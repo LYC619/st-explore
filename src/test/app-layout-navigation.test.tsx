@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -155,13 +155,16 @@ describe('AppLayout route transitions', () => {
     let mounts = 0;
     function CountingPage() {
       const [, setSearchParams] = useSearchParams();
+      const [draft, setDraft] = useState('draft A');
       useEffect(() => { mounts += 1; }, []);
       return (
         <AppLayout>
+          <input aria-label="draft" value={draft} onChange={(event) => setDraft(event.target.value)} />
+          <button data-testid="edit-draft" onClick={() => setDraft('unsaved A')}>Edit</button>
           <button
             data-testid="switch-view"
             type="button"
-            onClick={() => setSearchParams((current) => { current.set('view', 'diary'); return current; }, { replace: true })}
+            onClick={() => setSearchParams((current) => { current.set('view', 'grid'); return current; }, { replace: true })}
           >
             换子视图
           </button>
@@ -171,7 +174,7 @@ describe('AppLayout route transitions', () => {
 
     await act(async () => {
       root.render(
-        <MemoryRouter initialEntries={['/story/st_9?view=volume']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <MemoryRouter initialEntries={['/story/st_9?assetId=A&view=list']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
           <Routes>
             <Route element={<AppLayout />}>
               <Route path="/story/:id" element={<CountingPage />} />
@@ -181,6 +184,8 @@ describe('AppLayout route transitions', () => {
       );
     });
     expect(mounts).toBe(1);
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="edit-draft"]')!.click(); });
+    const draftInput = container.querySelector<HTMLInputElement>('[aria-label="draft"]');
 
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[data-testid="switch-view"]')?.click();
@@ -188,6 +193,8 @@ describe('AppLayout route transitions', () => {
     });
 
     expect(mounts).toBe(1);
+    expect(container.querySelector('[aria-label="draft"]')).toBe(draftInput);
+    expect(draftInput?.value).toBe('unsaved A');
   });
 
   it('附属库在新会话中默认折叠', async () => {

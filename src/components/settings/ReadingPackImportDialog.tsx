@@ -4,7 +4,7 @@
  * 两段式来自 DataSource 抽象（lib/data-source），云同步和手机端 ST zip 将来走同一套。
  * 不省这一步的理由：导入会覆盖本地条目，而本地条目上攒着用户的阅读进度和评分。
  */
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, FileDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,9 +20,12 @@ import {
 import { READING_PACK_EXT } from '@/types/reading-pack';
 import { RUNTIME_LABEL } from '@/lib/runtime';
 import {
-  getAllArchiveStories, getAllCharacters, getArchiveStory, saveArchiveStory, saveCharacter,
+  getAllArchiveStories, getAllCharacters, getCharacter, getArchiveStory, saveArchiveStory, saveCharacter,
 } from '@/lib/archive-db';
 import { getAllSummaries, saveSummary } from '@/lib/summary-db';
+import { parseReadingPackFile } from '@/lib/reading-pack/reading-pack-worker-client';
+import { isReadingPackError, ReadingPackError } from '@/lib/reading-pack/import';
+import { getActiveVault } from '@/lib/vault/active';
 
 interface ReadingPackImportDialogProps {
   open: boolean;
@@ -75,19 +78,51 @@ export function ReadingPackImportDialog({
   const [input, setInput] = useState<ReadingPackInput | null>(null);
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [busy, setBusy] = useState(false);
+  const sequence = useRef(0);
+  const requestRef = useRef<{
+    id: number; controller: AbortController; vault: ReturnType<typeof getActiveVault>; writing: boolean;
+  } | null>(null);
   const origin = input?.origin ?? '';
 
-  const reset = () => { setInput(null); setPlan(null); };
+  const cancelRequest = useCallback(() => {
+    requestRef.current?.controller.abort();
+    requestRef.current = null;
+  }, []);
+  const reset = useCallback(() => {
+    cancelRequest();
+    setInput(null);
+    setPlan(null);
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = '';
+  }, [cancelRequest]);
+
+  useEffect(() => {
+    if (!open) reset();
+    return cancelRequest;
+  }, [open, reset, cancelRequest]);
+
+  const changeOpen = (next: boolean) => { if (!next) reset(); onOpenChange(next); };
 
   const handlePick = async (file: File) => {
+    reset();
+    const request = { id: ++sequence.current, controller: new AbortController(), vault: getActiveVault(), writing: false };
+    requestRef.current = request;
+    const isCurrent = () => requestRef.current?.id === request.id && !request.controller.signal.aborted;
+    const checkVault = () => {
+      if (getActiveVault() !== request.vault) throw new ReadingPackError('cancelled', '库已切换，已取消读取阅读包');
+    };
     setBusy(true);
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
+      const parsed = await parseReadingPackFile(file, request.controller.signal);
+      if (!isCurrent()) return;
+      checkVault();
       const [characters, stories, summaries] = await Promise.all([
         getAllCharacters(), getAllArchiveStories(), getAllSummaries(),
       ]);
+      if (!isCurrent()) return;
+      checkVault();
       const nextInput: ReadingPackInput = {
-        bytes: buf,
+        parsed,
         origin: file.name,
         existing: {
           characters: characters.map((c) => ({ id: c.id, updatedAt: c.updatedAt })),
@@ -96,32 +131,48 @@ export function ReadingPackImportDialog({
         },
       };
       const next = await readingPackSource.inspect(nextInput);
+      if (!isCurrent()) return;
+      checkVault();
       setInput(nextInput);
       setPlan(next);
     } catch (e) {
+      if (!isCurrent()) return;
       reset();
+      if (isReadingPackError(e) && e.code === 'cancelled') return;
       toast({
         title: '读取阅读包失败',
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
     } finally {
-      setBusy(false);
-      // 清空 input，否则再选同一个文件不触发 change
-      if (fileRef.current) fileRef.current.value = '';
+      if (isCurrent()) {
+        setBusy(false);
+        if (fileRef.current) fileRef.current.value = '';
+      }
     }
   };
 
   const handleApply = async () => {
-    if (!input || !plan) return;
+    const request = requestRef.current;
+    if (!input || !plan || !request || request.writing) return;
+    request.writing = true;
+    const isCurrent = () => requestRef.current?.id === request.id && !request.controller.signal.aborted;
+    const guard = <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (!isCurrent() || getActiveVault() !== request.vault) {
+        throw new ReadingPackError('cancelled', '已取消导入阅读包');
+      }
+      return operation();
+    };
     setBusy(true);
     try {
       const result = await readingPackSource.apply(input, plan, {
-        saveCharacter,
-        saveStory: saveArchiveStory,
-        saveSummary,
-        getStory: getArchiveStory,
+        getCharacter: id => guard(() => getCharacter(id)),
+        saveCharacter: item => guard(() => saveCharacter(item)),
+        saveStory: item => guard(() => saveArchiveStory(item)),
+        saveSummary: item => guard(() => saveSummary(item)),
+        getStory: id => guard(() => getArchiveStory(id)),
       });
+      if (!isCurrent()) return;
       const { characters, stories, summaries } = result.written;
       toast({
         title: '阅读包已导入',
@@ -131,24 +182,27 @@ export function ReadingPackImportDialog({
       if (result.warnings.length > 0) {
         toast({ title: '有几处需要留意', description: result.warnings.slice(0, 3).join('；') });
       }
+      reset();
       onImported?.();
       onOpenChange(false);
-      reset();
     } catch (e) {
+      if (!isCurrent()) return;
+      reset();
+      if (isReadingPackError(e) && e.code === 'cancelled') return;
       toast({
         title: '导入失败',
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
     } finally {
-      setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   };
 
   return (
     <Dialog
       open={open}
-      onOpenChange={(next) => { onOpenChange(next); if (!next) reset(); }}
+      onOpenChange={changeOpen}
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -212,7 +266,7 @@ export function ReadingPackImportDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
+          <Button variant="outline" onClick={() => changeOpen(false)}>取消</Button>
           {plan && (
             <>
               <Button variant="ghost" onClick={reset} disabled={busy}>换个文件</Button>

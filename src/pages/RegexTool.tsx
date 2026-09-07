@@ -5,8 +5,7 @@
  * （选文本或某楼，逐条标出哪条规则改了哪、哪条没命中）。
  * 布局铁律：flex-wrap + 行内 basis，禁视口断点。
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Regex as RegexIcon, Archive, Save, FolderOpen, Trash2, Eye, ChevronDown, ChevronUp, User, Bot } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { RegexSidebar } from '@/components/chat/RegexSidebar';
@@ -17,6 +16,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -39,13 +39,12 @@ import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import { getCharacter, getAllArchiveStories } from '@/lib/archive-db';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
 import { executeDeleteAction } from '@/lib/destructive-action';
+import { useAssetIdentityNavigation } from '@/hooks/use-asset-identity-navigation';
 
 const RegexTool = () => {
   const { toast } = useToast();
-  const [searchParams] = useSearchParams();
   // 角色上下文（角色页关联资产区「处理」进来）：保存走写时复制
-  const cowCharacterId = searchParams.get('characterId') ?? undefined;
-  const initialAssetId = searchParams.get('assetId');
+  const [cowCharacterId, setCowCharacterId] = useState<string | undefined>();
   const [cowCharacterName, setCowCharacterName] = useState('');
 
   const [rules, setRules] = useState<RegexRule[]>(getInitialRegexRules);
@@ -54,6 +53,8 @@ const RegexTool = () => {
   const [collectionName, setCollectionName] = useState('');
   // 当前载入的资产 id（保存回资产时用；null = 纯当前规则集）
   const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify({ title: '', rules }));
+  const isDirty = JSON.stringify({ title: collectionName, rules }) !== savedSnapshot;
 
   // 预览区状态
   const [sampleText, setSampleText] = useState('');
@@ -64,67 +65,73 @@ const RegexTool = () => {
   const [pickStoryId, setPickStoryId] = useState('');
   const [pickFloor, setPickFloor] = useState('');
 
-  const refreshCollections = useCallback(async () => {
-    try {
-      setCollections(await getAllRegexCollections());
-    } catch { /* 列表失败不阻塞工具 */ }
-  }, []);
-
-  // 挂载：资产列表 + 角色名 + URL 指定资产载入 + 处理区交接文件 + 故事列表（预览取楼用）
-  useEffect(() => {
-    refreshCollections();
-    getAllArchiveStories().then(setStories).catch(() => {});
-    if (cowCharacterId) {
-      getCharacter(cowCharacterId).then((c) => setCowCharacterName(c?.name ?? '')).catch(() => {});
-    }
-    if (initialAssetId) {
-      // 深链指向已删/读不出来的资产时必须说一声：以前两条分支都是静默的，
-      // 用户从附属库点进来只会看到一个空编辑器，以为是自己点错了
-      getRegexCollection(initialAssetId).then((item) => {
-        if (item) {
-          setRules(JSON.parse(JSON.stringify(item.rules)));
-          setActiveCollectionId(item.id);
-          setCollectionName(item.title);
-          toast({ title: `已载入规则集「${item.title}」` });
-        } else {
-          toast({
-            title: '找不到这个规则集',
-            description: '它可能已经被删除。当前是一个空白规则集，不会覆盖任何已有资产。',
-            variant: 'destructive',
-          });
-        }
-      }).catch((error) => {
-        toast({
-          title: '载入规则集失败',
-          description: error instanceof Error ? error.message : String(error),
-          variant: 'destructive',
-        });
-      });
-    }
-    const handoff = takePendingToolFile('regex');
-    if (handoff) {
-      handoff.text().then((text) => {
-        try {
+  const initialImport = useRef<Promise<RegexRule[] | null> | null>(null);
+  const { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset } = useAssetIdentityNavigation({
+    isDirty,
+    load: async (identity, { initial, isCurrent }) => {
+      if (initial && !identity.assetId && !initialImport.current) {
+        const handoff = takePendingToolFile('regex');
+        initialImport.current = handoff ? handoff.text().then((text) => {
           const imported = parseSTRegexImport(JSON.parse(text));
-          if (imported.length === 0) throw new Error('empty');
-          setRules((prev) => {
-            const byId = new Map(prev.map((r) => [r.id, r]));
-            imported.forEach((r) => byId.set(r.id, r));
-            return Array.from(byId.values());
-          });
-          toast({ title: '已导入 ST 正则', description: `${handoff.name}：${imported.length} 条规则` });
-        } catch {
-          toast({ title: '导入失败', description: '文件里没有可识别的正则脚本', variant: 'destructive' });
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+          if (imported.length === 0) throw new Error('文件里没有可识别的正则脚本');
+          return imported;
+        }) : Promise.resolve(null);
+      }
+      const [item, character, items, imported] = await Promise.all([
+        identity.assetId ? getRegexCollection(identity.assetId) : null,
+        identity.characterId ? getCharacter(identity.characterId) : null,
+        getAllRegexCollections().catch(() => []),
+        initial && !identity.assetId ? initialImport.current : null,
+      ]);
+      if (isCurrent()) setCollections(item && !items.some((saved) => saved.id === item.id) ? [item, ...items] : items);
+      if (identity.assetId && !item) throw new Error('找不到这个规则集，它可能已经被删除');
+      return { item, characterName: character?.name ?? '', preserveSession: initial && !identity.assetId, imported };
+    },
+    accept: (target, identity) => {
+      if (!target.preserveSession) {
+        const nextRules: RegexRule[] = JSON.parse(JSON.stringify(target.item?.rules ?? []));
+        const title = target.item?.title ?? '';
+        setRules(nextRules);
+        setCollectionName(title);
+        setActiveCollectionId(target.item?.id ?? null);
+        setSavedSnapshot(JSON.stringify({ title, rules: nextRules }));
+      }
+      if (target.imported) {
+        const imported = target.imported;
+        setRules((previous) => {
+          const byId = new Map(previous.map((rule) => [rule.id, rule]));
+          imported.forEach((rule) => byId.set(rule.id, rule));
+          return Array.from(byId.values());
+        });
+        toast({ title: '已导入 ST 正则', description: `${imported.length} 条规则` });
+      }
+      setCowCharacterId(identity.characterId ?? undefined);
+      setCowCharacterName(target.characterName);
+    },
+    onError: (error) => toast({ title: '载入规则集失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }),
+  });
+
+  const refreshCollections = useCallback(async (isCurrent = captureCurrent()) => {
+    try {
+      const items = await getAllRegexCollections();
+      if (isCurrent()) setCollections(items);
+    } catch { /* 列表失败不阻塞工具 */ }
+  }, [captureCurrent]);
+
+  // 故事列表只用于预览取样，不参与编辑对象身份。
+  useEffect(() => {
+    let cancelled = false;
+    getAllArchiveStories().then((items) => { if (!cancelled) setStories(items); }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   // ---- 资产库操作 ----
 
   const handleSaveAsCollection = async () => {
+    const isCurrent = captureCurrent();
+    const savedRules: RegexRule[] = JSON.parse(JSON.stringify(rules));
     const name = collectionName.trim();
+    let savedTitle = name;
     if (!name) {
       toast({ title: '请输入规则集名称', variant: 'destructive' });
       return;
@@ -141,10 +148,12 @@ const RegexTool = () => {
             characterId: cowCharacterId,
             characterName: cowCharacterName,
             title: name,
-            content: { rules: JSON.parse(JSON.stringify(rules)) },
+            content: { rules: savedRules },
             newId: generateRegexCollectionId,
             save: saveRegexCollection,
           });
+          if (!isCurrent()) return;
+          savedTitle = result.title;
           // 原地更新这条历来不提示，与世界书/预设的「已保存」不一致；统一文案是另一件事
           if (result.action === 'redirect') {
             toast({ title: `已更新派生副本「${result.title}」` });
@@ -154,10 +163,11 @@ const RegexTool = () => {
           setActiveCollectionId(result.targetId);
         } else {
           // 角色上下文的全新规则集：直接入库并挂引用
-          const item = buildRegexCollection(name, rules);
+          const item = buildRegexCollection(name, savedRules);
           await saveRegexCollection(item);
           const updatedCharacter = await updateCharacterAssetReference(cowCharacterId, 'regex', item.id, item.id);
           if (!updatedCharacter) throw new Error('资产已保存，但角色引用切换失败：角色可能已被删除');
+          if (!isCurrent()) return;
           setActiveCollectionId(item.id);
           toast({ title: `已存入资产库并关联「${cowCharacterName}」` });
         }
@@ -167,18 +177,24 @@ const RegexTool = () => {
         await saveRegexCollection({
           ...base,
           title: name,
-          rules: JSON.parse(JSON.stringify(rules)),
+          rules: savedRules,
           updatedAt: Date.now(),
         });
+        if (!isCurrent()) return;
         toast({ title: `已更新规则集「${name}」` });
       } else {
-        const item = buildRegexCollection(name, rules);
+        const item = buildRegexCollection(name, savedRules);
         await saveRegexCollection(item);
+        if (!isCurrent()) return;
         setActiveCollectionId(item.id);
         toast({ title: `已存入资产库「${name}」` });
       }
-      await refreshCollections();
+      if (!isCurrent()) return;
+      setCollectionName((current) => current === collectionName ? savedTitle : current);
+      setSavedSnapshot(JSON.stringify({ title: savedTitle, rules: savedRules }));
+      await refreshCollections(isCurrent);
     } catch (error) {
+      if (!isCurrent()) return;
       // 含写时复制的重读失败与「资产已被删除」——原先只说「保存失败」，不说为什么
       toast({
         title: '保存失败',
@@ -189,24 +205,23 @@ const RegexTool = () => {
   };
 
   const handleLoadCollection = (item: RegexCollectionItem) => {
-    setRules(JSON.parse(JSON.stringify(item.rules)));
-    setActiveCollectionId(item.id);
-    setCollectionName(item.title);
-    toast({ title: `已载入「${item.title}」`, description: `${item.rules.length} 条规则已替换当前规则集` });
+    requestAsset(item.id);
   };
 
   const handleDeleteCollection = async () => {
     if (!deleteTarget) return;
+    const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
       await deleteRegexCollection(target.id);
+      if (!isCurrent()) return;
       if (activeCollectionId === target.id) setActiveCollectionId(null);
-      await refreshCollections();
+      await refreshCollections(isCurrent);
     }, {
-      onSuccess: () => toast({ title: `已删除规则集「${target.title}」` }),
-      onFailure: () => toast({ title: '删除规则集失败', variant: 'destructive' }),
+      onSuccess: () => { if (isCurrent()) toast({ title: `已删除规则集「${target.title}」` }); },
+      onFailure: () => { if (isCurrent()) toast({ title: '删除规则集失败', variant: 'destructive' }); },
     });
-    if (deleted) setDeleteTarget(null);
+    if (deleted && isCurrent()) setDeleteTarget(null);
   };
 
   // ---- 可视化预览 ----
@@ -233,6 +248,18 @@ const RegexTool = () => {
 
   return (
     <AppLayout>
+      <AlertDialog open={!!pendingTarget} onOpenChange={(open) => { if (!open) cancelPending(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认切换规则集？</AlertDialogTitle>
+            <AlertDialogDescription>当前规则集有未保存的修改，加载后将丢失这些修改。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPending}>确认加载</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="container mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card">

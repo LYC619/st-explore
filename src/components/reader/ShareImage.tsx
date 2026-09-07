@@ -12,7 +12,7 @@
  * 入口布局：小说视图和沉浸阅读的底栏各加一个分享图标按钮（Capacitor 环境下才显示），
  * 点击后弹 ShareImageDialog 选段落 + 预览 + 生成 + 调起分享。
  */
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useState, useRef, type SyntheticEvent } from 'react';
 import { Share as ShareIcon, Loader2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,6 +78,22 @@ const GRADIENTS = [
 /** 正文区最多画几行，超出省略。卡片是 3:4 固定尺寸，画满就溢出了。 */
 const MAX_BODY_LINES = 14;
 
+interface ShareSnapshot {
+  storyTitle: string;
+  characterName?: string;
+  floor: number;
+  text: string;
+}
+
+const stopReaderEvent = (event: SyntheticEvent) => event.stopPropagation();
+const readerToolEvents = {
+  'data-reader-tool': true,
+  onClick: stopReaderEvent,
+  onPointerDown: stopReaderEvent,
+  onTouchStart: stopReaderEvent,
+  onTouchEnd: stopReaderEvent,
+};
+
 export function ShareImage({
   storyTitle, characterName, currentFloor, currentText, triggerLabel = '生成分享图',
   onOpenChange,
@@ -85,22 +101,30 @@ export function ShareImage({
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(currentText);
+  const [snapshot, setSnapshot] = useState<ShareSnapshot | null>(null);
   const [gradient, setGradient] = useState(GRADIENTS[0].id);
   const [generating, setGenerating] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    if (open) setText(currentText);
-  }, [open, currentText]);
+  const dialogSession = useRef(0);
+  useEffect(() => () => { ++dialogSession.current; }, []);
 
   const changeOpen = (next: boolean) => {
+    ++dialogSession.current;
+    setGenerating(false);
+    if (next && !open) {
+      const nextSnapshot = { storyTitle, characterName, floor: currentFloor, text: currentText };
+      setSnapshot(nextSnapshot);
+      setText(nextSnapshot.text);
+    } else if (!next) setSnapshot(null);
     setOpen(next);
     onOpenChange?.(next);
   };
 
   const handleGenerate = async () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !snapshot) return;
+    const session = dialogSession.current;
+    const isCurrent = () => dialogSession.current === session;
 
     setGenerating(true);
     try {
@@ -146,35 +170,39 @@ export function ShareImage({
       const ink = watermarkInk(colors.start, colors.end);
       ctx.fillStyle = ink.title;
       ctx.font = 'bold 24px system-ui, sans-serif';
-      ctx.fillText(storyTitle, 60, watermarkY);
+      ctx.fillText(snapshot.storyTitle, 60, watermarkY);
 
       ctx.fillStyle = ink.meta;
       ctx.font = '18px system-ui, sans-serif';
-      const meta = characterName ? `${characterName} · 第 ${currentFloor} 楼` : `第 ${currentFloor} 楼`;
+      const meta = snapshot.characterName ? `${snapshot.characterName} · 第 ${snapshot.floor} 楼` : `第 ${snapshot.floor} 楼`;
       ctx.fillText(meta, 60, watermarkY + 40);
 
       // 导出。await 到底，别在 toBlob 回调里写 async——那样 catch 和 finally
       // 会先跑完，回调里的报错变成 unhandled rejection，用户只看到按钮恢复可点。
       const blob = await canvasToPngBlob(canvas);
+      if (!isCurrent()) return;
 
       if (isCapacitor()) {
         const bytes = new Uint8Array(await blob.arrayBuffer());
         const { Filesystem, Directory } = await import('@capacitor/filesystem');
         const { Share } = await import('@capacitor/share');
-        const fileName = `share-${currentFloor}.png`;
+        if (!isCurrent()) return;
+        const fileName = `share-${snapshot.floor}.png`;
         const { uri } = await Filesystem.writeFile({
           path: fileName,
           data: bytesToBase64(bytes),
           directory: Directory.Cache,
         });
+        if (!isCurrent()) return;
         await Share.share({ title: '分享阅读卡片', url: uri, dialogTitle: '分享到' });
+        if (!isCurrent()) return;
         toast({ description: '已调起分享面板' });
       } else {
         // 网页端降级：直接下载
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${storyTitle}-${currentFloor}.png`;
+        a.download = `${snapshot.storyTitle}-${snapshot.floor}.png`;
         a.click();
         URL.revokeObjectURL(url);
         toast({ description: '图片已下载' });
@@ -182,12 +210,13 @@ export function ShareImage({
 
       changeOpen(false);
     } catch (err) {
+      if (!isCurrent()) return;
       toast({
         variant: 'destructive',
         description: `生成失败：${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
-      setGenerating(false);
+      if (isCurrent()) setGenerating(false);
     }
   };
 
@@ -196,11 +225,11 @@ export function ShareImage({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" aria-label={triggerLabel}>
+        <Button variant="ghost" size="sm" aria-label={triggerLabel} {...readerToolEvents}>
           <ShareIcon className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" {...readerToolEvents}>
         <DialogHeader>
           <DialogTitle>生成分享图</DialogTitle>
           <DialogDescription>选择要分享的段落和背景样式</DialogDescription>
@@ -223,7 +252,7 @@ export function ShareImage({
               <SelectTrigger id="share-gradient" className="mt-1.5">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent {...readerToolEvents}>
                 {GRADIENTS.map((g) => (
                   <SelectItem key={g.id} value={g.id}>{g.label}</SelectItem>
                 ))}

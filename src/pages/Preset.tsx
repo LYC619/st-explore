@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { SlidersHorizontal, Download, Save, History, FileJson } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { HelpCard } from '@/components/HelpCard';
@@ -12,6 +11,7 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import type { NormalizedPreset, OrderEntry, PresetItem } from '@/types/preset';
 import { DEFAULT_CHARACTER_ID, generatePresetId } from '@/types/preset';
@@ -23,7 +23,7 @@ import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import { buildPresetSaveItem } from '@/lib/asset-save-record';
 import { getCharacter } from '@/lib/archive-db';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
-import { takePendingToolFile, peekPendingToolFile } from '@/lib/tool-handoff';
+import { takePendingToolFile } from '@/lib/tool-handoff';
 import { PresetOverview } from '@/components/preset/PresetOverview';
 import { PromptEditor } from '@/components/preset/PromptEditor';
 import { PresetUtilityFields } from '@/components/preset/PresetUtilityFields';
@@ -33,6 +33,7 @@ import { GuidedTour } from '@/components/GuidedTour';
 import { PRESET_TOUR_STEPS, isTourCompleted, setTourCompleted } from '@/lib/tour-steps';
 import type { RegexRule } from '@/types/chat';
 import { executeDeleteAction } from '@/lib/destructive-action';
+import { useAssetIdentityNavigation } from '@/hooks/use-asset-identity-navigation';
 
 const PRESET_SESSION_KEY = 'preset-active-session';
 interface PresetSessionPtr { itemId: string | null; }
@@ -47,13 +48,12 @@ function loadSessionPtr(): PresetSessionPtr | null {
 export default function Preset() {
   const { toast } = useToast();
   // 角色上下文（角色页关联资产区「处理」进来）：保存走写时复制（定稿第七章）
-  const [searchParams] = useSearchParams();
-  const cowCharacterId = searchParams.get('characterId') ?? undefined;
-  const initialAssetId = searchParams.get('assetId');
+  const [cowCharacterId, setCowCharacterId] = useState<string | undefined>();
   const [cowCharacterName, setCowCharacterName] = useState('');
   const [preset, setPreset] = useState<NormalizedPreset | null>(null);
   const [originalPreset, setOriginalPreset] = useState<NormalizedPreset | null>(null);
   const [fileName, setFileName] = useState('preset');
+  const [originalFileName, setOriginalFileName] = useState('preset');
   const [activeCharacterId, setActiveCharacterId] = useState(DEFAULT_CHARACTER_ID);
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<PresetItem[]>([]);
@@ -67,9 +67,68 @@ export default function Preset() {
   const historyIndexRef = useRef(-1);
   const [, forceUpdate] = useState(0);
 
-  const refreshSaved = useCallback(async () => {
-    try { setSavedItems(await getAllPresets()); } catch { /* ignore */ }
+  const isDirty = JSON.stringify({ title: fileName, preset }) !== JSON.stringify({ title: originalFileName, preset: originalPreset });
+
+  const applyPreset = useCallback((item: PresetItem | null) => {
+    setPreset(item?.preset ?? null);
+    setOriginalPreset(item?.preset ?? null);
+    setFileName(item?.title ?? 'preset');
+    setOriginalFileName(item?.title ?? 'preset');
+    setCurrentItemId(item?.id ?? null);
+    const firstId = item?.preset.promptOrder[0]?.character_id ?? DEFAULT_CHARACTER_ID;
+    setActiveCharacterId(firstId);
+    resetHistory(item ? getActiveOrder(item.preset, firstId) : []);
+    setTab('overview');
   }, []);
+
+  const initialTarget = useRef<Promise<{ item: PresetItem | null; imported: boolean }> | null>(null);
+  const { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset } = useAssetIdentityNavigation({
+    isDirty,
+    load: async (identity, { initial, isCurrent }) => {
+      if (initial && !identity.assetId && !initialTarget.current) {
+        const handoff = takePendingToolFile('preset');
+        const sessionId = loadSessionPtr()?.itemId;
+        initialTarget.current = handoff ? handoff.text().then((text) => ({
+          item: { id: generatePresetId(), title: handoff.name.replace(/\.json$/i, ''), preset: parsePreset(JSON.parse(text)), createdAt: Date.now(), updatedAt: Date.now(), autoSaved: true },
+          imported: true,
+        })) : (sessionId ? getPreset(sessionId) : Promise.resolve(null)).then((item) => ({ item: item ?? null, imported: false }));
+      }
+      const [item, character, items, restored] = await Promise.all([
+        identity.assetId ? getPreset(identity.assetId) : null,
+        identity.characterId ? getCharacter(identity.characterId) : null,
+        getAllPresets().catch(() => []),
+        initial && !identity.assetId ? initialTarget.current : null,
+      ]);
+      if (isCurrent()) setSavedItems(item && !items.some((saved) => saved.id === item.id) ? [item, ...items] : items);
+      if (identity.assetId && !item) throw new Error('找不到这个预设，它可能已经被删除');
+      return { item: item ?? restored?.item ?? null, characterName: character?.name ?? '', imported: restored?.imported ?? false };
+    },
+    accept: (target, identity) => {
+      applyPreset(target.item);
+      setCowCharacterId(identity.characterId ?? undefined);
+      setCowCharacterName(target.characterName);
+      if (target.imported && target.item) void saveImportedPreset(target.item);
+    },
+    onError: (error) => toast({ title: '载入预设失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }),
+  });
+
+  const refreshSaved = useCallback(async (isCurrent = captureCurrent()) => {
+    try {
+      const items = await getAllPresets();
+      if (isCurrent()) setSavedItems(items);
+    } catch { /* ignore */ }
+  }, [captureCurrent]);
+
+  const saveImportedPreset = useCallback(async (item: PresetItem) => {
+    const isCurrent = captureCurrent();
+    try {
+      await savePreset(item);
+      if (!isCurrent()) return;
+      setCurrentItemId(item.id);
+      await pruneAutoSavedPresets(5);
+      await refreshSaved(isCurrent);
+    } catch { /* 自动历史失败不阻塞导入 */ }
+  }, [captureCurrent, refreshSaved]);
 
   // 首次访问自动引导
   useEffect(() => {
@@ -78,32 +137,6 @@ export default function Preset() {
       return () => clearTimeout(t);
     }
   }, []);
-
-  // 跨页恢复：组件挂载时凭 sessionStorage 指针从 IndexedDB 回读；
-  // URL 指定资产（角色页「处理」直达）优先于指针恢复
-  useEffect(() => {
-    refreshSaved();
-    if (cowCharacterId) {
-      getCharacter(cowCharacterId).then((c) => setCowCharacterName(c?.name ?? '')).catch(() => {});
-    }
-    // 处理区交接了文件时跳过指针恢复——两个异步 setPreset 会竞态互相覆盖
-    const targetId = peekPendingToolFile('preset') ? null : (initialAssetId ?? loadSessionPtr()?.itemId);
-    if (targetId) {
-      getPreset(targetId).then((item) => {
-        if (item) {
-          setPreset(item.preset);
-          setOriginalPreset(item.preset);
-          setFileName(item.title);
-          setCurrentItemId(item.id);
-          const firstId = item.preset.promptOrder[0]?.character_id ?? DEFAULT_CHARACTER_ID;
-          setActiveCharacterId(firstId);
-          resetHistory(getActiveOrder(item.preset, firstId));
-        }
-      }).catch(() => { /* ignore */ });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
 
   // 跨页指针持久化
   useEffect(() => {
@@ -227,38 +260,29 @@ export default function Preset() {
 
   // ---- 导入 ----
   const loadFile = useCallback(async (file: File) => {
+    const isCurrent = captureCurrent();
     if (!file.name.toLowerCase().endsWith('.json')) {
       toast({ title: '请选择 .json 预设文件', variant: 'destructive' });
       return;
     }
     try {
       const np = parsePreset(JSON.parse(await file.text()));
+      if (!isCurrent()) return;
       const name = file.name.replace(/\.json$/i, '');
-      setPreset(np);
-      setOriginalPreset(np);
-      setFileName(name);
-      const firstId = np.promptOrder[0]?.character_id ?? DEFAULT_CHARACTER_ID;
-      setActiveCharacterId(firstId);
-      resetHistory(getActiveOrder(np, firstId));
-      setTab('overview');
+      const item = { id: generatePresetId(), title: name, preset: np, createdAt: Date.now(), updatedAt: Date.now(), autoSaved: true };
+      applyPreset(item);
       // 自动留存为导入历史（autoSaved），裁剪到最近 5 份
-      (async () => {
-        const id = generatePresetId();
-        const now = Date.now();
-        await savePreset({ id, title: name, preset: np, createdAt: now, updatedAt: now, autoSaved: true });
-        setCurrentItemId(id);
-        await pruneAutoSavedPresets(5);
-        await refreshSaved();
-      })().catch(() => { /* 自动历史失败不阻塞导入 */ });
+      void saveImportedPreset(item);
       toast({ title: '预设导入成功', description: `${np.prompts.length} 个提示词块` });
     } catch (e) {
+      if (!isCurrent()) return;
       toast({
         title: '解析失败',
         description: e instanceof Error ? e.message : '文件不是有效的 SillyTavern 预设',
         variant: 'destructive',
       });
     }
-  }, [toast, refreshSaved]);
+  }, [toast, captureCurrent, applyPreset, saveImportedPreset]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -267,19 +291,11 @@ export default function Preset() {
     if (file) loadFile(file);
   }, [loadFile]);
 
-  // 处理区入口交接来的文件：走与导入按钮相同的解析入库流程（只消费一次）
-  const handoffConsumedRef = useRef(false);
-  useEffect(() => {
-    if (handoffConsumedRef.current) return;
-    handoffConsumedRef.current = true;
-    const file = takePendingToolFile('preset');
-    if (file) loadFile(file);
-  }, [loadFile]);
-
   // ---- 保存（永久留存，存入 presets store，在「已存预设」中管理） ----
   // 角色上下文（角色页「处理」进来）：写时复制——原资产不动，改动落到该角色的派生副本
   const handleSaveLocal = useCallback(async () => {
     if (!preset) return;
+    const isCurrent = captureCurrent();
     const now = Date.now();
     const base = currentItemId ? savedItems.find((s) => s.id === currentItemId) : undefined;
 
@@ -296,6 +312,7 @@ export default function Preset() {
         save: savePreset,
         now,
       }).catch((error: unknown) => {
+        if (!isCurrent()) return null;
         // 重读失败 / 资产已被删除 / 落库失败：说清楚并中止，草稿仍在编辑器里
         toast({
           title: '保存失败',
@@ -304,7 +321,7 @@ export default function Preset() {
         });
         return null;
       });
-      if (!result) return;
+      if (!result || !isCurrent()) return;
       // 原地更新时 result.title 就是 fileName，这行是空操作
       setFileName(result.title);
       if (result.action === 'update') {
@@ -315,7 +332,9 @@ export default function Preset() {
         toast({ title: '已生成派生副本', description: `「${result.title}」，原预设与其他角色不受影响` });
       }
       setCurrentItemId(result.targetId);
-      await refreshSaved();
+      setOriginalPreset(preset);
+      setOriginalFileName(result.title);
+      await refreshSaved(isCurrent);
       return;
     }
 
@@ -327,42 +346,42 @@ export default function Preset() {
         const updatedCharacter = await updateCharacterAssetReference(cowCharacterId, 'preset', id, id, now);
         if (!updatedCharacter) throw new Error('资产已保存，但角色引用切换失败：角色可能已被删除');
       }
+      if (!isCurrent()) return;
       setCurrentItemId(id);
-      await refreshSaved();
+      setOriginalPreset(preset);
+      setOriginalFileName(fileName);
+      await refreshSaved(isCurrent);
+      if (!isCurrent()) return;
       toast({ title: '已保存', description: '可在右上角「已存预设」中查看；永久留存、纳入完整备份' });
     } catch (error: unknown) {
+      if (!isCurrent()) return;
       toast({
         title: '保存失败',
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
     }
-  }, [preset, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast]);
+  }, [preset, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast, captureCurrent]);
 
   const handleLoadItem = useCallback((item: PresetItem) => {
-    setPreset(item.preset);
-    setOriginalPreset(item.preset);
-    setFileName(item.title);
-    setCurrentItemId(item.id);
-    const firstId = item.preset.promptOrder[0]?.character_id ?? DEFAULT_CHARACTER_ID;
-    setActiveCharacterId(firstId);
-    resetHistory(getActiveOrder(item.preset, firstId));
-    setTab('overview');
-  }, []);
+    requestAsset(item.id);
+  }, [requestAsset]);
 
   const handleDeleteItem = useCallback(async () => {
     if (!deleteTarget) return;
+    const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
       await deletePreset(target.id);
+      if (!isCurrent()) return;
       if (target.id === currentItemId) setCurrentItemId(null);
-      await refreshSaved();
+      await refreshSaved(isCurrent);
     }, {
-      onSuccess: () => toast({ title: `已删除预设「${target.title}」` }),
-      onFailure: () => toast({ title: '删除预设失败', variant: 'destructive' }),
+      onSuccess: () => { if (isCurrent()) toast({ title: `已删除预设「${target.title}」` }); },
+      onFailure: () => { if (isCurrent()) toast({ title: '删除预设失败', variant: 'destructive' }); },
     });
-    if (deleted) setDeleteTarget(null);
-  }, [currentItemId, deleteTarget, refreshSaved, toast]);
+    if (deleted && isCurrent()) setDeleteTarget(null);
+  }, [currentItemId, deleteTarget, refreshSaved, toast, captureCurrent]);
 
   const actions = preset && (
     <>
@@ -406,6 +425,18 @@ export default function Preset() {
 
   return (
     <AppLayout actions={actions}>
+      <AlertDialog open={!!pendingTarget} onOpenChange={(open) => { if (!open) cancelPending(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认切换预设？</AlertDialogTitle>
+            <AlertDialogDescription>当前预设有未保存的修改，加载后将丢失这些修改。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPending}>确认加载</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <div className="container mx-auto px-4 py-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card">

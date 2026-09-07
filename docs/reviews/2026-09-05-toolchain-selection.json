@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-09-06T10:46:40.9650579Z",
+  "node": "22.14.0",
+  "vite": "8.2.2",
+  "vitest": "4.1.11",
+  "swc": "4.3.3",
+  "rationale": "Node 22.14.0 satisfies Vite 8.2.2 and plugin-react-swc 4.3.3. Vitest 4.1.11 declares both a dependency and peer range that includes Vite 8, removing the current Vitest 3.x embedded Vite 7 mismatch. Keep the installed Vite and SWC exact versions and upgrade only Vitest to the compatible exact release.",
+  "queries": {
+    "vite": "npm view vite@8.2.2 version engines peerDependencies --json",
+    "vitest": "npm view vitest@4.1.11 version engines dependencies.vite peerDependencies --json",
+    "swc": "npm view @vitejs/plugin-react-swc@4.3.3 version engines peerDependencies --json"
+  }
+}

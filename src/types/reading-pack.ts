@@ -39,13 +39,12 @@ export const PACK_MEDIA_DIR = 'media';
 
 export const READING_PACK_EXT = '.ste-reading';
 
-/**
- * 包体积硬上限。整库备份那边是 500MB，阅读包只装选中的故事，正常远低于此；
- * 超过多半是误选了别的文件。
- * ponytail: unzipSync 会把整个包解进内存，所以这个上限同时是内存上限。
- * 真要处理超大包得换 fflate 的流式 Unzip 按条目解，第一版不上。
- */
+/** 输入和展开预算；JSON、合并缓冲区仍有额外的有界内存开销。 */
 export const MAX_READING_PACK_BYTES = 300 * 1024 * 1024;
+export const MAX_READING_PACK_ENTRIES = 4096;
+export const MAX_READING_PACK_ENTRY_BYTES = 64 * 1024 * 1024;
+export const MAX_READING_PACK_UNCOMPRESSED_BYTES = 300 * 1024 * 1024;
+export const MAX_READING_PACK_JSON_BYTES = 64 * 1024 * 1024;
 
 /** 立绘条目在包里的形态：图片挪去 media/，这里只留路径 */
 export interface PackPortraitItem {

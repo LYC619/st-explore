@@ -19,7 +19,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { elementScroll, useVirtualizer } from '@tanstack/react-virtual';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -36,11 +36,12 @@ import {
   buildNovelDocument, buildChapterSuggestMessages, parseChapterSuggestions,
   buildNovelBookmarks, findNovelPageIndex, paginateNovelDocument,
   normalizeNovelSpreadStart, clampNovelPageIndex, novelPageCapacity,
+  findPageForNovelLocation, clampNovelLocation, type NovelLocation,
   DEFAULT_NOVEL_OPTIONS,
   type UserFloorMode, type NovelChapter, type NovelPage, type ChapterSuggestion, type NovelBookmark,
 } from '@/lib/novel-view';
 import { useViewport } from '@/hooks/use-viewport';
-import { useImmersiveLock } from '@/lib/immersive-mode';
+import { useImmersiveLock, useReaderBack } from '@/lib/immersive-mode';
 import { MobileReaderSettings, ReaderZoneHint, type ReadingMode } from './MobileReaderSettings';
 import { ShareImage } from './ShareImage';
 import { buildSummaryMessages } from '@/lib/summary-engine';
@@ -205,6 +206,14 @@ const NovelView = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const pageWeight = useMemo(() => novelPageCapacity(pageBox, fontSize), [pageBox, fontSize]);
   const pages = useMemo(() => paginateNovelDocument(chapters, pageWeight), [chapters, pageWeight]);
+  const sourceSignature = useMemo(() => JSON.stringify(chapters), [chapters]);
+  const blockLengths = useMemo(() => chapters.flatMap(chapter => chapter.blocks.map(block => block.text.length)), [chapters]);
+  const locationRef = useRef<NovelLocation | null>(null);
+  const initialFloorRef = useRef(initialFloor);
+  initialFloorRef.current = initialFloor;
+  const readerIdentity = JSON.stringify([session.id, progressKey, polish?.story.id, polish?.branchId]);
+  const layoutRef = useRef<{ identity: string; source: string; weight: number; mobile: boolean; scrolling: boolean } | null>(null);
+  const hasPages = pages.length > 0;
   const hiddenUserFloors = useMemo(
     () => session.messages.filter((m) => m.role === 'user').length,
     [session.messages],
@@ -221,7 +230,15 @@ const NovelView = ({
     const el = scrolling ? scrollRef.current : pageBoxRef.current;
     if (!el) return;
     const measure = () => {
-      const { clientWidth, clientHeight } = el;
+      if (!el.isConnected || el !== (scrolling ? scrollRef.current : pageBoxRef.current)) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const style = getComputedStyle(el);
+      const horizontalPadding = scrolling ? 0 : (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      const verticalPadding = scrolling ? 0 : (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      const clientWidth = rect.width - horizontalPadding;
+      const clientHeight = rect.height - verticalPadding;
+      if (clientWidth <= 0 || clientHeight <= 0) return;
       // 滚动视口比书页宽：正文限在 max-w-2xl(42rem) 里，按视口宽算会高估每行字数。
       const width = scrolling ? Math.min(clientWidth, SCROLL_TEXT_MAX_WIDTH) : clientWidth;
       setPageBox((prev) => (prev.width === width && prev.height === clientHeight
@@ -233,7 +250,7 @@ const NovelView = ({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [pages.length, embedded, scrolling]);
+  }, [hasPages, embedded, scrolling, isMobile]);
 
   const readStoredFloor = useCallback((): number | undefined => {
     if (!progressKey) return undefined;
@@ -244,15 +261,6 @@ const NovelView = ({
       return undefined;
     }
   }, [progressKey]);
-
-  useEffect(() => {
-    const next = normalizePage(
-      findNovelPageIndex(pages, initialFloor ?? readStoredFloor()),
-      pages.length,
-    );
-    currentPageRef.current = next;
-    setCurrentPage(next);
-  }, [initialFloor, normalizePage, pages, readStoredFloor]);
 
   const saveProgress = useCallback((floor: number) => {
     if (!progressKey || onFloorChange) return;
@@ -267,11 +275,48 @@ const NovelView = ({
     if (pages.length === 0) return;
     const next = normalizePage(pageIndex, pages.length);
     currentPageRef.current = next;
+    locationRef.current = pages[next].startLocation;
     setCurrentPage(next);
     const floor = pages[next].startFloor;
     onFloorChange?.(floor);
     saveProgress(floor);
   }, [normalizePage, onFloorChange, pages, saveProgress]);
+
+  const scrollSyncRef = useRef(false);
+  const scrollFrameRef = useRef<number | null>(null);
+  const jumpRequestId = useRef(0);
+  const jumpTimer = useRef<number | undefined>(undefined);
+  const scrollCommandRef = useRef<((page: number) => void) | null>(null);
+  const sampleScrollRef = useRef<(() => void) | null>(null);
+  const allowScrollCommandsRef = useRef(true);
+  const cancelPendingJump = useCallback(() => {
+    allowScrollCommandsRef.current = false;
+    ++jumpRequestId.current;
+    if (jumpTimer.current !== undefined) window.clearTimeout(jumpTimer.current);
+    jumpTimer.current = undefined;
+    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    scrollFrameRef.current = null;
+    scrollSyncRef.current = false;
+  }, []);
+  const alignScroll = useCallback((page: number) => {
+    cancelPendingJump();
+    const requestId = jumpRequestId.current;
+    scrollSyncRef.current = true;
+    allowScrollCommandsRef.current = true;
+    scrollCommandRef.current?.(page);
+    jumpTimer.current = window.setTimeout(() => {
+      if (requestId !== jumpRequestId.current) return;
+      jumpTimer.current = undefined;
+      scrollSyncRef.current = false;
+      sampleScrollRef.current?.();
+    }, 120);
+  }, [cancelPendingJump]);
+  const jumpToPage = useCallback((page: number) => {
+    if (!pages.length) return;
+    goToPage(page);
+    if (scrolling) alignScroll(currentPageRef.current);
+  }, [goToPage, scrolling, alignScroll, pages.length]);
+  useEffect(() => cancelPendingJump, [cancelPendingJump]);
 
   /**
    * 退出小说视图。Esc 和 Android 返回键共用这一个：先把当前页存下来再关，
@@ -283,19 +328,17 @@ const NovelView = ({
   }, [goToPage, onClose]);
 
   // 全屏阅读时让外壳收掉窗口栏和底部标签栏；嵌入模式不算沉浸。
-  // 第二个参数接 Android 返回键，复用 exitReader——沉浸阅读中按返回该退沉浸，
-  // 而不是把整个角色页退掉（回来还得重新找位置）。
-  // 放在这里而不是组件开头：exitReader 是 const，提前引用会踩 TDZ。
-  useImmersiveLock(isMobile && !embedded, exitReader);
+  useImmersiveLock(isMobile && !embedded);
+  useReaderBack(!embedded, exitReader);
 
   /**
    * 翻页动作（点分区、滑动、方向键）；进度条拖动不走这里——
    * 那是在工具栏上操作，顺手把工具栏收掉等于把手指底下的控件抽走。
    */
   const turnPage = useCallback((pageIndex: number) => {
-    goToPage(pageIndex);
+    jumpToPage(pageIndex);
     if (isMobile) setChromeVisible(false);
-  }, [goToPage, isMobile]);
+  }, [jumpToPage, isMobile]);
 
   const current = pages[currentPage];
   const facing = isMobile ? undefined : pages[currentPage + 1];
@@ -513,10 +556,6 @@ const NovelView = ({
   })).filter((item) => item.index >= 0);
 
   // ---- 滚动模式的进度 ⇄ 滚动位置同步 ----
-  /** 程序化滚动期间忽略 scroll 事件，否则「跳过去」会被自己的回读打回来 */
-  const scrollSyncRef = useRef(false);
-  const scrollFrameRef = useRef<number | null>(null);
-
   /**
    * 滚动模式的虚拟化：只渲染可视区 ±overscan 的段落。
    *
@@ -538,7 +577,11 @@ const NovelView = ({
     const host = scrollRef.current;
     const inner = scrollInnerRef.current;
     if (!host || !inner) return;
-    const measure = () => setScrollMargin(inner.offsetTop);
+    const measure = () => {
+      const list = inner.firstElementChild;
+      if (!host.isConnected || !list) return;
+      setScrollMargin(list.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop);
+    };
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
@@ -552,26 +595,41 @@ const NovelView = ({
     estimateSize: () => Math.max(240, pageBox.height || 480),
     overscan: 2,
     scrollMargin,
+    scrollToFn: (offset, options, instance) => {
+      // TanStack can reconcile a canceled jump later; keep only normal size adjustments.
+      if (allowScrollCommandsRef.current || options.adjustments !== undefined) {
+        elementScroll(offset, options, instance);
+      }
+    },
   });
 
   const scrollToPage = useCallback((pageIndex: number) => {
     if (!scrollRef.current || pages.length === 0) return;
-    scrollSyncRef.current = true;
     pageVirtualizer.scrollToIndex(clampNovelPageIndex(pageIndex, pages.length), { align: 'start' });
-    // 动态测量下 scrollToIndex 会分几帧收敛（先按估值跳，量完再补），
-    // 一帧就解锁的话补位那次滚动会被当成用户在读，把进度冲掉。
-    window.setTimeout(() => { scrollSyncRef.current = false; }, 120);
   }, [pageVirtualizer, pages.length]);
 
-  // 目录/书签/进度条改页码后把正文滚过去；切进滚动模式、重排版（改字号）时也要重新对位。
-  useEffect(() => {
-    if (!scrolling) return;
-    scrollToPage(currentPageRef.current);
-  }, [scrolling, pages, scrollToPage]);
+  useLayoutEffect(() => {
+    scrollCommandRef.current = scrollToPage;
+    return () => { scrollCommandRef.current = null; };
+  }, [scrollToPage]);
 
-  useEffect(() => () => {
-    if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
-  }, []);
+  useLayoutEffect(() => {
+    const previous = layoutRef.current;
+    const initialize = !previous || previous.identity !== readerIdentity || previous.source !== sourceSignature;
+    if (!initialize && previous.weight === pageWeight && previous.mobile === isMobile
+      && previous.scrolling === scrolling) return;
+    layoutRef.current = { identity: readerIdentity, source: sourceSignature, weight: pageWeight, mobile: isMobile, scrolling };
+    const target = initialize || !locationRef.current
+      ? findNovelPageIndex(pages, initialFloorRef.current ?? readStoredFloor())
+      : findPageForNovelLocation(pages, clampNovelLocation(locationRef.current, blockLengths));
+    const next = normalizePage(target, pages.length);
+    if (initialize) locationRef.current = pages[next]?.startLocation ?? null;
+    currentPageRef.current = next;
+    setCurrentPage(next);
+    if (scrolling && pages.length) alignScroll(next);
+    else cancelPendingJump();
+  }, [readerIdentity, sourceSignature, pageWeight, isMobile, scrolling, pages, blockLengths,
+    normalizePage, readStoredFloor, alignScroll, cancelPendingJump]);
 
   /** 滚动读到哪算哪：只更新进度，不反过来触发滚动 */
   const syncScrollProgress = useCallback((pageIndex: number) => {
@@ -579,36 +637,46 @@ const NovelView = ({
     const next = clampNovelPageIndex(pageIndex, pages.length);
     if (next === currentPageRef.current) return;
     currentPageRef.current = next;
+    locationRef.current = pages[next].startLocation;
     setCurrentPage(next);
     const floor = pages[next].startFloor;
     onFloorChange?.(floor);
     saveProgress(floor);
   }, [onFloorChange, pages, saveProgress]);
 
-  const handleBodyScroll = useCallback(() => {
-    if (scrollSyncRef.current) return;
-    setChromeVisible(false);
-    if (scrollFrameRef.current !== null) return;
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
+  const sampleScroll = useCallback(() => {
+      if (scrollSyncRef.current) return;
       const host = scrollRef.current;
       if (!host) return;
       // 顶边往下 8px 处落在哪一段就算读到哪一段。
       // 虚拟化之后不能再问 DOM：段落是绝对定位的，offsetTop 全是 0，而且没渲染的
-      // 段根本不在 DOM 里。改问虚拟器自己的几何——它的 start 已经含 scrollMargin，
-      // 所以探针也要加上，两边同一套坐标。
-      const probe = host.scrollTop + scrollMargin + 8;
+      // 段根本不在 DOM 里。item.start 和 scrollTop 都以滚动内容原点计量。
+      const probe = host.scrollTop + 8;
       const items = pageVirtualizer.getVirtualItems();
       let index = items[0]?.index ?? 0;
       for (const item of items) {
         if (item.start <= probe) index = item.index;
       }
       syncScrollProgress(index);
+  }, [syncScrollProgress, pageVirtualizer]);
+  useLayoutEffect(() => {
+    sampleScrollRef.current = sampleScroll;
+    return () => { sampleScrollRef.current = null; };
+  }, [sampleScroll]);
+  const handleBodyScroll = useCallback(() => {
+    if (scrollSyncRef.current) return;
+    setChromeVisible(false);
+    if (scrollFrameRef.current !== null) return;
+    const requestId = jumpRequestId.current;
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      if (requestId === jumpRequestId.current) sampleScrollRef.current?.();
     });
-  }, [syncScrollProgress, pageVirtualizer, scrollMargin]);
+  }, []);
 
   const handleSurfaceClick = (event: React.MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest('button, input, [role="slider"], [role="dialog"]')) return;
+    if (event.target instanceof Element
+      && event.target.closest('[data-reader-tool], button, input, textarea, [role="slider"], [role="dialog"]')) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     if (isMobile) {
       // 三分区：左 1/3 上一页、中 1/3 开关工具栏、右 1/3 下一页。
@@ -621,7 +689,7 @@ const NovelView = ({
       turnPage(currentPage + (zone < 1 / 3 ? -step : step));
       return;
     }
-    goToPage(event.clientX < bounds.left + bounds.width / 2 ? currentPage - 2 : currentPage + 2);
+    jumpToPage(event.clientX < bounds.left + bounds.width / 2 ? currentPage - 2 : currentPage + 2);
   };
 
   /**
@@ -667,6 +735,7 @@ const NovelView = ({
   const renderNovelPage = (page: NovelPage | undefined, pageIndex: number, side: 'left' | 'right' | 'single') => (
     <section
       data-novel-page={side}
+      ref={side === 'right' ? undefined : pageBoxRef}
       className={cn(
         'relative min-w-0 overflow-hidden bg-card text-card-foreground',
         side === 'single' ? 'h-full px-5 pb-9 pt-5' : 'px-7 pb-10 pt-7 sm:px-10',
@@ -676,8 +745,6 @@ const NovelView = ({
     >
       {page ? (
         <article
-          // 左页量尺寸（两页等宽，右页在末尾可能是空的）；h-full 让它正好等于书页内容区
-          ref={side === 'right' ? undefined : pageBoxRef}
           className="h-full font-serif text-foreground/90"
           style={{ fontSize: `${fontSize}px`, lineHeight: 1.75 }}
         >
@@ -722,11 +789,15 @@ const NovelView = ({
             // 客户端的窗口控制按钮和拖拽区。--app-chrome-h 由 AppLayout 写到 :root。
             : 'fixed inset-x-0 bottom-0 top-[var(--app-chrome-h,0px)] z-50 flex flex-col bg-canvas text-[color:var(--text-body)]',
       )}
-      onTouchStart={(event) => { touchStartX.current = event.changedTouches[0]?.clientX ?? null; }}
+      onTouchStart={(event) => {
+        touchStartX.current = event.target instanceof Element && event.target.closest('[data-reader-tool]')
+          ? null : event.changedTouches[0]?.clientX ?? null;
+      }}
       onTouchEnd={(event) => {
         const start = touchStartX.current;
         const end = event.changedTouches[0]?.clientX;
         touchStartX.current = null;
+        if (event.target instanceof Element && event.target.closest('[data-reader-tool]')) return;
         if (start === null || end === undefined || Math.abs(end - start) < 48) return;
         // 滚动模式不接横滑：上下读的时候手指斜着划一下就跳页太容易误触
         if (scrolling) return;
@@ -810,7 +881,7 @@ const NovelView = ({
                         <button
                           key={c.index}
                           className="w-full text-left px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
-                          onClick={() => goToPage(c.index)}
+                          onClick={() => jumpToPage(c.index)}
                         >
                           {c.title}
                         </button>
@@ -839,7 +910,7 @@ const NovelView = ({
                           key={bookmark.messageId}
                           type="button"
                           className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
-                          onClick={() => goToPage(bookmark.pageIndex)}
+                          onClick={() => jumpToPage(bookmark.pageIndex)}
                         >
                           <span className="shrink-0 font-mono text-xs text-primary">#{bookmark.floor}</span>
                           <span className="line-clamp-2 text-xs text-muted-foreground" title={bookmark.snippet}>{bookmark.snippet}</span>
@@ -924,6 +995,8 @@ const NovelView = ({
             ref={attachScrollHost}
             data-novel-scroll
             onScroll={handleBodyScroll}
+            onWheel={cancelPendingJump}
+            onTouchStart={cancelPendingJump}
             className="relative h-full overflow-y-auto overscroll-y-contain scrollbar-thin"
           >
             <div
@@ -974,7 +1047,6 @@ const NovelView = ({
           <div className="h-full px-2 pb-2 pt-[calc(env(safe-area-inset-top)+2.5rem)]">
             <div
               data-novel-spread="single"
-              key={`${currentPage}:${current?.startFloor}`}
               className="h-full overflow-hidden rounded-md border border-border bg-card shadow-lg"
             >
               {renderNovelPage(current, currentPage, 'single')}
@@ -984,7 +1056,6 @@ const NovelView = ({
           <div className="flex h-full items-center justify-center px-12 py-5 sm:px-16 sm:py-7">
             <div
               data-novel-spread="true"
-              key={`${currentPage}:${current?.startFloor}`}
               className="relative grid h-full max-h-[720px] w-full max-w-5xl grid-cols-2 overflow-hidden rounded-md border border-border bg-card shadow-xl"
             >
               {renderNovelPage(current, currentPage, 'left')}
@@ -1001,7 +1072,7 @@ const NovelView = ({
               variant="ghost"
               size="icon"
               className="absolute left-2 top-1/2 -translate-y-1/2"
-              onClick={(event) => { event.stopPropagation(); goToPage(currentPage - 2); }}
+              onClick={(event) => { event.stopPropagation(); jumpToPage(currentPage - 2); }}
               disabled={currentPage <= 0 || pages.length === 0}
               aria-label="上一页"
               title="上一页"
@@ -1012,7 +1083,7 @@ const NovelView = ({
               variant="ghost"
               size="icon"
               className="absolute right-2 top-1/2 -translate-y-1/2"
-              onClick={(event) => { event.stopPropagation(); goToPage(currentPage + 2); }}
+              onClick={(event) => { event.stopPropagation(); jumpToPage(currentPage + 2); }}
               disabled={currentPage >= lastSpreadStart || pages.length === 0}
               aria-label="下一页"
               title="下一页"
@@ -1048,7 +1119,7 @@ const NovelView = ({
           </Button>
           <Slider
             value={[currentPage]}
-            onValueChange={([value]) => goToPage(value)}
+            onValueChange={([value]) => jumpToPage(value)}
             min={0}
             max={lastSpreadStart}
             step={step}

@@ -10,13 +10,13 @@ import {
   promotePortraitItem,
   addPortraitFiles, setPortraitAsCard, createPortraitRow, renamePortraitRow, loadPortraitViews,
   renamePortraitItem, removePortraitItem, removePortraitItems, removePortraitRow,
-  movePortraitItems, replacePortraitItem, sniffImageMime,
+  movePortraitItemsMutation, replacePortraitItemMutation, sniffImageMime,
   CARD_ROW_TITLE, DEFAULT_ROW_TITLE, STRAY_ROW_ID,
 } from '@/lib/portrait-store';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
 import { setActiveVault } from '@/lib/vault/active';
-import { saveCharacter } from '@/lib/archive-db';
+import { saveCharacter, updateCharacter } from '@/lib/archive-db';
 import { __test } from '@/lib/png-writer';
 
 afterEach(() => setActiveVault(null));
@@ -209,7 +209,7 @@ describe('网页版 addPortraitFiles / setPortraitAsCard', () => {
     const c = baseChar({ portraitRows: [row('r1', '日常', [item('p1', { name: 'a.png', dataBase64: 'AAAA', mime: 'image/png' })])], portraitCurrentId: 'p1' });
     const renamed = await renamePortraitItem(c, 'p1', '新名.png');
     expect(renamed.portraitRows![0].items[0].name).toBe('新名.png');
-    const replaced = await replacePortraitItem({ ...c, ...renamed } as ArchiveCharacter, 'p1', pngFile('b.png'));
+    const { patch: replaced } = await replacePortraitItemMutation({ ...c, ...renamed } as ArchiveCharacter, 'p1', pngFile('b.png'));
     expect(replaced.portraitRows![0].items[0]).toMatchObject({ name: 'b.png', mime: 'image/png' });
     const removed = await removePortraitItem({ ...c, ...replaced } as ArchiveCharacter, 'p1');
     expect(removed.portraitCurrentId).toBeUndefined();
@@ -307,11 +307,13 @@ describe('批量管理', () => {
   it('批量移动把记录和文件一起搬到目标行', async () => {
     const { fs, cur, dayId, fightId } = await setupTwoRows();
     const ids = cur.portraitRows!.find((r) => r.id === dayId)!.items.map((i) => i.id);
-    const patch = await movePortraitItems(cur, ids, fightId);
-    expect(patch.portraitRows!.find((r) => r.id === dayId)!.items).toHaveLength(0);
-    expect(patch.portraitRows!.find((r) => r.id === fightId)!.items).toHaveLength(2);
+    await saveCharacter(cur);
+    const saved = await updateCharacter(cur.id, (current, context) => movePortraitItemsMutation(current, ids, fightId, context.vault));
+    expect(saved!.portraitRows!.find((r) => r.id === dayId)!.items).toHaveLength(0);
+    const moved = saved!.portraitRows!.find((r) => r.id === fightId)!.items;
+    expect(moved).toHaveLength(2);
     const dump = fs.dump();
-    expect(dump['角色/奏枝/立绘/战斗/a.png']).toBe('<binary>');
+    expect(dump[`角色/奏枝/立绘/战斗/${moved[0].fileName}`]).toBe('<binary>');
     expect(dump['角色/奏枝/立绘/日常/a.png']).toBeUndefined();
   });
 

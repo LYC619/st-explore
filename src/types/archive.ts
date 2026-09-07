@@ -81,8 +81,10 @@ export interface AttachedFile {
   id: string;
   /** 显示名（默认取文件名） */
   title: string;
-  /** 相对库根的路径，如 '角色/赫敏/附件/攻略.html' */
+  /** 新记录为角色目录内相对路径，如 '附件/攻略.html'；旧记录可含角色目录 */
   path: string;
+  /** 新记录固定为角色作用域；缺省表示兼容旧记录格式 */
+  pathBase?: 'character';
   /** 入库时的体积（展示用；文件被用户换过就以磁盘为准） */
   size: number;
   addedAt: number;

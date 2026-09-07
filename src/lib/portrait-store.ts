@@ -17,6 +17,19 @@ import type { VaultBackend } from '@/lib/vault/vault-backend';
 import { safeName, ensureUnique } from '@/lib/vault/naming';
 import { abToBase64 } from '@/lib/archive-db';
 import { embedCharaInPng } from '@/lib/png-writer';
+import { buildPortraitSnapshot } from '@/lib/portrait-snapshot';
+export { buildPortraitSnapshot } from '@/lib/portrait-snapshot';
+import type { PreparedCharacterMutation } from '@/lib/character-mutation';
+import { joinPath } from '@/lib/vault/fs';
+import {
+  beginPortraitOperation,
+  endPortraitOperation,
+  portraitMediaPath,
+  portraitRowsEqual,
+  recoverPortraitJournal,
+  writePortraitJournal,
+  type PortraitMutationJournal,
+} from '@/lib/portrait-journal';
 
 export const CARD_ROW_TITLE = '卡面';
 export const DEFAULT_ROW_TITLE = '未分行';
@@ -138,24 +151,6 @@ export function uniqueFileName(taken: Iterable<string>, name: string): string {
   return ensureUnique(safeName(stem, '图片'), takenStems) + ext;
 }
 
-/** 立绘.json 快照内容（纯）：只写不读的派生结构，真源在 档案.json 的 portraitRows */
-export function buildPortraitSnapshot(rows: PortraitRow[], currentId?: string): Record<string, unknown> {
-  return {
-    说明: 'STE 生成的立绘结构快照（只写不读）；条目真源在 档案.json 的 portraitRows，改这里不生效',
-    当前卡面条目: currentId ?? null,
-    行: rows.map((r) => ({
-      标题: r.title,
-      文件夹: rowDirOf(r.title),
-      图片: r.items.map((i) => ({
-        文件: i.fileName ?? '(网页版内嵌)',
-        名称: i.name ?? i.fileName ?? '图片',
-        来源: i.source === 'manual' ? '手动导入' : '替换自动存档',
-        加入时间: new Date(i.addedAt).toLocaleString(),
-      })),
-    })),
-  };
-}
-
 // ---------- IO（双后端） ----------
 
 interface VaultCtx {
@@ -165,8 +160,7 @@ interface VaultCtx {
 }
 
 /** 客户端且角色已入库 → vault 上下文；否则 null（网页版走 IDB 分支） */
-async function vaultCtx(characterId: string): Promise<VaultCtx | null> {
-  const vault = getActiveVault();
+async function vaultCtx(characterId: string, vault: VaultBackend | null = getActiveVault()): Promise<VaultCtx | null> {
   if (!vault) return null;
   const dir = await vault.pathOf('characters', characterId);
   return dir ? { vault, dir } : null;
@@ -182,6 +176,188 @@ async function writeSnapshot(characterId: string, rows: PortraitRow[], currentId
     `${ctx.dir}/${PORTRAIT_DIR}/${SNAPSHOT_FILE}`,
     JSON.stringify(buildPortraitSnapshot(rows, currentId), null, 2),
   );
+}
+
+interface PortraitCopyJob {
+  sourcePath?: string;
+  dataBase64?: string;
+  temporaryPath: string;
+  finalPath: string;
+}
+
+function portraitFiles(rows: PortraitRow[]): Set<string> {
+  return new Set(rows.flatMap((row) => row.items.flatMap((item) => item.fileName
+    ? [portraitMediaPath(rowDirOf(row.title), item.fileName)]
+    : [])));
+}
+
+function inlinePortraitMutation(c: ArchiveCharacter, rows: PortraitRow[]): PreparedCharacterMutation {
+  const beforeRows = structuredClone(c.portraitRows ?? []);
+  return {
+    patch: { portraitRows: rows },
+    async commitAfterPersist() { return { warnings: [] }; },
+    async recoverAfterPersistFailure(readPersisted) {
+      try {
+        const saved = await readPersisted();
+        if (saved?.id === c.id) {
+          if (portraitRowsEqual(saved.portraitRows ?? [], beforeRows)) return { action: 'rolled-back', warnings: [] };
+          if (portraitRowsEqual(saved.portraitRows ?? [], rows)) return { action: 'finalized', warnings: [] };
+        }
+        return { action: 'blocked', warnings: ['portrait-recovery-required: 无法确认实际保存的立绘状态'] };
+      } catch {
+        return { action: 'blocked', warnings: ['portrait-recovery-required: 无法读取实际保存的立绘状态'] };
+      }
+    },
+  };
+}
+
+async function preparePortraitCopies(
+  c: ArchiveCharacter,
+  ctx: VaultCtx,
+  rows: PortraitRow[],
+  jobs: PortraitCopyJob[],
+  operationId: string,
+): Promise<PreparedCharacterMutation> {
+  await ctx.vault.assertCharacterWritable(c.id);
+  const fs = ctx.vault.fs;
+  const beforeRows = structuredClone(c.portraitRows ?? []);
+  const beforeFiles = portraitFiles(beforeRows);
+  const afterFiles = portraitFiles(rows);
+  const beforeKeys = new Set([...beforeFiles].map(path => path.toLowerCase()));
+  const afterKeys = new Set([...afterFiles].map(path => path.toLowerCase()));
+  const createdFiles = jobs.flatMap((job) => [job.temporaryPath, job.finalPath]);
+  for (const path of createdFiles) {
+    if (beforeKeys.has(path.toLowerCase()) || (await fs.stat(joinPath(ctx.dir, path))).exists) {
+      throw new Error(`立绘目标已存在，拒绝覆盖：${path}`);
+    }
+  }
+  const journal: PortraitMutationJournal = {
+    version: 1,
+    operationId,
+    characterId: c.id,
+    status: 'prepared',
+    beforeRows,
+    afterRows: structuredClone(rows),
+    createdFiles,
+    cleanupFiles: [...beforeFiles].filter((path) => !afterKeys.has(path.toLowerCase())),
+    createdAt: Date.now(),
+  };
+  beginPortraitOperation(fs, c.id, operationId);
+  try {
+    await writePortraitJournal(ctx.dir, fs, journal);
+    for (const job of jobs) {
+      const base64 = job.dataBase64 ?? await fs.readBinary(joinPath(ctx.dir, job.sourcePath!));
+      await fs.writeBinary(joinPath(ctx.dir, job.temporaryPath), base64);
+    }
+    for (const job of jobs) {
+      await fs.rename(joinPath(ctx.dir, job.temporaryPath), joinPath(ctx.dir, job.finalPath));
+    }
+  } catch (error) {
+    try {
+      const report = await recoverPortraitJournal(ctx.dir, c.id, fs, journal);
+      if (report.action === 'blocked' || report.warnings.length > 0) {
+        const recoveryError = new Error(report.warnings.join('；') || '立绘准备失败，需要恢复');
+        Object.assign(recoveryError, { code: 'portrait-recovery-required', characterId: c.id, operationId, cause: error });
+        throw recoveryError;
+      }
+    } finally {
+      endPortraitOperation(fs, c.id, operationId);
+    }
+    throw error;
+  }
+
+  return {
+    patch: { portraitRows: rows },
+    async commitAfterPersist() {
+      try {
+        const report = await recoverPortraitJournal(ctx.dir, c.id, fs, journal);
+        return { warnings: report.warnings };
+      } finally {
+        endPortraitOperation(fs, c.id, operationId);
+      }
+    },
+    async recoverAfterPersistFailure() {
+      try {
+        const report = await recoverPortraitJournal(ctx.dir, c.id, fs, journal);
+        return report;
+      } finally {
+        endPortraitOperation(fs, c.id, operationId);
+      }
+    },
+  };
+}
+
+/** Copy-on-write replacement. Only archive-db may finalize the prepared files. */
+export async function replacePortraitItemMutation(
+  c: ArchiveCharacter,
+  itemId: string,
+  file: File,
+  vault: VaultBackend | null = getActiveVault(),
+): Promise<PreparedCharacterMutation> {
+  const mime = file.type || mimeOfName(file.name);
+  if (!mime || !Object.values(IMAGE_MIME).includes(mime)) throw new Error('不支持的图片格式');
+  const rows = structuredClone(c.portraitRows ?? []);
+  const row = rows.find((entry) => entry.items.some((item) => item.id === itemId));
+  const item = row?.items.find((entry) => entry.id === itemId);
+  if (!row || !item) throw new Error('立绘不存在');
+  const base64 = await blobToBase64(file);
+  const ctx = await vaultCtx(c.id, vault);
+  if (vault && !ctx) throw new Error('角色档案不存在');
+  item.name = file.name;
+  item.mime = mime;
+  if (!ctx) {
+    item.dataBase64 = base64;
+    item.fileName = undefined;
+    return inlinePortraitMutation(c, rows);
+  }
+  const operationId = crypto.randomUUID();
+  const rowDirectory = rowDirOf(row.title);
+  const extension = Object.keys(IMAGE_MIME).find(ext => IMAGE_MIME[ext] === mime)!;
+  const finalName = `.ste-portrait-${operationId}-0.${extension}`;
+  const temporaryPath = portraitMediaPath(rowDirectory, `.ste-portrait-${operationId}-0.tmp`);
+  const finalPath = portraitMediaPath(rowDirectory, finalName);
+  item.fileName = finalName;
+  item.dataBase64 = undefined;
+  return preparePortraitCopies(c, ctx, rows, [{ dataBase64: base64, temporaryPath, finalPath }], operationId);
+}
+
+/** Copy-on-write batch move. No source file is removed during preparation. */
+export async function movePortraitItemsMutation(
+  c: ArchiveCharacter,
+  itemIds: string[],
+  targetRowId: string,
+  vault: VaultBackend | null = getActiveVault(),
+): Promise<PreparedCharacterMutation> {
+  const rows = structuredClone(c.portraitRows ?? []);
+  const target = rows.find((row) => row.id === targetRowId);
+  if (!target) throw new Error('目标分行不存在');
+  const targets = new Set(itemIds);
+  const ctx = await vaultCtx(c.id, vault);
+  if (vault && !ctx) throw new Error('角色档案不存在');
+  const operationId = crypto.randomUUID();
+  const jobs: PortraitCopyJob[] = [];
+  for (const row of rows) {
+    if (row.id === targetRowId) continue;
+    const going = row.items.filter((item) => targets.has(item.id));
+    row.items = row.items.filter((item) => !targets.has(item.id));
+    for (const item of going) {
+      if (ctx && item.fileName) {
+        const sourcePath = portraitMediaPath(rowDirOf(row.title), item.fileName);
+        const mime = item.mime ?? mimeOfName(item.fileName) ?? 'image/png';
+        const extension = Object.keys(IMAGE_MIME).find(ext => IMAGE_MIME[ext] === mime) ?? 'png';
+        const nextName = `.ste-portrait-${operationId}-${jobs.length}.${extension}`;
+        const temporaryPath = portraitMediaPath(rowDirOf(target.title), `.ste-portrait-${operationId}-${jobs.length}.tmp`);
+        const finalPath = portraitMediaPath(rowDirOf(target.title), nextName);
+        jobs.push({ sourcePath, temporaryPath, finalPath });
+        item.name ??= item.fileName;
+        item.fileName = nextName;
+        item.dataBase64 = undefined;
+      }
+      target.items.push(item);
+    }
+  }
+  if (!ctx || jobs.length === 0) return inlinePortraitMutation(c, rows);
+  return preparePortraitCopies(c, ctx, rows, jobs, operationId);
 }
 
 // ---------- 展示视图 ----------
@@ -404,74 +580,6 @@ export async function removePortraitRow(
   const currentId = 'portraitCurrentId' in patch ? patch.portraitCurrentId : c.portraitCurrentId;
   await writeSnapshot(c.id, rows, currentId);
   return { ...patch, portraitRows: rows };
-}
-
-/** 批量移动受管条目到另一行；客户端连图片文件一起搬（撞名自动改名）。 */
-export async function movePortraitItems(
-  c: ArchiveCharacter,
-  itemIds: string[],
-  targetRowId: string,
-): Promise<Partial<ArchiveCharacter>> {
-  const targets = new Set(itemIds);
-  if (targets.size === 0) return {};
-  const rows = (c.portraitRows ?? []).map((row) => ({ ...row, items: [...row.items] }));
-  const target = rows.find((row) => row.id === targetRowId);
-  if (!target) throw new Error('目标分行不存在');
-  const ctx = await vaultCtx(c.id);
-  const targetDir = ctx ? rowDirPath(ctx, target.title) : '';
-  const taken = ctx ? new Set((await ctx.vault.fs.list(targetDir)).map((entry) => entry.name)) : new Set<string>();
-  let moved = 0;
-  for (const row of rows) {
-    if (row.id === targetRowId) continue;
-    const going = row.items.filter((item) => targets.has(item.id));
-    if (going.length === 0) continue;
-    row.items = row.items.filter((item) => !targets.has(item.id));
-    for (const item of going) {
-      if (ctx && item.fileName) {
-        const nextName = uniqueFileName(taken, item.fileName);
-        await ctx.vault.fs.rename(`${rowDirPath(ctx, row.title)}/${item.fileName}`, `${targetDir}/${nextName}`);
-        taken.add(nextName);
-        item.fileName = nextName;
-      }
-      target.items.push(item);
-      moved++;
-    }
-  }
-  if (moved === 0) return {};
-  await writeSnapshot(c.id, rows, c.portraitCurrentId);
-  return { portraitRows: rows };
-}
-
-/** 替换受管立绘内容。先写新文件/数据，成功后删除旧文件，避免失败时丢失原图。 */
-export async function replacePortraitItem(
-  c: ArchiveCharacter,
-  itemId: string,
-  file: File,
-): Promise<Partial<ArchiveCharacter>> {
-  const mime = file.type || mimeOfName(file.name);
-  if (!mime || !Object.values(IMAGE_MIME).includes(mime)) throw new Error('不支持的图片格式');
-  const rows = (c.portraitRows ?? []).map((row) => ({ ...row, items: [...row.items] }));
-  const hit = rows.flatMap((row) => row.items.map((item) => ({ row, item }))).find(({ item }) => item.id === itemId);
-  if (!hit) throw new Error('立绘不存在');
-  const { row, item } = hit;
-  const b64 = await blobToBase64(file);
-  const ctx = await vaultCtx(c.id);
-  if (ctx) {
-    const dir = rowDirPath(ctx, row.title);
-    const oldName = item.fileName ?? uniqueFileName(new Set((await ctx.vault.fs.list(dir)).map((entry) => entry.name)), file.name);
-    const nextName = uniqueFileName(new Set((await ctx.vault.fs.list(dir)).map((entry) => entry.name).filter((n) => n !== oldName)), oldName);
-    const tempName = uniqueFileName(new Set((await ctx.vault.fs.list(dir)).map((entry) => entry.name)), `${oldName}.replace`);
-    await ctx.vault.fs.writeBinary(`${dir}/${tempName}`, b64);
-    if (oldName !== tempName) await ctx.vault.fs.removeFile(`${dir}/${oldName}`).catch(() => {});
-    await ctx.vault.fs.rename(`${dir}/${tempName}`, `${dir}/${nextName}`);
-    item.fileName = nextName;
-  } else {
-    item.dataBase64 = b64;
-  }
-  item.name = file.name;
-  item.mime = mime;
-  await writeSnapshot(c.id, rows, c.portraitCurrentId);
-  return { portraitRows: rows };
 }
 
 /** Blob → 纯 base64（FileReader.readAsDataURL：浏览器/ jsdom 都在，且免大文件手动拼 binary string） */

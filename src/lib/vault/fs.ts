@@ -5,6 +5,7 @@
  * 两个实现：tauri-fs.ts（走 Rust 命令，真实磁盘）、createMemFs（内存，供 vitest 与策略开发）。
  * 二进制统一 base64 字符串（无 data: 前缀，与 ArchiveCharacter.pngBase64 同约定）。
  */
+import { createFsMutationError, FsMutationException } from './fs-mutation-error';
 
 export interface VaultEntry {
   name: string;
@@ -150,8 +151,20 @@ export function createMemFs(): VaultFs & { dump(): Record<string, string> } {
     },
     async removeFile(path) {
       const norm = normalizeRelPath(path);
+      if (isDir(norm)) {
+        throw new FsMutationException(createFsMutationError('not-file', norm, '普通文件 required'));
+      }
       if (!texts.delete(norm) && !binaries.delete(norm)) {
-        throw new Error(`删除文件失败 ${norm}: 不存在`);
+        throw new FsMutationException(createFsMutationError('not-found', norm, '文件不存在'));
+      }
+    },
+    async trashFile(path) {
+      const norm = normalizeRelPath(path);
+      if (isDir(norm)) {
+        throw new FsMutationException(createFsMutationError('not-file', norm, '普通文件 required'));
+      }
+      if (!texts.delete(norm) && !binaries.delete(norm)) {
+        throw new FsMutationException(createFsMutationError('not-found', norm, '文件不存在'));
       }
     },
     async removeEmptyDir(path) {

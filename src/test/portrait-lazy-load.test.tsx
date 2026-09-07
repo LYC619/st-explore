@@ -7,14 +7,17 @@
  *
  * 所以断言的是**读了几次盘**，不是渲染出什么：字段对不对不能证明省下了 IO。
  */
-import { act } from 'react';
+import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
+import { closeDB } from '@/lib/idb';
 import { PortraitSection } from '@/components/character/PortraitSection';
 import { createMemFs, type VaultFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
 import { setActiveVault } from '@/lib/vault/active';
-import { saveCharacter } from '@/lib/archive-db';
+import { getCharacter, saveCharacter, updateCharacter } from '@/lib/archive-db';
+import { commitCharacterPatch } from '@/lib/character-write';
 import { addPortraitFiles, createPortraitRow, loadPortraitViews, loadPortraitImage } from '@/lib/portrait-store';
 import type { ArchiveCharacter } from '@/types/archive';
 
@@ -81,6 +84,8 @@ let container: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  closeDB();
+  globalThis.indexedDB = new IDBFactory();
   observed.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -91,6 +96,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   setActiveVault(null);
+  closeDB();
 });
 
 async function renderSection(character: ArchiveCharacter) {
@@ -207,5 +213,90 @@ describe('网页版内嵌立绘', () => {
     const imgs = container.querySelectorAll('img');
     expect(imgs).toHaveLength(1);
     expect(imgs[0].getAttribute('src')).toBe('data:image/png;base64,AQID');
+  });
+});
+
+describe('persisted replacement in an open lightbox', () => {
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const dialogImage = () => dialog()?.querySelector('img');
+  const dialogButton = (label: string) => Array.from(dialog()!.querySelectorAll('button'))
+    .find(button => button.textContent?.trim() === label)!;
+
+  async function editingSection(inline = false) {
+    const fixture = await setupCharacter();
+    const character = structuredClone(fixture.character);
+    if (inline) {
+      for (const item of character.portraitRows![0].items) {
+        item.dataBase64 = 'AQID';
+        item.fileName = undefined;
+      }
+      setActiveVault(null);
+    }
+    await saveCharacter(character);
+    let pending: Promise<ArchiveCharacter> | undefined;
+    function Harness() {
+      const [current, setCurrent] = useState(character);
+      return <PortraitSection character={current} onOpenImport={() => {}} onPatch={patch => {
+        pending = commitCharacterPatch(current.id, patch, updateCharacter, setCurrent);
+        return pending;
+      }} />;
+    }
+    await act(async () => root.render(<Harness />));
+    if (!inline) await scrollTo('a.png');
+    await act(async () => { thumbs().find(thumb => thumb.dataset.portraitThumb === 'a.png')!.click(); });
+    expect(dialogImage()?.getAttribute('src')).toBe('data:image/png;base64,AQID');
+    return { ...fixture, character, pending: () => pending! };
+  }
+
+  async function replaceOpenImage() {
+    await act(async () => { dialogButton('替换').click(); });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    Object.defineProperty(input, 'files', { value: [new File(['replacement'], 'new.png', { type: 'image/png' })], configurable: true });
+    act(() => input.dispatchEvent(new Event('change', { bubbles: true })));
+  }
+
+  it.each([false, true])('refreshes the open image, item name, and thumbnail after saving (inline=%s)', async inline => {
+    const fixture = await editingSection(inline);
+    await replaceOpenImage();
+    await act(async () => { await fixture.pending(); });
+    expect(dialogImage()?.getAttribute('src')).toBe(`data:image/png;base64,${btoa('replacement')}`);
+    expect(dialogImage()?.alt).toBe('new.png');
+    if (!inline) await scrollTo('new.png');
+    const thumb = thumbs().find(item => item.dataset.portraitThumb === 'new.png')!;
+    expect(thumb.querySelector('img')?.getAttribute('src')).toBe(`data:image/png;base64,${btoa('replacement')}`);
+    expect((await getCharacter(fixture.character.id))?.portraitRows?.[0].items[0].name).toBe('new.png');
+  });
+
+  it('leaves the old lightbox and thumbnail intact when persistence fails', async () => {
+    const fixture = await editingSection();
+    const writeText = fixture.fs.writeText;
+    fixture.fs.writeText = async (path, content) => {
+      if (path.endsWith('/档案.json')) throw new Error('profile failure');
+      return writeText(path, content);
+    };
+    await replaceOpenImage();
+    await act(async () => { await expect(fixture.pending()).rejects.toThrow('profile failure'); });
+    expect(dialogImage()?.getAttribute('src')).toBe('data:image/png;base64,AQID');
+    expect(dialogImage()?.alt).toBe('a.png');
+    expect(thumbs().map(item => item.dataset.portraitThumb)).toEqual(['a.png', 'b.png', 'c.png']);
+  });
+
+  it.each(['close', 'next'])('does not overwrite a later lightbox action while saving: %s', async action => {
+    const fixture = await editingSection();
+    const writeText = fixture.fs.writeText;
+    let release!: () => void;
+    const barrier = new Promise<void>(resolve => { release = resolve; });
+    fixture.fs.writeText = async (path, content) => {
+      if (path.endsWith('/档案.json')) await barrier;
+      return writeText(path, content);
+    };
+    await replaceOpenImage();
+    await act(async () => {
+      if (action === 'close') dialogButton('关闭').click();
+      else dialog()!.querySelector<HTMLButtonElement>('[aria-label="下一张"]')!.click();
+    });
+    await act(async () => { release(); await fixture.pending(); });
+    if (action === 'close') expect(dialog()).toBeNull();
+    else expect(dialogImage()?.alt).toBe('b.png');
   });
 });

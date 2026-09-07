@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import type { ArchiveCharacter, ArchiveStory, QuoteAsset } from '@/types/archive';
 import type { STCharacterCard } from '@/lib/png-parser';
@@ -18,6 +18,9 @@ import {
 } from '@/lib/story-draft-save';
 import { commitCharacterPatch } from '@/lib/character-write';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
+import { createMemFs } from '@/lib/vault/fs';
+import { createVault } from '@/lib/vault/vault-backend';
+import { setActiveVault } from '@/lib/vault/active';
 
 const card = { name: '测试' } as unknown as STCharacterCard;
 
@@ -60,6 +63,42 @@ function deferred<T = void>() {
 beforeEach(() => {
   closeDB();
   (globalThis as unknown as { indexedDB: IDBFactory }).indexedDB = new IDBFactory();
+});
+
+afterEach(() => setActiveVault(null));
+
+it('uses explicitly captured repositories and preserves character and story queue ordering', async () => {
+  const a = createVault(createMemFs());
+  const b = createVault(createMemFs());
+  setActiveVault(a);
+  await saveCharacter(character());
+  await saveArchiveStory(story('original'));
+  const characterRepo = a.repo<ArchiveCharacter>('characters');
+  const storyRepo = a.repo<ArchiveStory>('archiveStories');
+  const release = deferred();
+  const characterStarted = deferred();
+  const storyStarted = deferred();
+  const firstCharacter = updateCharacter('c1', async () => {
+    characterStarted.resolve();
+    await release.promise;
+    return { subtitle: 'first' };
+  });
+  const firstStory = updateArchiveStory('s1', async () => {
+    storyStarted.resolve();
+    await release.promise;
+    return { title: 'first' };
+  });
+  await Promise.all([characterStarted.promise, storyStarted.promise]);
+  setActiveVault(b);
+  const savedCharacter = saveCharacter(character({ subtitle: 'captured' }), characterRepo);
+  const savedStory = saveArchiveStory(story('captured'), storyRepo);
+  const updatedStory = updateArchiveStory('s1', current => ({ title: `${current.title} updated` }), storyRepo);
+  release.resolve();
+  await Promise.all([firstCharacter, firstStory, savedCharacter, savedStory, updatedStory]);
+  expect((await characterRepo.get('c1'))?.subtitle).toBe('captured');
+  expect((await storyRepo.get('s1'))?.title).toBe('captured updated');
+  expect(await b.repo('characters').list()).toEqual([]);
+  expect(await b.repo('archiveStories').list()).toEqual([]);
 });
 
 describe('角色档案按 ID 串行更新', () => {

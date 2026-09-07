@@ -33,6 +33,7 @@ function vaultFor(repo: Repo<ArchiveStory>): VaultBackend {
     repo: <T extends { id: string; updatedAt: number }>() => repo as unknown as Repo<T>,
     fs: {} as VaultBackend['fs'],
     pathOf: async () => undefined,
+    assertCharacterWritable: async () => {},
   };
 }
 
@@ -51,6 +52,7 @@ function metaVaultFor(repo: Repo<ArchiveMetaRecord>): VaultBackend {
     repo: <T extends BaseRecord>() => repo as unknown as Repo<T>,
     fs: {} as VaultBackend['fs'],
     pathOf: async () => undefined,
+    assertCharacterWritable: async () => {},
   };
 }
 

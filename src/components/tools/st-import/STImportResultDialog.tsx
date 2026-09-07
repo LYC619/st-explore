@@ -73,11 +73,23 @@ export function STImportResultDialog({ result, onClose }: STImportResultDialogPr
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="px-6 pb-4 pt-6 pr-12">
-          <DialogTitle>导入完成</DialogTitle>
+          <DialogTitle>{result.aborted ? '导入已停止' : '导入完成'}</DialogTitle>
           <DialogDescription>{manifestNotice.description}</DialogDescription>
         </DialogHeader>
 
         <div className="min-h-0 overflow-y-auto border-y border-border px-6 py-4">
+          {result.aborted && (
+            <div className="mb-3 flex items-start gap-3 rounded border border-[var(--status-warn-bg)] bg-[var(--status-warn-bg)] p-3">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--status-warn)]" />
+              <div>
+                <p className="text-sm font-medium">你在导入过程中取消了</p>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  下面是取消之前已经写入的内容，它们会保留在库里。剩余项目没有开始，
+                  重新导入一次即可补上——已写入的部分会按重复导入规则自动跳过。
+                </p>
+              </div>
+            </div>
+          )}
           <div className="flex items-start gap-3 rounded border border-border bg-muted/30 p-3">
             {status.needsAttention
               ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-[color:var(--status-warn)]" />

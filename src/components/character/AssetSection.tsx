@@ -46,6 +46,7 @@ import type {
   QuoteAsset,
   STAssetRelation,
 } from '@/types/archive';
+import type { CharacterPatch } from '@/lib/character-write';
 import type { WorldBookEntry } from '@/types/worldbook';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { getAllPresets } from '@/lib/preset-db';
@@ -116,7 +117,7 @@ interface AssetSectionProps {
   /** 引用摘录变更回写 */
   onQuotesChange: (quotes: QuoteAsset[]) => Promise<void>;
   /** 关联文件变更回写（patch 由 attachment-store 生成，含删文件的副作用） */
-  onPatch: (patch: Partial<ArchiveCharacter>) => Promise<void>;
+  onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter>;
   /** 重扫卡内嵌世界书/正则入库挂关联（与操作抽屉同一动作） */
   onReadEmbedded: () => Promise<void>;
   /** 打开统一导入弹窗（预选世界书类） */
@@ -132,6 +133,7 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
   const [preview, setPreview] = useState<AssetView | null>(null);
   const [quoteToDelete, setQuoteToDelete] = useState<QuoteAsset | null>(null);
   const [fileToDelete, setFileToDelete] = useState<AttachmentView | null>(null);
+  const [deletingFile, setDeletingFile] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
 
   const loadLibrary = useCallback(async () => {
@@ -260,7 +262,7 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
   /** 交给系统默认程序 / 在文件管理器里定位。失败原因原样给出来（多半是没有关联程序）。 */
   const handleOpenExternally = async (file: AttachmentView, reveal: boolean) => {
     try {
-      await openAttachmentExternally(file.path, reveal);
+      await openAttachmentExternally(file.characterId, file.id, reveal);
     } catch (error) {
       toast({
         title: reveal ? '在文件管理器中显示失败' : '调用外部程序失败',
@@ -271,18 +273,28 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
   };
 
   /** 删附件：文件进回收站 + 撤记录，一起走 attachment-store 的 patch */
-  const handleDeleteFile = async (file: AttachmentView) => {
+  const handleDeleteFile = async (file: AttachmentView, deleteFile = true) => {
+    if (deletingFile || file.characterId !== character.id) return;
+    setDeletingFile(true);
     try {
-      await onPatch(await removeAttachment(character, file.id, true));
+      await removeAttachment(file.characterId, file.id, deleteFile, (_id, updater) => onPatch(updater));
       setFileToDelete(null);
       if (preview?.kind === 'file' && preview.file?.id === file.id) setPreview(null);
-      toast({ title: `已移除关联文件「${file.title}」`, description: '文件已放进系统回收站' });
+      toast({ title: `已移除关联文件「${file.title}」`, description: deleteFile ? '文件已放进系统回收站' : '已移除失效记录，未删除文件' });
     } catch (error) {
       toast({
         title: '移除关联文件失败',
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
+      // A file deletion may have succeeded before metadata failed. Refresh its missing state.
+      const refreshed = await loadAttachmentViews(character).catch(() => null);
+      if (refreshed) {
+        setAttachments(refreshed);
+        setFileToDelete(refreshed.find(item => item.id === file.id) ?? null);
+      }
+    } finally {
+      setDeletingFile(false);
     }
   };
 
@@ -570,20 +582,23 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
       </AlertDialog>
 
       {/* 关联文件移除确认：文件进回收站，与「移除资产引用」不同，说清楚动的是真文件 */}
-      <AlertDialog open={!!fileToDelete} onOpenChange={(v) => !v && setFileToDelete(null)}>
+      <AlertDialog open={!!fileToDelete} onOpenChange={(v) => !v && !deletingFile && setFileToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>移除关联文件「{fileToDelete?.title}」？</AlertDialogTitle>
             <AlertDialogDescription>
-              记录会从这张卡上撤掉，文件本体放进系统回收站（还能捞回来）。
+              {fileToDelete?.missing ? '文件已缺失，仅移除这张卡上的附件记录。' : '记录会从这张卡上撤掉，文件本体放进系统回收站（还能捞回来）。'}
               <br />
-              <span className="font-mono text-[11px] break-all">{fileToDelete?.path}</span>
+              <span className="font-mono text-[11px] break-all">{fileToDelete?.resolvedPath ?? fileToDelete?.path}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (fileToDelete) void handleDeleteFile(fileToDelete); }}>
-              移除
+            <AlertDialogCancel disabled={deletingFile}>取消</AlertDialogCancel>
+            <AlertDialogAction disabled={deletingFile} onClick={(event) => {
+              event.preventDefault();
+              if (fileToDelete) void handleDeleteFile(fileToDelete, !fileToDelete.missing);
+            }}>
+              {fileToDelete?.missing ? '仅移除失效记录' : '移除'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

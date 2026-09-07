@@ -14,7 +14,12 @@ const read = (p: string) => readFileSync(resolve(root, p), 'utf-8');
 describe('版本号单一来源一致性', () => {
   const pkgVersion = JSON.parse(read('package.json')).version as string; // 如 "0.18.0"
   const tauriVersion = JSON.parse(read('src-tauri/tauri.conf.json')).version as string;
+  const npmLock = JSON.parse(read('package-lock.json')) as {
+    version?: string;
+    packages?: { '': { version?: string } };
+  };
   const cargo = read('src-tauri/Cargo.toml');
+  const cargoLock = read('src-tauri/Cargo.lock');
   const cargoField = (name: string) => cargo.match(new RegExp(`^${name}\\s*=\\s*"([^"]*)"`, 'm'))?.[1];
   const cargoVersion = cargoField('version');
   const appVersion = read('src/components/GlobalSettings.tsx').match(/APP_VERSION\s*=\s*'([^']+)'/)?.[1];
@@ -35,6 +40,16 @@ describe('版本号单一来源一致性', () => {
   it('Tauri 与 Cargo 的正式版本都和 package.json 一致', () => {
     expect(tauriVersion).toBe(pkgVersion);
     expect(cargoVersion).toBe(pkgVersion);
+  });
+
+  it('npm lock 的两个根版本镜像和 Cargo.lock 自身包版本一致', () => {
+    expect(npmLock.version).toBe(pkgVersion);
+    expect(npmLock.packages?.[''].version).toBe(pkgVersion);
+    const selfBlocks = [...cargoLock.matchAll(/^\[\[package\]\]\r?\n[\s\S]*?(?=^\[|$(?![\s\S]))/gm)]
+      .map((match) => match[0])
+      .filter((block) => /^name\s*=\s*"ste-explorer"\s*$/m.test(block));
+    expect(selfBlocks).toHaveLength(1);
+    expect(selfBlocks[0]).toMatch(new RegExp(`^version\\s*=\\s*"${pkgVersion.replaceAll('.', '\\.') }"`, 'm'));
   });
 
   it('Cargo 使用真实项目元数据而不是 tauri init 占位值', () => {

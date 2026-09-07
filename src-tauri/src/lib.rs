@@ -60,18 +60,25 @@ impl AuthorizedRoots {
         Ok(canonical)
     }
 
-    fn revoke_temporary(&self, root: &Path) -> Result<PathBuf, String> {
+    fn cleanup_temporary(
+        &self,
+        root: &Path,
+        remove: impl FnOnce(&Path) -> Result<(), std::io::Error>,
+    ) -> Result<(), String> {
         let canonical = fs::canonicalize(root)
             .map_err(|e| format!("解析临时导入目录失败 {}: {e}", root.display()))?;
         let mut state = self
             .state
             .lock()
             .map_err(|_| "文件访问授权状态已损坏".to_string())?;
-        if !state.temporary.remove(&canonical) {
+        if !state.temporary.contains(&canonical) {
             return Err(format!("拒绝清理非本次导入的临时目录: {}", root.display()));
         }
+        remove(&canonical)
+            .map_err(|e| format!("清理临时导入目录失败 {}: {e}", canonical.display()))?;
+        state.temporary.remove(&canonical);
         state.roots.remove(&canonical);
-        Ok(canonical)
+        Ok(())
     }
 
     fn authorize_persistent(&self, root: &Path) -> Result<PathBuf, String> {
@@ -212,9 +219,62 @@ fn write_binary_impl(path: &Path, b64: &str) -> Result<(), String> {
     write_bytes_atomic(path, &bytes)
 }
 
+fn fs_mutation_error(code: &str, path: &Path, detail: impl std::fmt::Display) -> String {
+    serde_json::json!({
+        "code": code,
+        "path": path.to_string_lossy(),
+        "message": detail.to_string(),
+    })
+    .to_string()
+}
+
+fn fs_io_mutation_error(path: &Path, error: std::io::Error) -> String {
+    let code = match error.kind() {
+        std::io::ErrorKind::NotFound => "not-found",
+        std::io::ErrorKind::PermissionDenied => "permission-denied",
+        _ => "io",
+    };
+    fs_mutation_error(code, path, error)
+}
+
+fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
+fn with_regular_file(
+    path: &Path,
+    operation: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|e| fs_io_mutation_error(path, e))?;
+    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) {
+        return Err(fs_mutation_error("unsafe-path", path, "link or reparse point"));
+    }
+    if !metadata.is_file() {
+        return Err(fs_mutation_error("not-file", path, "ordinary file required"));
+    }
+    operation(path)
+}
+
 /// 只删单个文件；目录走 remove_empty_dir_impl，永不递归删。
 fn remove_file_impl(path: &Path) -> Result<(), String> {
-    fs::remove_file(path).map_err(|e| format!("删除文件失败 {}: {e}", path.display()))
+    with_regular_file(path, |target| {
+        fs::remove_file(target).map_err(|e| fs_io_mutation_error(target, e))
+    })
+}
+
+fn trash_file_impl(path: &Path) -> Result<(), String> {
+    with_regular_file(path, |target| {
+        trash::delete(target).map_err(|e| fs_mutation_error("io", target, e))
+    })
 }
 
 /// 只删空目录；非空时静默保留（返回 false）——里面可能有用户自己放的文件。
@@ -380,36 +440,52 @@ fn config_repair_impl(config_dir: &Path) -> Result<Option<PathBuf>, String> {
 // ---- Tauri 命令层（薄封装）----
 
 fn rooted_path_from_canonical(mut resolved: PathBuf, relative: &str) -> Result<PathBuf, String> {
-    if relative.contains('\\') {
-        return Err(format!("相对路径含非法分隔符: {relative}"));
+    if relative.contains('\\')
+        || relative.contains(':')
+        || relative.contains('\0')
+        || relative.chars().any(|c| c.is_control())
+    {
+        return Err(fs_mutation_error("unsafe-path", Path::new(relative), "invalid relative path separator"));
     }
     let rel = Path::new(relative);
     if rel.is_absolute()
+        || relative.split('/').any(|part| part == "." || part == "..")
         || rel
             .components()
             .any(|part| !matches!(part, Component::Normal(_)))
     {
-        return Err(format!("拒绝越出根目录的路径: {relative}"));
+        return Err(fs_mutation_error("unsafe-path", rel, "path must stay within the authorized root"));
     }
 
     for part in rel.components() {
         let Component::Normal(name) = part else {
-            return Err(format!("拒绝越出根目录的路径: {relative}"));
+            return Err(fs_mutation_error("unsafe-path", rel, "path must stay within the authorized root"));
         };
         resolved.push(name);
         match fs::symlink_metadata(&resolved) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                return Err(format!(
-                    "拒绝访问根目录内的符号链接: {}",
-                    resolved.display()
-                ));
+            Ok(meta) if meta.file_type().is_symlink() || is_reparse_point(&meta) => {
+                return Err(fs_mutation_error("unsafe-path", &resolved, "link or reparse point"));
             }
             Ok(_) => {}
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(format!("检查路径失败 {}: {err}", resolved.display())),
+            Err(err) => return Err(fs_io_mutation_error(&resolved, err)),
         }
     }
     Ok(resolved)
+}
+
+fn authorized_mutation_path(
+    roots: &AuthorizedRoots,
+    root: &str,
+    relative: &str,
+) -> Result<PathBuf, String> {
+    if relative.is_empty() {
+        return Err(fs_mutation_error("unsafe-path", Path::new(relative), "file path required"));
+    }
+    let canonical = roots
+        .resolve_root(root)
+        .map_err(|error| fs_mutation_error("unsafe-path", Path::new(root), error))?;
+    rooted_path_from_canonical(canonical, relative)
 }
 
 #[cfg(test)]
@@ -615,7 +691,7 @@ fn vault_remove_file(
     root: String,
     path: String,
 ) -> Result<(), String> {
-    remove_file_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    remove_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
 }
 
 /// 送进系统回收站而不是抹掉。给用户主动删自己文件的场景用（立绘等），
@@ -626,8 +702,7 @@ fn vault_trash_file(
     root: String,
     path: String,
 ) -> Result<(), String> {
-    let target = authorized_rooted_path(&roots, &root, &path)?;
-    trash::delete(&target).map_err(|e| format!("移入回收站失败 {}: {e}", target.display()))
+    trash_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
 }
 
 /// 把库内文件交给系统默认程序（reveal=true 则在文件管理器里定位）。
@@ -763,6 +838,16 @@ pub fn simplified_for_frontend(path: &Path) -> String {
     }
 }
 
+/// 给系统文件对话框挂上主窗口做属主：对话框随主窗口模态、定位跟着主窗口走，
+/// 不再作为孤立顶层窗口弹在屏幕上（0826 反馈 2）。
+/// 注意：对话框的**尺寸**由 Windows 自己按 ComDlg32 的历史记录还原，应用侧无法指定，
+/// 这里只能保证属主关系正确。
+///
+/// **用到本构建器的 command 必须是 `async fn`。** 同步 command 跑在主线程，而
+/// `blocking_pick_*` 的实现是「把创建对话框投递给主线程 + 阻塞当前线程等结果」
+/// （见 tauri-plugin-dialog 的 `blocking_fn!` 与 `desktop::pick_file`），在主线程上
+/// 调用等于自己等自己，对话框永远不会被创建 —— 表现为点按钮后选择框不弹、整个窗口
+/// 无响应。已经踩过两次：210b122（pick_chat_file）、本次（prepare_st_backup_import）。
 fn dialog_for(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<tauri::Wry> {
     let builder = app.dialog().file();
     match app.get_webview_window("main") {
@@ -866,6 +951,7 @@ pub fn run() {
                 }
             }
             app.manage(roots);
+            app.manage(st_backup_import::ImportCancel::default());
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -897,6 +983,7 @@ pub fn run() {
             config_set,
             config_repair,
             st_backup_import::prepare_st_backup_import,
+            st_backup_import::cancel_st_backup_import,
             st_backup_import::cleanup_st_backup_import
         ])
         .run(tauri::generate_context!())
@@ -1028,6 +1115,228 @@ mod tests {
     fn read_missing_file_reports_path() {
         let err = read_text_impl(Path::new("Z:/不存在/x.txt")).unwrap_err();
         assert!(err.contains("不存在"));
+    }
+
+    #[test]
+    fn file_mutations_reject_directories_and_report_not_file() {
+        let root = temp_root("mutation-directory");
+        let error = remove_file_impl(&root).unwrap_err();
+        let value: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert_eq!(value["code"], "not-file");
+        assert!(trash_file_impl(&root).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn file_mutations_report_missing_without_touching_parent() {
+        let root = temp_root("mutation-missing");
+        let target = root.join("missing.txt");
+        let error = remove_file_impl(&target).unwrap_err();
+        let value: serde_json::Value = serde_json::from_str(&error).unwrap();
+        assert_eq!(value["code"], "not-found");
+        assert!(root.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    fn mutation_code(error: &str) -> String {
+        serde_json::from_str::<serde_json::Value>(error).expect("structured mutation error")["code"]
+            .as_str().unwrap().to_owned()
+    }
+
+    #[test]
+    fn file_mutations_validate_before_entering_operation() {
+        let root = temp_root("mutation-operation");
+        fs::create_dir(root.join("empty")).unwrap();
+        fs::create_dir(root.join("occupied")).unwrap();
+        fs::write(root.join("occupied/keep.txt"), b"keep").unwrap();
+        fs::write(root.join("ordinary.txt"), b"ordinary").unwrap();
+        let calls = std::cell::Cell::new(0);
+        for (name, expected) in [("empty", "not-file"), ("occupied", "not-file"), ("missing", "not-found")] {
+            let error = with_regular_file(&root.join(name), |_| {
+                calls.set(calls.get() + 1);
+                Ok(())
+            }).unwrap_err();
+            assert_eq!(mutation_code(&error), expected);
+        }
+        assert_eq!(calls.get(), 0);
+        with_regular_file(&root.join("ordinary.txt"), |_| {
+            calls.set(calls.get() + 1);
+            Ok(())
+        }).unwrap();
+        assert_eq!(calls.get(), 1);
+        remove_file_impl(&root.join("ordinary.txt")).unwrap();
+        assert!(!root.join("ordinary.txt").exists());
+        assert_eq!(fs::read(root.join("occupied/keep.txt")).unwrap(), b"keep");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn file_mutations_reject_unsafe_paths_and_preserve_io_codes() {
+        let root = temp_root("mutation-path-codes");
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&root).unwrap();
+        let calls = std::cell::Cell::new(0);
+        for relative in ["", "../outside", "/absolute", "C:/absolute", "safe\\file", "a/./file", "a\0file"] {
+            let result = authorized_mutation_path(&roots, root.to_str().unwrap(), relative)
+                .and_then(|path| with_regular_file(&path, |_| { calls.set(calls.get() + 1); Ok(()) }));
+            assert_eq!(mutation_code(&result.unwrap_err()), "unsafe-path", "{relative:?}");
+        }
+        assert_eq!(calls.get(), 0);
+        assert!(authorized_rooted_path(&roots, root.to_str().unwrap(), "").is_ok());
+        let missing = authorized_mutation_path(&roots, root.to_str().unwrap(), "missing").unwrap();
+        assert_eq!(mutation_code(&remove_file_impl(&missing).unwrap_err()), "not-found");
+        // An oversized component reliably produces a non-NotFound IO error on supported filesystems.
+        let oversized = "a".repeat(300);
+        let error = authorized_mutation_path(&roots, root.to_str().unwrap(), &oversized).unwrap_err();
+        assert_eq!(mutation_code(&error), "io");
+        for (kind, expected) in [
+            (std::io::ErrorKind::NotFound, "not-found"),
+            (std::io::ErrorKind::PermissionDenied, "permission-denied"),
+            (std::io::ErrorKind::Other, "io"),
+        ] {
+            assert_eq!(mutation_code(&fs_io_mutation_error(&root, std::io::Error::from(kind))), expected);
+        }
+        fs::remove_dir_all(&root).unwrap();
+        let error = authorized_mutation_path(&roots, root.to_str().unwrap(), "file").unwrap_err();
+        assert_eq!(mutation_code(&error), "unsafe-path");
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "requires Windows symlink privilege; run explicitly with --ignored on a capable host")]
+    fn file_mutations_reject_file_and_ancestor_links() {
+        let root = temp_root("mutation-links");
+        let outside = temp_root("mutation-links-outside");
+        fs::write(outside.join("keep.txt"), b"keep").unwrap();
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, root.join("parent-link")).unwrap();
+            std::os::unix::fs::symlink(outside.join("keep.txt"), root.join("file-link")).unwrap();
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(&outside, root.join("parent-link"))
+                .expect("Windows symlink fixture unavailable: enable Developer Mode or grant symlink privilege; coverage NOT accepted");
+            std::os::windows::fs::symlink_file(outside.join("keep.txt"), root.join("file-link"))
+                .expect("Windows file-symlink fixture unavailable; coverage NOT accepted");
+        }
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&root).unwrap();
+        let calls = std::cell::Cell::new(0);
+        for relative in ["parent-link/keep.txt", "file-link"] {
+            let result = authorized_mutation_path(&roots, root.to_str().unwrap(), relative)
+                .and_then(|path| with_regular_file(&path, |_| { calls.set(calls.get() + 1); Ok(()) }));
+            assert_eq!(mutation_code(&result.unwrap_err()), "unsafe-path");
+        }
+        assert_eq!(mutation_code(&with_regular_file(&root.join("file-link"), |_| {
+            calls.set(calls.get() + 1); Ok(())
+        }).unwrap_err()), "unsafe-path");
+        assert_eq!(calls.get(), 0);
+        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"keep");
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn file_mutations_reject_junction_ancestors_without_entering_operation() {
+        let root = temp_root("mutation-junction");
+        let outside = temp_root("mutation-junction-outside");
+        fs::write(outside.join("keep.txt"), b"keep").unwrap();
+        let link = root.join("junction");
+        let created = std::process::Command::new("cmd").args(["/C", "mklink", "/J"])
+            .arg(&link).arg(&outside).output().unwrap();
+        assert!(created.status.success(), "Junction fixture unavailable; coverage NOT accepted: {}", String::from_utf8_lossy(&created.stderr));
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&root).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let result = authorized_mutation_path(&roots, root.to_str().unwrap(), "junction/keep.txt")
+            .and_then(|path| with_regular_file(&path, |_| { calls.set(calls.get() + 1); Ok(()) }));
+        assert_eq!(mutation_code(&result.unwrap_err()), "unsafe-path");
+        assert_eq!(calls.get(), 0);
+        assert_eq!(fs::read(outside.join("keep.txt")).unwrap(), b"keep");
+        fs::remove_dir(&link).unwrap();
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn file_mutations_reject_non_symlink_reparse_ancestors() {
+        use std::os::windows::fs::OpenOptionsExt;
+        use std::os::windows::io::AsRawHandle;
+        use std::ffi::c_void;
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn DeviceIoControl(handle: *mut c_void, code: u32, input: *const c_void, input_len: u32,
+                output: *mut c_void, output_len: u32, returned: *mut u32, overlapped: *mut c_void) -> i32;
+        }
+        let root = temp_root("mutation-reparse");
+        let directory = root.join("opaque");
+        fs::create_dir(&directory).unwrap();
+        let handle = fs::OpenOptions::new().access_mode(0x40000000)
+            .custom_flags(0x02200000).open(&directory).unwrap();
+        // A non-Microsoft, non-name-surrogate tag is a reparse point, but not a symlink.
+        let mut buffer = [0u8; 24];
+        buffer[..4].copy_from_slice(&0x42u32.to_le_bytes());
+        buffer[8..].copy_from_slice(&[0x12; 16]);
+        let mut returned = 0;
+        let result = unsafe { DeviceIoControl(handle.as_raw_handle(), 0x900A4, buffer.as_ptr().cast(),
+            buffer.len() as u32, std::ptr::null_mut(), 0, &mut returned, std::ptr::null_mut()) };
+        assert_ne!(result, 0, "Non-symlink reparse fixture unavailable; coverage NOT accepted: {}", std::io::Error::last_os_error());
+        drop(handle);
+        let metadata = fs::symlink_metadata(&directory).unwrap();
+        assert!(is_reparse_point(&metadata));
+        assert!(!metadata.file_type().is_symlink());
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&root).unwrap();
+        let resolved = authorized_mutation_path(&roots, root.to_str().unwrap(), "opaque/child");
+        let direct = rooted_path_from_canonical(fs::canonicalize(&root).unwrap(), "opaque");
+        fs::remove_dir(&directory).unwrap();
+        fs::remove_dir(&root).unwrap();
+        assert_eq!(mutation_code(&direct.unwrap_err()), "unsafe-path");
+        assert_eq!(mutation_code(&resolved.unwrap_err()), "unsafe-path");
+    }
+
+    #[test]
+    fn temporary_cleanup_retains_authorization_on_failure_and_allows_retry() {
+        let root = temp_root("cleanup-retry");
+        let roots = AuthorizedRoots::default();
+        let canonical = roots.authorize_temporary(&root).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let error = roots.cleanup_temporary(&root, |target| {
+            assert_eq!(target, canonical);
+            calls.set(calls.get() + 1);
+            Err(std::io::Error::new(std::io::ErrorKind::PermissionDenied, "cleanup failure"))
+        }).unwrap_err();
+        assert!(error.contains("cleanup failure"));
+        assert_eq!(roots.resolve_root(root.to_str().unwrap()).unwrap(), canonical);
+        assert!(roots.state.lock().unwrap().temporary.contains(&canonical));
+        roots.cleanup_temporary(&root, |target| {
+            calls.set(calls.get() + 1);
+            fs::remove_dir_all(target)
+        }).unwrap();
+        assert_eq!(calls.get(), 2);
+        assert!(!root.exists());
+        let state = roots.state.lock().unwrap();
+        assert!(!state.temporary.contains(&canonical));
+        assert!(!state.roots.contains(&canonical));
+    }
+
+    #[test]
+    fn temporary_cleanup_rejects_unauthorized_targets_before_operation() {
+        let root = temp_root("cleanup-unauthorized");
+        let roots = AuthorizedRoots::default();
+        let calls = std::cell::Cell::new(0);
+        for authorized in [false, true] {
+            if authorized { roots.authorize(&root).unwrap(); }
+            assert!(roots.cleanup_temporary(&root, |_| {
+                calls.set(calls.get() + 1);
+                Ok(())
+            }).is_err());
+        }
+        assert_eq!(calls.get(), 0);
+        assert!(root.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

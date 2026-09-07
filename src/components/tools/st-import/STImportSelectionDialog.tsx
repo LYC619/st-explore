@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatBytes } from '@/lib/storage-utils';
 import {
@@ -32,6 +33,7 @@ import {
   toggleImportPick,
   type STImportPicks,
 } from '@/lib/vault/st-import-presentation';
+import type { STImportProgress } from '@/lib/vault/st-import-progress';
 import type { STScanResult } from '@/lib/vault/st-import';
 
 interface STImportSelectionDialogProps {
@@ -39,6 +41,12 @@ interface STImportSelectionDialogProps {
   scan: STScanResult;
   picks: STImportPicks;
   importing: boolean;
+  /** 入库进度；importing 期间由父级喂进来。 */
+  progress?: STImportProgress | null;
+  /** 已经点过取消，正在等当前条目收尾 */
+  canceling?: boolean;
+  /** 解压时跳过的 secrets.json 数量；只有从备份包进来才可能 >0。 */
+  skippedSecrets?: number;
   onPicksChange: (picks: STImportPicks) => void;
   onCancel: () => void;
   onImport: () => void;
@@ -80,6 +88,9 @@ export function STImportSelectionDialog({
   scan,
   picks,
   importing,
+  progress = null,
+  canceling = false,
+  skippedSecrets = 0,
   onPicksChange,
   onCancel,
   onImport,
@@ -131,7 +142,7 @@ export function STImportSelectionDialog({
   ].join(' · ');
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !importing) onCancel(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !canceling) onCancel(); }}>
       <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="px-6 pb-4 pt-6 pr-12">
           <DialogTitle>选择要导入的内容</DialogTitle>
@@ -146,6 +157,14 @@ export function STImportSelectionDialog({
               <span className="font-medium text-foreground">重复导入规则：</span>{IMPORT_POLICY_SUMMARY}
             </p>
           </div>
+          {skippedSecrets > 0 && (
+            <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2">
+              <p className="text-xs leading-5 text-muted-foreground">
+                <span className="font-medium text-foreground">已跳过 secrets.json：</span>
+                包里的 API 密钥文件没有被解压，本应用也不需要它。其余内容照常导入。
+              </p>
+            </div>
+          )}
         </DialogHeader>
 
         <div className="min-h-0 border-y border-border">
@@ -299,13 +318,35 @@ export function STImportSelectionDialog({
         </div>
 
         <div className="px-6 py-4">
-          {!!scan.warnings.length && (
+          {!!scan.warnings.length && !importing && (
             <p className="mb-3 text-xs text-muted-foreground">
               已安全跳过 {scan.warnings.length} 个符号链接、非法路径名或过深目录；路径会写入本次清单。
             </p>
           )}
+          {importing && progress && (
+            <div className="mb-3 space-y-1.5">
+              <div className="flex items-baseline justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">
+                  {progress.total ? `写入中 ${progress.done} / ${progress.total}` : `写入中 ${progress.done}`}
+                </span>
+                <span className="min-w-0 truncate text-muted-foreground" title={progress.label}>
+                  {progress.label ?? ''}
+                </span>
+              </div>
+              <Progress
+                value={progress.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : 0}
+                className="h-2"
+              />
+              {/* 入库和前两个阶段不一样：写进去的东西撤不回来，取消前必须说清楚 */}
+              <p className="text-xs text-muted-foreground">
+                取消会停在当前条目，已经写入的内容会保留。
+              </p>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={onCancel} disabled={importing}>取消</Button>
+            <Button variant="outline" onClick={onCancel} disabled={canceling}>
+              {importing ? (canceling ? '正在停止…' : '取消导入') : '取消'}
+            </Button>
             <Button onClick={onImport} disabled={importing || pickedCount === 0}>
               {importing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
               导入 {pickedCount} 个项目组

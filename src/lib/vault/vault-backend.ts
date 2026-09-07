@@ -33,6 +33,7 @@ import type { VaultFs } from './fs';
 import { joinPath, parentDir, baseName } from './fs';
 import { safeName, ensureUnique } from './naming';
 import { serializeFrontmatter, parseFrontmatter } from './frontmatter';
+import { recoverCharacterJournals } from '@/lib/portrait-journal';
 
 export interface VaultBackend {
   repo<T extends BaseRecord>(store: StoreName): Repo<T>;
@@ -40,6 +41,8 @@ export interface VaultBackend {
   fs: VaultFs;
   /** 记录在库内的相对路径（角色/故事=文件夹，其余=文件）；未入索引返回 undefined */
   pathOf(store: StoreName, id: string): Promise<string | undefined>;
+  /** Retry recovery and reject new mutations while any journal remains unresolved. */
+  assertCharacterWritable(id: string): Promise<void>;
 }
 
 /** 文件库承接的 store（'books' 已退役不进文件库） */
@@ -139,7 +142,18 @@ export function createVault(fs: VaultFs): VaultBackend {
   const recCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
   const lightCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
 
+  async function recoverCharacter(id: string, dir: string, requireClean = false): Promise<void> {
+    const reports = await recoverCharacterJournals(dir, id, fs);
+    const blocked = reports.find((report) => report.action === 'blocked' || requireClean && report.warnings.length > 0);
+    if (blocked) {
+      const error = new Error(blocked.warnings.join('；'));
+      Object.assign(error, { code: 'portrait-recovery-required', characterId: id, operationId: blocked.operationId });
+      throw error;
+    }
+  }
+
   async function readRecordCached(store: VaultStore, id: string, path: string, light = false): Promise<BaseRecord | null> {
+    if (store === 'characters') await recoverCharacter(id, path);
     const m = (light ? lightCache : recCache).get(store)!;
     const hit = m.get(id);
     // 出入缓存都克隆：调用方拿到的对象与缓存互不别名（与 IDB 每次返回新对象的语义一致）
@@ -221,9 +235,25 @@ export function createVault(fs: VaultFs): VaultBackend {
     const chars = of('characters');
     await mapLimit((await fs.list(DIR_CHAR)).filter((e) => e.isDir), IO_LIMIT, async (e) => {
       const dir = joinPath(DIR_CHAR, e.name);
-      if (!(await fs.stat(joinPath(dir, FILE_PROFILE))).exists) return; // 用户自己的文件夹
-      const rec = await readJson(joinPath(dir, FILE_PROFILE));
-      if (rec && typeof rec.id === 'string') chars.set(rec.id, dir);
+      const profilePath = joinPath(dir, FILE_PROFILE);
+      let rec: Record<string, unknown> | null = null;
+      let readError: unknown;
+      try {
+        if ((await fs.stat(profilePath)).exists) rec = JSON.parse(await fs.readText(profilePath));
+      } catch (error) {
+        readError = error;
+      }
+      if (rec && typeof rec.id === 'string') {
+        chars.set(rec.id, dir);
+        return;
+      }
+      const journals = await fs.list(joinPath(dir, '.ste-control', 'portrait-journal'));
+      if (journals.some(entry => !entry.isDir && entry.name.endsWith('.json'))) {
+        throw Object.assign(new Error(`角色档案缺失或无效，需要恢复：${profilePath}`), {
+          code: 'portrait-recovery-required', path: profilePath,
+        });
+      }
+      if (readError) warnSkip(profilePath, readError);
     });
     // 2. 故事候选目录：角色/*/故事/* + 临时/*（除保留目录）
     const storyDirs: string[] = [];
@@ -661,11 +691,19 @@ export function createVault(fs: VaultFs): VaultBackend {
       },
       async put(item, opts) {
         await ensureIndex();
+        if (store === 'characters') {
+          const path = of(store).get(item.id);
+          if (path) await recoverCharacter(item.id, path, true);
+        }
         invalidate(store, item.id);
         await putRecord(store, item, opts);
       },
       async remove(id) {
         await ensureIndex();
+        if (store === 'characters') {
+          const path = of(store).get(id);
+          if (path) await recoverCharacter(id, path, true);
+        }
         invalidate(store, id);
         await removeRecord(store, id);
       },
@@ -687,10 +725,17 @@ export function createVault(fs: VaultFs): VaultBackend {
       return r as Repo<T>;
     },
     fs,
+    async assertCharacterWritable(id: string): Promise<void> {
+      await ensureIndex();
+      const path = of('characters').get(id);
+      if (path) await recoverCharacter(id, path, true);
+    },
     async pathOf(store: StoreName, id: string): Promise<string | undefined> {
       if (!(VAULT_STORES as readonly string[]).includes(store)) return undefined;
       await ensureIndex();
-      return of(store as VaultStore).get(id);
+      const path = of(store as VaultStore).get(id);
+      if (store === 'characters' && path) await recoverCharacter(id, path);
+      return path;
     },
   };
 }

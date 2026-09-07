@@ -53,6 +53,7 @@ vi.mock('@/components/tools/st-import/STImportResultDialog', () => ({
 }));
 
 import { STImportCard } from '@/components/tools/STImportCard';
+import { VAULT_CHANGED_EVENT } from '@/lib/vault/vault-registry-store';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -99,7 +100,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   mocks.pickDirectory.mockResolvedValue('D:/SillyTavern');
-  mocks.pickSTBackupImport.mockResolvedValue({ root: 'C:/Temp/ste-st-import-1', displayName: 'backup.zip' });
+  mocks.pickSTBackupImport.mockResolvedValue({ root: 'C:/Temp/ste-st-import-1', displayName: 'backup.zip', skippedSecrets: 0 });
   mocks.cleanupSTBackupImport.mockResolvedValue(undefined);
   mocks.createTauriFs.mockReturnValue({});
   mocks.scanSTUserDir.mockResolvedValue(scan);
@@ -113,6 +114,73 @@ afterEach(() => {
 });
 
 describe('STImportCard lifecycle', () => {
+  it('reports native cleanup failure even after the preparation owner unmounts', async () => {
+    let fail!: (error: string) => void;
+    mocks.pickSTBackupImport.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    await act(async () => root.render(<STImportCard />));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('button')[1].click());
+    await act(async () => root.render(null));
+    await act(async () => fail('STE_ST_IMPORT_CLEANUP_FAILED: synthetic temp is locked'));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: '清理临时导入文件失败', description: expect.stringContaining('synthetic temp is locked'),
+    }));
+  });
+
+  it('reports cleanup failure after vault invalidation so leftover files are visible', async () => {
+    mocks.cleanupSTBackupImport.mockRejectedValueOnce(new Error('synthetic temp is locked'));
+    await act(async () => root.render(<STImportCard />));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('button')[1].click());
+    await act(async () => window.dispatchEvent(new Event(VAULT_CHANGED_EVENT)));
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      title: '清理临时导入文件失败', description: expect.stringContaining('synthetic temp is locked'),
+    }));
+  });
+
+  it('aborts on unmount and cleans a preparation result that arrives afterwards', async () => {
+    let complete!: (value: { root: string; displayName: string; skippedSecrets: number }) => void;
+    mocks.pickSTBackupImport.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await act(async () => root.render(<STImportCard />));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('button')[1].click());
+    const controls = mocks.pickSTBackupImport.mock.calls[0][0];
+    await act(async () => root.render(null));
+    expect(controls.signal.aborted).toBe(true);
+    await act(async () => complete({ root: 'C:/Temp/late-backup', displayName: 'late.zip', skippedSecrets: 0 }));
+    expect(mocks.scanSTUserDir).not.toHaveBeenCalled();
+    expect(mocks.cleanupSTBackupImport).toHaveBeenCalledWith('C:/Temp/late-backup');
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
+  it('ignores a stale scan and its finally after a vault change and immediate retry', async () => {
+    let complete!: (value: STScanResult) => void;
+    mocks.scanSTUserDir.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await act(async () => root.render(<STImportCard />));
+    await act(async () => container.querySelector<HTMLButtonElement>('button')!.click());
+    const controls = mocks.scanSTUserDir.mock.calls[0][1];
+    await act(async () => window.dispatchEvent(new Event(VAULT_CHANGED_EVENT)));
+    expect(controls.signal.aborted).toBe(true);
+    mocks.pickDirectory.mockResolvedValueOnce('D:/SecondST');
+    await act(async () => container.querySelector<HTMLButtonElement>('button')!.click());
+    await act(async () => complete(scan));
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="st-import-selection"] button:last-child')!.click());
+    expect(mocks.importSelected.mock.calls[0][1].stRoot).toBe('D:/SecondST');
+    expect(mocks.setAppConfig).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels an active import on unmount and releases its source only after it settles', async () => {
+    let complete!: (value: STImportSummary) => void;
+    mocks.importSelected.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    await act(async () => root.render(<STImportCard />));
+    await act(async () => container.querySelectorAll<HTMLButtonElement>('button')[1].click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="st-import-selection"] button:last-child')!.click());
+    const controls = mocks.importSelected.mock.calls[0][2];
+    await act(async () => root.render(null));
+    expect(controls.signal.aborted).toBe(true);
+    expect(mocks.cleanupSTBackupImport).not.toHaveBeenCalled();
+    await act(async () => complete({ ...summary, aborted: true }));
+    expect(mocks.cleanupSTBackupImport).toHaveBeenCalledOnce();
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
   it('keeps the selection dialog mounted until the user finishes importing', async () => {
     const onChanged = vi.fn();
     await act(async () => {
@@ -174,10 +242,15 @@ describe('STImportCard lifecycle', () => {
       await Promise.resolve();
     });
 
-    expect(mocks.importSelected).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      stRoot: 'C:/Temp/ste-st-import-1',
-      sourceLabel: 'backup.zip',
-    }));
+    // 第三个参数是进度/取消 controls（onProgress + signal），这里只关心计划本身走对了
+    expect(mocks.importSelected).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        stRoot: 'C:/Temp/ste-st-import-1',
+        sourceLabel: 'backup.zip',
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(mocks.cleanupSTBackupImport).toHaveBeenCalledWith('C:/Temp/ste-st-import-1');
   });
 

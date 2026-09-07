@@ -26,7 +26,7 @@ import type { CharacterPatch } from '@/lib/character-write';
 import {
   loadPortraitViews, loadPortraitImage, createPortraitRow, renamePortraitRow, addPortraitFiles, setPortraitAsCard,
   rowTitleConflict, rowDirOf, ensureRowTitle, renamePortraitItem, removePortraitItems, removePortraitRow,
-  movePortraitItems, replacePortraitItem,
+  movePortraitItemsMutation, replacePortraitItemMutation,
   type PortraitViewRow, type PortraitViewItem,
 } from '@/lib/portrait-store';
 import { LOADING_LABEL } from '@/lib/ui-copy';
@@ -148,9 +148,20 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
   /** 改完记录后按落库结果重画视图（批量操作会同时动多行，逐条改本地态不划算） */
   const patchAndReload = useCallback(async (patch: CharacterPatch) => {
     const saved = await onPatch(patch);
-    setViews(await loadPortraitViews(saved));
+    const refreshed = await loadPortraitViews(saved);
+    setViews(refreshed);
+    if (lightbox?.item.itemId) {
+      const row = refreshed.find(entry => entry.items.some(item => item.itemId === lightbox.item.itemId));
+      const index = row?.items.findIndex(item => item.itemId === lightbox.item.itemId) ?? -1;
+      if (row && index >= 0) {
+        const item = row.items[index];
+        const url = await loadPortraitImage(item);
+        // A later close or navigation must win over this asynchronous refresh.
+        if (url) setLightbox(current => current === lightbox ? { rowId: row.rowId, index, item, url } : current);
+      }
+    }
     return saved;
-  }, [onPatch]);
+  }, [onPatch, lightbox]);
 
   const handleAddRow = async () => {
     try {
@@ -295,7 +306,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
     setMoveOpen(false);
     if (!target || ids.length === 0) return;
     try {
-      await patchAndReload((current) => movePortraitItems(current, ids, target));
+      await patchAndReload((current, context) => movePortraitItemsMutation(current, ids, target, context.vault));
       setSelected(new Set());
       toast({ title: `已移动 ${ids.length} 张到「${managedRows.find((row) => row.rowId === target)?.title ?? '目标分行'}」` });
     } catch (error) {
@@ -476,6 +487,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                     return (
                       <div key={item.itemId ?? `${row.rowId}-stray-${i}`} className={cn('group/pc', !open && 'w-40 shrink-0')}>
                         <PortraitThumb
+                          key={item.fsPath ?? item.url}
                           item={item}
                           selectable={selectable}
                           selected={selectable && selected.has(item.itemId!)}
@@ -534,7 +546,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
           const replaceId = replaceItemId.current;
           replaceItemId.current = null;
           if (replaceId && files[0]) {
-            void patchAndReload((current) => replacePortraitItem(current, replaceId, files[0]))
+            void patchAndReload((current, context) => replacePortraitItemMutation(current, replaceId, files[0], context.vault))
               .catch((error) => toast({ title: '替换失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }));
           } else {
             void handleImportFiles(files);

@@ -8,12 +8,85 @@ import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
 import { setActiveVault } from '@/lib/vault/active';
 import { scanSTUserDir, importSelected, type STScanResult } from '@/lib/vault/st-import';
+import {
+  STImportAbortedError,
+  throttleProgress,
+  type STImportProgress,
+} from '@/lib/vault/st-import-progress';
 import { getAllArchiveStories, getAllCharacters, saveCharacter } from '@/lib/archive-db';
 import { getAllWorldBooks, saveWorldBook } from '@/lib/worldbook-db';
 import { getAllPresets } from '@/lib/preset-db';
 import { getAllRegexCollections } from '@/lib/regex-db';
 
 afterEach(() => setActiveVault(null));
+
+describe('ST import destination and scan completion', () => {
+  it('keeps an in-flight item and its manifest in the original vault after a switch', async () => {
+    const source = createMemFs();
+    await source.writeText('worlds/one.json', JSON.stringify({ entries: {} }));
+    const scan = await scanSTUserDir(source);
+    const originalFs = createMemFs();
+    const original = createVault(originalFs);
+    const otherFs = createMemFs();
+    const other = createVault(otherFs);
+    setActiveVault(original);
+    const result = await importSelected({ ...source, readText: async path => {
+      const text = await source.readText(path);
+      setActiveVault(other);
+      return text;
+    } }, selectAll(scan));
+    expect(await other.repo('worldbooks').list()).toEqual([]);
+    expect(await original.repo('worldbooks').list()).toHaveLength(1);
+    expect(result.aborted).toBe(true);
+    expect(await otherFs.list('说明')).toEqual([]);
+    expect(JSON.parse(await originalFs.readText('说明/SillyTavern 最近一次导入.json')).summary.aborted).toBe(true);
+  });
+
+  it('binds embedded assets and their character to the import-start vault', async () => {
+    const source = createMemFs();
+    await source.writeBinary('characters/example.png', makeCardPngBase64({
+      spec: 'chara_card_v2', data: { name: 'Example', character_book: {
+        name: 'Embedded', entries: [{ id: 0, keys: ['key'], content: 'World', enabled: true }],
+      }, extensions: { regex_scripts: [{ scriptName: 'Rule', findRegex: '/a/g', replaceString: 'b', placement: [2] }] } },
+    }));
+    const scan = await scanSTUserDir(source);
+    const original = createVault(createMemFs());
+    const other = createVault(createMemFs());
+    setActiveVault(original);
+    const result = await importSelected({ ...source, readBinary: async path => {
+      const bytes = await source.readBinary(path);
+      setActiveVault(other);
+      return bytes;
+    } }, selectAll(scan));
+    for (const store of ['characters', 'worldbooks', 'regexes'] as const) {
+      expect(await other.repo(store).list(), store).toEqual([]);
+      expect(await original.repo(store).list(), store).toHaveLength(1);
+    }
+    expect(result.aborted).toBe(true);
+  });
+
+  it('honors cancellation during the final directory listing', async () => {
+    const source = createMemFs();
+    await source.writeText('characters/readme.txt', 'Example');
+    await source.writeText('user/workflows/last.json', '{}');
+    const controller = new AbortController();
+    let finalListings = 0;
+    await expect(scanSTUserDir({ ...source, list: async path => {
+      const entries = await source.list(path);
+      if (path === 'user/workflows' && ++finalListings === 2) controller.abort();
+      return entries;
+    } }, { signal: controller.signal })).rejects.toBeInstanceOf(STImportAbortedError);
+  });
+
+  it('reports the final scan progress even when all IO finishes inside the throttle interval', async () => {
+    const source = createMemFs();
+    await source.writeText('characters/readme.txt', 'Example');
+    const progress: STImportProgress[] = [];
+    await scanSTUserDir(source, { onProgress: item => progress.push(item) });
+    expect(progress.at(-1)).toMatchObject({ phase: 'scan', label: '完成' });
+    expect(progress.at(-1)!.done).toBeGreaterThan(0);
+  });
+});
 
 // ---------- 假 ST 树构造 ----------
 
@@ -1040,5 +1113,107 @@ describe('importSelected', () => {
     const scan = await scanSTUserDir(fs);
     expect(scan.archives[0].files.map((file) => file.relativePath)).toEqual(['real.bin']);
     expect(scan.warnings).toContainEqual({ path: 'extensions/..\\..\\escape.txt', reason: 'unsafe-path' });
+  });
+});
+
+// ---------- 进度与取消 ----------
+
+describe('导入进度与中途取消', () => {
+  it('进度分母是勾选的条目数，跑完时走满', async () => {
+    const st = createMemFs();
+    await seedSTTree(st);
+    setupVault();
+    const scan = await scanSTUserDir(st);
+    const plan = selectAll(scan);
+
+    const seen: STImportProgress[] = [];
+    await importSelected(st, plan, { onProgress: (progress) => seen.push(progress) });
+
+    // 分母按计划自己算，避免把 seedSTTree 的条目数硬编码进断言
+    const expectedTotal = plan.worldbooks.length
+      + plan.characters.length
+      + plan.characters.reduce((sum, character) => sum + character.chats.length, 0)
+      + plan.strayChats.length
+      + plan.presets.length
+      + (plan.regex ? 1 : 0)
+      + (plan.archives ?? []).reduce(
+        (sum, group) => sum + group.files.length + (group.generatedFiles?.length ?? 0),
+        0,
+      );
+
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((progress) => progress.phase === 'import')).toBe(true);
+    expect(seen.every((progress) => progress.total === expectedTotal)).toBe(true);
+    expect(seen[seen.length - 1].done).toBe(expectedTotal);
+  });
+
+  it('signal 已置位时一条都不写，summary 标记 aborted', async () => {
+    const st = createMemFs();
+    await seedSTTree(st);
+    setupVault();
+    const scan = await scanSTUserDir(st);
+    const controller = new AbortController();
+    controller.abort();
+
+    const summary = await importSelected(st, selectAll(scan), { signal: controller.signal });
+
+    expect(summary.aborted).toBe(true);
+    expect(summary).toMatchObject({ characters: 0, stories: 0, worldbooks: 0, presets: 0 });
+    expect(await getAllCharacters()).toEqual([]);
+    expect(await getAllWorldBooks()).toEqual([]);
+  });
+
+  it('中途取消停在条目边界，已写入的内容保留、后续阶段不再开始', async () => {
+    const st = createMemFs();
+    await seedSTTree(st);
+    setupVault();
+    const scan = await scanSTUserDir(st);
+    const controller = new AbortController();
+
+    // 第一次 readText 是世界书那本；读完就喊停，它会被写完，角色卡阶段则不该开始。
+    // 不挂在 onProgress 上触发：那条通道有节流，密集上报会被压掉，测试会飘。
+    const readText = st.readText.bind(st);
+    let reads = 0;
+    st.readText = async (path) => {
+      const text = await readText(path);
+      if (++reads === 1) controller.abort();
+      return text;
+    };
+
+    const summary = await importSelected(st, selectAll(scan), { signal: controller.signal });
+
+    expect(summary.aborted).toBe(true);
+    expect(summary.worldbooks).toBe(1);
+    // 取消不回滚：写进去的那本还在库里
+    expect((await getAllWorldBooks()).length).toBe(1);
+    // 角色卡在世界书之后，整段没开始
+    expect(summary.characters).toBe(0);
+    expect(await getAllCharacters()).toEqual([]);
+  });
+
+  it('扫描阶段取消直接抛 STImportAbortedError（这时还没写过任何东西）', async () => {
+    const st = createMemFs();
+    await seedSTTree(st);
+    const controller = new AbortController();
+    const list = st.list.bind(st);
+    let calls = 0;
+    st.list = async (dir) => {
+      const entries = await list(dir);
+      if (++calls === 2) controller.abort();
+      return entries;
+    };
+
+    await expect(scanSTUserDir(st, { signal: controller.signal }))
+      .rejects.toThrow(STImportAbortedError);
+  });
+
+  it('进度节流：密集上报被压掉，flush 一定发得出去', () => {
+    // 这轮改动的初衷就是别让界面卡；每个文件都 setState 会把卡顿换个形式做回来。
+    const seen: number[] = [];
+    const { report, flush } = throttleProgress((progress) => seen.push(progress.done), 10_000);
+    for (let index = 1; index <= 100; index++) report({ phase: 'import', done: index });
+    expect(seen).toEqual([1]);
+    flush({ phase: 'import', done: 100 });
+    expect(seen).toEqual([1, 100]);
   });
 });

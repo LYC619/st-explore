@@ -3,10 +3,12 @@
  * 实体定义见 @/types/archive；存储走统一仓库层（未来客户端换文件库后端无感）。
  */
 import type { ArchiveCharacter, ArchiveStory, CharacterStatus, CharacterType, StoryStatus, StoryBranch } from '@/types/archive';
+import { isPreparedCharacterMutation, type CharacterMutationContext, type CharacterUpdater } from '@/lib/character-mutation';
+import { getActiveVault } from '@/lib/vault/active';
 import type { ChatSession, ChatMessage, ChapterMarker } from '@/types/chat';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
-import { createRepo, getCurrentRepo } from '@/lib/repo';
+import { createRepo, getCurrentRepo, type Repo } from '@/lib/repo';
 import { extractModels, estimatePlayTime, computeStoryProps } from '@/lib/story-meta';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { bytesToBase64 } from '@/lib/utils';
@@ -38,24 +40,73 @@ export async function getCharacter(id: string): Promise<ArchiveCharacter | undef
   return characterRepo.get(id);
 }
 
-export async function saveCharacter(item: ArchiveCharacter): Promise<void> {
+/** Hold the character queue through file access. Call outside an existing character updater. */
+export async function readCharacterInQueue<T>(
+  id: string,
+  read: (current: ArchiveCharacter | undefined, context: CharacterMutationContext) => Promise<T>,
+): Promise<T> {
   const repo = getCurrentRepo<ArchiveCharacter>('characters');
+  const context = { vault: getActiveVault() };
+  return characterWrites.enqueue(id, async () => read(await repo.get(id), context));
+}
+
+export async function saveCharacter(
+  item: ArchiveCharacter,
+  repo: Repo<ArchiveCharacter> = getCurrentRepo<ArchiveCharacter>('characters'),
+): Promise<void> {
   return characterWrites.enqueue(item.id, () => repo.put(item));
 }
 
 export async function updateCharacter(
   id: string,
-  updater: (current: ArchiveCharacter) => Partial<ArchiveCharacter> | undefined | Promise<Partial<ArchiveCharacter> | undefined>,
+  updater: CharacterUpdater,
+  options?: { onWarning?: (report: { warnings: string[] }) => void },
 ): Promise<ArchiveCharacter | undefined> {
   const repo = getCurrentRepo<ArchiveCharacter>('characters');
+  const context = { vault: getActiveVault() };
   return characterWrites.enqueue(id, async () => {
+    const notifyWarning = (warnings: string[]) => {
+      if (warnings.length === 0) return;
+      try { options?.onWarning?.({ warnings }); }
+      catch { /* An observer cannot change the outcome of a committed write. */ }
+    };
     const current = await repo.get(id);
     if (!current) return undefined;
-    const patch = await updater(current);
-    if (!patch) return current;
+    await context.vault?.assertCharacterWritable(id);
+    const result = await updater(current, context);
+    if (!result) return current;
+    const mutation = isPreparedCharacterMutation(result) ? result : undefined;
+    const patch = mutation?.patch ?? result;
     const next: ArchiveCharacter = { ...current, ...patch, id: current.id };
     // patch 没碰 pngBase64 → 卡片.png 不必重写（markCharacterViewed 这类只盖时间戳的改动）
-    await repo.put(next, { derivedUnchanged: next.pngBase64 === current.pngBase64 });
+    try {
+      await repo.put(next, { derivedUnchanged: next.pngBase64 === current.pngBase64 });
+    } catch (error) {
+      if (!mutation) throw error;
+      const recovery = await mutation.recoverAfterPersistFailure(() => repo.get(id));
+      if (recovery.action === 'finalized') {
+        const saved = await repo.get(id);
+        if (!saved) {
+          throw Object.assign(new Error('角色变更后无法重新读取真实档案'), { code: 'portrait-recovery-required', characterId: id });
+        }
+        notifyWarning(recovery.warnings);
+        return saved;
+      }
+      if (recovery.action === 'blocked') {
+        const blocked = new Error(`角色变更需要恢复：${recovery.warnings.join('；') || '无法确认档案状态'}`);
+        Object.assign(blocked, { code: 'portrait-recovery-required', characterId: id, operationId: recovery.operationId, recovery });
+        throw blocked;
+      }
+      throw error;
+    }
+    if (mutation) {
+      try {
+        const cleanup = await mutation.commitAfterPersist();
+        notifyWarning(cleanup.warnings);
+      } catch (error) {
+        notifyWarning([`角色已保存，立绘清理需重试：${error instanceof Error ? error.message : String(error)}`]);
+      }
+    }
     return next;
   });
 }
@@ -78,8 +129,10 @@ export async function getArchiveStory(id: string): Promise<ArchiveStory | undefi
   return storyRepo.get(id);
 }
 
-export async function saveArchiveStory(item: ArchiveStory): Promise<void> {
-  const repo = getCurrentRepo<ArchiveStory>('archiveStories');
+export async function saveArchiveStory(
+  item: ArchiveStory,
+  repo: Repo<ArchiveStory> = getCurrentRepo<ArchiveStory>('archiveStories'),
+): Promise<void> {
   return storyWrites.enqueue(item.id, () => repo.put(item));
 }
 
@@ -93,8 +146,8 @@ export async function saveArchiveStory(item: ArchiveStory): Promise<void> {
 export async function updateArchiveStory(
   id: string,
   updater: (current: ArchiveStory) => Partial<ArchiveStory> | undefined | Promise<Partial<ArchiveStory> | undefined>,
+  repo: Repo<ArchiveStory> = getCurrentRepo<ArchiveStory>('archiveStories'),
 ): Promise<ArchiveStory | undefined> {
-  const repo = getCurrentRepo<ArchiveStory>('archiveStories');
   return storyWrites.enqueue(id, async () => {
     const current = await repo.get(id);
     if (!current) return undefined;

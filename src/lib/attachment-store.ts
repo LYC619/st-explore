@@ -15,9 +15,13 @@
  * 变更函数返回 Partial<ArchiveCharacter> patch，由页面统一 patchCharacter 落库。
  */
 import type { ArchiveCharacter, AttachedFile } from '@/types/archive';
+import { readCharacterInQueue, updateCharacter } from '@/lib/archive-db';
+import type { PersistCharacterPatch } from '@/lib/character-write';
 import { getActiveVault } from '@/lib/vault/active';
 import type { VaultBackend } from '@/lib/vault/vault-backend';
-import { baseName, joinPath } from '@/lib/vault/fs';
+import { joinPath } from '@/lib/vault/fs';
+import { attachmentFileName, resolveAttachmentRelativePath } from '@/lib/vault/character-relative-path';
+import { throwFsMutationError } from '@/lib/vault/fs-mutation-error';
 import { classifyArchivePreview, type ArchivePreviewKind } from '@/lib/vault/other-assets';
 import { uniqueFileName } from '@/lib/portrait-store';
 
@@ -54,8 +58,7 @@ interface VaultCtx {
 }
 
 /** 客户端且角色已入库 → vault 上下文；否则 null（网页版无附件功能） */
-async function vaultCtx(characterId: string): Promise<VaultCtx | null> {
-  const vault = getActiveVault();
+async function vaultCtx(characterId: string, vault = getActiveVault()): Promise<VaultCtx | null> {
   if (!vault) return null;
   const dir = await vault.pathOf('characters', characterId);
   return dir ? { vault, dir } : null;
@@ -77,6 +80,9 @@ export interface AttachmentView extends AttachedFile {
   missing: boolean;
   /** 以磁盘为准的体积；缺失时回落到记录里的 size */
   actualSize: number;
+  /** 当前角色目录内的解析结果；不作为后续 mutation 的授权输入 */
+  resolvedPath?: string;
+  characterId: string;
 }
 
 /**
@@ -89,18 +95,80 @@ export async function loadAttachmentViews(c: ArchiveCharacter): Promise<Attachme
   const ctx = await vaultCtx(c.id);
   const found = ctx
     ? new Map((await ctx.vault.fs.list(joinPath(ctx.dir, ATTACHMENT_DIR)))
-      .filter((entry) => !entry.isDir)
+      .filter((entry) => !entry.isDir && !entry.isSymlink)
       .map((entry) => [entry.name, entry.size] as const))
     : new Map<string, number>();
   return records.map((record) => {
-    const size = found.get(baseName(record.path));
+    const relative = resolveAttachmentRelativePath(record);
+    const fileName = relative ? attachmentFileName(record) : undefined;
+    const size = fileName ? found.get(fileName) : undefined;
     const actualSize = size ?? record.size;
     return {
       ...record,
-      tier: attachmentTier(record.path, actualSize),
-      missing: size === undefined,
+      characterId: c.id,
+      ...(relative ? { resolvedPath: joinPath(ctx?.dir ?? '', relative) } : {}),
+      tier: attachmentTier(fileName ?? record.title, actualSize),
+      missing: relative === undefined || size === undefined,
       actualSize,
     };
+  });
+}
+
+function resolveRecordPath(ctx: VaultCtx, character: ArchiveCharacter | undefined, attachmentId: string) {
+  const record = character?.attachments?.find(item => item.id === attachmentId);
+  if (!record) throw new Error('附件不存在');
+  const relative = resolveAttachmentRelativePath(record);
+  if (!relative) throwFsMutationError({ code: 'unsafe-path', path: record.path, message: '附件路径格式无效' }, record.path);
+  return { path: joinPath(ctx.dir, relative), record };
+}
+
+async function requireAttachmentFile(ctx: VaultCtx, path: string) {
+  const fileName = path.slice(path.lastIndexOf('/') + 1);
+  const entries = await ctx.vault.fs.list(joinPath(ctx.dir, ATTACHMENT_DIR));
+  const entry = entries.find(item => item.name === fileName);
+  if (!entry) throwFsMutationError({ code: 'not-found', path, message: '附件文件不存在' });
+  if (entry.isSymlink) throwFsMutationError({ code: 'unsafe-path', path, message: '附件不能是符号链接' });
+  if (entry.isDir) throwFsMutationError({ code: 'not-file', path, message: '附件必须是普通文件' });
+  return entry;
+}
+
+interface ResolvedAttachment {
+  path: string;
+  record: AttachedFile;
+  ctx: VaultCtx;
+  fileName: string;
+  size: number;
+}
+
+async function withAttachmentFile<T>(
+  characterId: string,
+  attachmentId: string,
+  access: (resolved: ResolvedAttachment) => Promise<T>,
+): Promise<T> {
+  return readCharacterInQueue(characterId, async (character, { vault }) => {
+    if (!vault) throw new Error('当前环境不支持读取关联文件');
+    const ctx = await vaultCtx(characterId, vault);
+    if (!ctx) throw new Error('角色档案不存在');
+    const resolved = resolveRecordPath(ctx, character, attachmentId);
+    const entry = await requireAttachmentFile(ctx, resolved.path);
+    return access({ ...resolved, ctx, fileName: entry.name, size: entry.size });
+  });
+}
+
+export async function getAttachmentPath(characterId: string, attachmentId: string): Promise<string> {
+  return withAttachmentFile(characterId, attachmentId, async resolved => resolved.path);
+}
+
+export async function readAttachment(characterId: string, attachmentId: string): Promise<{ path: string; record: AttachedFile; fileName: string; tier: AttachmentTier; text?: string; base64?: string }> {
+  return withAttachmentFile(characterId, attachmentId, async ({ ctx, size, ...resolved }) => {
+    const tier = attachmentTier(resolved.fileName, size);
+    if (tier === 'external') throw new Error('此文件格式或大小不支持内部预览，请用外部程序打开');
+    try {
+      if (tier === 'image') return { ...resolved, tier, base64: await ctx.vault.fs.readBinary(resolved.path) };
+      return { ...resolved, tier, text: await ctx.vault.fs.readText(resolved.path) };
+    } catch (error) {
+      throwFsMutationError(error, resolved.path);
+    }
   });
 }
 
@@ -123,7 +191,8 @@ export async function addAttachmentFiles(
       added.push({
         id: crypto.randomUUID(),
         title: file.name,
-        path: joinPath(dir, fileName),
+        path: joinPath(ATTACHMENT_DIR, fileName),
+        pathBase: 'character',
         size: file.size,
         addedAt: Date.now(),
       });
@@ -141,25 +210,44 @@ export async function addAttachmentFiles(
 
 /**
  * 移除一条附件。deleteFile=true 时文件进系统回收站（捞得回来），
- * false 只撤记录、文件原样留在 附件/ 里。文件已经不在了也照样撤记录。
+ * false 只撤记录、文件原样留在 附件/ 里。文件缺失或物理删除失败时保留记录。
  */
 export async function removeAttachment(
-  c: ArchiveCharacter,
+  characterId: string,
   id: string,
   deleteFile: boolean,
-): Promise<Partial<ArchiveCharacter>> {
-  const records = c.attachments ?? [];
-  const target = records.find((record) => record.id === id);
-  if (!target) throw new Error('附件不存在');
-  if (deleteFile) {
-    const ctx = await vaultCtx(c.id);
-    const fs = ctx?.vault.fs;
-    if (fs) {
-      // 用户主动删自己的文件 → 优先回收站，与立绘同一套取舍
-      await (fs.trashFile ? fs.trashFile(target.path) : fs.removeFile(target.path)).catch(() => {});
+  persist: PersistCharacterPatch = updateCharacter,
+): Promise<ArchiveCharacter> {
+  let deletedPath: string | undefined;
+  try {
+    const saved = await persist(characterId, async (current, context) => {
+      const records = current.attachments ?? [];
+      if (!records.some(record => record.id === id)) throw new Error('附件不存在');
+      if (deleteFile) {
+        const ctx = await vaultCtx(characterId, context.vault);
+        if (!ctx) throw new Error('当前环境不支持删除关联文件');
+        const { path } = resolveRecordPath(ctx, current, id);
+        await requireAttachmentFile(ctx, path);
+        const fs = ctx.vault.fs;
+        try {
+          await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
+        } catch (error) {
+          throwFsMutationError(error, path);
+        }
+        deletedPath = path;
+      }
+      return { attachments: records.filter(record => record.id !== id) };
+    });
+    if (!saved) throw new Error('角色档案不存在');
+    return saved;
+  } catch (error) {
+    if (deletedPath) {
+      throw Object.assign(new Error('文件已删除，但附件记录未能更新。请重试仅移除失效记录。'), {
+        code: 'attachment-metadata-failed', characterId, attachmentId: id, path: deletedPath, cause: error,
+      });
     }
+    throw error;
   }
-  return { attachments: records.filter((record) => record.id !== id) };
 }
 
 /** 重命名附件的显示名（不动磁盘文件名：外部程序、快捷方式还指着原路径） */
@@ -172,10 +260,15 @@ export function renameAttachment(c: ArchiveCharacter, id: string, title: string)
 }
 
 /** 交给系统默认程序打开；网页版/内存库没有这个能力，调用前先看 externalOpenSupported */
-export async function openAttachmentExternally(path: string, reveal = false): Promise<void> {
-  const fs = getActiveVault()?.fs;
-  if (!fs?.openPath) throw new Error('当前环境不支持调用外部程序');
-  await fs.openPath(path, reveal);
+export async function openAttachmentExternally(characterId: string, id: string, reveal = false): Promise<void> {
+  return withAttachmentFile(characterId, id, async ({ ctx, path }) => {
+    if (!ctx.vault.fs.openPath) throw new Error('当前环境不支持调用外部程序');
+    try {
+      await ctx.vault.fs.openPath(path, reveal);
+    } catch (error) {
+      throwFsMutationError(error, path);
+    }
+  });
 }
 
 /** Blob → 纯 base64（与 portrait-store 同一条路：FileReader 在浏览器与 jsdom 都有） */

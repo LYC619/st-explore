@@ -59,6 +59,8 @@ export interface ImportResult {
 
 /** 写库副作用注入，测试里可换成内存实现 */
 export interface ImportSink {
+  /** 取接收端当前记录，覆盖时只提取本机所有字段 */
+  getCharacter(id: string): Promise<ArchiveCharacter | undefined>;
   saveCharacter(item: ArchiveCharacter): Promise<void>;
   saveStory(item: ArchiveStory): Promise<void>;
   saveSummary(item: SummaryItem): Promise<void>;

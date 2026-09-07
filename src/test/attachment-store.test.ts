@@ -14,6 +14,8 @@ import type { ArchiveCharacter } from '@/types/archive';
 import { setActiveVault } from '@/lib/vault/active';
 import { createMemFs } from '@/lib/vault/fs';
 import type { VaultBackend } from '@/lib/vault/vault-backend';
+import { createVault } from '@/lib/vault/vault-backend';
+import { saveCharacter } from '@/lib/archive-db';
 import {
   addAttachmentFiles,
   attachmentTier,
@@ -44,6 +46,14 @@ function mountVault() {
     pathOf: async () => CHAR_DIR,
   } as unknown as VaultBackend;
   setActiveVault(backend);
+  return { fs, trashed };
+}
+
+async function mountSavedCharacter(c: ArchiveCharacter) {
+  const fs = createMemFs();
+  const trashed: string[] = [];
+  setActiveVault(createVault({ ...fs, trashFile: async path => { trashed.push(path); await fs.removeFile(path); } }));
+  await saveCharacter(c);
   return { fs, trashed };
 }
 
@@ -105,7 +115,8 @@ describe('导入', () => {
     const { patch, ok, fail } = await addAttachmentFiles(character(), [file('攻略.html', '<p>hi</p>')]);
     expect([ok, fail]).toEqual([1, 0]);
     expect(patch.attachments).toHaveLength(1);
-    expect(patch.attachments![0].path).toBe(`${CHAR_DIR}/附件/攻略.html`);
+    expect(patch.attachments![0].path).toBe('附件/攻略.html');
+    expect(patch.attachments![0].pathBase).toBe('character');
     expect(patch.attachments![0].title).toBe('攻略.html');
     expect(await readBack(fs, `${CHAR_DIR}/附件/攻略.html`)).toBe('<p>hi</p>');
   });
@@ -158,34 +169,34 @@ describe('展示视图', () => {
 
 describe('移除与改名', () => {
   it('删附件走系统回收站，不是直接抹掉', async () => {
-    const { fs, trashed } = mountVault();
-    await fs.writeText(`${CHAR_DIR}/附件/攻略.html`, 'x');
     const c = character({
       attachments: [{ id: 'a1', title: '攻略', path: `${CHAR_DIR}/附件/攻略.html`, size: 1, addedAt: 1 }],
     });
-    const patch = await removeAttachment(c, 'a1', true);
+    const { fs, trashed } = await mountSavedCharacter(c);
+    await fs.writeText(`${CHAR_DIR}/附件/攻略.html`, 'x');
+    const patch = await removeAttachment(c.id, 'a1', true);
     expect(patch.attachments).toEqual([]);
     expect(trashed).toEqual([`${CHAR_DIR}/附件/攻略.html`]);
     expect((await fs.stat(`${CHAR_DIR}/附件/攻略.html`)).exists).toBe(false);
   });
 
   it('deleteFile=false 只撤记录，文件留在库里', async () => {
-    const { fs, trashed } = mountVault();
-    await fs.writeText(`${CHAR_DIR}/附件/攻略.html`, 'x');
     const c = character({
       attachments: [{ id: 'a1', title: '攻略', path: `${CHAR_DIR}/附件/攻略.html`, size: 1, addedAt: 1 }],
     });
-    expect((await removeAttachment(c, 'a1', false)).attachments).toEqual([]);
+    const { fs, trashed } = await mountSavedCharacter(c);
+    await fs.writeText(`${CHAR_DIR}/附件/攻略.html`, 'x');
+    expect((await removeAttachment(c.id, 'a1', false)).attachments).toEqual([]);
     expect(trashed).toEqual([]);
     expect((await fs.stat(`${CHAR_DIR}/附件/攻略.html`)).exists).toBe(true);
   });
 
-  it('文件已经不在了也照样能撤掉记录', async () => {
-    mountVault();
+  it('文件缺失时物理删除报错并保留记录', async () => {
     const c = character({
       attachments: [{ id: 'a1', title: '早没了', path: `${CHAR_DIR}/附件/早没了.mp4`, size: 1, addedAt: 1 }],
     });
-    await expect(removeAttachment(c, 'a1', true)).resolves.toMatchObject({ attachments: [] });
+    await mountSavedCharacter(c);
+    await expect(removeAttachment(c.id, 'a1', true)).rejects.toMatchObject({ code: 'not-found' });
   });
 
   it('改名只动显示名，磁盘路径不变（外部快捷方式还指着它）', () => {

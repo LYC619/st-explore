@@ -21,12 +21,12 @@ function buttonText(label: string): HTMLButtonElement | undefined {
 async function renderRail({
   uncategorizedExpanded = false,
   activeType = 'all',
-  onTypeChange = vi.fn(),
+  onTypeChange = vi.fn<(value: string) => void>(),
   railWidth,
 }: {
   uncategorizedExpanded?: boolean;
   activeType?: string;
-  onTypeChange?: ReturnType<typeof vi.fn>;
+  onTypeChange?: (value: string) => void;
   railWidth?: number;
 } = {}) {
   if (railWidth !== undefined) localStorage.setItem('ste-library-filter-width', String(railWidth));

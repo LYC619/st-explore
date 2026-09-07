@@ -42,6 +42,7 @@ import { renameArchiveStory } from '@/lib/story-rename';
 import { IMPORT_KINDS, type CharacterImportKind, type CharacterImportResult } from '@/lib/character-import';
 import { importFilesForCharacter } from '@/lib/character-import';
 import { commitCharacterPatch, type CharacterPatch } from '@/lib/character-write';
+import { isPreparedCharacterMutation } from '@/lib/character-mutation';
 import {
   buildEditorChatPath,
   buildEditorStoryPath,
@@ -148,20 +149,24 @@ const CharacterPage = () => {
     try {
       return await commitCharacterPatch(
         id,
-        async (current) => {
-          const requested = typeof patch === 'function' ? await patch(current) : patch;
+        async (current, context) => {
+          const requested = typeof patch === 'function' ? await patch(current, context) : patch;
           if (!requested) return undefined;
-          let effective = ('rating' in requested || 'tags' in requested || 'nsfw' in requested)
-            ? { ...requested, ...applyCharacterTagPatch(current, requested) }
-            : requested;
+          const prepared = isPreparedCharacterMutation(requested);
+          const requestedPatch = prepared ? requested.patch : requested;
+          let effective = ('rating' in requestedPatch || 'tags' in requestedPatch || 'nsfw' in requestedPatch)
+            ? { ...requestedPatch, ...applyCharacterTagPatch(current, requestedPatch) }
+            : requestedPatch;
           // 设类型统一走域函数，顺带清理历史误写的「类型/*」标签（与标签管理、导入两条路径一致）。
-          if ('type' in requested && requested.type) {
-            effective = { ...effective, ...applyCharacterTypePatch({ ...current, ...effective }, requested.type) };
+          if ('type' in requestedPatch && requestedPatch.type) {
+            effective = { ...effective, ...applyCharacterTypePatch({ ...current, ...effective }, requestedPatch.type) };
           }
-          return { ...effective, updatedAt: Date.now() };
+          const nextPatch = { ...effective, updatedAt: Date.now() };
+          return prepared ? { ...requested, patch: nextPatch } : nextPatch;
         },
         updateCharacter,
         setCharacter,
+        { onWarning: (report) => toast({ title: '立绘清理需要稍后重试', description: report.warnings.join('；'), variant: 'destructive' }) },
       );
     } catch (error) {
       toast({
@@ -599,9 +604,7 @@ const CharacterPage = () => {
                 onQuotesChange={async (quotes) => {
                   await patchCharacter({ quotes });
                 }}
-                onPatch={async (patch) => {
-                  await patchCharacter(patch);
-                }}
+                onPatch={patchCharacter}
                 onReadEmbedded={handleReadEmbedded}
                 onOpenImport={() => setImportOpen(true)}
               />

@@ -19,26 +19,29 @@
  */
 import type { VaultFs } from './fs';
 import { joinPath } from './fs';
+import {
+  throttleProgress,
+  throwIfAborted,
+  type STImportControls,
+} from './st-import-progress';
 import { extractCharacterFromPngBuffer, normalizeCharacterCard } from '@/lib/png-parser';
 import {
   buildCharacterFromCard,
   buildStoryFromSession,
-  getAllArchiveStories,
-  getAllCharacters,
-  saveArchiveStory,
-  updateArchiveStory,
-  saveCharacter,
+  saveArchiveStory as persistStory,
+  updateArchiveStory as updateStory,
+  saveCharacter as persistCharacter,
 } from '@/lib/archive-db';
 import { parseJsonl } from '@/lib/adapters/st/chat-jsonl';
 import { generateWorldBookId, parseWorldBook } from '@/types/worldbook';
-import { getAllWorldBooks, saveWorldBook } from '@/lib/worldbook-db';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { ChatSession, STMetadata } from '@/types/chat';
 import { parsePreset } from '@/lib/preset-parser';
 import { generatePresetId, type PresetItem } from '@/types/preset';
-import { getAllPresets, savePreset } from '@/lib/preset-db';
 import { parseSTRegexImport } from '@/lib/st-regex-interop';
-import { buildRegexCollection, getAllRegexCollections, saveRegexCollection } from '@/lib/regex-db';
+import { buildRegexCollection } from '@/lib/regex-db';
+import { getCurrentRepo } from '@/lib/repo';
+import type { RegexCollectionItem } from '@/types/regex';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
 import { getActiveVault } from '@/lib/vault/active';
 import type { ArchiveCharacter, ArchiveStory, AssetRef, STAssetRelation, UnresolvedAssetRef } from '@/types/archive';
@@ -240,11 +243,58 @@ function utf8Size(text: string): number {
 }
 
 /**
+ * 给扫描用的 fs 套一层进度/取消。
+ *
+ * 走包装而不是给 listFiles/listTreeFiles/scanArchiveDir 一路加参数：扫描里有二十多处
+ * fs 调用（含 listTreeFiles 的递归），逐处穿参既啰嗦又容易漏。包在 fs 上，
+ * 递归多深都自动覆盖到。
+ *
+ * 扫描事先不知道总量（要走多少层目录取决于包的内容），所以只报「已发现 N 个条目」，
+ * 进度条走不确定态。
+ */
+function instrumentScanFs(fs: VaultFs, controls: STImportControls): { fs: VaultFs; finish: () => void } {
+  const { onProgress, signal } = controls;
+  const { report, flush } = throttleProgress(onProgress);
+  let seen = 0;
+  return {
+    finish: () => {
+      throwIfAborted(signal);
+      flush({ phase: 'scan', done: seen, label: '完成' });
+    },
+    fs: {
+    ...fs,
+    list: async (dir: string) => {
+      throwIfAborted(signal);
+      const entries = await fs.list(dir);
+      throwIfAborted(signal);
+      seen += entries.length;
+      report({ phase: 'scan', done: seen, label: dir || '/' });
+      return entries;
+    },
+    readText: async (path: string) => {
+      throwIfAborted(signal);
+      report({ phase: 'scan', done: seen, label: path });
+      const text = await fs.readText(path);
+      throwIfAborted(signal);
+      return text;
+    },
+    },
+  };
+}
+
+/**
  * 扫描 ST 用户目录，返回结构化清单。
  * fs 以用户所选目录为根；三个子目录（characters/chats/worlds）都不在、
  * 但存在 data/default-user 时视为选中了 ST 安装根目录，自动下钻。
+ *
+ * controls.signal 置位时抛 STImportAbortedError。扫描阶段还没写过任何东西，
+ * 取消就是干净退出，调用方只需清掉临时目录。
  */
-export async function scanSTUserDir(fs: VaultFs): Promise<STScanResult> {
+export async function scanSTUserDir(
+  rawFs: VaultFs,
+  controls: STImportControls = {},
+): Promise<STScanResult> {
+  const { fs, finish } = instrumentScanFs(rawFs, controls);
   let userDir = '';
   const warnings: STScanWarning[] = [];
   const warned = new Set<string>();
@@ -367,6 +417,7 @@ export async function scanSTUserDir(fs: VaultFs): Promise<STScanResult> {
         characterWorldbooks,
       };
     } catch (err) {
+      throwIfAborted(controls.signal);
       relationships = { status: 'invalid', settingsPath, globalWorldbooks: [], characterWorldbooks: [] };
       console.warn(`[st-import] settings.json 解析失败，跳过世界书关系与全局正则:`, err);
     }
@@ -538,6 +589,7 @@ export async function scanSTUserDir(fs: VaultFs): Promise<STScanResult> {
       files: userMediaFiles,
     });
   }
+  finish();
   return { userDir, characters, strayChats, worldbooks, presets, regex, archives, relationships, warnings };
 }
 
@@ -600,6 +652,11 @@ export interface STImportSummary {
   /** 用户可核对的逐项结果；完整副本同时写入库内最近一次导入清单。 */
   details: STImportDetail[];
   scanWarnings: STScanWarning[];
+  /**
+   * 用户中途取消。入库无法回滚（角色/故事已进 IndexedDB、资产已落盘），
+   * 所以这里是「已完成的部分保留，剩下的没开始」，不是「什么都没发生」。
+   */
+  aborted?: boolean;
 }
 
 /** ST 绝对来源路径：所选根（去尾部分隔符）+ '/' + 相对路径，与 createTauriFs 实际读的路径一致 */
@@ -699,11 +756,52 @@ STE 只读取 SillyTavern 来源目录，导入不会移动、删除或改写来
 群组、群聊、其他模型后端预设和向量索引目前尚未转换为 STE 业务对象。快速回复、Persona、主题和媒体已作为可还原的安全归档保存，但尚无专用编辑器。密钥文件不进入导入范围；角色卡和聊天中的未知字段仍随原始数据保留。
 `;
 
+/** 入库阶段的进度分母：用户能在勾选界面上数出来的那些条目。 */
+function countImportUnits(plan: STImportPlan): number {
+  const archiveFiles = (plan.archives ?? []).reduce(
+    (sum, group) => sum + group.files.length + (group.generatedFiles?.length ?? 0),
+    0,
+  );
+  const characterChats = plan.characters.reduce((sum, character) => sum + character.chats.length, 0);
+  return plan.worldbooks.length
+    + plan.characters.length + characterChats
+    + plan.strayChats.length
+    + plan.presets.length
+    + (plan.regex ? 1 : 0)
+    + archiveFiles;
+}
+
 /**
  * 按勾选项执行导入。写入走 archive-db / worldbook-db 的保存入口
  * （createRepo 惰性代理：客户端落文件库，vitest 里 setActiveVault(内存库) 即可验证）。
+ *
+ * controls.signal 置位时在下一个条目边界停下，返回已完成部分的 summary 并置
+ * `aborted`。**不回滚**——写进 IndexedDB 的角色故事和落了盘的资产都留着，
+ * 中途取消的语义是「停在这里」而不是「当作没发生」。
  */
-export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise<STImportSummary> {
+export async function importSelected(
+  stFs: VaultFs,
+  plan: STImportPlan,
+  controls: STImportControls = {},
+): Promise<STImportSummary> {
+  const destination = getActiveVault();
+  const vaultFs = destination?.fs;
+  const characterRepo = getCurrentRepo<ArchiveCharacter>('characters');
+  const storyRepo = getCurrentRepo<ArchiveStory>('archiveStories');
+  const worldbookRepo = getCurrentRepo<WorldBookItem>('worldbooks');
+  const presetRepo = getCurrentRepo<PresetItem>('presets');
+  const regexRepo = getCurrentRepo<RegexCollectionItem>('regexes');
+  const getAllCharacters = () => characterRepo.list();
+  const getAllArchiveStories = () => storyRepo.list();
+  const getAllWorldBooks = () => worldbookRepo.list();
+  const getAllPresets = () => presetRepo.list();
+  const getAllRegexCollections = () => regexRepo.list();
+  const saveCharacter = (item: ArchiveCharacter) => persistCharacter(item, characterRepo);
+  const saveArchiveStory = (item: ArchiveStory) => persistStory(item, storyRepo);
+  const updateArchiveStory = (id: string, updater: Parameters<typeof updateStory>[1]) => updateStory(id, updater, storyRepo);
+  const saveWorldBook = (item: WorldBookItem) => worldbookRepo.put(item);
+  const savePreset = (item: PresetItem) => presetRepo.put(item);
+  const saveRegexCollection = (item: RegexCollectionItem) => regexRepo.put(item);
   const summary: STImportSummary = {
     characters: 0,
     stories: 0,
@@ -721,16 +819,38 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
   };
   const detail = (item: STImportDetail) => summary.details.push(item);
 
+  const totalUnits = countImportUnits(plan);
+  const { report, flush } = throttleProgress(controls.onProgress);
+  let doneUnits = 0;
+  /** 走完一个条目：推进进度。放在每个循环体末尾，失败项也算走过。 */
+  const step = (label: string) => {
+    doneUnits++;
+    report({ phase: 'import', done: doneUnits, total: totalUnits, label });
+  };
+  /**
+   * 循环头部的取消闸。一旦置位就记进 summary，后面所有循环靠 summary.aborted 一路短路，
+   * 免得把 400 行函数体整个包进 try/catch 只为了抛一个异常。
+   */
+  const stopRequested = () => {
+    if (summary.aborted) return true;
+    if (!controls.signal?.aborted && getActiveVault() === destination) return false;
+    summary.aborted = true;
+    return true;
+  };
+  report({ phase: 'import', done: 0, total: totalUnits, label: '准备写入' });
+
   // 独立世界书必须先入库，角色卡与聊天随后才能把名称解析为稳定 id。
   const existingWorldbooks = await getAllWorldBooks();
   const wbSources = new Set(existingWorldbooks.map((w) => sourcePathKey(w.sourcePath)).filter(Boolean));
   const worldbooks = [...existingWorldbooks];
   for (const wb of plan.worldbooks) {
+    if (stopRequested()) break;
     const src = sourcePathOf(plan.stRoot, wb.path);
     const srcKey = sourcePathKey(src);
     if (wbSources.has(srcKey)) {
       summary.skipped++;
       detail({ status: 'skipped', kind: '世界书', name: wb.name, sourcePath: src });
+      step(wb.name);
       continue;
     }
     try {
@@ -755,6 +875,7 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
       summary.failed++;
       detail({ status: 'failed', kind: '世界书', name: wb.name, sourcePath: src });
     }
+    step(wb.name);
   }
 
   const normalizedRoot = plan.stRoot.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
@@ -794,7 +915,9 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
   };
 
   // settings.json 全局世界书没有角色所有者，标记在世界书资产本身。
-  if (plan.relationships?.status === 'parsed' && plan.relationships.settingsPath) {
+  // 关系重整是「全有或全无」的一致性单元，中途断开会留下半整理的关联，
+  // 所以只在进入前查一次取消，进来了就整段跑完（纯内存 + 少量写，很快）。
+  if (!stopRequested() && plan.relationships?.status === 'parsed' && plan.relationships.settingsPath) {
     const settingsSource = sourcePathOf(plan.stRoot, plan.relationships.settingsPath);
     const selectedGlobal = new Set(plan.relationships.globalWorldbooks.map(normalizedAssetName));
     for (const book of worldbooks) {
@@ -979,6 +1102,7 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
 
   // 角色卡（先导卡拿到 id，聊天才有绑定目标）
   for (const c of plan.characters) {
+    if (stopRequested()) break;
     const src = sourcePathOf(plan.stRoot, c.pngPath);
     const srcKey = sourcePathKey(src);
     let character = charBySource.get(srcKey);
@@ -1009,7 +1133,7 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
         character = buildCharacterFromCard(card, base64);
         character.sourcePath = src;
         // 卡内嵌世界书/正则自动入库并挂关联（阶段9.5）
-        const refs = await importEmbeddedAssets(character);
+        const refs = await importEmbeddedAssets(character, { repositories: { worldbooks: worldbookRepo, regexes: regexRepo } });
         if (refs.length > 0) {
           character.assets = refs.map((ref) => ({ ...ref, relations: ['embedded'] }));
           for (const ref of refs) detail({ status: 'linked', kind: ref.kind === 'worldbook' ? '内嵌世界书' : '内嵌正则', name: character.name, target: ref.assetId });
@@ -1026,19 +1150,31 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
         detail({ status: 'failed', kind: '角色卡', name: c.name, sourcePath: src });
       }
     }
-    for (const chat of c.chats) await importChat(chat, c.name, charId);
+    step(c.name);
+    // 角色卡自身取消后，名下聊天不再继续；已导入的卡保留。
+    for (const chat of c.chats) {
+      if (stopRequested()) break;
+      await importChat(chat, c.name, charId);
+      step(chat.name);
+    }
   }
 
   // 散聊天：未绑定故事（落 临时/）
-  for (const chat of plan.strayChats) await importChat(chat, 'Character');
+  for (const chat of plan.strayChats) {
+    if (stopRequested()) break;
+    await importChat(chat, 'Character');
+    step(chat.name);
+  }
 
   // 预设（OpenAI Settings 聊天补全预设）
   for (const p of plan.presets) {
+    if (stopRequested()) break;
     const src = sourcePathOf(plan.stRoot, p.path);
     const srcKey = sourcePathKey(src);
     if (presetSources.has(srcKey)) {
       summary.skipped++;
       detail({ status: 'skipped', kind: '预设', name: p.name, sourcePath: src });
+      step(p.name);
       continue;
     }
     try {
@@ -1062,10 +1198,11 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
       summary.failed++;
       detail({ status: 'failed', kind: '预设', name: p.name, sourcePath: src });
     }
+    step(p.name);
   }
 
   // 全局正则：settings.json → extensions.regex，整组导入为一套规则集
-  if (plan.regex) {
+  if (!stopRequested() && plan.regex) {
     const src = sourcePathOf(plan.stRoot, plan.regex.path);
     const srcKey = sourcePathKey(src);
     if (regexSources.has(srcKey)) {
@@ -1088,12 +1225,14 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
         detail({ status: 'failed', kind: '全局正则', name: 'ST 全局正则', sourcePath: src });
       }
     }
+    step('ST 全局正则');
   }
 
   // 其他资产不执行扩展代码；原文件做二进制归档，选择性设置以安全文本清单归档。
-  const vaultFs = getActiveVault()?.fs;
   for (const group of plan.archives ?? []) {
+    if (stopRequested()) break;
     for (const file of group.files) {
+      if (stopRequested()) break;
       const src = sourcePathOf(plan.stRoot, file.path);
       const target = joinPath('资产/其他/SillyTavern', group.kind, file.relativePath);
       try {
@@ -1107,8 +1246,10 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
         summary.failed++;
         detail({ status: 'failed', kind: group.label, name: file.relativePath, sourcePath: src, target });
       }
+      step(file.relativePath);
     }
     for (const file of group.generatedFiles ?? []) {
+      if (stopRequested()) break;
       const src = sourcePathOf(plan.stRoot, file.sourcePath ?? group.rootPath);
       const target = joinPath('资产/其他/SillyTavern', group.kind, file.relativePath);
       try {
@@ -1122,6 +1263,7 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
         summary.failed++;
         detail({ status: 'failed', kind: group.label, name: file.relativePath, sourcePath: src, target });
       }
+      step(file.relativePath);
     }
   }
 
@@ -1131,6 +1273,8 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
       0,
     ) ?? 0)
     + (plan.relationships?.status === 'parsed' ? 1 : 0) > 0;
+  // 取消时也要写清单：它记的是「这次实际发生了什么」，半截导入更需要留痕。
+  stopRequested();
   if (vaultFs && selectedAnything) {
     try {
       const guidePath = '说明/SillyTavern 导入说明.md';
@@ -1148,5 +1292,11 @@ export async function importSelected(stFs: VaultFs, plan: STImportPlan): Promise
     }
   }
 
+  flush({
+    phase: 'import',
+    done: doneUnits,
+    total: totalUnits,
+    label: summary.aborted ? '已停止' : '完成',
+  });
   return summary;
 }

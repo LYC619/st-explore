@@ -1,5 +1,4 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { GuidedTour } from '@/components/GuidedTour';
 import { AppLayout } from '@/components/AppLayout';
@@ -24,7 +23,7 @@ import { buildWorldBookSaveItem } from '@/lib/asset-save-record';
 import { getCharacter } from '@/lib/archive-db';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
 import { executeDeleteAction } from '@/lib/destructive-action';
-import { takePendingToolFile, peekPendingToolFile } from '@/lib/tool-handoff';
+import { takePendingToolFile } from '@/lib/tool-handoff';
 import { estimateTokens } from '@/lib/preset-parser';
 import { useToast } from '@/hooks/use-toast';
 import { useWorldBookDraftState } from '@/hooks/use-worldbook-draft-state';
@@ -33,7 +32,8 @@ import { useEntryFilters } from '@/hooks/use-entry-filters';
 import { useBatchSelection } from '@/hooks/use-batch-selection';
 import { useWorldbookEntries } from '@/hooks/use-worldbook-entries';
 import { ToastAction } from '@/components/ui/toast';
-import { readWorldBookUpload } from '@/lib/worldbook-file-import';
+import { readWorldBookUpload, type WorldBookUpload } from '@/lib/worldbook-file-import';
+import { useAssetIdentityNavigation } from '@/hooks/use-asset-identity-navigation';
 
 const undoAction = (undo: () => void) => <ToastAction altText="撤销" onClick={undo}>撤销</ToastAction>;
 
@@ -49,9 +49,7 @@ export default function WorldBookPage() {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   // 角色上下文（角色页关联资产区「处理」进来）：保存走写时复制（定稿第七章）
-  const [searchParams] = useSearchParams();
-  const cowCharacterId = searchParams.get('characterId') ?? undefined;
-  const initialAssetId = searchParams.get('assetId');
+  const [cowCharacterId, setCowCharacterId] = useState<string | undefined>();
   const [cowCharacterName, setCowCharacterName] = useState('');
 
   const restored = useRestoredWbSession();
@@ -118,73 +116,79 @@ export default function WorldBookPage() {
     };
   }, [worldbook, tokenStats, controls.hasFilters, filteredEntries.length, allEntries.length, filename]);
 
-  // Auto-restore from IndexedDB on mount, or pick up AI-generated worldbook
-  useEffect(() => {
-    // 角色上下文：加载角色名（写时复制的副本命名用）
-    if (cowCharacterId) {
-      getCharacter(cowCharacterId).then(c => setCowCharacterName(c?.name ?? '')).catch(() => {});
-    }
-
-    // Check for AI-generated worldbook import
-    const aiImport = sessionStorage.getItem('ai-worldbook-import');
-    if (aiImport) {
-      sessionStorage.removeItem('ai-worldbook-import');
-      try {
-        const parsed = JSON.parse(aiImport);
-        if (parsed && parsed.entries) {
-          setWorldbook(parsed);
-          setFilename('AI 提取的世界书');
-          toast({ title: '已导入 AI 生成的世界书数据' });
-          return;
-        }
-      } catch { /* ignore */ }
-    }
-
-    // URL 指定资产（角色页「处理」直达）：优先于自动恢复
-    if (initialAssetId) {
-      Promise.all([getWorldBook(initialAssetId), getAllWorldBooks()]).then(([item, items]) => {
-        setSavedItems(items);
-        setSavedLoaded(true);
-        if (item) {
-          hydrateWorldbook(item.worldbook);
-          setFilename(item.title);
-          setCurrentItemId(item.id);
-        } else {
-          // 深链指向已删资产：以前什么都不发生，用户只看到一个空编辑器
-          toast({
-            title: '找不到这个世界书',
-            description: '它可能已经被删除。当前是空白编辑器，不会覆盖任何已有资产。',
-            variant: 'destructive',
-          });
-        }
-      }).catch((error: unknown) => {
-        setSavedLoaded(true);
-        setSavedLoadError(error instanceof Error ? error.message : '无法读取世界书库');
-      });
-      return;
-    }
-
-    // 处理区交接了文件时不自动恢复最近世界书——两个异步 setWorldbook 会竞态互相覆盖
-    const hasHandoff = peekPendingToolFile('worldbook');
-    getAllWorldBooks().then(items => {
-      setSavedItems(items);
-      setSavedLoaded(true);
-      if (items.length > 0 && !worldbook && !hasHandoff) {
-        const latest = items[0]; // already sorted by updatedAt desc
-        hydrateWorldbook(latest.worldbook);
-        setFilename(latest.title);
-        setCurrentItemId(latest.id);
+  // Cache consumed handoffs so StrictMode can retry initialization without losing the file.
+  const initialImport = useRef<Promise<(WorldBookUpload & { autoSave: boolean }) | null> | null>(null);
+  const {
+    pendingTarget, confirmPending, cancelPending, captureCurrent, acceptLocalAsset,
+  } = useAssetIdentityNavigation({
+    isDirty,
+    load: async (identity, { initial, isCurrent }) => {
+      if (initial && !identity.assetId && !initialImport.current) {
+        const handoff = takePendingToolFile('worldbook');
+        const aiImport = sessionStorage.getItem('ai-worldbook-import');
+        sessionStorage.removeItem('ai-worldbook-import');
+        let aiWorldbook: WorldBook | null = null;
+        try {
+          const parsed = aiImport ? JSON.parse(aiImport) : null;
+          if (parsed?.entries) aiWorldbook = parsed;
+        } catch { /* ignore invalid AI handoff */ }
+        initialImport.current = handoff ? readWorldBookUpload(handoff).then((upload) => ({ ...upload, autoSave: true })) : Promise.resolve(
+          aiWorldbook ? { worldbook: aiWorldbook, title: 'AI 提取的世界书', autoSave: false } : null,
+        );
       }
-    }).catch((error: unknown) => {
+      const [item, character, items, imported] = await Promise.all([
+        identity.assetId ? getWorldBook(identity.assetId) : null,
+        identity.characterId ? getCharacter(identity.characterId) : null,
+        getAllWorldBooks().catch((error: unknown) => {
+          if (isCurrent()) setSavedLoadError(error instanceof Error ? error.message : '无法读取世界书库');
+          return [];
+        }),
+        initial && !identity.assetId ? initialImport.current : null,
+      ]);
+      if (isCurrent()) {
+        setSavedItems(item && !items.some((saved) => saved.id === item.id) ? [item, ...items] : items);
+        setSavedLoaded(true);
+      }
+      if (identity.assetId && !item) throw new Error('找不到这个世界书，它可能已经被删除');
+      return {
+        item: item ?? (initial && !identity.assetId && !restored && !imported ? items[0] ?? null : null),
+        characterName: character?.name ?? '',
+        preserveSession: initial && !identity.assetId && !!restored,
+        imported,
+      };
+    },
+    accept: (target, identity) => {
+      if (!target.preserveSession || target.item) {
+        hydrateWorldbook(target.item?.worldbook ?? null);
+        setFilename(target.item?.title ?? 'worldbook');
+        setCurrentItemId(target.item?.id ?? null);
+      }
+      setSelectedUid(null);
+      setMobileEditorOpen(false);
+      setCowCharacterId(identity.characterId ?? undefined);
+      setCowCharacterName(target.characterName);
+      setConfirmLoadItem(null);
+      setStagedDialogOpen(false);
+      if (target.imported?.autoSave) {
+        handleImport(target.imported.worldbook, target.imported.title, target.imported.sourceModifiedAt);
+      } else if (target.imported) {
+        setWorldbook(target.imported.worldbook);
+        setFilename(target.imported.title);
+        toast({ title: '已导入 AI 生成的世界书数据' });
+      }
+    },
+    onError: (error) => {
       setSavedLoaded(true);
-      setSavedLoadError(error instanceof Error ? error.message : '无法读取世界书库');
-    });
+      toast({ title: '载入世界书失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+    },
+  });
+
+  useEffect(() => {
     if (!isTourCompleted('worldbook')) {
       const timer = setTimeout(() => setShowTour(true), 500);
       return () => clearTimeout(timer);
     }
-    return undefined;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const selectEntry = useCallback((key: string) => {
     setSelectedUid(key);
@@ -208,13 +212,17 @@ export default function WorldBookPage() {
   });
 
   const handleImport = useCallback((wb: WorldBook, name: string, sourceModifiedAt?: number) => {
-    setWorldbook(wb);
-    setFilename(name);
-    setSelectedUid(null);
-    setActiveTab('edit');
+    const id = generateWorldBookId();
+    acceptLocalAsset(id, () => {
+      setCurrentItemId(id);
+      setWorldbook(wb);
+      setFilename(name);
+      setSelectedUid(null);
+      setActiveTab('edit');
+    });
+    const isCurrent = captureCurrent();
     // 自动保留为导入历史（autoSaved），并裁剪到最近 5 份
     (async () => {
-      const id = generateWorldBookId();
       const now = Date.now();
       await saveWorldBook({
         id,
@@ -225,31 +233,16 @@ export default function WorldBookPage() {
         autoSaved: true,
         ...(sourceModifiedAt === undefined ? {} : { sourceModifiedAt }),
       });
-      setCurrentItemId(id);
       await pruneAutoSavedWorldBooks(5);
-      setSavedItems(await getAllWorldBooks());
+      if (!isCurrent()) return;
+      const items = await getAllWorldBooks();
+      if (isCurrent()) setSavedItems(items);
     })().catch(() => { /* 自动历史失败不阻塞导入 */ });
-  }, [setWorldbook]);
-
-  // 处理区入口交接来的文件：走与导入按钮相同的解析入库流程（只消费一次）
-  const handoffConsumedRef = useRef(false);
-  useEffect(() => {
-    if (handoffConsumedRef.current) return;
-    handoffConsumedRef.current = true;
-    const file = takePendingToolFile('worldbook');
-    if (!file) return;
-    const fail = () => toast({ title: '导入失败', description: '无法解析为世界书 JSON', variant: 'destructive' });
-    readWorldBookUpload(file).then((upload) => {
-      try {
-        const count = Object.keys(upload.worldbook.entries).length;
-        handleImport(upload.worldbook, upload.title, upload.sourceModifiedAt);
-        toast({ title: '导入成功', description: `已加载 ${count} 个条目` });
-      } catch { fail(); }
-    }).catch(fail);
-  }, [handleImport, toast]);
+  }, [setWorldbook, captureCurrent, acceptLocalAsset]);
 
   const handleSaveLocal = useCallback(async () => {
     if (!worldbook) return;
+    const isCurrent = captureCurrent();
     const now = Date.now();
     const base = currentItemId ? savedItems.find(s => s.id === currentItemId) : undefined;
 
@@ -267,6 +260,7 @@ export default function WorldBookPage() {
         save: saveWorldBook,
         now,
       }).catch((error: unknown) => {
+        if (!isCurrent()) return null;
         // 重读失败 / 资产已被删除 / 落库失败：说清楚并中止，草稿仍在编辑器里
         toast({
           title: '保存失败',
@@ -275,7 +269,7 @@ export default function WorldBookPage() {
         });
         return null;
       });
-      if (!result) return;
+      if (!result || !isCurrent()) return;
       // 原地更新时 result.title 就是 filename，这行是空操作
       setFilename(result.title);
       if (result.action === 'update') {
@@ -287,7 +281,8 @@ export default function WorldBookPage() {
       }
       setCurrentItemId(result.targetId);
       markWorldbookClean(worldbook);
-      setSavedItems(await getAllWorldBooks());
+      const items = await getAllWorldBooks();
+      if (isCurrent()) setSavedItems(items);
       return;
     }
 
@@ -306,18 +301,22 @@ export default function WorldBookPage() {
         const updatedCharacter = await updateCharacterAssetReference(cowCharacterId, 'worldbook', id, id, now);
         if (!updatedCharacter) throw new Error('资产已保存，但角色引用切换失败：角色可能已被删除');
       }
+      if (!isCurrent()) return;
       setCurrentItemId(id);
       markWorldbookClean(worldbook);
-      setSavedItems(await getAllWorldBooks());
+      const items = await getAllWorldBooks();
+      if (!isCurrent()) return;
+      setSavedItems(items);
       toast({ title: '已保存', description: '永久留存，不会被自动清理' });
     } catch (error: unknown) {
+      if (!isCurrent()) return;
       toast({
         title: '保存失败',
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
     }
-  }, [worldbook, filename, currentItemId, savedItems, cowCharacterId, cowCharacterName, toast, markWorldbookClean]);
+  }, [worldbook, filename, currentItemId, savedItems, cowCharacterId, cowCharacterName, toast, markWorldbookClean, captureCurrent]);
 
   // Ctrl+S / Cmd+S to save (declared after handleSaveLocal to avoid TDZ)
   useEffect(() => {
@@ -339,54 +338,79 @@ export default function WorldBookPage() {
   // 条目跨书复制/转移（阶段9.8 余项）：目标=资产库里另一本世界书，直接落库；
   // 「转移」再从当前书移除（当前书走正常 dirty→手动保存流程）
   const handleBatchCopyTo = useCallback(async (targetId: string, move: boolean) => {
+    const isCurrent = captureCurrent();
     const entries = batch.selectedEntries();
     if (entries.length === 0) return;
     try {
       const target = await getWorldBook(targetId);
       if (!target) {
-        toast({ title: '目标世界书不存在', description: '可能刚被删除，请刷新后重试', variant: 'destructive' });
+        if (isCurrent()) toast({ title: '目标世界书不存在', description: '可能刚被删除，请刷新后重试', variant: 'destructive' });
         return;
       }
       await saveWorldBook({ ...target, worldbook: appendEntries(target.worldbook, entries), updatedAt: Date.now() });
-      setSavedItems(await getAllWorldBooks());
+      if (!isCurrent()) return;
+      const items = await getAllWorldBooks();
+      if (!isCurrent()) return;
+      setSavedItems(items);
       if (move) batch.removeSelected();
       toast({
         title: move ? '已转移' : '已复制',
         description: `${entries.length} 个条目 → 「${target.title}」${move ? '（当前书的移除记得保存）' : '，原条目保留'}`,
       });
     } catch {
+      if (!isCurrent()) return;
       toast({ title: move ? '转移失败' : '复制失败', variant: 'destructive' });
     }
-  }, [batch, toast]);
+  }, [batch, toast, captureCurrent]);
 
   const doLoadStaged = useCallback((item: WorldBookItem) => {
-    hydrateWorldbook(item.worldbook);
-    setFilename(item.title);
-    setCurrentItemId(item.id);
-    setSelectedUid(null);
-    setStagedDialogOpen(false);
-    setConfirmLoadItem(null);
+    acceptLocalAsset(item.id, () => {
+      hydrateWorldbook(item.worldbook);
+      setFilename(item.title);
+      setCurrentItemId(item.id);
+      setSelectedUid(null);
+      setStagedDialogOpen(false);
+      setConfirmLoadItem(null);
+    });
     toast({ title: '已加载', description: `已加载「${item.title}」` });
-  }, [hydrateWorldbook, toast]);
+  }, [hydrateWorldbook, toast, acceptLocalAsset]);
 
   const handleLoadStaged = useCallback((item: WorldBookItem) => {
     if (isDirty) setConfirmLoadItem(item);
     else doLoadStaged(item);
   }, [isDirty, doLoadStaged]);
 
+  const refreshSavedItems = useCallback(async () => {
+    const isCurrent = captureCurrent();
+    setSavedLoadError(null);
+    setSavedLoaded(false);
+    try {
+      const items = await getAllWorldBooks();
+      if (isCurrent()) setSavedItems(items);
+    } catch (error: unknown) {
+      if (isCurrent()) setSavedLoadError(error instanceof Error ? error.message : '无法读取世界书库');
+    } finally {
+      if (isCurrent()) setSavedLoaded(true);
+    }
+  }, [captureCurrent]);
+
   const handleDeleteStaged = useCallback(async () => {
     if (!deleteTarget) return;
+    const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
       await deleteWorldBook(target.id);
-      setSavedItems(await getAllWorldBooks());
+      if (!isCurrent()) return;
+      const items = await getAllWorldBooks();
+      if (!isCurrent()) return;
+      setSavedItems(items);
       if (currentItemId === target.id) setCurrentItemId(null);
     }, {
-      onSuccess: () => toast({ title: `已删除世界书「${target.title}」` }),
-      onFailure: () => toast({ title: '删除世界书失败', variant: 'destructive' }),
+      onSuccess: () => { if (isCurrent()) toast({ title: `已删除世界书「${target.title}」` }); },
+      onFailure: () => { if (isCurrent()) toast({ title: '删除世界书失败', variant: 'destructive' }); },
     });
-    if (deleted) setDeleteTarget(null);
-  }, [currentItemId, deleteTarget, toast]);
+    if (deleted && isCurrent()) setDeleteTarget(null);
+  }, [currentItemId, deleteTarget, toast, captureCurrent]);
 
   return (
     <AppLayout>
@@ -404,22 +428,27 @@ export default function WorldBookPage() {
           savedItems={savedItems}
           stagedDialogOpen={stagedDialogOpen}
           onStagedDialogOpenChange={setStagedDialogOpen}
-          onRefreshStaged={() => { getAllWorldBooks().then(setSavedItems).catch(() => {}); }}
+          onRefreshStaged={refreshSavedItems}
           onLoadStaged={handleLoadStaged}
           onDeleteStaged={setDeleteTarget}
           onSave={handleSaveLocal}
         >
-          <AlertDialog open={!!confirmLoadItem} onOpenChange={(open) => !open && setConfirmLoadItem(null)}>
+          <AlertDialog open={!!confirmLoadItem || !!pendingTarget} onOpenChange={(open) => {
+            if (!open) { cancelPending(); setConfirmLoadItem(null); }
+          }}>
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>确认切换</AlertDialogTitle>
                 <AlertDialogDescription>
-                  当前编辑中的世界书将被替换为「{confirmLoadItem?.title}」，还没保存的修改将丢失。是否继续？
+                  当前编辑中的世界书将被替换为「{pendingTarget ? pendingTarget.data.item?.title ?? '空白世界书' : confirmLoadItem?.title}」，还没保存的修改将丢失。是否继续？
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={() => confirmLoadItem && doLoadStaged(confirmLoadItem)}>
+                <AlertDialogAction onClick={() => {
+                  if (pendingTarget) confirmPending();
+                  else if (confirmLoadItem) doLoadStaged(confirmLoadItem);
+                }}>
                   确认加载
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -450,22 +479,9 @@ export default function WorldBookPage() {
                 savedItems={savedItems}
                 savedLoaded={savedLoaded}
                 loadError={savedLoadError}
-                onRetry={() => {
-                  setSavedLoadError(null);
-                  setSavedLoaded(false);
-                  getAllWorldBooks()
-                    .then((items) => { setSavedItems(items); setSavedLoaded(true); })
-                    .catch((error: unknown) => {
-                      setSavedLoaded(true);
-                      setSavedLoadError(error instanceof Error ? error.message : '无法读取世界书库');
-                    });
-                }}
+                onRetry={refreshSavedItems}
                 onImport={handleImport}
-                onRestore={(item) => {
-                  hydrateWorldbook(item.worldbook);
-                  setFilename(item.title);
-                  setCurrentItemId(item.id);
-                }}
+                onRestore={handleLoadStaged}
                 onDelete={setDeleteTarget}
               />
             ) : (

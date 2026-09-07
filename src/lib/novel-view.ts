@@ -81,6 +81,33 @@ export interface NovelBookmark {
   pageIndex: number;
 }
 
+export interface NovelLocation {
+  blockIndex: number;
+  offset: number;
+}
+
+export interface LocatedNovelPage extends NovelPage {
+  startLocation: NovelLocation;
+  endLocation: NovelLocation;
+}
+
+export function clampNovelLocation(location: NovelLocation, blockLengths: readonly number[]): NovelLocation {
+  if (blockLengths.length === 0) return { blockIndex: 0, offset: 0 };
+  const index = Number.isFinite(location.blockIndex) ? Math.trunc(location.blockIndex) : 0;
+  const blockIndex = Math.max(0, Math.min(index, blockLengths.length - 1));
+  const offset = Number.isFinite(location.offset) ? Math.trunc(location.offset) : 0;
+  return { blockIndex, offset: Math.max(0, Math.min(offset, blockLengths[blockIndex])) };
+}
+
+export function findPageForNovelLocation(pages: readonly LocatedNovelPage[], location: NovelLocation): number {
+  for (let index = pages.length - 1; index >= 0; index--) {
+    const start = pages[index].startLocation;
+    if (start.blockIndex < location.blockIndex
+      || (start.blockIndex === location.blockIndex && start.offset <= location.offset)) return index;
+  }
+  return 0;
+}
+
 // ---------- 楼内拆句重排 ----------
 
 /** 中英引号对（开→闭）。直引号 " 成对出现按顺序配对 */
@@ -323,14 +350,23 @@ function splitTextForPage(text: string, maxChars: number): TextPageSplit {
 export function paginateNovelDocument(
   chapters: NovelChapter[],
   maxWeight = DEFAULT_PAGE_WEIGHT,
-): NovelPage[] {
+): LocatedNovelPage[] {
   const limit = Math.max(1, maxWeight);
-  const pages: NovelPage[] = [];
+  const pages: LocatedNovelPage[] = [];
+  let sourceBlockIndex = 0;
 
   chapters.forEach((chapter, chapterIndex) => {
     let pageBlocks: NovelBlock[] = [];
     let pageWeight = 0;
     let pageNumber = 0;
+    let startLocation: NovelLocation = { blockIndex: sourceBlockIndex, offset: 0 };
+    let endLocation = startLocation;
+    const append = (block: NovelBlock, blockIndex: number, offset: number) => {
+      if (pageBlocks.length === 0) startLocation = { blockIndex, offset };
+      endLocation = { blockIndex, offset: offset + block.text.length };
+      pageBlocks.push(block);
+      pageWeight += blockWeight(block);
+    };
     const flush = () => {
       if (pageBlocks.length === 0) return;
       pages.push({
@@ -340,6 +376,8 @@ export function paginateNovelDocument(
         startFloor: pageBlocks[0].floor,
         endFloor: pageBlocks[pageBlocks.length - 1].floor,
         blocks: pageBlocks,
+        startLocation,
+        endLocation,
       });
       pageBlocks = [];
       pageWeight = 0;
@@ -347,15 +385,16 @@ export function paginateNovelDocument(
     };
 
     for (const block of chapter.blocks) {
+      const blockIndex = sourceBlockIndex++;
       if (block.type === 'scene-break') {
         const weight = blockWeight(block);
         if (pageBlocks.length > 0 && pageWeight + weight > limit) flush();
-        pageBlocks.push(block);
-        pageWeight += weight;
+        append(block, blockIndex, 0);
         continue;
       }
 
       let remaining = block.text;
+      let sourceOffset = 0;
       let continued = Boolean(block.continuedFromPrevious);
       while (remaining.length > 0) {
         let available = Math.max(0, limit - pageWeight - BLOCK_SPACING_WEIGHT);
@@ -374,8 +413,7 @@ export function paginateNovelDocument(
             text: remaining,
             continuedFromPrevious: continued || undefined,
           };
-          pageBlocks.push(nextBlock);
-          pageWeight += blockWeight(nextBlock);
+          append(nextBlock, blockIndex, sourceOffset);
           remaining = '';
           continue;
         }
@@ -394,8 +432,8 @@ export function paginateNovelDocument(
           text: split.head,
           continuedFromPrevious: continued || undefined,
         };
-        pageBlocks.push(nextBlock);
-        pageWeight += blockWeight(nextBlock);
+        append(nextBlock, blockIndex, sourceOffset);
+        sourceOffset += split.head.length;
         remaining = split.tail;
         continued = true;
         flush();

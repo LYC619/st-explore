@@ -15,7 +15,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { AlertTriangle, File, FileVideo, Loader2 } from 'lucide-react';
 import type { AttachmentView } from '@/lib/attachment-store';
 import { isMediaAttachment } from '@/lib/attachment-store';
-import { getActiveVault } from '@/lib/vault/active';
+import { readAttachment } from '@/lib/attachment-store';
 import { formatArchiveBytes, imageMimeType } from '@/lib/vault/other-assets';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 import { cn } from '@/lib/utils';
@@ -33,8 +33,6 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
 
   useEffect(() => {
     if (file.missing || file.tier === 'external') return;
-    const fs = getActiveVault()?.fs;
-    if (!fs) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -42,14 +40,16 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
 
     void (async () => {
       try {
-        if (file.tier === 'image') {
-          const base64 = await fs.readBinary(file.path);
-          if (!cancelled) setContent({ imageUrl: `data:${imageMimeType(file.path)};base64,${base64}` });
+        const result = await readAttachment(file.characterId, file.id);
+        if (result.tier === 'image') {
+          if (!cancelled && result.base64 !== undefined) {
+            setContent({ imageUrl: `data:${imageMimeType(result.fileName)};base64,${result.base64}` });
+          }
           return;
         }
-        const raw = await fs.readText(file.path);
+        const raw = result.text ?? '';
         if (cancelled) return;
-        if (file.tier === 'json') {
+        if (result.tier === 'json') {
           try {
             setContent({ text: JSON.stringify(JSON.parse(raw) as unknown, null, 2) });
           } catch {
@@ -71,7 +71,7 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
   if (file.missing) {
     return (
       <Notice tone="warn" icon={AlertTriangle} title="文件不在库里了">
-        记录还留着。文件可能被挪走或改名了，放回 <span className="font-mono break-all">{file.path}</span> 就会恢复；
+        记录还留着。文件可能被挪走或改名了，放回 <span className="font-mono break-all">{file.resolvedPath ?? file.path}</span> 就会恢复；
         也可以直接移除这条记录。
       </Notice>
     );

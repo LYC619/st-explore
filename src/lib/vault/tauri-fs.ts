@@ -3,7 +3,10 @@
  * 仅此文件 import @tauri-apps/*；网页版打包也会带上这些模块但永不调用（isTauri 短路）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import { Channel } from '@tauri-apps/api/core';
 import type { VaultEntry, VaultFs, VaultStat } from './fs';
+import type { STImportControls } from './st-import-progress';
+import { createFsMutationError, throwFsMutationError } from './fs-mutation-error';
 
 /**
  * 是否运行在 Tauri 客户端里（网页版、Android 客户端均为 false）。
@@ -28,15 +31,28 @@ interface RawStat {
 }
 
 function safeRelativePath(path: string): string {
-  if (path.includes('\\') || path.startsWith('/')) throw new Error(`不安全的相对路径: ${path}`);
+  if (path.includes('\\') || path.includes(':') || path.startsWith('/')
+    || Array.from(path).some(char => char.charCodeAt(0) < 32)) {
+    throwFsMutationError(createFsMutationError('unsafe-path', path, `不安全的相对路径: ${path}`));
+  }
   const parts = path.split('/').filter(Boolean);
-  if (parts.some((part) => part === '.' || part === '..')) throw new Error(`不安全的相对路径: ${path}`);
+  if (parts.some((part) => part === '.' || part === '..')) {
+    throwFsMutationError(createFsMutationError('unsafe-path', path, `不安全的相对路径: ${path}`));
+  }
   return parts.join('/');
 }
 
 /** 以 root 为库根的真实磁盘实现；root 为绝对路径（来自目录选择器） */
 export function createTauriFs(root: string): VaultFs {
   const args = (path: string) => ({ root, path: safeRelativePath(path) });
+  const mutate = async (command: string, path: string, extra: Record<string, unknown> = {}): Promise<void> => {
+    try {
+      if (!path) throwFsMutationError(createFsMutationError('unsafe-path', path, '普通文件路径不能为空'));
+      await invoke(command, { ...args(path), ...extra });
+    } catch (error) {
+      throwFsMutationError(error, path);
+    }
+  };
   return {
     async list(dir): Promise<VaultEntry[]> {
       const entries = await invoke<RawEntry[]>('vault_list_dir', args(dir));
@@ -52,8 +68,8 @@ export function createTauriFs(root: string): VaultFs {
     writeText: (path, content) => invoke('vault_write_text', { ...args(path), content }),
     readBinary: (path) => invoke('vault_read_binary', args(path)),
     writeBinary: (path, base64) => invoke('vault_write_binary', { ...args(path), base64 }),
-    removeFile: (path) => invoke('vault_remove_file', args(path)),
-    trashFile: (path) => invoke('vault_trash_file', args(path)),
+    removeFile: (path) => mutate('vault_remove_file', path),
+    trashFile: (path) => mutate('vault_trash_file', path),
     openPath: (path, reveal = false) => invoke('vault_open_path', { ...args(path), reveal }),
     removeEmptyDir: (path) => invoke('vault_remove_empty_dir', args(path)),
     rename: (from, to) => invoke('vault_rename', { root, from: safeRelativePath(from), to: safeRelativePath(to) }),
@@ -145,17 +161,85 @@ export async function setVaultRoot(path: string): Promise<void> {
 export interface PreparedSTBackup {
   root: string;
   displayName: string;
+  /** 解压时跳过的 secrets.json 数量；>0 时界面上要如实说明「这个没读」。 */
+  skippedSecrets: number;
 }
 
-/** 选择并解压一个 SillyTavern zip；返回只在本次导入期间有效的临时根目录。 */
-export async function pickSTBackupImport(): Promise<PreparedSTBackup | null> {
-  const value = await invoke<{ root: string; display_name: string } | null>('prepare_st_backup_import');
-  return value ? { root: value.root, displayName: value.display_name } : null;
+/** Rust 侧 ExtractProgress 的镜像；stage 与 STImportPhase 的前两档同名。 */
+interface RawExtractProgress {
+  stage: 'validate' | 'extract';
+  done: number;
+  total: number;
+  label: string;
+}
+
+/**
+ * 选择并解压一个 SillyTavern zip；返回只在本次导入期间有效的临时根目录。
+ *
+ * 用户在文件对话框点取消、或解压中途点取消，都返回 null —— 两种都是用户主动收场，
+ * 不该弹错误提示。解压半截的临时目录由 Rust 侧清掉。
+ */
+let backupPreparation: Promise<unknown> = Promise.resolve();
+const pendingBackupCleanup = new Set<string>();
+const backupCleanupInFlight = new Map<string, Promise<void>>();
+
+export function pickSTBackupImport(
+  controls: STImportControls = {},
+): Promise<PreparedSTBackup | null> {
+  const run = backupPreparation.then(async () => {
+    if (controls.signal?.aborted) return null;
+    for (const root of pendingBackupCleanup) await cleanupSTBackupImport(root);
+    if (controls.signal?.aborted) return null;
+    return prepareSTBackupImport(controls);
+  });
+  // The native cancellation flag belongs to one preparation at a time, including after unmount.
+  backupPreparation = run.catch(() => {});
+  return run;
+}
+
+async function prepareSTBackupImport(controls: STImportControls): Promise<PreparedSTBackup | null> {
+  const { onProgress, signal } = controls;
+  const onProgressChannel = new Channel<RawExtractProgress>();
+  if (onProgress) {
+    onProgressChannel.onmessage = (message) => {
+      onProgress({
+        phase: message.stage,
+        done: message.done,
+        total: message.total,
+        label: message.label,
+      });
+    };
+  }
+  // 取消要能打断已经在跑的解压：置 Rust 侧旗标，解压循环下一条就退出。
+  let cancellation: Promise<unknown> | undefined;
+  const abort = () => {
+    cancellation ??= invoke('cancel_st_backup_import').catch(() => {});
+  };
+  signal?.addEventListener('abort', abort);
+  try {
+    const value = await invoke<{ root: string; display_name: string; skipped_secrets: number } | null>(
+      'prepare_st_backup_import',
+      { onProgress: onProgressChannel },
+    );
+    return value
+      ? { root: value.root, displayName: value.display_name, skippedSecrets: value.skipped_secrets ?? 0 }
+      : null;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    await cancellation;
+  }
 }
 
 /** 清理 pickSTBackupImport 创建的一次性临时根目录。 */
 export function cleanupSTBackupImport(root: string): Promise<void> {
-  return invoke('cleanup_st_backup_import', { root });
+  const pending = backupCleanupInFlight.get(root);
+  if (pending) return pending;
+  pendingBackupCleanup.add(root);
+  const cleanup = invoke<void>('cleanup_st_backup_import', { root })
+    .then(() => { pendingBackupCleanup.delete(root); })
+    .finally(() => { backupCleanupInFlight.delete(root); });
+  backupCleanupInFlight.set(root, cleanup);
+  return cleanup;
 }
 
 /** 弹系统目录选择器；用户取消返回 null */

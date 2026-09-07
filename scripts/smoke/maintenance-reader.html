@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Maintenance Reader Fixture</title></head>
+  <body>
+    <div id="root"></div>
+    <script type="module">
+      import React from 'react';
+      import { createRoot } from 'react-dom/client';
+      import NovelView from '/src/components/reader/NovelView.tsx';
+      import { buildReadingPack } from '/src/lib/reading-pack/export.ts';
+      import { parseReadingPackFile } from '/src/lib/reading-pack/reading-pack-worker-client.ts';
+      import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+      import { getCurrentRepo } from '/src/lib/repo/index.ts';
+      import { DEFAULT_ENTRY } from '/src/types/worldbook.ts';
+      import { setTourCompleted } from '/src/lib/tour-steps.ts';
+      import '/src/index.css';
+      localStorage.setItem('novel-view-zone-hint-seen', '1');
+      const root = createRoot(document.getElementById('root'));
+      function NavigationProbe() {
+        window.maintenance.navigate = useNavigate();
+        window.maintenance.location = useLocation().search;
+        return null;
+      }
+      const session = {
+        id: 'synthetic-reader', title: 'Maintenance Reader', createdAt: 1,
+        character: { name: 'Example Character' }, user: { name: 'Reader' },
+        messages: Array.from({ length: 4 }, (_, i) => ({
+          id: `m${i}`, role: 'assistant', rawData: {},
+          content: Array.from({ length: 100 }, (_, n) =>
+            `Paragraph ${i}, passage ${n}. The daylight filled the room as the next page began. `).join(''),
+        })),
+      };
+      window.maintenance = {
+        mountEditor: async (kind) => {
+          setTourCompleted(kind);
+          sessionStorage.clear();
+          const store = { worldbook: 'worldbooks', preset: 'presets', regex: 'regexes' }[kind];
+          const repo = getCurrentRepo(store);
+          for (const id of ['A', 'B']) {
+            const base = { id, title: `Asset ${id}`, createdAt: 1, updatedAt: 2 };
+            const rule = { id: 'rule', name: `Rule ${id}`, findRegex: id, replaceString: '', placement: ['all'], disabled: false };
+            const item = kind === 'worldbook'
+              ? { ...base, worldbook: { entries: { '1': { ...DEFAULT_ENTRY, uid: 1, comment: `Entry ${id}`, content: `Content ${id}` } } } }
+              : kind === 'preset'
+                ? { ...base, preset: { prompts: [{ identifier: 'prompt', name: `Prompt ${id}`, role: 'system', content: `Content ${id}` }],
+                  promptOrder: [{ character_id: 7, order: [{ identifier: 'prompt', enabled: true }] }],
+                  regexRules: [rule], hasRegexExtension: true, originalData: {} } }
+                : { ...base, rules: [rule] };
+            await repo.put(item);
+          }
+          const modules = {
+            worldbook: () => import('/src/pages/WorldBook.tsx'),
+            preset: () => import('/src/pages/Preset.tsx'),
+            regex: () => import('/src/pages/RegexTool.tsx'),
+          };
+          const { default: Page } = await modules[kind]();
+          root.render(React.createElement(MemoryRouter, { key: kind, initialEntries: [`/${kind}?assetId=A&view=list`] },
+            React.createElement(NavigationProbe), React.createElement(Page)));
+        },
+        mount: () => root.render(React.createElement(NovelView, {
+          session, markers: [{ messageId: 'm2', messageIndex: 2, title: 'Third Chapter', createdAt: 1 }],
+          regexRules: [], favorites: ['m2'], onClose: () => {}, readOnly: true,
+          progressKey: 'synthetic-reader', initialFloor: 0,
+        })),
+        parse: async () => {
+          const { bytes } = buildReadingPack({
+            characters: [], stories: [{ id: 'story', title: 'Synthetic Story', session, createdAt: 1, updatedAt: 1 }],
+            appVersion: '0.9.1',
+          });
+          const parsed = await parseReadingPackFile(new File([bytes], 'synthetic.ste-reading'));
+          return { count: parsed.stories.length, title: parsed.stories[0].title };
+        },
+      };
+    </script>
+  </body>
+</html>

@@ -2,8 +2,9 @@
  * SillyTavern 接入流程协调器。
  * 目录选择与导入执行留在这里，扫描选择和结果展示由独立弹窗负责。
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArchiveRestore, FolderSearch, Loader2 } from 'lucide-react';
+import { STImportProgressDialog } from '@/components/tools/st-import/STImportProgressDialog';
 import { STImportResultDialog } from '@/components/tools/st-import/STImportResultDialog';
 import { STImportSelectionDialog } from '@/components/tools/st-import/STImportSelectionDialog';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ import {
   IMPORT_POLICY_SUMMARY,
   type STImportPicks,
 } from '@/lib/vault/st-import-presentation';
+import { isSTImportAborted, type STImportProgress } from '@/lib/vault/st-import-progress';
 import { importSelected, scanSTUserDir, type STImportSummary, type STScanResult } from '@/lib/vault/st-import';
 import {
   cleanupSTBackupImport,
@@ -25,12 +27,16 @@ import {
   setAppConfig,
 } from '@/lib/vault/tauri-fs';
 import type { VaultFs } from '@/lib/vault/fs';
+import { getActiveVault } from '@/lib/vault/active';
+import { VAULT_CHANGED_EVENT } from '@/lib/vault/vault-registry-store';
 
 interface ScanState {
+  vault: ReturnType<typeof getActiveVault>;
   root: string;
   fs: VaultFs;
   scan: STScanResult;
   sourceLabel?: string;
+  skippedSecrets?: number;
   cleanup?: () => Promise<void>;
 }
 
@@ -45,12 +51,80 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
   const { toast } = useToast();
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
-  const [state, setState] = useState<ScanState | null>(null);
+  const [state, renderState] = useState<ScanState | null>(null);
+  const stateRef = useRef<ScanState | null>(null);
+  const setState = (next: ScanState | null) => { stateRef.current = next; renderState(next); };
   const [picks, setPicks] = useState<STImportPicks>(createEmptyImportPicks());
   const [result, setResult] = useState<STImportSummary | null>(null);
+  const [progress, setProgress] = useState<STImportProgress | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  // 每一轮（解压+扫描、或入库）一个 controller；用 ref 是因为取消按钮要拿到
+  // 当前这一轮的那个，而它不该触发重渲染。
+  const abortRef = useRef<AbortController | null>(null);
+  const mounted = useRef(true);
+  const importingState = useRef<ScanState | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    const invalidate = () => {
+      abortRef.current?.abort();
+      abortRef.current = null;
+      const pending = stateRef.current;
+      stateRef.current = null;
+      if (pending && pending !== importingState.current) {
+        void pending.cleanup?.().catch(error => {
+          toast({ title: '清理临时导入文件失败', description: String(error), variant: 'destructive' });
+        });
+      }
+    };
+    const onVaultChange = () => {
+      invalidate();
+      renderState(null);
+      setResult(null);
+      setScanning(false);
+      setImporting(false);
+      setProgress(null);
+      setCanceling(false);
+    };
+    window.addEventListener(VAULT_CHANGED_EVENT, onVaultChange);
+    return () => {
+      mounted.current = false;
+      window.removeEventListener(VAULT_CHANGED_EVENT, onVaultChange);
+      invalidate();
+    };
+  }, [toast]);
 
   const notifyChanged = () => {
     try { onChanged?.(); } catch { /* UI 刷新不能把成功导入误报为失败 */ }
+  };
+
+  /** 开一轮可取消的流程，返回配好的 controls。 */
+  const beginRun = () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    const vault = getActiveVault();
+    abortRef.current = controller;
+    setCanceling(false);
+    setProgress(null);
+    const isCurrent = () => mounted.current && abortRef.current === controller && getActiveVault() === vault;
+    return {
+      signal: controller.signal,
+      isCurrent,
+      vault,
+      onProgress: (next: STImportProgress) => { if (isCurrent()) setProgress(next); },
+    };
+  };
+
+  const endRun = (controls: ReturnType<typeof beginRun>) => {
+    if (!controls.isCurrent()) return;
+    abortRef.current = null;
+    setCanceling(false);
+    setProgress(null);
+  };
+
+  const requestCancel = () => {
+    setCanceling(true);
+    abortRef.current?.abort();
   };
 
   const closeScan = async (current: ScanState | null) => {
@@ -67,14 +141,16 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
 
   const handlePick = async () => {
     setScanning(true);
+    const controls = beginRun();
     try {
       const selectedRoot = root ?? await pickDirectory(
         '选择 SillyTavern 目录（安装根目录或 data/default-user）',
         { persistAuthorization: true },
       );
-      if (!selectedRoot) return;
+      if (!selectedRoot || !controls.isCurrent() || controls.signal.aborted) return;
       const fs = createTauriFs(selectedRoot);
-      const scan = await scanSTUserDir(fs);
+      const scan = await scanSTUserDir(fs, controls);
+      if (!controls.isCurrent() || controls.signal.aborted) return;
       if (!scan.characters.length && !scan.strayChats.length && !scan.worldbooks.length && !scan.presets.length
         && !scan.regex && !scan.archives.length && scan.relationships.status !== 'parsed') {
         const warningPaths = scan.warnings.slice(0, 3).map((warning) => warning.path).join('；');
@@ -89,49 +165,72 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       }
 
       await setAppConfig('stRoot', selectedRoot);
+      if (!controls.isCurrent() || controls.signal.aborted) return;
       setPicks(createAllImportPicks(scan));
-      setState({ root: selectedRoot, fs, scan });
+      setState({ root: selectedRoot, fs, scan, vault: controls.vault });
     } catch (err) {
-      toast({ title: '扫描失败', description: String(err), variant: 'destructive' });
+      // 用户自己点的取消，不是故障，不弹错误
+      if (controls.isCurrent() && !isSTImportAborted(err)) {
+        toast({ title: '扫描失败', description: String(err), variant: 'destructive' });
+      }
     } finally {
-      setScanning(false);
+      if (controls.isCurrent()) setScanning(false);
+      endRun(controls);
     }
   };
 
   const handlePickBackup = async () => {
     setScanning(true);
+    const controls = beginRun();
     let prepared: Awaited<ReturnType<typeof pickSTBackupImport>> = null;
+    let transferred = false;
     try {
-      prepared = await pickSTBackupImport();
-      if (!prepared) return;
+      prepared = await pickSTBackupImport(controls);
+      // null = 用户在文件对话框点了取消，或解压中途点了取消，两种都静默收场
+      if (!prepared || !controls.isCurrent() || controls.signal.aborted) return;
       const fs = createTauriFs(prepared.root);
-      const scan = await scanSTUserDir(fs);
+      const scan = await scanSTUserDir(fs, controls);
+      if (!controls.isCurrent() || controls.signal.aborted) return;
       if (!scan.characters.length && !scan.strayChats.length && !scan.worldbooks.length && !scan.presets.length
         && !scan.regex && !scan.archives.length && scan.relationships.status !== 'parsed') {
         throw new Error('没有找到可导入的 SillyTavern 内容');
       }
       setPicks(createAllImportPicks(scan));
       setState({
+        vault: controls.vault,
         root: prepared.root,
         fs,
         scan,
         sourceLabel: prepared.displayName,
+        skippedSecrets: prepared.skippedSecrets,
         cleanup: () => cleanupSTBackupImport(prepared!.root),
       });
+      transferred = true;
     } catch (err) {
-      if (prepared) {
-        try { await cleanupSTBackupImport(prepared.root); } catch { /* 保留原始扫描错误 */ }
+      if (String(err).includes('STE_ST_IMPORT_CLEANUP_FAILED:')) {
+        toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+      } else if (controls.isCurrent() && !isSTImportAborted(err)) {
+        toast({ title: '读取 SillyTavern 备份失败', description: String(err), variant: 'destructive' });
       }
-      toast({ title: '读取 SillyTavern 备份失败', description: String(err), variant: 'destructive' });
     } finally {
-      setScanning(false);
+      if (prepared && !transferred) {
+        try { await cleanupSTBackupImport(prepared.root); }
+        catch (err) {
+          toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+        }
+      }
+      if (controls.isCurrent()) setScanning(false);
+      endRun(controls);
     }
   };
 
   const handleImport = async () => {
     if (!state) return;
     const current = state;
+    if (current.vault !== getActiveVault()) { await closeScan(current); return; }
+    importingState.current = current;
     setImporting(true);
+    const controls = beginRun();
     try {
       const { scan } = current;
       const summary = await importSelected(current.fs, {
@@ -145,7 +244,8 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
         archives: scan.archives.filter((group) => picks.archives.has(group.kind)),
         relationships: picks.settingsRelations ? scan.relationships : undefined,
         scanWarnings: scan.warnings,
-      });
+      }, controls);
+      if (!controls.isCurrent()) return;
       const parts = [
         `角色 ${summary.characters}`,
         `故事 ${summary.stories}`,
@@ -159,18 +259,26 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       if (summary.skipped) parts.push(`跳过已导入 ${summary.skipped}`);
       if (summary.failed) parts.push(`处理失败 ${summary.failed}`);
       setState(null);
+      // 中途取消也算走完一轮：已写入的部分要照常汇报，不能装作没发生
       toast({
-        title: current.sourceLabel ? `${current.sourceLabel}导入完成` : '导入完成',
+        title: summary.aborted
+          ? '导入已停止，已写入的内容已保留'
+          : (current.sourceLabel ? `${current.sourceLabel}导入完成` : '导入完成'),
         description: parts.join('，'),
       });
       setResult(summary);
     } catch (err) {
-      toast({ title: '导入失败', description: String(err), variant: 'destructive' });
+      if (controls.isCurrent()) toast({ title: '导入失败', description: String(err), variant: 'destructive' });
     } finally {
       try { await current.cleanup?.(); } catch (err) {
         toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
       }
-      setImporting(false);
+      if (importingState.current === current) importingState.current = null;
+      if (controls.isCurrent()) {
+        setState(null);
+        setImporting(false);
+      }
+      endRun(controls);
     }
   };
 
@@ -194,11 +302,11 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
               指定 ST 目录，按类别选择角色、聊天、世界书、预设、正则、扩展和媒体。{IMPORT_POLICY_SUMMARY}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning}>
+          <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning || importing}>
             {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}
             选择 ST 目录
           </Button>
-          <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning}>
+          <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning || importing}>
             {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}
             从 SillyTavern 备份导入
           </Button>
@@ -206,13 +314,13 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       ) : (
         <>
           {root && (
-            <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning}>
+            <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning || importing}>
               {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}
               重新扫描并选择
             </Button>
           )}
           {/* 云端/别机导出的 zip 不需要先接目录，设置页也要给这个入口（0826 反馈 1） */}
-          <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning}>
+          <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning || importing}>
             {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}
             从 SillyTavern 备份导入
           </Button>
@@ -225,10 +333,21 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
           scan={state.scan}
           picks={picks}
           importing={importing}
+          progress={importing ? progress : null}
+          canceling={canceling}
+          skippedSecrets={state.skippedSecrets}
           onPicksChange={setPicks}
-          onCancel={() => { void closeScan(state); }}
+          onCancel={() => {
+            // 导入中 = 中断本次写入；还没开始 = 关掉弹窗并清临时目录
+            if (importing) requestCancel();
+            else void closeScan(state);
+          }}
           onImport={handleImport}
         />
+      )}
+      {/* 解压/扫描阶段：选择弹窗还没出来，用独立进度弹窗顶上 */}
+      {!state && !importing && (
+        <STImportProgressDialog progress={progress} canceling={canceling} onCancel={requestCancel} />
       )}
       <STImportResultDialog result={result} onClose={handleResultClose} />
     </>

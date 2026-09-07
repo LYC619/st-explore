@@ -13,12 +13,14 @@ import type { WorldBookItem } from '@/types/worldbook';
 import { generateWorldBookId } from '@/types/worldbook';
 import { normalizeCharacterCard } from '@/lib/png-parser';
 import { characterBookToWorldBook } from '@/lib/character-book';
-import { getAllWorldBooks, saveWorldBook } from '@/lib/worldbook-db';
+import { getCurrentRepo, type Repo } from '@/lib/repo';
+import type { RegexCollectionItem } from '@/types/regex';
 import { parseSTRegexImport } from '@/lib/st-regex-interop';
-import { buildRegexCollection, getAllRegexCollections, saveRegexCollection } from '@/lib/regex-db';
+import { buildRegexCollection } from '@/lib/regex-db';
 
 export interface EmbeddedAssetImportOptions {
   onDuplicate?: (kind: AssetRef['kind'], assetId: string) => void;
+  repositories?: { worldbooks: Repo<WorldBookItem>; regexes: Repo<RegexCollectionItem> };
 }
 
 function stableJson(value: unknown): string {
@@ -50,6 +52,8 @@ export async function importEmbeddedAssets(
   character: ArchiveCharacter,
   options: EmbeddedAssetImportOptions = {},
 ): Promise<AssetRef[]> {
+  const worldbooks = options.repositories?.worldbooks ?? getCurrentRepo<WorldBookItem>('worldbooks');
+  const regexes = options.repositories?.regexes ?? getCurrentRepo<RegexCollectionItem>('regexes');
   const refs: AssetRef[] = [];
   let n;
   try {
@@ -66,7 +70,7 @@ export async function importEmbeddedAssets(
       const linkedIds = new Set(
         (character.assets ?? []).filter((ref) => ref.kind === 'worldbook').map((ref) => ref.assetId),
       );
-      const existing = (await getAllWorldBooks()).find((item) => (
+      const existing = (await worldbooks.list()).find((item) => (
         (linkedIds.has(item.id) && embeddedContentHash(item.worldbook) === contentHash)
         || (item.embedded?.characterId === character.id && item.embedded.contentHash === contentHash)
       ));
@@ -84,7 +88,7 @@ export async function importEmbeddedAssets(
         createdAt: now,
         updatedAt: now,
       };
-      await saveWorldBook(item);
+      await worldbooks.put(item);
       refs.push({ kind: 'worldbook', assetId: item.id });
       }
     }
@@ -101,7 +105,7 @@ export async function importEmbeddedAssets(
         const linkedIds = new Set(
           (character.assets ?? []).filter((ref) => ref.kind === 'regex').map((ref) => ref.assetId),
         );
-        const existing = (await getAllRegexCollections()).find((item) => (
+        const existing = (await regexes.list()).find((item) => (
           (linkedIds.has(item.id) && embeddedContentHash(regexContentForHash(item.rules)) === contentHash)
           || (item.embedded?.characterId === character.id && item.embedded.contentHash === contentHash)
         ));
@@ -111,7 +115,7 @@ export async function importEmbeddedAssets(
         } else {
           const item = candidate;
           item.embedded = { characterId: character.id, contentHash, importedAt: item.createdAt };
-          await saveRegexCollection(item);
+          await regexes.put(item);
           refs.push({ kind: 'regex', assetId: item.id });
         }
       }

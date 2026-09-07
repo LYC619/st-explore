@@ -7,7 +7,8 @@
  * 连 level:0（STORE，本来不可能膨胀）都一样。同一段代码在 node 下完全正常。
  * 详见 src/test/setup.ts 的说明。
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IDBFactory } from 'fake-indexeddb';
 import { strToU8, unzipSync, zipSync } from 'fflate';
 import { buildReadingPack, suggestPackFileName } from '@/lib/reading-pack/export';
 import {
@@ -15,8 +16,15 @@ import {
   restoreCharacter, restoreStory,
 } from '@/lib/reading-pack/import';
 import { READING_PACK_FORMAT } from '@/types/reading-pack';
-import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import type { ArchiveCharacter, ArchiveStory, StoryBranch } from '@/types/archive';
 import type { SummaryItem } from '@/types/summary';
+import { readingPackSource, type ImportSink } from '@/lib/data-source';
+import { getCharacter, getArchiveStory, saveCharacter, saveArchiveStory } from '@/lib/archive-db';
+import { saveSummary } from '@/lib/summary-db';
+import { closeDB, openDB } from '@/lib/idb';
+import { createMemFs } from '@/lib/vault/fs';
+import { createVault } from '@/lib/vault/vault-backend';
+import { setActiveVault } from '@/lib/vault/active';
 
 /** 一小张「PNG」：内容无所谓，只验字节原样往返 */
 const cardBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 250, 251, 252]);
@@ -261,9 +269,10 @@ describe('阅读包 · 去重与进度保护', () => {
     const local = story({ lastFloor: 777, lastViewedAt: 88888, lastViewedBranchId: 'br-9' });
     const restored = restoreStory(parsed.stories[0], local);
 
-    expect(restored.lastFloor).toBe(777);
+    expect(restored.lastFloor).toBe(2);
     expect(restored.lastViewedAt).toBe(88888);
-    expect(restored.lastViewedBranchId).toBe('br-9');
+    // 不复活已被接收端删除的分支。
+    expect(restored.lastViewedBranchId).toBeUndefined();
     // 内容仍然来自包
     expect(restored.session.messages).toHaveLength(2);
     expect(restored.rating).toBe(7);
@@ -275,7 +284,193 @@ describe('阅读包 · 去重与进度保护', () => {
   it('本地没有这篇故事时，用包里的进度（可能是别的设备读到的地方）', () => {
     const parsed = parseReadingPackBytes(pack().bytes);
     const restored = restoreStory(parsed.stories[0]);
-    expect(restored.lastFloor).toBe(42);
+    expect(restored.lastFloor).toBe(2);
+  });
+});
+
+const sessionWithFloors = (count: number): ArchiveStory['session'] => ({
+  ...story().session,
+  messages: Array.from({ length: count }, (_, i) => ({
+    id: `m${i}`, role: 'assistant', content: `Floor ${i + 1}`,
+  })),
+});
+
+const branch = (id: string, count: number, lastFloor?: number): StoryBranch => ({
+  id, name: id, session: sessionWithFloors(count), lastFloor,
+  markers: [], createdAt: 1, updatedAt: 2,
+});
+
+describe('reading pack field ownership', () => {
+  it.each([false, true])('strips injected device fields (overwrite=%s)', (overwrite) => {
+    const parsed = parseReadingPackBytes(pack().bytes);
+    const injected = JSON.parse(JSON.stringify({
+      ...parsed.characters[0],
+      attachments: character().attachments,
+      assets: character().assets,
+      unresolvedAssets: [{ kind: 'worldbook', name: 'injected', relation: 'primary' }],
+      sourcePath: 'C:/other-device/card.png',
+      pngBase64: 'injected',
+    }));
+    const local = overwrite ? character({
+      attachments: undefined, assets: undefined, unresolvedAssets: undefined, sourcePath: undefined,
+    }) : undefined;
+    const restored = restoreCharacter(parsed, injected, local);
+    for (const key of ['attachments', 'assets', 'unresolvedAssets', 'sourcePath'] as const) {
+      expect(restored[key]).toBeUndefined();
+    }
+    expect(restored.pngBase64).toBe(toBase64(cardBytes));
+    const restoredStory = restoreStory(JSON.parse(JSON.stringify({
+      ...parsed.stories[0], sourcePath: 'C:/other-device/chat', writebacks: [{ at: 1, floors: 2 }],
+      assets: character().assets, unresolvedAssets: injected.unresolvedAssets,
+    })), overwrite ? story({
+      sourcePath: undefined, writebacks: undefined, assets: undefined, unresolvedAssets: undefined,
+    }) : undefined);
+    for (const key of ['sourcePath', 'writebacks', 'assets', 'unresolvedAssets'] as const) {
+      expect(restoredStory[key]).toBeUndefined();
+    }
+  });
+
+  it('keeps receiver fields but imports new content', () => {
+    const parsed = parseReadingPackBytes(pack().bytes);
+    const local = character({ name: 'Local old content', unresolvedAssets: [
+      { kind: 'worldbook', name: 'local', relation: 'primary' },
+    ] });
+    const restored = restoreCharacter(parsed, parsed.characters[0], local);
+    expect(restored.name).toBe(character().name);
+    for (const key of ['attachments', 'assets', 'unresolvedAssets', 'sourcePath'] as const) {
+      expect(restored[key]).toEqual(local[key]);
+    }
+  });
+});
+
+describe('reading pack branch progress', () => {
+  it('merges by ID, clamps to the new content and never resurrects removed branches', () => {
+    const incoming = story({ session: sessionWithFloors(50), lastFloor: 3, branches: [
+      branch('keep', 100, 2), branch('short', 20, 2), branch('new', 10, 99), branch('empty', 0, 1),
+    ] });
+    const local = story({ lastFloor: 40, lastViewedAt: 900, lastViewedBranchId: 'keep', branches: [
+      branch('keep', 100, 80), branch('short', 100, 80), branch('removed', 10, 8),
+    ] });
+    const restored = restoreStory(incoming, local);
+    expect(restored.lastFloor).toBe(40);
+    expect(restored.lastViewedAt).toBe(900);
+    expect(restored.lastViewedBranchId).toBe('keep');
+    expect(restored.branches?.map(b => [b.id, b.lastFloor])).toEqual([
+      ['keep', 80], ['short', 20], ['new', 10], ['empty', undefined],
+    ]);
+    expect(restoreStory(incoming, { ...local, lastViewedBranchId: 'removed' }).lastViewedBranchId)
+      .toBeUndefined();
+  });
+
+  it('absent local progress wins over sender progress, including omitted properties', () => {
+    const incoming = story({ lastViewedBranchId: 'keep', branches: [branch('keep', 100, 70)] });
+    const local = story({ branches: [branch('keep', 100)] });
+    delete local.lastFloor;
+    delete local.lastViewedAt;
+    delete local.lastViewedBranchId;
+    delete local.branches![0].lastFloor;
+    const restored = restoreStory(incoming, local);
+    expect(restored.lastFloor).toBeUndefined();
+    expect(restored.lastViewedAt).toBeUndefined();
+    expect(restored.lastViewedBranchId).toBeUndefined();
+    expect(restored.branches?.[0].lastFloor).toBeUndefined();
+  });
+
+  it.each([[-5, 1], [1.9, 1], [99, 2], [NaN, undefined], [Infinity, undefined]])(
+    'clamps new mainline and branch floor %s to %s', (floor, expected) => {
+      const restored = restoreStory(story({ lastFloor: floor, branches: [branch('new', 2, floor)] }));
+      expect(restored.lastFloor).toBe(expected);
+      expect(restored.branches?.[0].lastFloor).toBe(expected);
+      expect(restoreStory(story({ session: sessionWithFloors(0), lastFloor: floor })).lastFloor)
+        .toBeUndefined();
+    },
+  );
+});
+
+describe('reading pack apply uses current records', () => {
+  const makeInput = (existing = true) => ({
+    parsed: parseReadingPackBytes(pack({ summaries: [] }).bytes), origin: 'test.ste-reading',
+    existing: {
+      characters: existing ? [{ id: 'char-1', updatedAt: 1 }] : [],
+      stories: existing ? [{ id: 'story-1', updatedAt: 1 }] : [], summaries: [],
+    },
+  });
+  const makeSink = (localCharacter?: ArchiveCharacter, localStory?: ArchiveStory): ImportSink => ({
+    getCharacter: vi.fn().mockResolvedValue(localCharacter),
+    getStory: vi.fn().mockResolvedValue(localStory),
+    saveCharacter: vi.fn(), saveStory: vi.fn(), saveSummary: vi.fn(),
+  });
+
+  it('does not resurrect overwrite targets deleted after inspect', async () => {
+    const input = makeInput();
+    const plan = await readingPackSource.inspect(input);
+    const sink = makeSink();
+    const result = await readingPackSource.apply(input, plan, sink);
+    expect(result.skipped).toBe(2);
+    expect(result.warnings).toHaveLength(2);
+    expect(sink.saveCharacter).not.toHaveBeenCalled();
+    expect(sink.saveStory).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('redecides after a receiver update or concurrent add (existed=%s)', async (existed) => {
+    const input = makeInput(existed);
+    const plan = await readingPackSource.inspect(input);
+    const sink = makeSink(character({ updatedAt: 9999 }), story({ updatedAt: 9999 }));
+    const result = await readingPackSource.apply(input, plan, sink);
+    expect(result.skipped).toBe(2);
+    expect(sink.saveCharacter).not.toHaveBeenCalled();
+    expect(sink.saveStory).not.toHaveBeenCalled();
+  });
+
+  it('propagates a fresh-read failure without writing', async () => {
+    const input = makeInput();
+    const sink = makeSink();
+    vi.mocked(sink.getCharacter).mockRejectedValue(new Error('read failed'));
+    await expect(readingPackSource.apply(input, await readingPackSource.inspect(input), sink))
+      .rejects.toThrow('read failed');
+    expect(sink.saveCharacter).not.toHaveBeenCalled();
+    expect(sink.saveStory).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading pack persistence roundtrip', () => {
+  beforeEach(() => { closeDB(); vi.stubGlobal('indexedDB', new IDBFactory()); });
+  afterEach(() => { setActiveVault(null); closeDB(); vi.unstubAllGlobals(); });
+
+  it.each(['vault', 'idb'] as const)('preserves receiver fields after reopening %s', async (backend) => {
+    const fs = createMemFs();
+    setActiveVault(backend === 'vault' ? createVault(fs) : null);
+    const connection = backend === 'idb' ? await openDB() : undefined;
+    const localCharacter = character({ pngBase64: undefined, portraitRows: [], updatedAt: 1,
+      unresolvedAssets: [{ kind: 'worldbook', name: 'local', relation: 'primary' }],
+    });
+    const localStory = story({ updatedAt: 1, lastFloor: 2, branches: [branch('keep', 100, 80)] });
+    await saveCharacter(localCharacter);
+    await saveArchiveStory(localStory);
+    const attachment = localCharacter.attachments![0];
+    await fs.writeText(attachment.path, 'local attachment bytes');
+    const input = {
+      parsed: parseReadingPackBytes(pack({ characters: [character({ pngBase64: undefined, portraitRows: [], rating: 9 })],
+        stories: [story({ branches: [branch('keep', 100, 1)] })], summaries: [],
+      }).bytes),
+      origin: 'test.ste-reading', existing: { characters: [localCharacter], stories: [localStory], summaries: [] },
+    };
+    await readingPackSource.apply(input, await readingPackSource.inspect(input), {
+      getCharacter, getStory: getArchiveStory, saveCharacter, saveStory: saveArchiveStory, saveSummary,
+    });
+    if (backend === 'vault') setActiveVault(createVault(fs));
+    else { closeDB(); expect(await openDB()).not.toBe(connection); }
+    const restored = await getCharacter(localCharacter.id);
+    expect(restored?.rating).toBe(9);
+    for (const key of ['attachments', 'assets', 'unresolvedAssets', 'sourcePath'] as const) {
+      expect(restored?.[key]).toEqual(localCharacter[key]);
+    }
+    expect(await fs.readText(attachment.path)).toBe('local attachment bytes');
+    const restoredStory = await getArchiveStory(localStory.id);
+    expect(restoredStory?.lastFloor).toBe(2);
+    expect(restoredStory?.branches?.[0].lastFloor).toBe(80);
+    expect(restoredStory?.sourcePath).toBe(localStory.sourcePath);
+    expect(restoredStory?.writebacks).toEqual(localStory.writebacks);
   });
 });
 
