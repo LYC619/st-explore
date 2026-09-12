@@ -70,6 +70,24 @@ function fixture() {
   return { stories, characters, options, main };
 }
 
+function replacementFixture() {
+  const f = fixture();
+  const original = f.stories.items.get('story-a')!;
+  original.title = 'same-name';
+  original.session.rawMetadata = { ...original.session.rawMetadata, ste_catalog: { fileName: 'same-name' } };
+  const replacement = { ...buildStoryFromSession(session('replacement-session'), 'character-a'),
+    id: 'replacement-story', title: 'same-name',
+  };
+  replacement.session.messages[0].content = 'replacement-only prose';
+  replacement.session.rawMetadata = { ...replacement.session.rawMetadata, ste_catalog: { fileName: 'same-name' } };
+  function replace(change: 'delete' | 'rebind') {
+    if (change === 'delete') f.stories.items.delete(original.id);
+    else f.stories.items.set(original.id, { ...original, characterId: 'character-b' });
+    f.stories.items.set(replacement.id, structuredClone(replacement));
+  }
+  return { ...f, replacement, replace };
+}
+
 describe('roleplay character/chat catalog', () => {
   it('uses stable, collision-free keys and enumerates all stored mainlines and internal branches', async () => {
     const f = fixture();
@@ -129,6 +147,73 @@ describe('roleplay character/chat catalog', () => {
     await expect(catalog.locate(catalog.initial.avatar, catalog.initial.fileName)).rejects.toThrow(/不存在|删除/);
     expect(f.stories.listReads()).toBe(lists);
     expect(f.stories.items.size).toBe(2);
+  });
+
+  for (const change of ['delete', 'rebind'] as const) {
+    it(`never transfers an issued filename to a replacement story after ${change} and a directory refresh`, async () => {
+      const f = replacementFixture();
+      const catalog = await createRoleplayCatalog({ ...f.options, branchId: null });
+      const issued = { ...catalog.initial };
+      expect(issued.fileName).toBe('same-name');
+      f.replace(change);
+      const refreshed = await catalog.chats(issued.avatar);
+      const stale = encodeLiveChat(session()); stale[1].mes = 'late original prose';
+      await expect(catalog.resolveForSave(issued.avatar, issued.fileName, stale)).rejects.toThrow(/不存在|删除|角色/);
+      await expect(catalog.existingLine(issued.avatar, issued.fileName)).rejects.toThrow(/不存在|删除|角色/);
+      const replacement = refreshed.find(chat => chat.key === chatKey('replacement-story', null))!;
+      expect(replacement.file_name).not.toBe(`${issued.fileName}.jsonl`);
+      const located = await catalog.locate(issued.avatar, replacement.file_name);
+      expect(located?.storyId).toBe('replacement-story');
+      expect((await catalog.resolveForSave(issued.avatar, located!.fileName, encodeLiveChat(f.replacement.session))).storyId).toBe('replacement-story');
+      expect(f.stories.items.get('replacement-story')).toEqual(f.replacement);
+      expect(f.stories.writes()).toBe(0);
+    });
+
+    it(`does not rename a replacement story when an old rename was already awaiting its list during ${change}`, async () => {
+      const f = replacementFixture();
+      let blockList = false;
+      let release!: () => void;
+      let started!: () => void;
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const entered = new Promise<void>(resolve => { started = resolve; });
+      const queuedRepo: Repo<ArchiveStory> = { ...f.stories.repo, list: async () => {
+        if (blockList) { blockList = false; started(); await gate; }
+        return f.stories.repo.list();
+      } };
+      const catalog = await createRoleplayCatalog({ ...f.options, stories: queuedRepo, branchId: null });
+      blockList = true;
+      const rename = catalog.rename(catalog.initial.avatar, catalog.initial.fileName, 'late original rename');
+      const rejected = expect(rename).rejects.toThrow(/不存在|删除|角色/);
+      await entered;
+      f.replace(change);
+      release();
+      await rejected;
+      expect(f.stories.items.get('replacement-story')).toEqual(f.replacement);
+      expect(f.stories.writes()).toBe(0);
+    });
+  }
+
+  it('keeps a disambiguated persistent filename round-trippable through locate, existingLine and save resolution', async () => {
+    const f = fixture();
+    for (const id of ['story-a', 'story-b']) {
+      const story = f.stories.items.get(id)!;
+      story.session.rawMetadata = { ...story.session.rawMetadata, ste_catalog: { fileName: 'shared-alias' } };
+    }
+    const catalog = await createRoleplayCatalog({ ...f.options, branchId: null });
+    const sharedKeys = new Set([chatKey('story-a', null), chatKey('story-b', null)]);
+    const chats = (await catalog.chats(catalog.initial.avatar)).filter(chat => sharedKeys.has(chat.key));
+    expect(new Set(chats.map(chat => chat.file_name)).size).toBe(2);
+    for (const chat of chats) {
+      const located = await catalog.locate(catalog.initial.avatar, chat.file_name);
+      expect(located?.fileName).toBe(chat.file_name.replace(/\.jsonl$/, ''));
+      const current = await catalog.existingLine(catalog.initial.avatar, located!.fileName);
+      expect(current?.locator).toEqual(located);
+      const resolved = await catalog.resolveForSave(catalog.initial.avatar, located!.fileName, encodeLiveChat(current!.line.session));
+      expect(resolved).toMatchObject({ key: chat.key, fileName: located!.fileName, created: false });
+      expect((await catalog.locate(catalog.initial.avatar, chat.key))?.fileName).toBe(located!.fileName);
+    }
+    await expect(catalog.locate(catalog.initial.avatar, 'shared-alias')).rejects.toThrow(/重名|多个/);
+    expect(f.stories.writes()).toBe(0);
   });
 
   it('leaves another character’s chat pending until saving and creates it once for overlapping saves', async () => {

@@ -153,6 +153,12 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
 
   const aliasId = (avatar: string, name: string) => JSON.stringify([avatar, name]);
 
+  function rememberAlias(avatar: string, name: string, key: string | null) {
+    const id = aliasId(avatar, name);
+    // An issued name must never acquire a different owner during this catalog's lifetime.
+    if (!seenAliases.has(id)) seenAliases.set(id, key);
+  }
+
   async function snapshot(): Promise<Snapshot> {
     assertCurrent();
     const [allStories, allCharacters] = await Promise.all([stories.list(), characters.list()]);
@@ -193,8 +199,11 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     for (const entry of [...entries].sort((a, b) => a.locator.key.localeCompare(b.locator.key))) {
       const { locator } = entry;
       const names = aliases.get(locator.avatar)!;
-      const occupied = (name: string) => [...names.get(name) ?? []].some(key => key !== locator.key)
-        || (byKey.has(name) && name !== locator.key);
+      const occupied = (name: string) => {
+        const id = aliasId(locator.avatar, name);
+        return (seenAliases.has(id) ? seenAliases.get(id) !== locator.key : [...names.get(name) ?? []].some(key => key !== locator.key))
+          || (byKey.has(name) && name !== locator.key);
+      };
       if (occupied(locator.fileName)) {
         const base = `${locator.fileName} [${locator.key}]`;
         locator.fileName = base;
@@ -205,7 +214,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     }
     for (const entry of entries) knownLocators.set(entry.locator.key, { ...entry.locator });
     for (const [avatar, names] of aliases) {
-      for (const [name, owners] of names) seenAliases.set(aliasId(avatar, name), owners.size === 1 ? [...owners][0] : null);
+      for (const [name, owners] of names) rememberAlias(avatar, name, owners.size === 1 ? [...owners][0] : null);
     }
     entries.sort((a, b) => Number(b.locator.key === initialKey) - Number(a.locator.key === initialKey));
     return { people, entries, byKey, aliases };
@@ -214,15 +223,10 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   function find(state: Snapshot, avatar: string, fileName: string): Entry | undefined {
     if (!state.people.has(avatar)) throw new Error('角色不存在');
     const name = chatName(fileName);
-    const keyed = state.byKey.get(name);
-    if (keyed) {
-      if (keyed.locator.avatar !== avatar) throw new Error('聊天角色与故事不匹配');
-      return keyed;
-    }
+    const remembered = seenAliases.get(aliasId(avatar, name));
     const owners = state.aliases.get(avatar)?.get(name);
-    if (owners && owners.size > 1) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
-    const key = owners?.size ? [...owners][0] : seenAliases.get(aliasId(avatar, name));
-    if (key === null) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
+    if (remembered === null || (remembered === undefined && owners && owners.size > 1)) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
+    const key = remembered ?? (owners?.size ? [...owners][0] : state.byKey.has(name) ? name : undefined);
     if (key) {
       const entry = state.byKey.get(key);
       if (!entry) throw new Error('故事或分支已删除，聊天不存在');
@@ -237,10 +241,9 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   async function knownEntry(avatar: string, fileName: string): Promise<Entry | undefined> {
     assertCurrent();
     const name = chatName(fileName);
-    const direct = knownLocators.get(name);
     const remembered = seenAliases.get(aliasId(avatar, name));
-    if (!direct && remembered === null) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
-    const locator = direct ?? (remembered ? knownLocators.get(remembered) : undefined);
+    if (remembered === null) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
+    const locator = knownLocators.get(remembered ?? name);
     if (!locator) return undefined;
     if (locator.avatar !== avatar) throw new Error('聊天角色与故事不匹配');
     const story = await stories.get(locator.storyId);
@@ -250,9 +253,8 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     const line = getBranchLine(story, locator.branchId);
     if (!line) throw new Error('故事分支已删除，聊天不存在');
     const branch = story.branches?.find(item => item.id === locator.branchId);
-    const currentLocator = { ...locator, fileName: optionalName(catalogMetadata(line.session).fileName) ?? locator.fileName };
-    knownLocators.set(locator.key, currentLocator);
-    return { locator: currentLocator, story, line,
+    // Refresh the body, retaining the catalog's already disambiguated filename.
+    return { locator, story, line,
       displayName: branch ? `${story.title} · ${branch.name}` : story.title, updatedAt: branch?.updatedAt ?? story.updatedAt };
   }
 
@@ -356,8 +358,8 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
           await saveArchiveStory(story, guardedStories);
         }
         knownLocators.set(locator!.key, locator!);
-        seenAliases.set(aliasId(avatar, name), locator!.key);
-        seenAliases.set(aliasId(avatar, locator!.key), locator!.key);
+        rememberAlias(avatar, name, locator!.key);
+        rememberAlias(avatar, locator!.key, locator!.key);
         return { ...locator!, created: true };
       });
     },
@@ -385,7 +387,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
         }, guardedStories);
         if (!saved) throw new Error('故事不存在');
         knownLocators.set(locator.key, locator);
-        seenAliases.set(aliasId(avatar, name), locator.key);
+        rememberAlias(avatar, name, locator.key);
         return { sanitizedFileName: name, locator };
       });
     },
