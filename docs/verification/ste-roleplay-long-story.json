@@ -1,0 +1,25 @@
+{
+  "logicalMessages": 2000,
+  "openMs": 12482,
+  "mountedRows": 7,
+  "streamChunks": 81,
+  "storyWritesDuringReply": [
+    {
+      "at": 13806.60000000894,
+      "messages": 2001
+    },
+    {
+      "at": 15379.20000000298,
+      "messages": 2002
+    }
+  ],
+  "toolRequestBytes": [
+    4397,
+    4808,
+    4969
+  ],
+  "writerRequestMessages": [
+    741,
+    664
+  ]
+}

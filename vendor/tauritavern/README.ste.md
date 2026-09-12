@@ -43,7 +43,7 @@ SillyTavern's original `src/index.html` has `<base href="/">`, and its scripts u
 | Served URL | Source / generated input | Production artifact |
 | --- | --- | --- |
 | `/tavern.html` | Original `src/index.html`, with only the two metadata href remaps below | `dist/tavern.html` |
-| `/script.js`, `/lib.js`, `/init.js`, `/tauri-main.js` | Original raw modules | `dist/script.js`, `dist/lib.js`, `dist/init.js`, `dist/tauri-main.js` |
+| `/script.js`, `/lib.js`, `/init.js`, `/tauri-main.js` | Original raw modules with explicit host overlays where required | `dist/script.js`, `dist/lib.js`, `dist/init.js`, `dist/tauri-main.js` |
 | `/css/**`, `/scripts/**`, `/lib/**`, `/locales/**`, `/webfonts/**`, `/img/**`, `/sounds/**`, `/tauri/**` | Original frontend files at matching paths | Matching paths under `dist/` |
 | `/dist/lib.core.bundle.js` | Original core library bundle | `dist/dist/lib.core.bundle.js` |
 | `/dist/lib.optional.bundle.js` | Original optional library bundle | `dist/dist/lib.optional.bundle.js` |
@@ -72,11 +72,11 @@ The development middleware serves only manifest entries and verifies their bytes
 
 Normal development/build commands never regenerate the reviewed source manifest. `.cache/tavern` is disposable build output and is ignored by Git.
 
-## Next host/bootstrap integration
+## STE host integration
 
-The original initialization order is `init.js -> lib.js -> tauri-main.js -> script.js`. This task delivers that source and its dependencies; it does not yet make native startup, chat persistence, provider calls or Agent behavior work inside STE. No navigation entry advertises working chat.
+The original initialization order is `init.js -> lib.js -> tauri-main.js -> script.js`. STE opens this document in the same-origin iframe at `/play/:storyId`. Its parent owns repositories, API profiles and credentials; the original frontend owns live `chat[]`, rendering and interaction. Durable chat storage remains the STE `ArchiveStory`, including branches and candidate identities.
 
-The single composition seam is `composeAssets()` in `scripts/tavern/build.mjs`, called by `prepareTavern()` before either Vite delivery path consumes its result. Asset records have `{ url, root, path, sha256, size }`; an optional entry transform is confined to the two metadata href remaps. A later STE integration can generate bridge/bootstrap files, add their records, and supply explicit replacement records with the expected original hash:
+`prepareTavernRuntime()` in `scripts/tavern/runtime-build.mjs` prepares the original dependencies and then calls `createHostAssets()` in `host-overlay.mjs`. `composeAssets()` receives the original asset records, generated dependencies/helpers, and explicit replacements with each expected original hash:
 
 ```js
 const assets = composeAssets(pinnedAssets, generatedAssets, [
@@ -84,4 +84,10 @@ const assets = composeAssets(pinnedAssets, generatedAssets, [
 ]);
 ```
 
-Both development and production then deliver the same reviewed overlay. Generate replacements separately and retain original source hashes. Host startup must account for original `init.js` setting `__TAURI_RUNNING__` and its origin-wide development Service Worker registration, preserve STE's Service Worker ownership, provide the STE data/command bridge, and establish stable message IDs on the actual canonical chat array before serialization. Selected `default/content` data can be read during host generation without exposing the whole default-content tree.
+Both development and production deliver this same overlay. It installs `src/tavern/host-bootstrap.js`, connects original fetch/command routes to the parent host, stamps canonical message/candidate IDs before serialization, adds save barriers, and preserves STE's Service Worker ownership. New stories explicitly enable the original greeting initialization once; reopening an existing empty story does not invent a greeting. The original module imports and UI remain in use.
+
+Classic generation uses the original ST prompt/worldbook/regex pipeline. Agent mode uses STE's bounded tool loop and freezes supplements at the final provider boundary; the original TauriTavern Agent router is disabled. Generated helper and package controls are separate STE files under `/ste/`. Selected `default/content` settings and bundled media are copied through explicit mappings; the entire source directory is not exposed.
+
+The pinned BaiBai test package is user-supplied or fetched by a development fixture into ignored cache storage. It is not included in this vendor snapshot or the production resource map.
+
+See [the user guide](../../docs/guides/roleplay.md), [compatibility matrix](../../docs/principles/extension-compatibility.md), and [verification record](../../docs/verification/ste-roleplay-runtime-v1.md) for supported flows and platform limits. A successful build does not establish physical WebView or remote-provider compatibility.
