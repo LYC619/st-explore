@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { prepareTavern } from './build.mjs';
+import { prepareTavernRuntime } from './runtime-build.mjs';
 import { checkAssetCollisions, copyAssets, createAssetMiddleware } from './delivery.mjs';
 
 /** @returns {import('vite').Plugin} */
 export function tavernFrontend() {
   let config;
   let preparation;
-  const prepare = () => preparation ??= prepareTavern(config.root);
+  const prepare = () => preparation ??= prepareTavernRuntime(config.root);
   return {
     name: 'ste-pinned-tavern-frontend',
     enforce: 'pre',

@@ -9,8 +9,8 @@ try {
     const manifest = await recordSourceManifest();
     console.log(`Tavern: recorded ${manifest.files.length} original files; review provenance before committing.`);
   } else if (args.length === 0) {
-    const { prepareTavern } = await import('./build.mjs');
-    const result = await prepareTavern();
+    const { prepareTavernRuntime } = await import('./runtime-build.mjs');
+    const result = await prepareTavernRuntime();
     console.log(`Tavern: ${result.reused ? 'verified cached' : 'built'} ${result.manifest.files.length} bundle assets; ${result.assets.size} served assets.`);
   } else {
     throw new Error('Usage: node scripts/tavern/prepare.mjs [--verify-only | --record-source]');

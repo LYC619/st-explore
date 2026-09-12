@@ -13,6 +13,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
 import { Plus, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/AppLayout';
@@ -568,6 +569,7 @@ const Library = () => {
           onFontScaleChange={prefs.setFontScale}
           fileInputRef={fileInputRef}
           onPickFiles={handleImportFiles}
+          storyPackageTools={<StoryPackageTools />}
         />
 
         {/* ===== 内容区：标签筛选栏 + 卡墙 ===== */}

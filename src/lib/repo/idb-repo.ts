@@ -64,6 +64,17 @@ export function createIdbRepo<T extends BaseRecord>(storeName: StoreName): Repo<
     const items = (await request((await store('readonly')).getAll())) as T[];
     return items.sort((a, b) => b.updatedAt - a.updatedAt);
   };
+  const write = async (mutate: (store: IDBObjectStore) => void) => {
+    const db = await openDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(storeName, 'readwrite');
+      tx.oncomplete = () => resolve();
+      tx.onabort = () => reject(tx.error ?? new Error('本地保存事务已取消'));
+      tx.onerror = () => reject(tx.error ?? new Error('本地保存事务失败'));
+      try { mutate(tx.objectStore(storeName)); }
+      catch (error) { tx.abort(); reject(error); }
+    });
+  };
   return {
     list,
     // IDB 没有字段投影，getAll 一次就是整条；省不掉，与 list 同源。
@@ -73,10 +84,10 @@ export function createIdbRepo<T extends BaseRecord>(storeName: StoreName): Repo<
     },
     // IDB 整条记录一次写入，没有派生文件，PutOptions 对它无意义
     async put(item) {
-      await request((await store('readwrite')).put(item));
+      await write(store => { store.put(item); });
     },
     async remove(id) {
-      await request((await store('readwrite')).delete(id));
+      await write(store => { store.delete(id); });
     },
   };
 }

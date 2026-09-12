@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import {
   ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List as ListIcon,
   Plus, Search, SlidersHorizontal, Tags, X,
@@ -43,6 +43,7 @@ interface LibraryToolbarProps {
   onFontScaleChange: (value: number) => void;
   fileInputRef: RefObject<HTMLInputElement>;
   onPickFiles: (files: FileList | null) => void;
+  storyPackageTools?: ReactNode;
 }
 
 /** 顶栏一行：标题 / 搜索 / 激活筛选 / 排序+方向 / 分组 / 外观 / 导入 */
@@ -53,7 +54,7 @@ export function LibraryToolbar({
   viewMode, onViewModeChange, groupBy, onGroupByChange,
   groupTagCategory, groupTagCategories, onGroupTagCategoryChange,
   cardWidth, onCardWidthChange, fontScale, onFontScaleChange,
-  fileInputRef, onPickFiles,
+  fileInputRef, onPickFiles, storyPackageTools,
 }: LibraryToolbarProps) {
   const showClearAll =
     activeFilterChips.length > 1 || (activeFilterChips.length > 0 && searchQuery.trim().length > 0);
@@ -217,6 +218,7 @@ export function LibraryToolbar({
           </div>
         </PopoverContent>
       </Popover>
+      {storyPackageTools}
       <Button size="sm" onClick={() => fileInputRef.current?.click()}>
         <Plus className="w-4 h-4 mr-1.5" />
         导入角色卡

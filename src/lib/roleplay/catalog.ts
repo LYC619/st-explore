@@ -8,6 +8,7 @@ import {
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { normalizeCharacterCard, type STCharacterCard } from '@/lib/png-parser';
 import { decodeLiveChat, encodeLiveChat } from './live-chat';
+import { captureBranchRuntimeParent } from './branch-inheritance';
 
 export interface ChatLocator {
   storyId: string;
@@ -353,6 +354,8 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
             const branch = buildBranchFromSession(session, name);
             locator = { storyId: current.id, branchId: branch.id, avatar, fileName: name, key: chatKey(current.id, branch.id) };
             branch.session = withCatalogMetadata(session, locator, []);
+            branch.session.rawMetadata!.ste_catalog.runtimeParent = captureBranchRuntimeParent(current.id, branch.id,
+              parent.locator.branchId, parentLine.session, session);
             const indices = new Map(session.messages.map((message, index) => [message.id, index]));
             branch.markers = parentLine.markers.filter(marker => indices.has(marker.messageId))
               .map(marker => ({ ...structuredClone(marker), messageIndex: indices.get(marker.messageId)! }));

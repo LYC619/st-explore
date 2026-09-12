@@ -8,6 +8,7 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SummaryItem } from '@/types/summary';
 import type { ArchiveStory } from '@/types/archive';
@@ -64,7 +65,7 @@ const story = {
 } as unknown as ArchiveStory;
 
 async function render(node: React.ReactNode) {
-  await act(async () => { root.render(node); });
+  await act(async () => { root.render(<MemoryRouter>{node}</MemoryRouter>); });
   await act(async () => { await Promise.resolve(); });
 }
 

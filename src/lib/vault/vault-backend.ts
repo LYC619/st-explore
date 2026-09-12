@@ -34,6 +34,10 @@ import { joinPath, parentDir, baseName } from './fs';
 import { safeName, ensureUnique } from './naming';
 import { serializeFrontmatter, parseFrontmatter } from './frontmatter';
 import { recoverCharacterJournals } from '@/lib/portrait-journal';
+import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { sha256 } from 'js-sha256';
+
+type PackageDependencyStore = 'characters' | 'worldbooks' | 'presets' | 'regexes';
 
 export interface VaultBackend {
   repo<T extends BaseRecord>(store: StoreName): Repo<T>;
@@ -43,6 +47,12 @@ export interface VaultBackend {
   pathOf(store: StoreName, id: string): Promise<string | undefined>;
   /** Retry recovery and reject new mutations while any journal remains unresolved. */
   assertCharacterWritable(id: string): Promise<void>;
+  /** Publish a complete staged story with one directory rename. Caller holds the story queue. */
+  publishStoryDirectory?(storyId: string, stagedDirectory: string, isCurrent?: () => boolean): Promise<string>;
+  /** A full, uncached read with no journal recovery; import previews must not mutate disk. */
+  peekRecord?<T extends BaseRecord>(store: StoreName, id: string): Promise<T | undefined>;
+  /** New dependencies are staged too, so a failed PNG write cannot strand a partial character. */
+  publishPackageDependency?(store: PackageDependencyStore, item: BaseRecord, packageId: string, isCurrent?: () => boolean): Promise<void>;
 }
 
 /** 文件库承接的 store（'books' 已退役不进文件库） */
@@ -83,6 +93,24 @@ const TPL_RATING_PREFIX = '评分模板·';
 const TEMP_RESERVED = ['记录', '卡片'];
 
 const toJson = (v: unknown) => JSON.stringify(v, null, 2);
+const canonicalJson = (value: unknown) => JSON.stringify(value, (_key, child) => child && typeof child === 'object' && !Array.isArray(child)
+  ? Object.fromEntries(Object.keys(child).sort().map(key => [key, child[key]])) : child);
+const sameRecord = (left: unknown, right: unknown) => canonicalJson(left) === canonicalJson(right);
+const REPRESENTATION_KEY = '__ste_normalized_v1';
+
+/** A representation hint only: editing the native ST content invalidates it immediately. */
+function losslessMeta(rec: BaseRecord, native: unknown, payload: unknown, decoded: unknown): Record<string, unknown> {
+  const metadata = steMeta(rec);
+  if (sameRecord(payload, decoded)) return metadata;
+  if (Object.hasOwn(metadata, REPRESENTATION_KEY)) throw new Error('资产内部表示字段冲突，已停止写入');
+  return { ...metadata, [REPRESENTATION_KEY]: { format: 'ste-normalized-v1', digest: sha256(canonicalJson(native)), payload } };
+}
+function restoreRepresentation(metadata: Record<string, unknown>, native: unknown, decoded: unknown) {
+  const hint = metadata[REPRESENTATION_KEY] as { format?: unknown; digest?: unknown; payload?: unknown } | undefined;
+  if (!hint || hint.format !== 'ste-normalized-v1') return { metadata, payload: decoded };
+  const clean = { ...metadata }; delete clean[REPRESENTATION_KEY];
+  return { metadata: clean, payload: hint.digest === sha256(canonicalJson(native)) ? hint.payload : decoded };
+}
 
 /** IO 并发上限：客户端每次读文件都是一趟 IPC，串行读几十张卡是加载慢的主因 */
 const IO_LIMIT = 8;
@@ -102,12 +130,9 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 /** 资产文件的 __ste 元数据键（进 ST 兼容 JSON 顶层，ST 导入时会忽略） */
 function steMeta(rec: BaseRecord): Record<string, unknown> {
   const src = rec as unknown as Record<string, unknown>;
-  const out: Record<string, unknown> = {};
-  // sourcePath：阶段7.3 从 ST 目录导入的资产记来源路径（重复导入判定），须随 __ste 往返存活
-  for (const k of ['id', 'title', 'createdAt', 'updatedAt', 'autoSaved', 'derived', 'sourcePath', 'sourceModifiedAt', 'embedded', 'stGlobal', 'stGlobalSources']) {
-    if (src[k] !== undefined) out[k] = src[k];
-  }
-  return out;
+  // The payload lives in ST's normal fields; all record metadata, including unknown
+  // provenance from portable imports, must survive the __ste round trip.
+  return Object.fromEntries(Object.entries(src).filter(([key]) => !['worldbook', 'preset', 'rules'].includes(key)));
 }
 
 /** frontmatter 文件：除 content 外全部字段进头部（JSON 值行），body=content */
@@ -127,6 +152,7 @@ function stripStoryBody(rec: BaseRecord | null): BaseRecord | null {
 }
 
 export function createVault(fs: VaultFs): VaultBackend {
+  const publications = new KeyedSerialQueue();
   // ---- 索引：id → 相对路径 ----
   const idx = new Map<VaultStore, Map<string, string>>(VAULT_STORES.map((s) => [s, new Map()]));
   const of = (s: VaultStore) => idx.get(s)!;
@@ -351,9 +377,10 @@ export function createVault(fs: VaultFs): VaultBackend {
     const { __ste, entries, ...rest } = rec;
     const ste = __ste as Record<string, unknown> | undefined;
     if (!ste || typeof ste.id !== 'string') return null;
+    const restored = restoreRepresentation(ste, { ...rest, entries }, { entries: (entries ?? {}) as WorldBook['entries'], originalData: rest });
     return {
-      ...ste,
-      worldbook: { entries: (entries ?? {}) as WorldBook['entries'], originalData: rest },
+      ...restored.metadata,
+      worldbook: restored.payload,
     } as unknown as BaseRecord;
   }
 
@@ -364,7 +391,8 @@ export function createVault(fs: VaultFs): VaultBackend {
     const stJson = { ...rec };
     delete stJson.__ste;
     try {
-      return { ...ste, preset: parsePreset(stJson) } as unknown as BaseRecord;
+      const restored = restoreRepresentation(ste, stJson, parsePreset(stJson));
+      return { ...restored.metadata, preset: restored.payload } as unknown as BaseRecord;
     } catch (err) {
       warnSkip(path, err);
       return null;
@@ -575,13 +603,16 @@ export function createVault(fs: VaultFs): VaultBackend {
 
   function serializeWorldbook(rec: WorldBookItem): string {
     // ST 可直接导入的形状：原顶层键 + entries；__ste 收 STE 自有元数据，回读时剥离
-    return toJson({ ...(rec.worldbook.originalData ?? {}), entries: rec.worldbook.entries, __ste: steMeta(rec) });
+    const native: Record<string, unknown> = { ...(rec.worldbook.originalData ?? {}), entries: rec.worldbook.entries }; delete native.__ste;
+    const { entries, ...originalData } = native;
+    return toJson({ ...native, __ste: losslessMeta(rec, native, rec.worldbook, { entries, originalData }) });
   }
 
   function serializePresetFile(rec: PresetItem): string {
     // exportPreset 产出 ST 兼容全量 JSON（originalData+prompts+prompt_order+extensions），再挂 __ste
     const st = JSON.parse(exportPreset(rec.preset)) as Record<string, unknown>;
-    st.__ste = steMeta(rec);
+    delete st.__ste;
+    st.__ste = losslessMeta(rec, st, rec.preset, parsePreset(st));
     return toJson(st);
   }
 
@@ -710,6 +741,32 @@ export function createVault(fs: VaultFs): VaultBackend {
     };
   }
 
+  async function packageDirectories(path: string, required: boolean) {
+    let parent = '';
+    for (const part of path.split('/')) {
+      const entry = (await fs.list(parent)).find(item => item.name === part);
+      if (entry?.isSymlink || entry && !entry.isDir) throw new Error('故事包发布路径含链接或非目录');
+      if (!entry && required) throw new Error('故事包暂存目录不存在');
+      parent = joinPath(parent, part);
+    }
+  }
+  async function publishPreparedRecord(store: VaultStore, item: BaseRecord, source: string, parent: string, stem: string,
+    extension: string, isCurrent?: () => boolean): Promise<string> {
+    const check = () => { if (isCurrent?.() === false) throw new Error('文件库已切换，故事包发布已停止'); };
+    await ensureIndex();
+    if (of(store).has(item.id)) throw new Error('故事包记录已存在，不能覆盖发布');
+    await packageDirectories(parent, false);
+    const name = await uniqueStem(parent, stem, [extension], [], parent === DIR_TEMP ? TEMP_RESERVED : []);
+    const target = joinPath(parent, name + extension);
+    check(); await fs.mkdir(parent); await packageDirectories(parent, true); check();
+    try { await fs.rename(source, target); }
+    catch (error) {
+      // An IPC response can be lost after the atomic rename already succeeded.
+      if ((await fs.stat(source)).exists || !sameRecord(await readRecord(store, target), item)) throw error;
+    }
+    of(store).set(item.id, target); invalidate(store, item.id); return target;
+  }
+
   const repos = new Map<VaultStore, Repo<BaseRecord>>();
   return {
     repo<T extends BaseRecord>(store: StoreName): Repo<T> {
@@ -725,6 +782,83 @@ export function createVault(fs: VaultFs): VaultBackend {
       return r as Repo<T>;
     },
     fs,
+    async peekRecord<T extends BaseRecord>(store: StoreName, id: string): Promise<T | undefined> {
+      if (!(VAULT_STORES as readonly string[]).includes(store)) return undefined;
+      await ensureIndex(); const path = of(store as VaultStore).get(id);
+      return path ? (await readRecord(store as VaultStore, path)) as T | null ?? undefined : undefined;
+    },
+    publishPackageDependency(store, item, packageId, isCurrent) {
+      return publications.enqueue('records', async () => {
+        const check = () => { if (isCurrent?.() === false) throw new Error('文件库已切换，故事包导入已停止'); };
+        check();
+        if (!['characters', 'worldbooks', 'presets', 'regexes'].includes(store) || !/^[a-f0-9]{64}$/.test(packageId)
+          || typeof item.id !== 'string' || !item.id) throw new Error('故事包依赖身份无效');
+        await ensureIndex(); if (of(store).has(item.id)) throw new Error('故事包依赖已存在，不能覆盖');
+        const prefix = `.ste-control/story-packages/${packageId}/dependencies/${store}/${sha256(item.id)}`;
+        const texts = new Map<string, string>(), binaries = new Map<string, string>();
+        let source: string, parent: string, stem: string, extension: string;
+        if (store === 'characters') {
+          const { pngBase64, ...character } = item as ArchiveCharacter;
+          source = prefix; parent = DIR_CHAR; stem = safeName(character.name, '未命名角色'); extension = '';
+          texts.set(source + '/' + FILE_PROFILE, toJson(character));
+          if (pngBase64) binaries.set(source + '/' + FILE_CARD_PNG, pngBase64);
+        } else {
+          source = prefix + '.json'; extension = '.json'; stem = safeName((item as WorldBookItem).title);
+          parent = store === 'worldbooks' ? DIR_ASSET_WB : store === 'presets' ? DIR_ASSET_PRESET : DIR_ASSET_REGEX;
+          texts.set(source, store === 'worldbooks' ? serializeWorldbook(item as WorldBookItem)
+            : store === 'presets' ? serializePresetFile(item as PresetItem) : toJson({ __ste: steMeta(item), rules: (item as RegexCollectionItem).rules }));
+        }
+        for (const [path, content] of [...texts, ...binaries]) {
+          await packageDirectories(parentDir(path), false);
+          const entry = (await fs.list(parentDir(path))).find(entry => entry.name === baseName(path));
+          if (entry?.isSymlink || entry?.isDir) throw new Error('故事包依赖暂存路径含链接或非文件');
+          const read = () => binaries.has(path) ? fs.readBinary(path) : fs.readText(path);
+          if (entry && await read() !== content) throw new Error('故事包依赖暂存文件已有不同内容');
+          if (!entry) { check(); if (binaries.has(path)) await fs.writeBinary(path, content); else await fs.writeText(path, content); }
+          if (await read() !== content) throw new Error('故事包依赖暂存写入不完整');
+        }
+        if (store === 'characters') for (const entry of await fs.list(source)) {
+          if (entry.isSymlink || entry.isDir || !texts.has(source + '/' + entry.name) && !binaries.has(source + '/' + entry.name)) {
+            throw new Error('故事包角色暂存目录包含未知文件或链接');
+          }
+        }
+        if (!sameRecord(await readRecord(store, source), item)) throw new Error('文件库未能无损保存故事资产，故事尚未发布');
+        check(); await publishPreparedRecord(store, item, source, parent, stem, extension, isCurrent);
+      });
+    },
+    publishStoryDirectory(storyId, stagedDirectory, isCurrent) {
+      return publications.enqueue('records', async () => {
+        const check = () => { if (isCurrent?.() === false) throw new Error('文件库已切换，故事发布已停止'); };
+        check();
+        if (!/^\.ste-control\/story-packages\/[a-f0-9]{64}\/story$/.test(stagedDirectory)) {
+          throw new Error('故事暂存路径无效');
+        }
+        await packageDirectories(stagedDirectory, true);
+        let count = 0;
+        async function noLinks(path: string, depth = 0) {
+          if (depth > 64) throw new Error('故事暂存目录层数过多');
+          for (const entry of await fs.list(path)) {
+            if (++count > 10_000) throw new Error('故事暂存文件过多');
+            // eslint-disable-next-line no-control-regex -- Staged filesystem names are untrusted.
+            if (entry.isSymlink || !entry.name || /[\\/:\x00-\x1f]/.test(entry.name) || ['.', '..'].includes(entry.name)) {
+              throw new Error('故事暂存路径含链接或非法文件名');
+            }
+            if (entry.isDir) await noLinks(joinPath(path, entry.name), depth + 1);
+          }
+        }
+        await noLinks(stagedDirectory);
+        const text = await fs.readText(joinPath(stagedDirectory, FILE_STORY));
+        const story = JSON.parse(text) as ArchiveStory;
+        if (!story || story.id !== storyId || typeof story.title !== 'string'
+          || story.characterId !== undefined && typeof story.characterId !== 'string') throw new Error('暂存故事身份不匹配');
+        await ensureIndex();
+        if (of('archiveStories').has(storyId)) throw new Error('故事已存在，不能覆盖发布');
+        const characterDirectory = story.characterId ? of('characters').get(story.characterId) : undefined;
+        if (story.characterId && !characterDirectory) throw new Error('故事角色尚未入库');
+        const parent = characterDirectory ? joinPath(characterDirectory, DIR_STORIES) : DIR_TEMP;
+        check(); return publishPreparedRecord('archiveStories', story, stagedDirectory, parent, safeName(story.title, '未命名故事'), '', isCurrent);
+      });
+    },
     async assertCharacterWritable(id: string): Promise<void> {
       await ensureIndex();
       const path = of('characters').get(id);

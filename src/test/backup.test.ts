@@ -7,6 +7,7 @@ import {
   importBackup,
   BackupError,
   MAX_BACKUP_BYTES,
+  collectFullBackup,
   type ParsedBackup,
 } from '@/lib/storage-utils';
 
@@ -183,6 +184,32 @@ describe('importBackup 原子写回', () => {
 });
 
 describe('备份 round-trip', () => {
+  it('restores library play settings, installed extension and runtime files without connection credentials', async () => {
+    const parsed = await parseBackupFile(jsonFile(validBackup({
+      archiveMeta: [{ id: 'archive-schema', schemaVersion: 5, updatedAt: 1, libraryTags: { customTags: ['常用'] },
+        roleplay: { mainProfileId: 'main', toolProfileId: 'tool',
+          tavern: { username: '旅人', oai_settings: { api_key: 'secret', temperature: 0.8 },
+            extension_settings: { example: { apiKey: 'private', enabled: true } } },
+          installedBaiBai: { version: '1.2.7', files: { 'dist/index.js': 'original installed script' } } } },
+        { id: 'bad-schema', schemaVersion: 'invalid' }],
+      roleplayFiles: [{ id: JSON.stringify(['story', 'memory/main/state.md']), storyId: 'story', path: 'memory/main/state.md', text: '# 场景', updatedAt: 1 }],
+    })));
+    const preview = await previewBackup(parsed);
+    expect(preview.stores.find(store => store.key === 'archiveMeta')).toMatchObject({ add: 1, skipped: 1 });
+    await importBackup(parsed);
+    const meta = (await getAll('archiveMeta'))[0];
+    expect(meta).toMatchObject({ id: 'archive-schema', libraryTags: { customTags: ['常用'] },
+      roleplay: { mainProfileId: 'main', tavern: { username: '旅人', oai_settings: { temperature: 0.8 } },
+        installedBaiBai: { files: { 'dist/index.js': 'original installed script' } } } });
+    expect(JSON.stringify(meta)).not.toContain('secret');
+    expect(JSON.stringify(meta)).not.toContain('private');
+    expect((await getAll('roleplayFiles'))[0].text).toBe('# 场景');
+    await seed('archiveMeta', { ...meta, password: 'backup-secret' });
+    const exported = await collectFullBackup();
+    expect(exported.archiveMeta).toEqual([meta]);
+    expect(exported.roleplayFiles).toEqual(await getAll('roleplayFiles'));
+  });
+
   it('构造完整备份 → 导入 → 逐 store 读回内容一致', async () => {
     const backup = validBackup({
       worldbooks: [{ id: 'w1', title: '书', worldbook: { entries: {} } }],

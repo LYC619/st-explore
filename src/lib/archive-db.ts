@@ -6,6 +6,7 @@ import type { ArchiveCharacter, ArchiveStory, CharacterStatus, CharacterType, St
 import { isPreparedCharacterMutation, type CharacterMutationContext, type CharacterUpdater } from '@/lib/character-mutation';
 import { getActiveVault } from '@/lib/vault/active';
 import type { ChatSession, ChatMessage, ChapterMarker } from '@/types/chat';
+import type { RoleplayPreferences } from '@/types/roleplay';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
 import { createRepo, getCurrentRepo, type Repo } from '@/lib/repo';
@@ -21,11 +22,12 @@ import {
 
 const characterRepo = createRepo<ArchiveCharacter>('characters');
 const storyRepo = createRepo<ArchiveStory>('archiveStories');
-interface ArchiveMetaRecord {
+export interface ArchiveMetaRecord {
   id: string;
   schemaVersion: number;
   updatedAt: number;
   libraryTags?: LibraryTagPreferences;
+  roleplay?: RoleplayPreferences;
   [key: string]: unknown;
 }
 const archiveMetaRepo = createRepo<ArchiveMetaRecord>('archiveMeta');
@@ -44,10 +46,16 @@ export async function getCharacter(id: string): Promise<ArchiveCharacter | undef
 export async function readCharacterInQueue<T>(
   id: string,
   read: (current: ArchiveCharacter | undefined, context: CharacterMutationContext) => Promise<T>,
+  options?: { isCurrent?: () => boolean },
 ): Promise<T> {
   const repo = getCurrentRepo<ArchiveCharacter>('characters');
   const context = { vault: getActiveVault() };
-  return characterWrites.enqueue(id, async () => read(await repo.get(id), context));
+  return characterWrites.enqueue(id, async () => {
+    if (options?.isCurrent?.() === false) throw new Error('文件库已切换，角色读取已停止');
+    const current = await repo.get(id);
+    if (options?.isCurrent?.() === false) throw new Error('文件库已切换，角色读取已停止');
+    return read(current, context);
+  });
 }
 
 export async function saveCharacter(
@@ -143,6 +151,11 @@ export async function saveArchiveStory(
  * 「打开故事盖个 lastViewedAt」不该把主线加每条分支整体重新序列化一遍。
  * 判据是引用比较，只在 patch 确实没带这两个字段时才成立——宁可多写一次，不会漏写。
  */
+/** Also serializes creation/import with updates and runtime sidecars for a not-yet-existing story. */
+export function withArchiveStoryLock<T>(id: string, action: () => Promise<T>): Promise<T> {
+  return storyWrites.enqueue(id, action);
+}
+
 export async function updateArchiveStory(
   id: string,
   updater: (current: ArchiveStory) => Partial<ArchiveStory> | undefined | Promise<Partial<ArchiveStory> | undefined>,
@@ -168,6 +181,24 @@ export async function deleteArchiveStory(id: string): Promise<void> {
 const ARCHIVE_SCHEMA_META_ID = 'archive-schema';
 /** 元信息记录是 read-modify-write，统一排队防止 schemaVersion 与标签偏好并发互相覆盖。 */
 const metaWrites = new KeyedSerialQueue();
+
+export async function getRoleplayPreferences(repo: Repo<ArchiveMetaRecord> = getCurrentRepo<ArchiveMetaRecord>('archiveMeta')): Promise<RoleplayPreferences> {
+  return structuredClone((await repo.get(ARCHIVE_SCHEMA_META_ID))?.roleplay ?? {});
+}
+
+export async function saveRoleplayPreferences(patch: Partial<RoleplayPreferences>, repo: Repo<ArchiveMetaRecord> = getCurrentRepo<ArchiveMetaRecord>('archiveMeta')): Promise<void> {
+  const snapshot = structuredClone(patch);
+  return metaWrites.enqueue(ARCHIVE_SCHEMA_META_ID, async () => {
+    const current = await repo.get(ARCHIVE_SCHEMA_META_ID);
+    await repo.put({
+      ...current,
+      id: ARCHIVE_SCHEMA_META_ID,
+      schemaVersion: current?.schemaVersion ?? 1,
+      roleplay: { ...current?.roleplay, ...snapshot },
+      updatedAt: Date.now(),
+    });
+  });
+}
 
 export async function getArchiveSchemaVersion(): Promise<number> {
   return (await archiveMetaRepo.get(ARCHIVE_SCHEMA_META_ID))?.schemaVersion ?? 1;

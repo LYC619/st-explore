@@ -12,6 +12,7 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-close",
     "dialog:allow-save",
-    "dialog:allow-open"
+    "dialog:allow-open",
+    { "identifier": "http:default", "allow": [{ "url": "http://**" }, { "url": "https://**" }] }
   ]
 }

@@ -7,7 +7,7 @@
  */
 
 export const DB_NAME = 'st-chat-beautifier';
-export const DB_VERSION = 10;
+export const DB_VERSION = 11;
 
 /** 全部 object store 名单。新增 store：在此登记 + DB_VERSION 加 1，所有调用点自动跟随。 */
 export const ALL_STORES = [
@@ -23,6 +23,7 @@ export const ALL_STORES = [
   'regexes', // v8 正则规则集资产（2.0 阶段5）
   'ratingTemplates', // v9 评分模板（2.0 阶段6；内置模板是代码常量不入库）
   'archiveMeta', // v10 归档库 schema 版本等内部元数据
+  'roleplayFiles', // v11 Web/Android 的文件记忆与生成记录；桌面使用故事目录中的实际文件
 ] as const;
 
 export type StoreName = (typeof ALL_STORES)[number];
@@ -37,6 +38,7 @@ function ensureAllStores(db: IDBDatabase) {
       const store = db.createObjectStore(name, { keyPath: 'id' });
       store.createIndex('updatedAt', 'updatedAt', { unique: false });
       store.createIndex('title', 'title', { unique: false });
+      if (name === 'roleplayFiles') store.createIndex('storyId', 'storyId', { unique: false });
     }
   }
 }

@@ -69,13 +69,18 @@ export function stScriptToRule(script: STRegexScript): RegexRule {
     placement: placementFromST(placement),
     disabled: !!disabled,
     // 保留 ST 独有字段（trimStrings/markdownOnly/... 及任何未知字段），导出时拼回
-    _raw: rest,
+    _raw: { ...rest, ...(Array.isArray(placement) ? { placement: [...placement] } : {}) },
   };
 }
 
 /** 应用内 RegexRule → ST 正则脚本（拼回 _raw 里保留的原始字段） */
 export function ruleToSTScript(rule: RegexRule): STRegexScript {
   const raw = (rule._raw as Record<string, unknown> | undefined) ?? {};
+  const original = Array.isArray(raw.placement) && raw.placement.every(value => typeof value === 'number')
+    ? raw.placement as number[] : undefined;
+  // The compact editor cannot express WI/reasoning/slash placements. Retain their exact
+  // upstream scope while the user only edits the pattern, replacement or other fields.
+  const placementUnchanged = original && JSON.stringify(placementToST(placementFromST(original))) === JSON.stringify(placementToST(rule.placement));
   return {
     // ST 默认值（_raw 里有就被覆盖）
     trimStrings: [],
@@ -91,7 +96,7 @@ export function ruleToSTScript(rule: RegexRule): STRegexScript {
     scriptName: rule.name,
     findRegex: rule.findRegex,
     replaceString: rule.replaceString,
-    placement: placementToST(rule.placement),
+    placement: placementUnchanged ? [...original] : placementToST(rule.placement),
     disabled: rule.disabled,
   };
 }

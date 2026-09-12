@@ -7,7 +7,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, BookOpen, Download, Package } from 'lucide-react';
+import { ArrowLeft, ChevronRight, BookOpen, Download, Package, MessageSquare } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
@@ -102,6 +102,8 @@ const CharacterPage = () => {
   const [cardEdits, setCardEdits] = useState<CardEdits | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [cardSaving, setCardSaving] = useState(false);
+  const [startingPlay, setStartingPlay] = useState(false);
+  const playStartLock = useRef(false);
   const contentColumnRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
@@ -478,7 +480,7 @@ const CharacterPage = () => {
             className={cn('flex-1 flex flex-col pt-3', isMobile ? 'px-3 pb-4' : 'px-6 pb-6')}
           >
             {/* TabsList 用 flex（布局铁律：防插件包裹破坏 grid）；行右侧=统一导入钮（10.3c） */}
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
                <TabsList className="flex w-fit flex-wrap gap-1">
                  <TabsTrigger value="stories">故事 {stories.length > 0 && <span className="ml-1 text-[11px] opacity-70">{stories.length}</span>}</TabsTrigger>
                  <TabsTrigger value="notes">备注 {(character.notes?.length ?? 0) > 0 && <span className="ml-1 text-[11px] opacity-70">{character.notes!.length}</span>}</TabsTrigger>
@@ -487,6 +489,14 @@ const CharacterPage = () => {
                  <TabsTrigger value="card-edit">角色卡编辑</TabsTrigger>
                  <TabsTrigger value="greetings">开场白</TabsTrigger>
                </TabsList>
+               {activeTab === 'stories' && <Button size="sm" disabled={startingPlay} onClick={() => {
+                 if (playStartLock.current) return;
+                 playStartLock.current = true; setStartingPlay(true);
+                 void import('@/lib/roleplay/start-story').then(module => module.startCharacterStory(character.id))
+                   .then(storyId => navigate('/play/' + encodeURIComponent(storyId)))
+                   .catch(error => toast({ title: '无法开始新聊天', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }))
+                   .finally(() => { playStartLock.current = false; setStartingPlay(false); });
+               }}><MessageSquare className="mr-1 h-3.5 w-3.5" />{startingPlay ? '正在打开…' : '新开聊天'}</Button>}
                {/* 导出阅读包：只在故事 tab 且有故事时给——包的主体就是故事正文，
                    空卡导出一个只有卡面的包没有意义 */}
                {activeTab === 'stories' && stories.length > 0 && (

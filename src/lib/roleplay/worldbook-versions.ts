@@ -50,6 +50,8 @@ export interface WorldbookVersionsOptions {
 }
 
 export interface WorldbookVersions {
+  /** Read only, for callers already holding the story queue. */
+  inheritanceFiles(targetBranchId: string, session: ChatSession, forkRefs: SourceRef[]): Promise<{ path: string; text: string }[]>;
   list(): Promise<WorldbookVersion[]>;
   effective(worldId: string, entryId: string | number): Promise<WorldbookVersion | null>;
   propose(proposal: WorldbookVersionProposal): Promise<WorldbookVersion>;
@@ -91,7 +93,8 @@ function originalDigest(world: WorldBookItem | undefined, entryId: string): stri
 
 /** Original assets stay authoritative; accepted branch versions are a sourced overlay in separate JSON files. */
 export function createWorldbookVersions(options: WorldbookVersionsOptions): WorldbookVersions {
-  const { storyId, branchId, store, stories, worldbooks } = options;
+  const { storyId, branchId, stories, worldbooks } = options;
+  const store = options.store.underStoryLock ?? options.store;
   if (!validTextId(storyId) || store.storyId !== storyId) throw new Error('世界书版本与故事不匹配');
   if (branchId !== null && !validTextId(branchId)) throw new Error('世界书版本分支无效');
   const epoch = getVaultEpoch();
@@ -221,6 +224,27 @@ export function createWorldbookVersions(options: WorldbookVersionsOptions): Worl
     });
   }
   return {
+    async inheritanceFiles(targetBranchId, session, forkRefs) {
+      const targetRoot = `.ste-control/roleplay/${branchKey(targetBranchId)}/worldbook-versions`;
+      if (targetBranchId === branchId || !isRuntimePath(targetRoot, true)) throw new Error('世界书继承的目标分支无效');
+      const state = await snapshot(session);
+      const allowed = new Set(forkRefs.map(ref => stableJson(ref)));
+      const valid = new Set(state.views.filter(view => view.accepted && ['active', 'superseded'].includes(view.status)
+        && view.sourceRefs.every(ref => allowed.has(stableJson(ref)))).map(view => view.id));
+      const selected: StoredVersion[] = [];
+      // A version based on excluded future lore must not carry that dependency into the fork.
+      for (const { record } of [...state.records].sort((a, b) => a.record.version - b.record.version)) {
+        if (valid.has(record.id) && (record.baseVersionId === null || selected.some(base => base.id === record.baseVersionId))) selected.push(record);
+      }
+      const ids = new Map(selected.map(record => [record.id,
+        digest(stableJson([storyId, targetBranchId, record.worldId, record.entryId, record.operationId]))]));
+      check();
+      return selected.map(record => ({
+        path: `${targetRoot}/${digest(entryKey(record.worldId, record.entryId))}/${digest(record.operationId)}.json`,
+        text: JSON.stringify({ ...record, branchId: targetBranchId, id: ids.get(record.id),
+          baseVersionId: record.baseVersionId === null ? null : ids.get(record.baseVersionId) }, null, 2),
+      }));
+    },
     list: () => inStory(async session => (await snapshot(session)).views),
     async effective(worldId, entryId) {
       if (!validTextId(worldId)) throw new Error('世界书 ID 无效');

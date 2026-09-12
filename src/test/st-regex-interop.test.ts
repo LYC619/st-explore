@@ -53,6 +53,19 @@ describe('stScriptToRule', () => {
 });
 
 describe('ruleToSTScript (round-trip)', () => {
+  it.each([[4], [5], [3, 4, 5], [1, 4], [2, 5], [1, 2, 4, 5], []])('retains the original ST-only and mixed placements %j', (...placement: number[]) => {
+    const script = makeST({ placement });
+    const rule = stScriptToRule(script);
+    rule.replaceString = 'edited replacement';
+    expect(ruleToSTScript(rule).placement).toEqual(placement);
+  });
+
+  it('honors a changed compact placement rather than restoring a stale original', () => {
+    const rule = stScriptToRule(makeST({ placement: [4] }));
+    rule.placement = ['assistant'];
+    expect(ruleToSTScript(rule).placement).toEqual([2]);
+  });
+
   it('restores ST-only fields from _raw', () => {
     const st = makeST({ trimStrings: ['a'], substituteRegex: 2, minDepth: 1, maxDepth: 5 });
     const back = ruleToSTScript(stScriptToRule(st));

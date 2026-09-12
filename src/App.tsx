@@ -1,9 +1,9 @@
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { lazy, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { VaultGate } from "@/components/vault/VaultGate";
 import { MigrationNotice } from "@/components/MigrationNotice";
 import { ThemeSync } from "@/components/ThemeSync";
@@ -42,6 +42,8 @@ const CardViewer = lazy(PAGE_LOADERS.cardViewer);
 const Preset = lazy(PAGE_LOADERS.preset);
 const RegexTool = lazy(PAGE_LOADERS.regex);
 const NotFound = lazy(PAGE_LOADERS.notFound);
+// The original Tavern and its tokenizer are loaded only when opening a story for play.
+const Roleplay = lazy(() => import("./pages/Roleplay"));
 
 /** 空闲时预热全部页面 chunk（失败静默：预热失败不影响正常懒加载兜底） */
 function usePrefetchPages() {
@@ -60,6 +62,26 @@ function usePrefetchPages() {
 
 const App = () => {
   usePrefetchPages();
+  // Data-router blockers let the live editor finish its save before Back/search/navigation.
+  const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<>
+    <Route path="/play/:id" element={<Suspense fallback={<div>正在打开酒馆…</div>}><Roleplay /></Suspense>} />
+    <Route element={<AppLayout />}>
+      <Route path="/" element={<Home />} />
+      <Route path="/library" element={<Library />} />
+      <Route path="/character/:id" element={<CharacterPage />} />
+      <Route path="/story/:id" element={<StoryWorkspace />} />
+      <Route path="/tools" element={<Tools />} />
+      <Route path="/chat" element={<Index />} />
+      <Route path="/assets" element={<AssetLibrary />} />
+      <Route path="/worldbook" element={<WorldBook />} />
+      <Route path="/card-viewer" element={<CardViewer />} />
+      <Route path="/preset" element={<Preset />} />
+      <Route path="/regex" element={<RegexTool />} />
+      <Route path="/settings" element={<SettingsPage />} />
+      <Route path="/ai-tools" element={<Navigate to="/settings" replace />} />
+      <Route path="*" element={<NotFound />} />
+    </Route>
+  </>)));
   return (
   <ThemeProvider
     attribute="data-theme"
@@ -81,30 +103,7 @@ const App = () => {
       <Sonner />
       <VaultGate>
         <MigrationNotice>
-        <BrowserRouter>
-          <Routes>
-          <Route element={<AppLayout />}>
-          <Route path="/" element={<Home />} />
-          <Route path="/library" element={<Library />} />
-          <Route path="/character/:id" element={<CharacterPage />} />
-          <Route path="/story/:id" element={<StoryWorkspace />} />
-          {/* 编辑区一级入口直接进入 /chat；/tools 仅承载总结/故事树选择器。 */}
-          <Route path="/tools" element={<Tools />} />
-          <Route path="/chat" element={<Index />} />
-          <Route path="/assets" element={<AssetLibrary />} />
-          <Route path="/worldbook" element={<WorldBook />} />
-          <Route path="/card-viewer" element={<CardViewer />} />
-          <Route path="/preset" element={<Preset />} />
-          <Route path="/regex" element={<RegexTool />} />
-          {/* /summary /story-tree 已并入故事工作区（阶段3）；/bookshelf /reader 已随书架退役删除（阶段5） */}
-          <Route path="/settings" element={<SettingsPage />} />
-          {/* 阶段9.9：AI 配置迁入设置页，旧路径重定向兜底 */}
-          <Route path="/ai-tools" element={<Navigate to="/settings" replace />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-          </Route>
-          </Routes>
-        </BrowserRouter>
+        <RouterProvider router={router} />
       </MigrationNotice>
       </VaultGate>
     </TooltipProvider>

@@ -379,6 +379,14 @@ const StoryWorkspace = () => {
 
   return (
     <AppLayout
+      actions={<Button size="sm" onClick={async () => {
+        try {
+          await saverRef.current.flush();
+          navigate(`/play/${encodeURIComponent(story.id)}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`);
+        } catch (error) {
+          toast({ title: '保存未完成，暂未打开游玩', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+        }
+      }}><MessageSquare className="mr-1 h-4 w-4" />开始游玩</Button>}
       /* 窄屏：六个视图进左抽屉的页面插槽，分支/章节/书签进右抽屉。
          桌面档两个插槽都不传，二级栏照旧在页面里。 */
       mobileDrawer={isCompact ? (

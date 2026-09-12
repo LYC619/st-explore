@@ -5,6 +5,7 @@ import type { ChatSession } from '@/types/chat';
 import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, updateArchiveStory } from '@/lib/archive-db';
 import { avatarKey, chatKey, createRoleplayCatalog } from '@/lib/roleplay/catalog';
 import { encodeLiveChat } from '@/lib/roleplay/live-chat';
+import { sourceRefs } from '@/lib/roleplay/fingerprint';
 
 function memoryRepo<T extends { id: string; updatedAt: number }>(initial: T[]) {
   const items = new Map(initial.map(item => [item.id, structuredClone(item)]));
@@ -264,6 +265,8 @@ describe('roleplay character/chat catalog', () => {
     const branch = after.branches!.find(item => item.id === child.branchId)!;
     expect(branch.session.id).not.toBe(before.session.id);
     expect(branch.session.messages.map(message => message.id)).toEqual(['m1', 'm2']);
+    expect(branch.session.rawMetadata?.ste_catalog.runtimeParent).toEqual({ schema: 1,
+      storyId: 'story-a', branchId: child.branchId, parentBranchId: null, sourceRefs: sourceRefs(before.session).slice(0, 2) });
     expect(branch.markers).toEqual([before.markers[0]]);
     expect(branch.favorites).toEqual(['m2']);
     expect(branch.session.rawMetadata).toMatchObject({ foreign_header: { keep: true }, chat_metadata: { plugin: { count: 2 }, main_chat: catalog.initial.fileName, checkpoint: true } });
@@ -274,6 +277,9 @@ describe('roleplay character/chat catalog', () => {
     const grandchild = await catalog.resolveForSave(child.avatar, '分支的分支', grandchildPayload);
     expect(grandchild.storyId).toBe('story-a');
     expect(grandchild.branchId).not.toBe(child.branchId);
+    const descendant = f.stories.items.get('story-a')!.branches!.find(item => item.id === grandchild.branchId)!;
+    expect(descendant.session.rawMetadata?.ste_catalog.runtimeParent).toEqual({ schema: 1,
+      storyId: 'story-a', branchId: grandchild.branchId, parentBranchId: child.branchId, sourceRefs: sourceRefs(branch.session) });
   });
 
   it('renames only display metadata, persists old aliases across reopening, and rejects ambiguous names', async () => {

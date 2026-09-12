@@ -35,7 +35,7 @@ async function fixture() {
       7: { uid: 7, key: ['北门'], content: '北门尚无守门官。', constant: true, foreign: { keep: true } },
       8: { uid: 8, key: ['南门'], content: '南门临河。' },
     } }) });
-  const store = createRuntimeStore(story.id);
+  const store = createRuntimeStore(story.id).underStoryLock!;
   let current = true;
   const options = { storyId: story.id, branchId: null, store, stories, worldbooks, isCurrent: () => current };
   const versions = createWorldbookVersions(options);

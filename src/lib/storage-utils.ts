@@ -3,6 +3,7 @@
  */
 
 import { openDB, ALL_STORES, DB_VERSION, type StoreName } from '@/lib/idb';
+import { isRuntimePath, runtimeFileId } from '@/lib/roleplay/paths';
 
 /** 备份文件大小硬上限：正常整库备份远低于此，超过多半是误选了别的大文件或文件损坏，直接拒绝以免 file.text() 撑爆内存。 */
 export const MAX_BACKUP_BYTES = 500 * 1024 * 1024;
@@ -21,6 +22,17 @@ interface StoreSpec {
   label: string;
   /** 单条记录有效性判定：缺关键字段的脏数据会被跳过而不是写入（避免坏记录污染库） */
   isValid: (item: Record<string, unknown>) => boolean;
+  prepare?: (item: Record<string, unknown>) => Record<string, unknown>;
+}
+
+// Connection profiles live outside the library. Legacy extension settings can
+// still contain credentials, so library metadata must not carry them in backups.
+function withoutCredentials(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutCredentials);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) =>
+    !/^(?:api[_-]?key(?:[_-].*)?|.*[_-]api[_-]?key|authorization|proxy[_-]?password|password|secret(?:[_-].*)?|access[_-]?token|refresh[_-]?token)$/i.test(key))
+    .map(([key, item]) => [key, withoutCredentials(item)]));
 }
 
 /**
@@ -37,8 +49,13 @@ const STORE_SPECS: readonly StoreSpec[] = [
   { key: 'stories', label: '故事树', isValid: (s) => !!s.id && Array.isArray(s.nodes) },
   { key: 'characters', label: '角色档案', isValid: (c) => !!c.id && !!c.card },
   { key: 'archiveStories', label: '归档故事', isValid: (s) => !!s.id && !!s.session },
+  { key: 'archiveMeta', label: '文件库与游玩设置', isValid: m => typeof m.id === 'string' && !!m.id
+    && typeof m.schemaVersion === 'number' && Number.isFinite(m.schemaVersion) && typeof m.updatedAt === 'number',
+    prepare: m => withoutCredentials(m) as Record<string, unknown> },
   { key: 'regexes', label: '正则规则集', isValid: (r) => !!r.id && Array.isArray(r.rules) },
   { key: 'ratingTemplates', label: '评分模板', isValid: (t) => !!t.id && Array.isArray(t.dimensions) },
+  { key: 'roleplayFiles', label: '游玩记忆与记录', isValid: f => typeof f.storyId === 'string' && typeof f.text === 'string'
+    && isRuntimePath(f.path) && f.id === runtimeFileId(f.storyId, f.path) },
 ];
 
 /**
@@ -66,7 +83,7 @@ export async function estimateStorageUsage(): Promise<{
  * summaryTemplates/stories/characters/archiveStories/regexes），
  * 少备份任何一个都会造成"完整备份"名不副实的数据丢失。
  */
-export async function exportFullBackup(): Promise<void> {
+export async function collectFullBackup(): Promise<Record<string, unknown>> {
   const db = await openDB();
 
   const readAll = (storeName: string) =>
@@ -89,9 +106,13 @@ export async function exportFullBackup(): Promise<void> {
     app: 'silly-tavern-explorer',
   };
   STORE_SPECS.forEach((s, i) => {
-    backup[s.key] = results[i];
+    backup[s.key] = s.prepare ? validItems(s, results[i]) : results[i];
   });
+  return backup;
+}
 
+export async function exportFullBackup(): Promise<void> {
+  const backup = await collectFullBackup();
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -212,7 +233,7 @@ function validItems(spec: StoreSpec, items: unknown[]): Record<string, unknown>[
   return items.filter(
     (it): it is Record<string, unknown> =>
       !!it && typeof it === 'object' && spec.isValid(it as Record<string, unknown>),
-  );
+  ).map(item => spec.prepare ? spec.prepare(item) : item);
 }
 
 /**
