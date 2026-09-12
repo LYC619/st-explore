@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Repo } from '@/lib/repo';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
-import { buildCharacterFromCard, buildStoryFromSession, updateArchiveStory } from '@/lib/archive-db';
+import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, updateArchiveStory } from '@/lib/archive-db';
 import { avatarKey, chatKey, createRoleplayCatalog } from '@/lib/roleplay/catalog';
 import { encodeLiveChat } from '@/lib/roleplay/live-chat';
 
@@ -311,6 +311,63 @@ describe('roleplay character/chat catalog', () => {
     expect((await catalog.locate(catalog.initial.avatar, '../名字/只是别名.jsonl'))?.storyId).toBe('story-a');
     expect(f.stories.items.get('story-a')?.sourcePath).toBe('原始聊天.jsonl');
   });
+
+  it.each(['display name', 'stable key'] as const)('resolves stable identities after renaming to a %s and importing a branch copy', async renameTo => {
+    const f = fixture();
+    const catalog = await createRoleplayCatalog({ ...f.options, branchId: null });
+    await catalog.rename(catalog.initial.avatar, catalog.initial.fileName, renameTo === 'stable key' ? catalog.initial.key : '改名后的主线');
+    const copied = structuredClone(f.stories.items.get('story-a')!.session);
+    expect(copied.rawMetadata?.ste_catalog).toMatchObject({ aliases: expect.arrayContaining([catalog.initial.key]) });
+    const imported = buildBranchFromSession(copied, '导入的支线');
+    await updateArchiveStory('story-a', current => ({ branches: [...current.branches ?? [], imported] }), f.stories.repo);
+
+    const reopened = await createRoleplayCatalog({ ...f.options, branchId: null });
+    const chats = await reopened.chats(reopened.initial.avatar);
+    const writes = f.stories.writes();
+    const lists = f.stories.listReads();
+    for (const branchId of [null, imported.id]) {
+      const key = chatKey('story-a', branchId);
+      const expected = { storyId: 'story-a', branchId, key };
+      const listed = chats.find(chat => chat.key === key)!;
+      const located = await reopened.locate(reopened.initial.avatar, key);
+      expect(located).toMatchObject(expected);
+      expect(located?.fileName).toBe(listed.file_name.replace(/\.jsonl$/, ''));
+      expect(await reopened.locate(reopened.initial.avatar, listed.file_name)).toEqual(located);
+      expect(await reopened.existingLine(reopened.initial.avatar, key)).toMatchObject({ locator: expected });
+      expect(await reopened.resolveForSave(reopened.initial.avatar, key, encodeLiveChat(copied)))
+        .toMatchObject({ ...expected, created: false });
+      await expect(reopened.locate(avatarKey('character-b'), key)).rejects.toThrow(/角色/);
+    }
+    expect(f.stories.writes()).toBe(writes);
+    expect(f.stories.listReads()).toBe(lists);
+  });
+
+  for (const reopen of [false, true]) {
+    it(`rejects a deleted branch key retained in an imported copy's aliases ${reopen ? 'after reopening' : 'after refreshing'}`, async () => {
+      const f = fixture();
+      const catalog = await createRoleplayCatalog({ ...f.options, branchId: 'branch-a' });
+      const original = catalog.initial;
+      await catalog.rename(original.avatar, original.key, '改名后的分支');
+      const copied = structuredClone(f.stories.items.get('story-a')!.branches![0].session);
+      expect(copied.rawMetadata?.ste_catalog).toMatchObject({ aliases: expect.arrayContaining([original.key]) });
+      const imported = buildBranchFromSession(copied, '导入的分支副本');
+      await updateArchiveStory('story-a', current => ({ branches: [...current.branches ?? [], imported] }), f.stories.repo);
+      const beforeDeletion = await createRoleplayCatalog({ ...f.options, branchId: null });
+      await updateArchiveStory('story-a', current => ({ branches: current.branches!.filter(branch => branch.id !== original.branchId) }), f.stories.repo);
+      const current = reopen ? await createRoleplayCatalog({ ...f.options, branchId: null }) : beforeDeletion;
+      await current.chats(original.avatar);
+      const writes = f.stories.writes();
+
+      await expect(current.locate(original.avatar, original.key)).rejects.toThrow(/不存在|删除/);
+      await expect(current.existingLine(original.avatar, original.key)).rejects.toThrow(/不存在|删除/);
+      await expect(current.resolveForSave(original.avatar, original.key, encodeLiveChat(copied))).rejects.toThrow(/不存在|删除/);
+      const child = encodeLiveChat(copied);
+      child[0].chat_metadata!.main_chat = original.key;
+      await expect(current.resolveForSave(original.avatar, '已删父聊天的新分支', child)).rejects.toThrow(/不存在|删除/);
+      expect(await current.locate(original.avatar, chatKey('story-a', imported.id))).toMatchObject({ branchId: imported.id });
+      expect(f.stories.writes()).toBe(writes);
+    });
+  }
 
   it('keeps unbound stories accessible through synthetic character DTOs without creating character records', async () => {
     const f = fixture();

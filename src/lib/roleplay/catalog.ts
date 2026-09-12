@@ -63,6 +63,8 @@ export interface RoleplayCatalog {
 const encodeKey = (value: string) => encodeURIComponent(value).replace(/[.!'()*~]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 export const avatarKey = (characterId: string): string => `ste-${encodeKey(characterId)}.png`;
 export const chatKey = (storyId: string, branchId: string | null): string => `ste-chat-${encodeKey(storyId)}~${branchId === null ? 'main' : `branch-${encodeKey(branchId)}`}`;
+// Qualified filenames may start with a key, but are still ordinary aliases.
+const isChatKey = (name: string) => /^ste-chat-(?:[\w-]|%[0-9A-F]{2})*~(?:main|branch-(?:[\w-]|%[0-9A-F]{2})*)$/.test(name);
 const orphanAvatar = (storyId: string) => `ste~story~${encodeKey(storyId)}.png`;
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 
@@ -223,10 +225,15 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   function find(state: Snapshot, avatar: string, fileName: string): Entry | undefined {
     if (!state.people.has(avatar)) throw new Error('角色不存在');
     const name = chatName(fileName);
-    const remembered = seenAliases.get(aliasId(avatar, name));
-    const owners = state.aliases.get(avatar)?.get(name);
-    if (remembered === null || (remembered === undefined && owners && owners.size > 1)) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
-    const key = remembered ?? (owners?.size ? [...owners][0] : state.byKey.has(name) ? name : undefined);
+    // Imports can copy aliases, but a stable key only identifies its own captured line.
+    let key = knownLocators.has(name) ? name : undefined;
+    if (!key) {
+      if (isChatKey(name)) throw new Error('故事或分支不存在');
+      const remembered = seenAliases.get(aliasId(avatar, name));
+      const owners = state.aliases.get(avatar)?.get(name);
+      if (remembered === null || (remembered === undefined && owners && owners.size > 1)) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
+      key = remembered ?? (owners?.size ? [...owners][0] : undefined);
+    }
     if (key) {
       const entry = state.byKey.get(key);
       if (!entry) throw new Error('故事或分支已删除，聊天不存在');
@@ -241,9 +248,12 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   async function knownEntry(avatar: string, fileName: string): Promise<Entry | undefined> {
     assertCurrent();
     const name = chatName(fileName);
-    const remembered = seenAliases.get(aliasId(avatar, name));
-    if (remembered === null) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
-    const locator = knownLocators.get(remembered ?? name);
+    let locator = knownLocators.get(name);
+    if (!locator && !isChatKey(name)) {
+      const remembered = seenAliases.get(aliasId(avatar, name));
+      if (remembered === null) throw new Error('聊天名称重名，对应多个故事或分支，请使用列表中的名称');
+      locator = knownLocators.get(remembered ?? name);
+    }
     if (!locator) return undefined;
     if (locator.avatar !== avatar) throw new Error('聊天角色与故事不匹配');
     const story = await stories.get(locator.storyId);
