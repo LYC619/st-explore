@@ -5,6 +5,7 @@ import {
   IdCard,
   Layers,
   MessageSquare,
+  MessageCircle,
   Network,
   PenLine,
   Regex,
@@ -12,7 +13,7 @@ import {
   Users,
 } from 'lucide-react';
 
-export type NavAreaKey = 'home' | 'characters' | 'editor' | 'assets';
+export type NavAreaKey = 'home' | 'chats' | 'characters' | 'editor' | 'assets';
 
 export interface NavDestination {
   key: string;
@@ -45,6 +46,15 @@ export const NAV_AREAS: NavArea[] = [
     icon: Home,
     path: '/',
     prefixes: ['/'],
+    children: [],
+  },
+  {
+    key: 'chats',
+    label: '聊天',
+    description: '继续对话、开始新聊天和配置记忆',
+    icon: MessageCircle,
+    path: '/play',
+    prefixes: ['/play'],
     children: [],
   },
   {

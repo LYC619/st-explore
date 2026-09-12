@@ -869,6 +869,47 @@ async fn pick_chat_file(app: tauri::AppHandle) -> Result<Option<PickedChatFile>,
     read_picked_file_impl(&path, MAX_PICKED_FILE_BYTES).map(Some)
 }
 
+// The path comes only from the native save dialog, never from a frontend argument.
+// Writing this one file does not grant later access to its surrounding directory.
+fn write_selected_text_export(selected: Option<PathBuf>, content: &str) -> Result<bool, String> {
+    let Some(path) = selected else {
+        return Ok(false);
+    };
+    if !path.is_absolute() {
+        return Err("导出位置不是本机绝对路径".to_string());
+    }
+    if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
+        return Err("请选择普通文件，不能覆盖符号链接".to_string());
+    }
+    write_bytes_atomic(&path, content.as_bytes())?;
+    Ok(true)
+}
+
+#[tauri::command]
+async fn save_text_export(
+    app: tauri::AppHandle,
+    file_name: String,
+    extension: String,
+    content: String,
+) -> Result<bool, String> {
+    let label = match extension.as_str() {
+        "jsonl" => "聊天恢复文件",
+        "ste-play" => "STE 完整故事包",
+        _ => return Err("不支持的导出文件格式".to_string()),
+    };
+    let selected = dialog_for(&app)
+        .set_title(format!("导出{label}"))
+        .set_file_name(file_name)
+        .add_filter(label, &[extension.as_str()])
+        .blocking_save_file()
+        .map(|file| {
+            file.into_path()
+                .map_err(|error| format!("导出位置不是本机文件: {error}"))
+        })
+        .transpose()?;
+    write_selected_text_export(selected, &content)
+}
+
 #[tauri::command]
 fn vault_write_abs_text(
     roots: tauri::State<'_, AuthorizedRoots>,
@@ -977,6 +1018,7 @@ pub fn run() {
             vault_stat,
             vault_read_abs_text,
             pick_chat_file,
+            save_text_export,
             vault_write_abs_text,
             vault_write_abs_binary,
             vault_pick_authorized_directory,
@@ -1371,6 +1413,33 @@ mod tests {
         assert!(err.contains("文件过大"), "实际错误: {err}");
 
         assert!(read_picked_file_impl(&root.join("不存在.jsonl"), MAX_PICKED_FILE_BYTES).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn selected_text_export_writes_outside_vault_without_granting_directory_access() {
+        let root = temp_root("selected-text-export");
+        let target = root.join("恢复.jsonl");
+        let roots = AuthorizedRoots::default();
+        assert!(authorized_write_absolute_path(&roots, target.to_str().unwrap()).is_err());
+        assert!(write_selected_text_export(Some(target.clone()), "当前编辑与输入").unwrap());
+        assert_eq!(read_text_impl(&target).unwrap(), "当前编辑与输入");
+        assert!(authorized_write_absolute_path(&roots, target.to_str().unwrap()).is_err());
+        assert!(!write_selected_text_export(None, "取消时不能改文件").unwrap());
+        assert_eq!(read_text_impl(&target).unwrap(), "当前编辑与输入");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn selected_text_export_surfaces_write_failure_and_keeps_existing_content() {
+        let root = temp_root("failed-text-export");
+        let target = root.join("existing-directory.jsonl");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("保留.txt"), "既有文件").unwrap();
+        assert!(write_selected_text_export(Some(target.clone()), "不能覆盖目录").is_err());
+        assert_eq!(read_text_impl(&target.join("保留.txt")).unwrap(), "既有文件");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        assert!(write_selected_text_export(Some(PathBuf::from("relative.jsonl")), "拒绝相对路径").is_err());
         let _ = fs::remove_dir_all(&root);
     }
 

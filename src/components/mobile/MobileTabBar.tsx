@@ -1,5 +1,5 @@
 /**
- * 底部标签栏（移动端适配 P0）：常驻四个一级入口，来源就是 NAV_AREAS 的四个区域，
+ * 底部标签栏（移动端适配 P0）：常驻一级入口，来源就是 NAV_AREAS，
  * 不额外维护第二份信息架构。设置不在这里——它不是一级区域，入口在左侧抽屉底部，
  * 与桌面侧栏的位置一致。全屏阅读层挂载时整条隐藏（沉浸态）。
  */
@@ -22,7 +22,7 @@ interface MobileTabBarProps {
 export function MobileTabBar({ onActivateArea }: MobileTabBarProps) {
   const { pathname, search } = useLocation();
   const activeIndex = activeAreaIndex(pathname, search);
-  /** 设置页不属于任何一级区域，四个 tab 都不该亮 */
+  /** 设置页不属于任何一级区域，所有 tab 都不该亮 */
   const outsideAreas = pathname.startsWith('/settings');
 
   return (

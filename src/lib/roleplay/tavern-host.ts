@@ -43,6 +43,7 @@ export interface TavernHostOptions {
   branchId?: string | null;
   defaults: TavernDefaults;
   onCommit?: (commit: StoryCommit) => void;
+  onSaveError?: (message: string) => void;
   onReady?: () => void;
   onGeneration?: (active: boolean) => void;
   onManageProfiles?: () => void;
@@ -734,7 +735,11 @@ export async function createTavernHost(options: TavernHostOptions) {
         return json({ error: { message: `尚未接入的酒馆接口：${pathname}` } }, 501);
       } catch (error) {
         if (signal?.aborted) throw error;
-        return json({ error: { message: error instanceof Error ? error.message : String(error) } }, 409);
+        const message = error instanceof Error ? error.message : String(error);
+        if (path.split('?')[0] === '/api/chats/save') {
+          try { options.onSaveError?.(message); } catch { /* Reporting must not hide the write failure. */ }
+        }
+        return json({ error: { message } }, 409);
       }
     },
     tokenize: tokenizeTavern,

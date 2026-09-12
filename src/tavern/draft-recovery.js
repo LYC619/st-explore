@@ -41,7 +41,15 @@ export function installDraftRecovery(st, host) {
                 restore.disabled = snapshot.conflict; banner.hidden = false;
             } else {
                 const input = document.querySelector('#send_textarea');
-                if (input) { input.value = snapshot?.draft.input ?? ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+                const recovery = st.chat_metadata?.ste_recovery;
+                const exportedInput = recovery?.version === 1 && typeof recovery.input === 'string' ? recovery.input : '';
+                if (input) {
+                    input.value = snapshot?.draft.input ?? exportedInput;
+                    // The next ordinary chat save consumes the import marker. Later empty drafts
+                    // must not resurrect input that the player has already sent or cleared.
+                    if (recovery?.version === 1) delete st.chat_metadata.ste_recovery;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             }
         } catch (error) {
             pending = true; label.textContent = error.message; restore.disabled = true; banner.hidden = false;

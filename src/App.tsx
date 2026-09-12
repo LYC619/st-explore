@@ -15,6 +15,7 @@ import { THEME_KEYS, DEFAULT_THEME } from "@/lib/theme";
 // 消除首次切页的 Suspense 白屏，本地静态资源预热成本可忽略）。
 const PAGE_LOADERS = {
   home: () => import("./pages/Home"),
+  chats: () => import("./pages/ChatHub"),
   index: () => import("./pages/Index"),
   tools: () => import("./pages/Tools"),
   library: () => import("./pages/Library"),
@@ -30,6 +31,7 @@ const PAGE_LOADERS = {
 };
 
 const Home = lazy(PAGE_LOADERS.home);
+const ChatHub = lazy(PAGE_LOADERS.chats);
 const Index = lazy(PAGE_LOADERS.index);
 const Tools = lazy(PAGE_LOADERS.tools);
 const Library = lazy(PAGE_LOADERS.library);
@@ -67,6 +69,7 @@ const App = () => {
     <Route path="/play/:id" element={<Suspense fallback={<div>正在打开酒馆…</div>}><Roleplay /></Suspense>} />
     <Route element={<AppLayout />}>
       <Route path="/" element={<Home />} />
+      <Route path="/play" element={<ChatHub />} />
       <Route path="/library" element={<Library />} />
       <Route path="/character/:id" element={<CharacterPage />} />
       <Route path="/story/:id" element={<StoryWorkspace />} />

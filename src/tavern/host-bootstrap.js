@@ -1,6 +1,7 @@
 // Served as /tauri-main.js inside the original ST document. All persistence stays in the parent STE app.
 import { lodash } from './lib.js';
 import { installDraftRecovery } from '/ste/draft-recovery.js';
+import { captureRecoveryFile } from '/ste/recovery-export.js';
 import { installRegexAssets } from '/ste/regex-assets.js';
 import { installHelperHost } from '/ste/helper-host.js';
 import { installHelperControls } from '/ste/helper-controls.js';
@@ -8,7 +9,7 @@ import { installPackageControls } from '/ste/package-controls.js';
 
 const channel = new URLSearchParams(location.search).get('host');
 const host = window.parent.__STE_TAVERN_HOSTS__?.get(channel);
-if (!host) throw new Error('请从 STE 的故事页面打开酒馆');
+if (!host) throw new Error('请从 STE 的聊天或故事页面打开酒馆');
 window._ = lodash;
 // ST normally lives at /. At /tavern.html, jQuery UI otherwise treats #tab
 // links resolved against <base href="/"> as remote and inserts a second document.
@@ -240,6 +241,22 @@ window.__STE_BEFORE_CHAT_SWITCH__ = async () => {
     await window.__STE_DRAFT_CAPTURE__?.();
 };
 let stModule;
+window.__STE_TAVERN_SNAPSHOT__ = async () => captureRecoveryFile(stModule ?? await import('./script.js'));
+window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
+    const runtime = section === 'runtime';
+    const drawer = $(runtime ? '#extensions-settings-button' : '#sys-settings-button');
+    const content = drawer.children('.drawer-content');
+    if (content.hasClass('closedDrawer')) await (stModule ?? await import('./script.js')).doNavbarIconClick.call(drawer.children('.drawer-toggle')[0]);
+    if (runtime) {
+        const panel = $('#ste_runtime_settings');
+        if (!panel.find('.inline-drawer-content').is(':visible')) panel.find('.inline-drawer-toggle').trigger('click');
+        await panel.find('.inline-drawer-content').promise();
+    }
+    const control = document.querySelector(runtime ? '#ste_play_mode' : '#ste_main_profile');
+    if (!control) throw new Error('聊天界面尚未准备好，请稍后再试');
+    control.scrollIntoView({ block: 'center' });
+    control.focus({ preventScroll: true });
+};
 window.__STE_TAVERN_DIRTY__ = () => host.isGenerating() || stModule?.hasUnsavedChat() || !!document.querySelector('#chat .edit_textarea')
     || !!document.querySelector('#send_textarea')?.value;
 async function installConnectionControls() {
@@ -333,7 +350,8 @@ async function installRuntimeControls(st) {
     mode.addEventListener('change', change); owner.addEventListener('change', change);
     const { Popup, POPUP_TYPE } = await import('./scripts/popup.js');
     const pluginControls = document.createElement('div'); pluginControls.className = 'flex-container flexFlowColumn';
-    pluginControls.innerHTML = '<hr><b>柏宝书原版插件</b><small id="ste_baibai_installed"></small><small>摘要使用 STE 工具模型；当前支持非向量记忆。安装后重新打开聊天生效。</small><label class="menu_button">选择插件 ZIP<input type="file" id="ste_baibai_zip" accept=".zip" style="max-width:100%"></label><button class="menu_button" id="ste_baibai_remove">移除插件</button>';
+    pluginControls.innerHTML = '<hr><b>柏宝书原版插件</b><small id="ste_baibai_installed"></small><small>摘要使用 STE 工具模型；当前支持非向量记忆。安装后重新打开聊天生效。</small><button type="button" class="menu_button" id="ste_baibai_choose">选择插件 ZIP</button><input type="file" id="ste_baibai_zip" accept=".zip"><button class="menu_button" id="ste_baibai_remove">移除插件</button>';
+    pluginControls.querySelector('#ste_baibai_choose').addEventListener('click', () => pluginControls.querySelector('#ste_baibai_zip').click());
     panel.querySelector('.inline-drawer-content').append(pluginControls);
     const installed = await request('/ste/extensions');
     const pluginStatus = pluginControls.querySelector('#ste_baibai_installed');

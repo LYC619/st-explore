@@ -31,7 +31,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     overlays.push({ asset: await generated(url, await transform(text)), expectedSha256: original.sha256 });
   }
   await override('/tauri-main.js', () => readFile(path.join(source.projectRoot, 'src/tavern/host-bootstrap.js')));
-  for (const name of ['draft-recovery.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'package-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
+  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'package-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
   additions.push(await generated('/ste/helper-lodash.js', await readFile(path.join(source.projectRoot, 'node_modules/lodash/lodash.min.js'))));
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'
@@ -81,6 +81,11 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     'if (getCurrentChatId() !== undefined) return;\n    await unshallowPermanentAssistant();\n    if (getCurrentChatId() !== undefined) return;\n    sendAssistantMessage();'));
   await override('/script.js', input => {
     let text = input;
+    text = replaceOnce(text, 'throw new Error(result.statusText);',
+      'throw new Error(errorData?.error?.message || result.statusText || "聊天保存失败");');
+    text = replaceOnce(text,
+      'toastr.error(t`Check the server connection and reload the page to prevent data loss.`, t`Chat could not be saved`);',
+      'toastr.error(error.message, "聊天尚未保存，请使用顶部的重试或导出");');
     text = replaceOnce(text, 'chat_metadata = chatHeader?.chat_metadata ?? {};',
       'chat_metadata = chatHeader?.chat_metadata ?? {};\n            allowNewChat ||= chat_metadata.ste_pending_initial_greeting === true;\n            delete chat_metadata.ste_pending_initial_greeting;');
     for (const declaration of [

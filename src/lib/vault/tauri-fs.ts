@@ -117,6 +117,11 @@ export function writeAbsText(path: string, content: string): Promise<void> {
   return invoke('vault_write_abs_text', { path, content });
 }
 
+/** Select and write one export in Rust; an ordinary Save dialog does not authorize a vault root. */
+export function saveTextExport(output: { fileName: string; extension: string; content: string }): Promise<boolean> {
+  return invoke('save_text_export', output);
+}
+
 /** 按绝对路径写二进制（阅读包导出用）。载荷走 base64——zip 塞不进 String。 */
 export function writeAbsBytes(path: string, bytes: Uint8Array): Promise<void> {
   let bin = '';

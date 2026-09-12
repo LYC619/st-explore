@@ -4,6 +4,8 @@ export type TavernHost = Awaited<ReturnType<typeof createTavernHost>>;
 export interface TavernFrameWindow extends Window {
   __STE_TAVERN_FLUSH__?: () => Promise<void>;
   __STE_TAVERN_DIRTY__?: () => boolean;
+  __STE_TAVERN_SNAPSHOT__?: () => Promise<{ fileName: string; text: string }>;
+  __STE_TAVERN_OPEN_SETTINGS__?: (section: 'runtime' | 'models') => Promise<void>;
 }
 declare global {
   interface Window {

@@ -30,25 +30,27 @@ describe('视口档位', () => {
 });
 
 describe('一级区域索引', () => {
-  it('四个一级入口各归各位', () => {
+  it('五个一级入口各归各位，聊天与聊天处理各自独立', () => {
     expect(activeAreaIndex('/', '')).toBe(0);
-    expect(activeAreaIndex('/library', '')).toBe(1);
-    expect(activeAreaIndex('/chat', '')).toBe(2);
-    expect(activeAreaIndex('/assets', '?tab=worldbook')).toBe(3);
+    expect(activeAreaIndex('/play', '')).toBe(1);
+    expect(activeAreaIndex('/library', '')).toBe(2);
+    expect(activeAreaIndex('/chat', '')).toBe(3);
+    expect(activeAreaIndex('/assets', '?tab=worldbook')).toBe(4);
   });
 
   it('子界面点亮父 tab', () => {
     // 编辑区：独立路由的和挂 ?focus= 的都要落在编辑区
-    expect(activeAreaIndex('/worldbook', '')).toBe(2);
-    expect(activeAreaIndex('/card-viewer', '')).toBe(2);
-    expect(activeAreaIndex('/tools', '?focus=summary')).toBe(2);
+    expect(activeAreaIndex('/worldbook', '')).toBe(3);
+    expect(activeAreaIndex('/card-viewer', '')).toBe(3);
+    expect(activeAreaIndex('/tools', '?focus=summary')).toBe(3);
     // 角色详情页归角色库
-    expect(activeAreaIndex('/character/abc', '')).toBe(1);
+    expect(activeAreaIndex('/character/abc', '')).toBe(2);
     // 附属库换 tab 不改一级归属
-    expect(activeAreaIndex('/assets', '?tab=preset')).toBe(3);
+    expect(activeAreaIndex('/assets', '?tab=preset')).toBe(4);
+    expect(activeAreaIndex('/play/example', '?from=chats')).toBe(1);
   });
 
-  it('不属于任何区域的路由返回 -1（设置页四个 tab 都不该亮）', () => {
+  it('不属于任何区域的路由返回 -1（设置页所有 tab 都不该亮）', () => {
     expect(activeAreaIndex('/settings', '')).toBe(-1);
     expect(activeAreaIndex('/settings/data', '')).toBe(-1);
   });

@@ -93,6 +93,7 @@ async function seed(page: Page) {
   await page.goto('/');
   await expect(page.locator('main')).toBeVisible();
   return page.evaluate(async endpoint => {
+    localStorage.setItem('ste-play-guide-seen', '1');
     const db = await import('/src/lib/archive-db.ts');
     const profiles = await import('/src/components/ai-tools/api-profiles.ts');
     profiles.persistProfiles([{ id: 'browser-test', name: '本地测试模型', apiUrl: endpoint, apiKey: '', model: 'fixture-model' }], 'browser-test');
@@ -598,12 +599,97 @@ test('a failed story write keeps the live chat open and retry preserves the edit
   await message.locator('.edit_textarea').fill('这条修改需要重试保存。');
   await page.getByRole('button', { name: '返回故事' }).click();
   await expect(page.getByRole('alert')).toContainText('尚未保存');
+  await expect(page.getByRole('alert')).toContainText('模拟磁盘写入失败');
   await expect(page).toHaveURL(new RegExp('/play/'));
   await page.evaluate(() => (window as any).__restoreStoryWrite());
+  await page.getByRole('button', { name: '重试保存', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByRole('button', { name: '返回故事' }).click();
   await expect(page).toHaveURL(new RegExp('/story/'));
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages[0].content).toBe('这条修改需要重试保存。');
+});
+
+test('failed saving still lets the player export the editor and input, then explicitly leave', async ({ page }) => {
+  const storyId = await seed(page);
+  await page.goto('/play/' + storyId + '?from=chats');
+  const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  const message = tavern.locator('#chat .mes').first();
+  await expect(message.locator('.mes_text')).toHaveText('请进，外面在下雨。');
+  await page.evaluate(async () => {
+    const repo = (await import('/src/lib/repo/index.ts')).getCurrentRepo('archiveStories');
+    const original = repo.put.bind(repo);
+    (window as any).__restoreStoryWrite = () => { repo.put = original; };
+    repo.put = async () => { throw new Error('模拟持续写入失败'); };
+  });
+  await message.hover(); await message.locator('.mes_edit').click();
+  await message.locator('.edit_textarea').fill('必须能带走的未保存编辑。');
+  await tavern.locator('#send_textarea').fill('还没有发出的下一句话。');
+  await page.getByRole('button', { name: /返回故事|返回聊天/ }).click();
+  await expect(page.getByRole('button', { name: '导出当前内容', exact: true })).toBeVisible({ timeout: 5000 });
+  const downloadTask = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出当前内容', exact: true }).click();
+  const download = await downloadTask;
+  const recoveryText = await readFile((await download.path())!, 'utf8');
+  const rows = recoveryText.trim().split('\n').map(line => JSON.parse(line));
+  expect(rows[1].mes).toBe('必须能带走的未保存编辑。');
+  expect(rows[0].chat_metadata.ste_recovery.input).toBe('还没有发出的下一句话。');
+  await page.getByRole('button', { name: '退出聊天', exact: true }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: '确认离开', exact: true }).click();
+  await expect(page).toHaveURL(/\/play$/);
+  const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
+  expect(saved.session.messages[0].content).toBe('请进，外面在下雨。');
+  const recoveryId = await page.evaluate(async ({ text, characterId }) => {
+    (window as any).__restoreStoryWrite();
+    const db = await import('/src/lib/archive-db.ts');
+    const { parseJsonl } = await import('/src/lib/adapters/st/chat-jsonl.ts');
+    const parsed = parseJsonl(text);
+    const restored = db.buildStoryFromSession({ id: crypto.randomUUID(), title: '恢复的聊天', createdAt: Date.now(),
+      user: { name: parsed.metadata.user_name }, character: { name: parsed.metadata.character_name },
+      messages: parsed.messages, rawMetadata: parsed.metadata }, characterId);
+    await db.saveArchiveStory(restored);
+    return restored.id;
+  }, { text: recoveryText, characterId: saved.characterId });
+  await page.goto('/play/' + recoveryId + '?from=chats');
+  await expect(tavern.locator('#chat')).toContainText('必须能带走的未保存编辑。');
+  await expect(tavern.locator('#send_textarea')).toHaveValue('还没有发出的下一句话。');
+});
+
+test('the chat hub opens conversations directly and guides a new chat to its real settings', async ({ page }, info) => {
+  const storyId = await seed(page);
+  await page.goto('/play');
+  await expect(page.getByRole('heading', { name: '聊天', exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('chat-hub.png') });
+  await page.getByRole('button', { name: '继续 雨夜书店', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp('/play/' + storyId));
+  const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
+  await page.getByRole('button', { name: '返回聊天', exact: true }).click();
+  await expect(page).toHaveURL(/\/play$/);
+  await page.evaluate(() => localStorage.removeItem('ste-play-guide-seen'));
+  await page.getByRole('button', { name: '新建聊天', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: '与林聊天', exact: true }).click();
+  const guide = page.getByRole('dialog', { name: '聊天与记忆指南' });
+  await expect(guide).toContainText('主模型');
+  await expect(guide).toContainText('STE Agent');
+  await expect(guide).toContainText('柏宝书');
+  await page.screenshot({ path: info.outputPath('chat-guide.png') });
+  await guide.getByRole('button', { name: '打开玩法设置', exact: true }).click();
+  await expect(tavern.locator('#ste_play_mode')).toBeVisible();
+  const fileChooserTask = page.waitForEvent('filechooser');
+  await tavern.getByRole('button', { name: '选择插件 ZIP', exact: true }).click();
+  const fileChooser = await fileChooserTask;
+  expect(fileChooser.isMultiple()).toBe(false);
+  await fileChooser.setFiles([]);
+  await page.getByRole('button', { name: '使用帮助', exact: true }).click();
+  await guide.getByRole('button', { name: '打开模型设置', exact: true }).click();
+  await expect(tavern.locator('#ste_main_profile')).toBeVisible();
+  await page.getByRole('button', { name: '返回聊天', exact: true }).click();
+  await expect(page).toHaveURL(/\/play$/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('navigation', { name: '主导航', exact: true }).getByRole('button', { name: '聊天', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath('chat-hub-mobile.png') });
 });
 
 test('the original branch command creates an internal STE branch and continues only that line', async ({ page }) => {
