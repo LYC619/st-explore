@@ -55,6 +55,10 @@ scripts/*
 !scripts/sync-version.test.mjs
 !scripts/smoke/
 !scripts/smoke/**
+!scripts/tavern/
+!scripts/tavern/**
+# Generated upstream frontend bundles and Rspack cache; source is pinned in vendor/.
+/.cache/tavern/
 .superpowers/
 # worktree 挂载点：里面是另一个分支的完整源码，不能进本分支的提交。
 # 只忽略 worktrees 子目录而不是整个 .claude/——settings.json 这类项目配置是该入库的。

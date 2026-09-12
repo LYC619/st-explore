@@ -11,7 +11,7 @@ export default tseslint.config(
   // 原来写的是 .worktrees（手工 git worktree add 的老约定，那个目录已删）；
   // 换成工具实际使用的路径，坑还在同一个地方，配置不能只指着已经没有的目录。
   // android/ 同理：Capacitor 生成的原生工程，里头的 JS 不受本项目规则管。
-  { ignores: ["dist", "_reference", "src-tauri/target", "scripts", ".claude/worktrees", "android"] },
+  { ignores: ["dist", "_reference", "vendor", ".cache/tavern", "src-tauri/target", "scripts", ".claude/worktrees", "android"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

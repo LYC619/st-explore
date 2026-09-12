@@ -1,0 +1,9 @@
+# Keep the original git-archive bytes and recorded SHA-256 values on every host.
+* -text
+# Original whitespace is part of the pinned bytes; apply checks to STE-owned files.
+src/** -whitespace
+default/content/** -whitespace
+LICENSE -whitespace
+package.json -whitespace
+pnpm-lock.yaml -whitespace
+rspack.config.js -whitespace

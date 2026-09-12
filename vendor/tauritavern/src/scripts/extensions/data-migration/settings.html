@@ -1,0 +1,49 @@
+<div id="data_migration_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b data-i18n="Data Migration">Data Migration</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+            <small class="extensions_info"
+                data-i18n="Import a SillyTavern data archive (zip, tar, tar.gz, or tgz) and migrate it to TauriTavern.">
+                Import a SillyTavern data archive (zip, tar, tar.gz, or tgz) and migrate it to TauriTavern.
+            </small>
+            <small class="extensions_info" data-i18n="Imported user handles are normalized to default-user.">
+                Imported user handles are normalized to default-user.
+            </small>
+            <div class="flex-container flexGap5">
+                <button id="data_migration_import_button" class="menu_button menu_button_icon"
+                    data-i18n="Import Data Archive">
+                    <i class="fa-solid fa-file-import"></i>
+                    <span>Import Data Archive</span>
+                </button>
+                <button id="data_migration_export_button" class="menu_button menu_button_icon"
+                    data-i18n="Export Current Data">
+                    <i class="fa-solid fa-file-export"></i>
+                    <span>Export Current Data</span>
+                </button>
+                <button id="data_migration_cancel_button" class="menu_button menu_button_icon"
+                    data-i18n="Cancel Migration" style="display:none;">
+                    <i class="fa-solid fa-ban"></i>
+                    <span>Cancel Migration</span>
+                </button>
+            </div>
+            <input id="data_migration_import_input" type="file"
+                accept=".zip,.tar,.tar.gz,.tgz,application/zip,application/gzip,application/x-gzip,application/x-tar,application/octet-stream"
+                hidden />
+            <small id="data_migration_status" class="extensions_info"></small>
+            <div id="data_migration_export_actions" class="flex-container flexGap5" style="display:none;">
+                <button id="data_migration_reveal_export_button" class="menu_button menu_button_icon"
+                    data-i18n="Show In Folder">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <span>Show In Folder</span>
+                </button>
+            </div>
+            <small class="extensions_info"
+                data-i18n="Warning: importing will merge into your current local data directory (same-path files will be overwritten).">
+                Warning: importing will merge into your current local data directory (same-path files will be overwritten).
+            </small>
+        </div>
+    </div>
+</div>

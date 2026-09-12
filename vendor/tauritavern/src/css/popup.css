@@ -1,0 +1,336 @@
+@import url('/lib/dialog-polyfill.css');
+@import url('./popup-safari-fix.css');
+
+dialog {
+    color: var(--SmartThemeBodyColor);
+}
+
+/* Closed state of the dialog */
+.popup {
+    width: 500px;
+    text-align: center;
+    box-shadow: 0px 0px 14px var(--black70a);
+    border: 1px solid var(--SmartThemeBorderColor);
+    padding: 4px 14px;
+    background-color: var(--SmartThemeBlurTintColor);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+
+    max-height: calc(100dvh - 2em);
+    max-width: calc(100dvw - 2em);
+    min-height: fit-content;
+
+    /* Overflow visible so elements (like toasts) can appear outside of the dialog. '.popup-body' is hiding overflow for the real content. */
+    overflow: visible;
+
+    /* Fix weird animation issue with font-scaling during popup open */
+    backface-visibility: hidden;
+    -webkit-font-smoothing: subpixel-antialiased;
+
+    /* Variables setup */
+    --popup-animation-speed: var(--animation-duration-slow);
+}
+
+/** Popup styles applied to the main popup */
+.popup--animation-fast {
+    --popup-animation-speed: var(--animation-duration);
+}
+
+.popup--animation-slow {
+    --popup-animation-speed: var(--animation-duration-slow);
+}
+
+.popup--animation-none {
+    --popup-animation-speed: 0ms;
+}
+
+/* Styling of main popup elements */
+.popup .popup-body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    width: min(100%, 100vw);
+    height: 100%;
+    padding: 1px;
+}
+
+.popup:not(:has(.img_enlarged_container)) .popup-body {
+    max-height: 95dvh;
+}
+
+.popup .popup-content {
+    margin-top: 10px;
+    padding: 0 8px;
+    overflow: hidden;
+    flex-grow: 1;
+}
+
+.popup .popup-content h3:first-child {
+    /* No double spacing for the first heading needed, the .popup-content already has margin */
+    margin-top: 0px;
+}
+
+.popup.vertical_scrolling_dialogue_popup .popup-content {
+    overflow-y: auto;
+}
+
+.popup.horizontal_scrolling_dialogue_popup .popup-content {
+    overflow-x: auto;
+}
+
+.popup.left_aligned_dialogue_popup .popup-content {
+    text-align: start;
+}
+
+/* Opening animation */
+.popup[opening] {
+    animation: pop-in var(--popup-animation-speed) ease-in-out;
+}
+
+.popup[opening]::backdrop {
+    animation: fade-in var(--popup-animation-speed) ease-in-out;
+}
+
+/* Fix toast container snapping into the backdrop while the animation is running */
+.popup[opening] #toast-container {
+    visibility: hidden;
+}
+
+/* Open state of the dialog */
+.popup[open] {
+    color: var(--SmartThemeBodyColor);
+}
+
+.popup[open]::backdrop {
+    backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 2));
+    -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength) * 2));
+    background-color: var(--black30a);
+}
+
+body.no-blur .popup[open]::backdrop {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* Closing animation */
+.popup[closing] {
+    animation: pop-out var(--popup-animation-speed) ease-in-out;
+}
+
+.popup[closing]::backdrop {
+    animation: fade-out var(--popup-animation-speed) ease-in-out;
+}
+
+/* Edge inset to match Toastr default spacing */
+:root {
+    --toast-edge: 12px;
+}
+
+.popup #toast-container {
+    /* Popups are centered by default; toasts should not be */
+    text-align: left;
+}
+
+/* Per-position position adjustments caused by the top bar, inside the popup */
+.popup #toast-container.toast-top-left {
+    top: calc(var(--toast-edge) + var(--topBarBlockSize));
+}
+
+.popup #toast-container.toast-top-center {
+    /* toastr in core does not have a top offset on center, so we don't do that either in popups */
+    top: var(--topBarBlockSize);
+}
+
+.popup #toast-container.toast-top-right {
+    top: calc(var(--toast-edge) + var(--topBarBlockSize));
+}
+
+.popup-crop-wrap {
+    margin: 10px auto;
+    max-height: 75vh;
+    max-height: 75dvh;
+    max-width: 100%;
+}
+
+.popup-crop-wrap img {
+    max-width: 100%;
+    /* This rule is very important, please do not ignore this! */
+}
+
+.popup-inputs {
+    margin-top: 10px;
+    font-size: smaller;
+    opacity: 0.7;
+}
+
+.popup-input {
+    margin-top: 10px;
+}
+
+.popup-controls {
+    margin-top: 10px;
+    display: flex;
+    align-self: center;
+    gap: 20px;
+}
+
+.menu_button.menu_button_default {
+    box-shadow: 0 0 5px var(--white20a);
+}
+
+.menu_button.popup-button-ok {
+    background-color: var(--crimson70a);
+}
+
+.menu_button.popup-button-ok:hover {
+    background-color: var(--crimson-hover);
+}
+
+.popup-controls .menu_button {
+    /* Popup buttons should not scale to smallest size, otherwise they will always break to multiline if multiple words */
+    width: unset;
+
+    /* Fix weird animation issue with fonts on brightness filter */
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    -webkit-font-smoothing: subpixel-antialiased;
+}
+
+.popup-controls .menu_button:hover:focus-visible {
+    filter: brightness(1.3) saturate(1.3);
+}
+
+.popup .popup-button-close {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 24px;
+    height: 24px;
+    font-size: 20px;
+    padding: 2px 3px 3px 2px;
+
+    filter: brightness(0.8);
+
+    /* Fix weird animation issue with font-scaling during popup open */
+    backface-visibility: hidden;
+}
+
+@media screen and (max-width: 1000px) {
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] {
+        padding: 0;
+        box-sizing: border-box;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] .popup-body {
+        width: 100%;
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+        max-height: none;
+        padding: 0;
+    }
+
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] .popup-content {
+        flex: 1 1 auto;
+        min-height: 0;
+        margin: 0;
+        padding: 10px;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] .popup-controls {
+        flex: 0 0 auto;
+        flex-wrap: wrap;
+        width: 100%;
+        gap: 8px;
+        justify-content: center;
+        align-self: stretch;
+        margin-top: 0;
+        padding: 8px 10px 10px;
+        border-top: 1px solid var(--SmartThemeBorderColor);
+        background: color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, transparent);
+    }
+
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] .popup-controls .menu_button {
+        flex: 1 1 130px;
+        min-width: 0;
+        justify-content: center;
+    }
+
+    .popup.tt-tauritavern-panel-popup[data-tt-mobile-surface="fullscreen-window"] .popup-button-close {
+        top: 8px;
+        right: 8px;
+    }
+}
+
+.popup.tt-fullscreen-text-viewer-popup {
+    width: 100vw;
+    width: 100dvw;
+    height: 100vh;
+    height: var(--tt-base-viewport-height, 100dvh);
+    max-width: 100vw;
+    max-width: 100dvw;
+    max-height: 100vh;
+    max-height: var(--tt-base-viewport-height, 100dvh);
+    min-height: 0;
+    margin: 0;
+    inset: 0;
+    padding: 0;
+    border-radius: 0;
+}
+
+.popup.tt-fullscreen-text-viewer-popup .popup-body {
+    max-height: none;
+    min-height: 0;
+    padding:
+        calc(var(--tt-inset-top) + 12px)
+        calc(var(--tt-inset-right) + 12px)
+        calc(var(--tt-viewport-bottom-inset) + 12px)
+        calc(var(--tt-inset-left) + 12px);
+}
+
+.popup.tt-fullscreen-text-viewer-popup .popup-content {
+    margin: 0;
+    padding: 0;
+    min-height: 0;
+    height: 100%;
+}
+
+.popup.tt-fullscreen-text-viewer-popup .popup-button-close {
+    top: calc(var(--tt-inset-top) + 8px);
+    right: calc(var(--tt-inset-right) + 8px);
+}
+
+.tt-fullscreen-text-viewer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    height: 100%;
+    min-height: 0;
+}
+
+.tt-fullscreen-text-viewer__header {
+    display: flex;
+    align-items: center;
+    min-height: 0;
+    padding-right: 44px;
+    text-align: left;
+}
+
+.tt-fullscreen-text-viewer__title {
+    font-size: 1rem;
+}
+
+.tt-fullscreen-text-viewer__textarea {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    margin: 0;
+    resize: none;
+    overflow: auto;
+}

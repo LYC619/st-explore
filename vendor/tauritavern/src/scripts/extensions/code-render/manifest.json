@@ -1,0 +1,10 @@
+{
+    "display_name": "Code Render",
+    "loading_order": 22,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "author": "Darkatse",
+    "version": "1.0.0",
+    "homePage": "https://github.com/Darkatse/TauriTavern"
+}

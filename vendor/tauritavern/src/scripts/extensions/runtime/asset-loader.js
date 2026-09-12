@@ -1,0 +1,189 @@
+import { resolveExtensionAssetPath } from './manifest-assets.js';
+
+async function withTimeout(taskFactory, timeoutMs, timeoutErrorFactory) {
+    return await new Promise((resolve, reject) => {
+        let settled = false;
+        const timeoutId = setTimeout(() => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            reject(timeoutErrorFactory());
+        }, timeoutMs);
+
+        Promise.resolve()
+            .then(taskFactory)
+            .then(result => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                resolve(result);
+            })
+            .catch(error => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                reject(error);
+            });
+    });
+}
+
+function toStyleLoadError(name, url, error) {
+    if (error instanceof Error) {
+        return error;
+    }
+
+    const errorType = error?.type || 'error';
+    return new Error(`Extension "${name}" stylesheet load failed (${errorType}): ${url}`);
+}
+
+function toStyleTimeoutError(name, url, timeoutMs) {
+    return new Error(`Extension "${name}" stylesheet load timed out after ${timeoutMs}ms: ${url}`);
+}
+
+function toStylePrepareTimeoutError(name, url, timeoutMs) {
+    return new Error(`Extension "${name}" stylesheet preprocessing timed out after ${timeoutMs}ms: ${url}`);
+}
+
+function toScriptLoadError(name, url, error) {
+    if (error instanceof Error) {
+        return error;
+    }
+
+    const errorType = error?.type || 'error';
+    return new Error(`Extension "${name}" script load failed (${errorType}): ${url}`);
+}
+
+function toInvalidAssetFieldError(name, fieldName) {
+    return new Error(
+        `Extension "${name}" manifest field "${fieldName}" must be a string or single-item string array.`,
+    );
+}
+
+export function createExtensionAssetLoader({
+    sanitizeSelector,
+    getExtensionResourceUrl,
+    isThirdPartyExtension,
+    resolveThirdPartyStylesheetUrl,
+    styleLoadTimeoutMs = 15000,
+}) {
+    async function addExtensionStyle(name, manifest) {
+        if (!manifest.css) {
+            return;
+        }
+
+        const id = sanitizeSelector(`${name}-css`);
+        const existing = document.getElementById(id);
+        if (existing) {
+            if (existing.dataset.tauritavernLoaded === 'true') {
+                return;
+            }
+
+            existing.remove();
+        }
+
+        const stylePath = resolveExtensionAssetPath(manifest.css);
+        if (!stylePath) {
+            throw toInvalidAssetFieldError(name, 'css');
+        }
+
+        let styleUrl = getExtensionResourceUrl(name, stylePath);
+        if (isThirdPartyExtension(name)) {
+            styleUrl = await withTimeout(
+                () => resolveThirdPartyStylesheetUrl(styleUrl),
+                styleLoadTimeoutMs,
+                () => toStylePrepareTimeoutError(name, styleUrl, styleLoadTimeoutMs),
+            );
+        }
+
+        await new Promise((resolve, reject) => {
+            let settled = false;
+            const link = document.createElement('link');
+            const timeoutId = setTimeout(() => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                link.dataset.tauritavernLoaded = 'false';
+                reject(toStyleTimeoutError(name, styleUrl, styleLoadTimeoutMs));
+            }, styleLoadTimeoutMs);
+
+            link.id = id;
+            link.rel = 'stylesheet';
+            link.type = 'text/css';
+            link.href = styleUrl;
+            link.onload = function () {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                link.dataset.tauritavernLoaded = 'true';
+                resolve();
+            };
+            link.onerror = function (err) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                clearTimeout(timeoutId);
+                link.dataset.tauritavernLoaded = 'false';
+                reject(toStyleLoadError(name, styleUrl, err));
+            };
+            document.head.appendChild(link);
+        });
+    }
+
+    async function addExtensionScript(name, manifest) {
+        if (!manifest.js) {
+            return;
+        }
+
+        const id = sanitizeSelector(`${name}-js`);
+        const existing = document.getElementById(id);
+        if (existing) {
+            if (existing.dataset.tauritavernLoaded === 'true') {
+                return;
+            }
+
+            existing.remove();
+        }
+
+        const scriptPath = resolveExtensionAssetPath(manifest.js);
+        if (!scriptPath) {
+            throw toInvalidAssetFieldError(name, 'js');
+        }
+
+        const scriptUrl = getExtensionResourceUrl(name, scriptPath);
+
+        const script = document.createElement('script');
+        script.id = id;
+        script.type = 'module';
+        script.src = scriptUrl;
+        script.async = true;
+
+        const loaded = new Promise((resolve, reject) => {
+            script.onerror = function (err) {
+                script.dataset.tauritavernLoaded = 'false';
+                reject(toScriptLoadError(name, scriptUrl, err));
+            };
+            script.onload = function () {
+                resolve();
+            };
+        });
+
+        document.body.appendChild(script);
+        // A load event alone does not reliably cover top-level await across WebViews.
+        await Promise.all([loaded, import(scriptUrl)]);
+        script.dataset.tauritavernLoaded = 'true';
+    }
+
+    return {
+        addExtensionStyle,
+        addExtensionScript,
+    };
+}

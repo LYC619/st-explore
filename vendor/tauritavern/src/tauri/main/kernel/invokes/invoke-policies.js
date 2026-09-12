@@ -1,0 +1,165 @@
+// @ts-check
+
+import { fnv1a32 } from '../hash-utils.js';
+
+const PROVIDER_METADATA_TIMEOUT_MS = 35_000;
+
+/**
+ * @typedef {import('./tauri-commands.js').TauriInvokeCommand} TauriInvokeCommand
+ *
+ * @typedef {(
+ *   command: TauriInvokeCommand | string,
+ *   args?: any,
+ * ) => Promise<any>} InvokeTransport
+ *
+ * @typedef {{
+ *   kind: 'dedupe';
+ *   key?: ((args: any) => string) | undefined;
+ *   cacheTtlMs?: number | undefined;
+ *   cacheLimit?: number | undefined;
+ *   maxConcurrent?: number | undefined;
+ *   timeoutMs?: number | undefined;
+ * }} DedupePolicy
+ *
+ * @typedef {{
+ *   kind: 'writeBehind';
+ *   key?: ((args: any) => string) | undefined;
+ *   delayMs?: number | undefined;
+ *   merge?: ((previousArgs: any, nextArgs: any) => any) | undefined;
+ *   maxConcurrent?: number | undefined;
+ *   timeoutMs?: number | undefined;
+ * }} WriteBehindPolicy
+ *
+ * @typedef {DedupePolicy | WriteBehindPolicy} InvokePolicy
+ * @typedef {Partial<Record<TauriInvokeCommand, InvokePolicy>> & Record<string, InvokePolicy>} HostInvokePolicies
+ */
+
+/**
+ * @param {any} args
+ * @returns {string}
+ */
+function countOpenAiTokensBatchKey(args) {
+    const dto = args?.dto ?? args ?? {};
+    const json = JSON.stringify(dto);
+    return fnv1a32(json);
+}
+
+/** @param {any} args */
+function exactTokenizerRequestKey(args) {
+    const dto = args?.dto ?? args ?? {};
+    return JSON.stringify(dto);
+}
+
+/**
+ * @param {any} args
+ * @returns {string}
+ */
+function providerMetadataKey(args) {
+    const dto = args?.dto ?? args ?? {};
+    const json = JSON.stringify(dto);
+    return fnv1a32(json);
+}
+
+/** @param {any} _prev @param {any} next */
+function takeLatest(_prev, next) {
+    return next;
+}
+
+/**
+ * Centralized invoke policies for the host kernel.
+ *
+ * Keep this module free of higher-level imports (services/routes/adapters).
+ *
+ * @returns {HostInvokePolicies}
+ */
+export function createHostInvokePolicies() {
+    return {
+        get_bootstrap_snapshot: {
+            kind: 'dedupe',
+            key: () => 'singleton',
+        },
+        get_sillytavern_settings: {
+            kind: 'dedupe',
+            key: () => 'singleton',
+        },
+        get_client_version: {
+            kind: 'dedupe',
+            key: () => 'singleton',
+            cacheTtlMs: 5_000,
+            cacheLimit: 1,
+        },
+        count_openai_tokens_batch: {
+            kind: 'dedupe',
+            maxConcurrent: 1,
+            cacheTtlMs: 2_000,
+            cacheLimit: 50,
+            key: countOpenAiTokensBatchKey,
+        },
+        count_openai_token_prefixes: {
+            kind: 'dedupe',
+            maxConcurrent: 1,
+            key: exactTokenizerRequestKey,
+        },
+        get_openrouter_model_providers: {
+            kind: 'dedupe',
+            maxConcurrent: 2,
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 60_000,
+            cacheLimit: 50,
+            key: providerMetadataKey,
+        },
+        get_nanogpt_model_providers: {
+            kind: 'dedupe',
+            maxConcurrent: 2,
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 60_000,
+            cacheLimit: 50,
+            key: providerMetadataKey,
+        },
+        get_siliconflow_embedding_models: {
+            kind: 'dedupe',
+            maxConcurrent: 2,
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 60_000,
+            cacheLimit: 10,
+            key: providerMetadataKey,
+        },
+        get_workers_ai_embedding_models: {
+            kind: 'dedupe',
+            maxConcurrent: 2,
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 60_000,
+            cacheLimit: 10,
+            key: providerMetadataKey,
+        },
+        get_workers_ai_multimodal_models: {
+            kind: 'dedupe',
+            maxConcurrent: 2,
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 60_000,
+            cacheLimit: 10,
+            key: providerMetadataKey,
+        },
+        get_openrouter_credits: {
+            kind: 'dedupe',
+            key: () => 'singleton',
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 30_000,
+            cacheLimit: 1,
+        },
+        get_nanogpt_credits: {
+            kind: 'dedupe',
+            key: () => 'singleton',
+            timeoutMs: PROVIDER_METADATA_TIMEOUT_MS,
+            cacheTtlMs: 30_000,
+            cacheLimit: 1,
+        },
+        save_user_settings: {
+            kind: 'writeBehind',
+            delayMs: 300,
+            maxConcurrent: 1,
+            key: () => 'singleton',
+            merge: takeLatest,
+        },
+    };
+}

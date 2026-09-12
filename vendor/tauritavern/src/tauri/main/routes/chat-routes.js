@@ -1,0 +1,409 @@
+import {
+    loadCharacterChatPayload,
+    loadGroupChatPayload,
+    saveCharacterChatPayload,
+    saveGroupChatPayload,
+} from '../../../scripts/tauri/chat/transport.js';
+import { payloadToJsonl } from '../../../scripts/tauri/chat/jsonl.js';
+import { resolveRouteCharacterId } from './character-route-utils.js';
+import { registerChatImportRoutes } from './chat-import-routes.js';
+import { mapChatSummaryResults } from './chat-route-utils.js';
+import { registerChatRecentRoutes } from './chat-recent-routes.js';
+
+export function registerChatRoutes(router, context, { jsonResponse }) {
+    registerChatImportRoutes(router, context, { jsonResponse });
+    const allowMissingChat = (body) => Boolean(body?.allow_not_found ?? body?.allowNotFound);
+
+    const isIntegrityError = (error) => {
+        const serialized = (() => {
+            try {
+                return JSON.stringify(error);
+            } catch {
+                return '';
+            }
+        })();
+
+        return [error?.message, error, serialized]
+            .map((value) => String(value || '').toLowerCase())
+            .join(' ')
+            .includes('integrity');
+    };
+
+    router.post('/api/chats/get', async ({ body }) => {
+        const allowNotFound = allowMissingChat(body);
+        const resolved = await resolveRouteCharacterId(context, {
+            avatar: body?.avatar_url,
+            fallbackName: body?.ch_name || body?.character_name,
+        });
+        if (resolved.responseBody) {
+            return jsonResponse(resolved.responseBody, 400);
+        }
+        const characterId = resolved.characterId;
+
+        const fileName = context.stripJsonl(body?.file_name || body?.chatfile || body?.file);
+
+        if (!characterId || !fileName.trim()) {
+            return jsonResponse({ error: 'Invalid chat payload request' }, 400);
+        }
+
+        try {
+            const payload = await loadCharacterChatPayload({
+                characterName: characterId,
+                avatarUrl: body?.avatar_url,
+                fileName,
+                allowNotFound,
+            });
+            return jsonResponse(payload);
+        } catch (error) {
+            return jsonResponse(
+                {
+                    error: 'Failed to load chat',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+    });
+
+    router.post('/api/chats/save', async ({ body }) => {
+        const resolved = await resolveRouteCharacterId(context, {
+            avatar: body?.avatar_url,
+            fallbackName: body?.ch_name || body?.character_name,
+        });
+        if (resolved.responseBody) {
+            return jsonResponse(resolved.responseBody, 400);
+        }
+        const characterId = resolved.characterId;
+
+        const fileName = context.stripJsonl(body?.file_name || body?.chatfile || body?.file);
+        if (!characterId || !fileName.trim() || !Array.isArray(body?.chat)) {
+            return jsonResponse({ error: 'Invalid chat payload' }, 400);
+        }
+        try {
+            await saveCharacterChatPayload({
+                characterName: characterId,
+                avatarUrl: body?.avatar_url,
+                fileName,
+                payload: body.chat,
+                force: Boolean(body?.force),
+                commitReason: body?.commit_reason,
+            });
+            return jsonResponse({ ok: true });
+        } catch (error) {
+            if (isIntegrityError(error)) {
+                return jsonResponse({ error: 'integrity' }, 400);
+            }
+
+            return jsonResponse(
+                {
+                    error: 'Failed to save chat',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+    });
+
+    router.post('/api/chats/delete', async ({ body }) => {
+        const resolved = await resolveRouteCharacterId(context, {
+            avatar: body?.avatar_url,
+            fallbackName: body?.ch_name || body?.character_name,
+        });
+        if (resolved.responseBody) {
+            return jsonResponse(resolved.responseBody, 400);
+        }
+        const characterId = resolved.characterId;
+
+        const fileName = context.stripJsonl(body?.chatfile || body?.file_name || body?.file);
+        if (!characterId || !fileName.trim()) {
+            return jsonResponse({ ok: true });
+        }
+
+        try {
+            await context.safeInvoke('delete_chat', {
+                characterName: characterId,
+                fileName,
+            });
+        } catch (error) {
+            return jsonResponse(
+                {
+                    error: 'Failed to delete chat',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+
+        return jsonResponse({ ok: true });
+    });
+
+    router.post('/api/chats/rename', async ({ body }) => {
+        const oldFileName = context.stripJsonl(body?.original_file || body?.old_file_name);
+        const newFileName = context.stripJsonl(body?.renamed_file || body?.new_file_name);
+
+        if (!oldFileName.trim() || !newFileName.trim()) {
+            return jsonResponse({ error: 'Invalid rename payload' }, 400);
+        }
+
+        if (body?.is_group) {
+            try {
+                const sanitizedFileName = await context.safeInvoke('rename_group_chat', {
+                    dto: {
+                        old_file_name: oldFileName,
+                        new_file_name: newFileName,
+                    },
+                });
+                return jsonResponse({ ok: true, sanitizedFileName });
+            } catch (error) {
+                console.error('Failed to rename group chat:', error);
+                return jsonResponse({ error: true, details: String(error?.message || error || '') }, 400);
+            }
+        }
+
+        const resolved = await resolveRouteCharacterId(context, { avatar: body?.avatar_url });
+        if (resolved.responseBody) {
+            return jsonResponse(resolved.responseBody, 400);
+        }
+        const characterId = resolved.characterId;
+        if (!characterId) {
+            return jsonResponse({ error: 'Invalid rename payload' }, 400);
+        }
+
+        try {
+            const sanitizedFileName = await context.safeInvoke('rename_chat', {
+                dto: {
+                    character_name: characterId,
+                    old_file_name: oldFileName,
+                    new_file_name: newFileName,
+                },
+            });
+            return jsonResponse({ ok: true, sanitizedFileName });
+        } catch (error) {
+            console.error('Failed to rename chat:', error);
+            return jsonResponse({ error: true, details: String(error?.message || error || '') }, 400);
+        }
+    });
+
+    router.post('/api/chats/search', async ({ body }) => {
+        const query = String(body?.query || '');
+        const hasQuery = query.trim().length > 0;
+
+        if (body?.group_id) {
+            const group = await context.safeInvoke('get_group', { id: String(body.group_id) });
+            if (!group || !Array.isArray(group.chats) || group.chats.length === 0) {
+                return jsonResponse([]);
+            }
+            const chatIds = group.chats
+                .map((chatId) => String(chatId ?? ''))
+                .filter((chatId) => chatId.trim());
+            if (chatIds.length === 0) {
+                return jsonResponse([]);
+            }
+
+            const results = hasQuery
+                ? await context.safeInvoke('search_group_chats', {
+                    query,
+                    chat_ids: chatIds,
+                })
+                : await context.safeInvoke('list_group_chat_summaries', {
+                    chat_ids: chatIds,
+                    include_metadata: false,
+                });
+
+            const mapped = mapChatSummaryResults(context, results);
+            mapped.sort((a, b) => Number(b.last_mes || 0) - Number(a.last_mes || 0));
+            return jsonResponse(mapped);
+        }
+
+        const resolved = await resolveRouteCharacterId(context, { avatar: body?.avatar_url });
+        if (resolved.responseBody) {
+            return jsonResponse(resolved.responseBody, 400);
+        }
+        const characterId = resolved.characterId;
+        const results = hasQuery
+            ? await context.safeInvoke('search_chats', {
+                query,
+                characterFilter: characterId || null,
+            })
+            : await context.safeInvoke('list_chat_summaries', {
+                character_filter: characterId || null,
+                include_metadata: false,
+            });
+
+        const mapped = mapChatSummaryResults(context, results);
+        return jsonResponse(mapped);
+    });
+
+    registerChatRecentRoutes(router, context, { jsonResponse });
+
+    router.post('/api/chats/export', async ({ body }) => {
+        const isGroup = Boolean(body?.is_group);
+        const format = String(body?.format || 'txt').toLowerCase();
+        const exportFilename = String(body?.exportfilename || '');
+        const fileName = context.stripJsonl(body?.file || body?.file_name);
+
+        if (!fileName.trim()) {
+            return jsonResponse({ message: 'Invalid export payload' }, 400);
+        }
+
+        let payload;
+        try {
+            if (isGroup) {
+                payload = await loadGroupChatPayload({ id: fileName, allowNotFound: false });
+            } else {
+                const resolved = await resolveRouteCharacterId(context, {
+                    avatar: body?.avatar_url,
+                    fallbackName: body?.ch_name,
+                });
+                if (resolved.responseBody) {
+                    return jsonResponse(resolved.responseBody, 400);
+                }
+                const characterId = resolved.characterId;
+
+                if (!characterId) {
+                    return jsonResponse({ message: 'Invalid export payload' }, 400);
+                }
+
+                payload = await loadCharacterChatPayload({
+                    characterName: characterId,
+                    avatarUrl: body?.avatar_url,
+                    fileName,
+                    allowNotFound: false,
+                });
+            }
+        } catch (error) {
+            const details = String(error?.message || error || '');
+            return jsonResponse(
+                {
+                    message: details ? `Failed to export chat: ${details}` : 'Failed to export chat',
+                },
+                500,
+            );
+        }
+
+        const result = format === 'jsonl'
+            ? payloadToJsonl(payload)
+            : context.exportChatAsText(payload);
+
+        return jsonResponse({
+            message: exportFilename ? `Chat saved to ${exportFilename}` : 'Chat exported',
+            result,
+        });
+    });
+
+    router.post('/api/chats/group/get', async ({ body }) => {
+        const allowNotFound = allowMissingChat(body);
+        const id = String(body?.id ?? '');
+        if (!id.trim()) {
+            return jsonResponse({ error: 'Invalid group chat payload request' }, 400);
+        }
+
+        try {
+            const payload = await loadGroupChatPayload({ id, allowNotFound });
+            return jsonResponse(payload);
+        } catch (error) {
+            return jsonResponse(
+                {
+                    error: 'Failed to load group chat',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+    });
+
+    router.post('/api/chats/group/info', async ({ body }) => {
+        const id = String(body?.id ?? '');
+        if (!id.trim()) {
+            return jsonResponse(null, 400);
+        }
+
+        const normalizedId = context.stripJsonl(id);
+        const withMetadata = Boolean(body?.metadata);
+
+        try {
+            const summary = await context.safeInvoke('get_group_chat_summary', {
+                chat_id: normalizedId,
+                include_metadata: withMetadata,
+            });
+
+            if (!summary || typeof summary !== 'object') {
+                return jsonResponse(null);
+            }
+
+            const fileName = context.ensureJsonl(summary.file_name || '');
+            const preview = String(summary.preview || '');
+            const messageCount = Number(summary.message_count || 0);
+            const mes = preview || (messageCount > 0 ? '' : '[The chat is empty]');
+
+            const result = {
+                file_id: context.stripJsonl(fileName),
+                file_name: fileName,
+                file_size: context.formatFileSize(summary.file_size),
+                chat_items: messageCount,
+                mes,
+                last_mes: Number(summary.date || 0),
+            };
+
+            if (withMetadata) {
+                result.chat_metadata = summary.chat_metadata || {};
+            }
+
+            return jsonResponse(result);
+        } catch (error) {
+            return jsonResponse(
+                {
+                    error: 'Failed to load group chat info',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+    });
+
+    router.post('/api/chats/group/save', async ({ body }) => {
+        const id = String(body?.id ?? '');
+        if (!id.trim() || !Array.isArray(body?.chat)) {
+            return jsonResponse({ error: 'Invalid group chat payload' }, 400);
+        }
+
+        try {
+            await saveGroupChatPayload({
+                id,
+                payload: body.chat,
+                force: Boolean(body?.force),
+                commitReason: body?.commit_reason,
+            });
+            return jsonResponse({ ok: true });
+        } catch (error) {
+            if (isIntegrityError(error)) {
+                return jsonResponse({ error: 'integrity' }, 400);
+            }
+
+            return jsonResponse(
+                {
+                    error: 'Failed to save group chat',
+                    details: String(error?.message || error || ''),
+                },
+                500,
+            );
+        }
+    });
+
+    router.post('/api/chats/group/delete', async ({ body }) => {
+        const id = String(body?.id ?? '');
+        if (!id.trim()) {
+            return jsonResponse({ error: true }, 400);
+        }
+
+        try {
+            await context.safeInvoke('delete_group_chat', {
+                dto: { id },
+            });
+            return jsonResponse({ ok: true });
+        } catch {
+            return jsonResponse({ error: true }, 400);
+        }
+    });
+
+}

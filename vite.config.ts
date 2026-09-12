@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { tavernFrontend } from "./scripts/tavern/vite-plugin.mjs";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -10,10 +11,10 @@ export default defineConfig({
     watch: {
       // 参考项目(_reference/projects/*)是借鉴用的外部源码(含 Vue/Astro 等异构栈)，
       // 不属于本项目，排除以免 vite 扫描其依赖报错(vue/pinia/pixi.js 未安装)
-      ignored: ["**/_reference/**"],
+      ignored: ["**/_reference/**", "**/vendor/**", "**/.cache/tavern/**"],
     },
   },
-  plugins: [react()],
+  plugins: [tavernFrontend(), react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

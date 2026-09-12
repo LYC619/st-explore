@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/Darkatse/TauriTavern.git",
+  "commit": "9693a4ec47cd4552f90878bccab453f176de0f18",
+  "sourceTree": "6afe13fd10ac80a3ee5d3cafb53d75100bf96013",
+  "defaultContentTree": "290e1b9ff84f88203cb97f7ddd3c14d0245946c2",
+  "packageVersion": "2.2.0",
+  "sillyTavernRepository": "https://github.com/SillyTavern/SillyTavern.git",
+  "sillyTavernVersion": "1.18.0",
+  "license": "AGPL-3.0",
+  "sourceSubset": [
+    "src/**",
+    "default/content/**",
+    "LICENSE",
+    "package.json",
+    "pnpm-lock.yaml",
+    "rspack.config.js"
+  ],
+  "localEdits": [],
+  "deliveryChanges": [
+    "Serve original src/index.html as /tavern.html; preserve STE /index.html.",
+    "Rewrite only generated HTML href=manifest.json to href=tavern.webmanifest and href=favicon.ico to href=tavern-favicon.ico.",
+    "Serve original src/manifest.json and src/favicon.ico at those alternate URLs; exclude upstream src/robots.txt."
+  ],
+  "buildChanges": [
+    "Use STE root npm dependencies and package-lock.json; never run the upstream native scripts.",
+    "Reuse original Rspack configurations with vendor context and relocated generated output/cache directories."
+  ],
+  "sourceManifest": {
+    "file": "SOURCE-MANIFEST.json",
+    "sha256": "052503afbf41b1f3f8fb8aeac81729827ce3c3d265847a180168a425f308879c"
+  }
+}
