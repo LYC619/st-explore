@@ -1,5 +1,7 @@
 # STE 角色扮演运行时 P0 Implementation Plan
 
+> **已退出执行入口（2026-09-12）：** 用户将前端路线改为复用 SillyTavern 原始界面与 TauriTavern 移植成果。本文保留为旧版纯契约参考，不再作为当前 P0 直接执行。先按修订后的实施路线核对上游生成/保存/候选身份及 STE 数据接入，再重新编写首个实施包。下文的任务和命令属于历史方案，不授权开始实现。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking. Execution and delegation must follow the user's authorization for that execution session.
 
 **Goal:** 建立可验证的生成身份、记忆来源与冻结回合契约，防止旧任务错写和动态资料破坏已保存的上下文。
@@ -10,7 +12,7 @@
 
 ---
 
-状态：计划已编写，下面代码仅存在于此文档，尚未创建应用文件或运行测试。
+状态：旧计划，仅作参考。下面代码仅存在于此文档，尚未创建应用文件或运行测试。
 
 设计依据：[总体设计](../specs/2026-09-12-ste-roleplay-runtime-design.md)。整体范围：[实施路线](./2026-09-12-ste-roleplay-runtime-roadmap.md)。
 
