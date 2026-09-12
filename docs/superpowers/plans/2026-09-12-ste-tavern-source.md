@@ -27,6 +27,7 @@ This task owns `vendor/tauritavern/**`, `scripts/tavern/**`, this plan and sourc
 | `scripts/tavern/source.mjs` | Manifest validation, safe pinned reads and explicit URL mapping |
 | `scripts/tavern/source.test.mjs` | Provenance, safe lookup, tamper and traversal contracts |
 | `scripts/tavern/build.mjs` | Original Rspack config wrapper, root lock validation and generated asset manifest |
+| `scripts/tavern/cache.mjs`, `cache.test.mjs` | Project-anchored cache directory preparation, compiler ancestry rechecks and link-escape regression tests |
 | `scripts/tavern/prepare.mjs` | CLI to prepare or verify frontend inputs |
 | `scripts/tavern/delivery.mjs` | Guarded HTTP middleware and exclusive production copy |
 | `scripts/tavern/delivery.test.mjs` | Real filesystem/HTTP collision and disclosure checks |
@@ -116,3 +117,20 @@ await assert.rejects(access(join(outputRoot, 'tavern.html')));
 - `npm run tavern:verify` verified all original source files; repeated `npm run tavern:prepare` reused six bundles only after validating their hashes.
 - The host task can extend the tested `composeAssets()` seam with explicit generated assets and original-hash-checked overrides; no host or chat behavior was implemented here.
 - Final diff review found only original upstream whitespace/CR bytes. The vendor attributes retain those exact bytes and exclude only imported paths from whitespace checks; STE-owned files remain checked normally.
+
+## Review correction: compiler cache ancestry
+
+The spec review reproduced a cache junction escaping the project before the existing read/delivery guards ran. Rspack's original `output.clean` deleted an external sentinel, then emitted bundles outside the worktree. This correction owns only the source/build guard, its tests and these source docs; the parent's host-overlay/runtime and package changes remain separate.
+
+- [x] Add real-compiler regression tests for `.cache`, `.cache/tavern`, a nested output junction, and a valid cached manifest behind a junction. Require rejection with the external sentinel and outside directory unchanged.
+- [x] Add `scripts/tavern/cache.mjs` and focused tests for a reusable `prepareCacheDirectory(projectRoot, relativePath)` helper. Walk existing ancestors without following links, create missing directories one level at a time, revalidate created directories, and reject unsafe cache entries before any compiler/cache use.
+- [x] Validate cache ancestry before reading a reusable manifest and immediately before compiler creation/run/emission. Include generated output and persistent-cache directories. Disable destructive Rspack `output.clean`; only compiler-manifest-listed assets are delivered, so stale cache files need not be deleted.
+- [x] Expose the same helper for the parent's upcoming `.cache/tavern/host` writes, and document the same-user filesystem boundary and revalidation requirement.
+- [x] Run explicit owned source/build/cache/delivery tests, source verification, build and relevant Node-config type checking. Stage and commit only this correction's files.
+
+Correction evidence: the real-compiler tests first reproduced external sentinel deletion through `.cache` and `.cache/tavern` junctions, lack of rejection for a nested output junction, and acceptance of a valid cached manifest through a junction. The first full-tree compiler-hook approach exposed a normal Windows race: native Rspack snapshots can briefly resolve under `C:\\$Extend\\$Deleted` or return `EPERM` during replacement. The final design uses full checks before compiler creation/cache reads, and ancestry checks at run/emit/close boundaries while native snapshots are active. Missing/changed temporary entries are rechecked, and no resolved outside path is accepted as valid.
+
+- All 40 explicit source/build/cache/delivery tests passed. The real-compiler valid-cache regression also passed three consecutive cold-build runs after the compiler-hook adjustment.
+- `npm run build` and `npx tsc --noEmit -p tsconfig.node.json` passed. The build's large-chunk warning belongs to the concurrent host/UI work and requires no source/build change.
+- `npm run tavern:verify` verified all 1,137 original files at commit `9693a4ec47cd4552f90878bccab453f176de0f18`. A separate post-build check confirmed `prepareTavern().reused === true` and byte-for-byte preservation of every STE `public/` file in `dist/`.
+- This correction stages only `scripts/tavern/{build.mjs,build.test.mjs,cache.mjs,cache.test.mjs}`, `vendor/tauritavern/{README.ste.md,UPSTREAM.json}` and this source plan. Host-overlay/runtime/UI/package changes remain with the parent.

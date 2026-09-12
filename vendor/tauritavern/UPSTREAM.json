@@ -24,7 +24,8 @@
   ],
   "buildChanges": [
     "Use STE root npm dependencies and package-lock.json; never run the upstream native scripts.",
-    "Reuse original Rspack configurations with vendor context and relocated generated output/cache directories."
+    "Reuse original Rspack configurations with vendor context and relocated generated output/cache directories.",
+    "Validate cache ancestry before cache reads/compiler writes and disable Rspack output.clean; only manifest-listed outputs are delivered."
   ],
   "sourceManifest": {
     "file": "SOURCE-MANIFEST.json",

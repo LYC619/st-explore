@@ -1,9 +1,10 @@
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   isWithin, loadPinnedSource, PROJECT_ROOT, readAsset, safeRelativePath, sha256, sourceAssetEntries,
 } from './source.mjs';
+import { prepareCacheDirectories, prepareCacheDirectory, revalidateCompilerCacheDirectories } from './cache.mjs';
 
 export const REQUIRED_BUNDLES = [
   'dist/lib.core.bundle.js',
@@ -53,7 +54,8 @@ export function adaptRspackConfigs(originalConfigs, { vendorRoot, cacheRoot, fin
     return {
       ...original,
       context: vendorRoot,
-      output: { ...original.output, path: path.join(cacheRoot, 'bundles', outputRelative) },
+      // Only manifest-listed assets are delivered; never recursively clean a cache path.
+      output: { ...original.output, path: path.join(cacheRoot, 'bundles', outputRelative), clean: false },
       cache: {
         ...original.cache,
         version: sha256(`${original.cache.version}\n${fingerprint}`),
@@ -105,9 +107,14 @@ async function readBuildManifest(manifestPath, generatedRoot, fingerprint) {
   }
 }
 
-async function compileBundles(configs, generatedRoot) {
+async function compileBundles(configs, generatedRoot, { prepareCache, revalidateCache }) {
   const { rspack } = await import('@rspack/core');
+  await prepareCache();
   const compiler = rspack(configs);
+  for (const child of compiler.compilers ?? [compiler]) {
+    child.hooks.beforeRun.tapPromise('STEValidatedCache', revalidateCache);
+    child.hooks.emit.tapPromise('STEValidatedCache', revalidateCache);
+  }
   try {
     const stats = await new Promise((resolve, reject) => {
       compiler.run((error, result) => error ? reject(error) : resolve(result));
@@ -129,14 +136,16 @@ async function compileBundles(configs, generatedRoot) {
     if (REQUIRED_BUNDLES.some((name) => !files.some((entry) => entry.path === name))) throw new Error('Original compiler omitted a required Tavern bundle');
     return files.sort((left, right) => left.path.localeCompare(right.path, 'en'));
   } finally {
+    // Closing a persistent compiler can write its cache too.
+    await revalidateCache();
     await new Promise((resolve, reject) => compiler.close((error) => error ? reject(error) : resolve()));
   }
 }
 
 export async function prepareTavern(projectRoot = PROJECT_ROOT) {
+  const cacheRoot = await prepareCacheDirectory(projectRoot);
   const source = await loadPinnedSource(projectRoot);
   const versions = await validateBuildDependencies(projectRoot, source);
-  const cacheRoot = path.join(projectRoot, '.cache/tavern');
   const generatedRoot = path.join(cacheRoot, 'bundles');
   const manifestPath = path.join(cacheRoot, 'build-manifest.json');
   const rootLockHash = sha256(await readFile(path.join(projectRoot, 'package-lock.json')));
@@ -149,20 +158,30 @@ export async function prepareTavern(projectRoot = PROJECT_ROOT) {
     arch: process.arch,
     rspack: versions['@rspack/core'],
   }));
+  await prepareCacheDirectory(projectRoot);
   let manifest = await readBuildManifest(manifestPath, generatedRoot, fingerprint);
+  await prepareCacheDirectory(projectRoot);
   const reused = Boolean(manifest);
   if (!manifest) {
-    await mkdir(cacheRoot, { recursive: true });
     const { default: originalConfigs } = await import(pathToFileURL(path.join(source.vendorRoot, 'rspack.config.js')).href);
     const configs = adaptRspackConfigs(originalConfigs, { vendorRoot: source.vendorRoot, cacheRoot, fingerprint });
-    const files = await compileBundles(configs, generatedRoot);
+    const compilerDirectories = configs.flatMap((config) => [config.output.path, config.cache.storage.directory]).map((directory) => {
+      if (!isWithin(cacheRoot, directory)) throw new Error(`Unsafe Tavern cache compiler directory outside its root: ${directory}`);
+      return path.relative(cacheRoot, directory).split(path.sep).join('/');
+    });
+    const files = await compileBundles(configs, generatedRoot, {
+      prepareCache: () => prepareCacheDirectories(projectRoot, compilerDirectories),
+      revalidateCache: () => revalidateCompilerCacheDirectories(projectRoot, compilerDirectories),
+    });
     manifest = {
       schemaVersion: 1, fingerprint, sourceCommit: source.provenance.commit,
       sourceManifestSha256: source.manifestHash, rootLockSha256: rootLockHash,
       nodeVersion: process.versions.node, rspackVersion: versions['@rspack/core'], files,
     };
+    await prepareCacheDirectory(projectRoot);
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
   }
+  await prepareCacheDirectory(projectRoot);
   const generatedAssets = manifest.files.map((file) => ({ root: generatedRoot, ...file, url: `/${file.path}` }));
   // Add reviewed STE host-generated entries/overlays at this seam; never edit vendor/src.
   const assets = composeAssets(sourceAssetEntries(source), generatedAssets);

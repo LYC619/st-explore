@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { adaptRspackConfigs, composeAssets, validateBuildDependencies } from './build.mjs';
+import { adaptRspackConfigs, composeAssets, prepareTavern, validateBuildDependencies } from './build.mjs';
 import { loadPinnedSource, PROJECT_ROOT } from './source.mjs';
 
 test('relocates original compiler paths while preserving original entries and compiler behavior', () => {
@@ -25,6 +25,7 @@ test('relocates original compiler paths while preserving original entries and co
   assert.equal(adapted.target, original.target);
   assert.equal(adapted.output.path, join(cacheRoot, 'bundles/dist'));
   assert.equal(adapted.output.module, true);
+  assert.equal(adapted.output.clean, false, 'manifest delivery does not need destructive directory cleaning');
   assert.equal(adapted.optimization.moduleIds, 'deterministic');
   assert.equal(adapted.plugins[0], plugin);
   assert.notEqual(adapted.cache.version, original.cache.version);
@@ -77,4 +78,59 @@ test('the single host overlay seam requires the expected original hash', () => {
   const result = composeAssets(assets, [], [{ asset: replacement, expectedSha256: 'original' }]);
   assert.equal(result.get('/script.js'), replacement);
   assert.equal(assets.get('/script.js'), original);
+});
+
+async function cacheEscapeFixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'ste-tavern-compiler-cache-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const project = join(root, 'project');
+  await mkdir(project);
+  await cp(join(PROJECT_ROOT, 'vendor/tauritavern'), join(project, 'vendor/tauritavern'), { recursive: true });
+  await writeFile(join(project, 'package.json'), await readFile(join(PROJECT_ROOT, 'package.json')));
+  await writeFile(join(project, 'package-lock.json'), await readFile(join(PROJECT_ROOT, 'package-lock.json')));
+  await symlink(join(PROJECT_ROOT, 'node_modules'), join(project, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  return { root, project };
+}
+
+for (const boundary of ['.cache', '.cache/tavern', '.cache/tavern/bundles/dist']) {
+  test(`rejects the ${boundary} junction before compiler cleaning or writes`, async (t) => {
+    const { root, project } = await cacheEscapeFixture(t);
+    const outside = join(root, 'outside-cache');
+    const sentinelDirectory = boundary === '.cache' ? join(outside, 'tavern/bundles/dist')
+      : boundary === '.cache/tavern' ? join(outside, 'bundles/dist') : outside;
+    await mkdir(sentinelDirectory, { recursive: true });
+    const sentinel = join(sentinelDirectory, 'review-sentinel.txt');
+    await writeFile(sentinel, 'outside project: preserve this file');
+    const linked = join(project, boundary);
+    await mkdir(join(linked, '..'), { recursive: true });
+    await symlink(outside, linked, process.platform === 'win32' ? 'junction' : 'dir');
+    let failure;
+    try {
+      await prepareTavern(project);
+    } catch (error) {
+      failure = error;
+    }
+    assert.equal(await readFile(sentinel, 'utf8').catch(() => null), 'outside project: preserve this file', 'compiler must not delete the outside sentinel');
+    assert.deepEqual(await readdir(sentinelDirectory), ['review-sentinel.txt'], 'compiler must not write outside the project');
+    assert.match(failure?.message ?? '', /cache.*(?:symlink|junction|outside|escape)/i);
+  });
+}
+
+test('rejects a cache junction even when it contains a valid reusable manifest', async (t) => {
+  const { root, project } = await cacheEscapeFixture(t);
+  const unlisted = join(project, '.cache/tavern/bundles/dist/unlisted.txt');
+  await mkdir(join(unlisted, '..'), { recursive: true });
+  await writeFile(unlisted, 'keep unlisted cache files without serving them');
+  const initial = await prepareTavern(project);
+  assert.equal(initial.reused, false);
+  assert.equal(await readFile(unlisted, 'utf8'), 'keep unlisted cache files without serving them');
+  assert.equal(initial.assets.has('/dist/unlisted.txt'), false);
+  const outside = join(root, 'outside-cache');
+  await rename(join(project, '.cache/tavern'), outside);
+  await writeFile(join(outside, 'review-sentinel.txt'), 'preserve cached files outside the project');
+  const manifestBefore = await readFile(join(outside, 'build-manifest.json'));
+  await symlink(outside, join(project, '.cache/tavern'), process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(prepareTavern(project), /cache.*(?:symlink|junction|outside|escape)/i);
+  assert.deepEqual(await readFile(join(outside, 'build-manifest.json')), manifestBefore);
+  assert.equal(await readFile(join(outside, 'review-sentinel.txt'), 'utf8'), 'preserve cached files outside the project');
 });

@@ -18,7 +18,7 @@ npm run build
 
 The Vite plugin in `scripts/tavern/vite-plugin.mjs` prepares the frontend automatically for both development and production. No installation inside this vendor directory is needed. The nested `package.json` is preserved as an upstream build input; its native scripts are not used by STE.
 
-The build uses Node 22.14.0 and the original Rspack 2.0.8 configurations. Required frontend libraries use the direct versions resolved by the original `pnpm-lock.yaml`; STE's root `package-lock.json` pins their installed dependency graph. STE's existing `fflate@0.8.2` is reused. Only Rspack's `context`, generated output paths and cache storage/version are adapted. The original entries, targets, optimization and plugins remain in effect. All three original compiler groups are built so their referenced assets exist; building an Agent/settings bundle does not enable its host functionality.
+The build uses Node 22.14.0 and the original Rspack 2.0.8 configurations. Required frontend libraries use the direct versions resolved by the original `pnpm-lock.yaml`; STE's root `package-lock.json` pins their installed dependency graph. STE's existing `fflate@0.8.2` is reused. Rspack's `context`, generated output paths and cache storage/version are adapted, and `output.clean` is disabled so the compiler cannot recursively delete cache-directory contents. The original entries, targets, optimization and plugins remain in effect. All three original compiler groups are built so their referenced assets exist; building an Agent/settings bundle does not enable its host functionality.
 
 Useful focused commands:
 
@@ -31,6 +31,10 @@ npx tsc --noEmit -p tsconfig.app.json
 ```
 
 Generated bundles live in `.cache/tavern/bundles`, their hashes and preparation fingerprint in `.cache/tavern/build-manifest.json`, and Rspack's cache in `.cache/tavern/rspack`. Preparation checks the source manifest, root lock, wrapper, Node version, platform and compiler version before reusing output. Every cached bundle is hashed again. Missing or changed generated output is rebuilt; source changes fail verification until deliberately reviewed and recorded.
+
+Cache paths are anchored to the real project directory before a cached manifest is read and before a compiler is created. `scripts/tavern/cache.mjs` checks every cache ancestor, rejects symlinks/junctions and linked cache files, and creates missing directory levels individually with checks before and after creation. Compiler run, emit and close boundaries revalidate declared output/storage ancestry. Full recursive checks run while the compiler is inactive; active checks avoid walking Rspack's native temporary snapshot directories while Windows replaces them. Unlisted cache files remain untouched and are excluded from the emitted asset manifest.
+
+Host generation can use `await prepareCacheDirectory(projectRoot, 'host')` to obtain the validated absolute `.cache/tavern/host` directory. Call it immediately before a host write batch; a previous returned path is not a permanent authorization. The helper also supports `prepareCacheDirectories(projectRoot, relativePaths)` for multiple directories. These checks protect against existing links and detect ancestry replacements at operation boundaries. They do not lock the filesystem against a hostile process with the same user's permissions changing paths between Node and native filesystem calls.
 
 ## URL and output ownership
 
