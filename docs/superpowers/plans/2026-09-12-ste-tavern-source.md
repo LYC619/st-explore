@@ -134,3 +134,14 @@ Correction evidence: the real-compiler tests first reproduced external sentinel 
 - `npm run build` and `npx tsc --noEmit -p tsconfig.node.json` passed. The build's large-chunk warning belongs to the concurrent host/UI work and requires no source/build change.
 - `npm run tavern:verify` verified all 1,137 original files at commit `9693a4ec47cd4552f90878bccab453f176de0f18`. A separate post-build check confirmed `prepareTavern().reused === true` and byte-for-byte preservation of every STE `public/` file in `dist/`.
 - This correction stages only `scripts/tavern/{build.mjs,build.test.mjs,cache.mjs,cache.test.mjs}`, `vendor/tauritavern/{README.ste.md,UPSTREAM.json}` and this source plan. Host-overlay/runtime/UI/package changes remain with the parent.
+
+## Review correction: Windows Vite filesystem module URLs
+
+Quality review found that applying the manifest-relative `requestPath()` validator to every request rejected Vite's normal `/@fs/D:/...` module URLs because their drive letters contain a colon. This breaks the real `/@vite/client` dependency on `vite/dist/client/env.mjs` when the Vite installation is outside the configured project root.
+
+- [x] Add failing middleware and real-Vite regressions before changing delivery behavior. The real client imported its external env module, but requesting that URL returned 404. A separate test also caught a bare protected directory falling through the previous `/@fs/` directory check.
+- [x] Handle standard `/@fs/` requests separately. Decode and validate their Windows-drive or POSIX path form, reject traversal/alternate separators/malformed encodings, and pass eligible requests to Vite unchanged so its filesystem allowlist remains in control.
+- [x] Keep direct `vendor`, `.cache` and `scripts/tavern` filesystem requests blocked, including case/encoding variants and the directory itself. Keep manifest asset lookup and production-copy validation unchanged.
+- [x] Run focused delivery/source tests and Node-config type checking, inspect the scoped diff, and commit only delivery implementation/tests plus this source plan. Parent-owned Vite plugin, prepare/runtime and application changes remain separate.
+
+Correction evidence: all three new tests failed before the implementation. Afterward, all 22 `delivery.test.mjs` and `source.test.mjs` tests passed, including a real Vite server with a temporary C: project root and the D: Vite installation: `/@vite/client` and its `/@fs/D:/.../env.mjs` dependency both returned 200 JavaScript. The request-preservation test covers Windows/POSIX paths, escaped spaces, encoded drive letters and query strings. Protected paths, traversal, repeated encoding, alternate separators and malformed paths return 404. `npx tsc --noEmit -p tsconfig.node.json` and the scoped whitespace check passed.

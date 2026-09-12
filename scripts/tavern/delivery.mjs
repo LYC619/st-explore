@@ -20,7 +20,19 @@ const MIME_TYPES = {
 function reservedPath(pathname) {
   const lower = pathname.toLowerCase();
   return RESERVED_DIRECTORIES.some((directory) => lower === `/${directory}` || lower.startsWith(`/${directory}/`))
-    || (lower.startsWith('/@fs/') && ['/vendor/', '/.cache/', '/scripts/tavern/'].some((part) => lower.includes(part)));
+    || (lower.startsWith('/@fs/') && ['/vendor', '/.cache', '/scripts/tavern'].some((part) => lower.endsWith(part) || lower.includes(`${part}/`)));
+}
+
+/** Vite filesystem URLs may include a Windows drive or a POSIX absolute path. */
+function viteFsRequestPath(rawUrl) {
+  const encoded = rawUrl.slice('/@fs/'.length).split(/[?#]/, 1)[0];
+  if (/%(?:2f|5c)/i.test(encoded)) return null;
+  try {
+    const relative = decodeURIComponent(encoded).replace(/^(?:[a-z]:\/|\/)/i, '');
+    return safeRelativePath(relative) ? `/@fs/${relative}` : null;
+  } catch {
+    return null;
+  }
 }
 
 function sendText(response, status, message) {
@@ -33,6 +45,12 @@ function sendText(response, status, message) {
 /** Runs before Vite's static handler, so upstream raw ESM is never transformed. */
 export function createAssetMiddleware(assets) {
   return async (request, response, next) => {
+    if (request.url?.startsWith('/@fs/')) {
+      const pathname = viteFsRequestPath(request.url);
+      if (pathname === null || reservedPath(pathname)) return sendText(response, 404, 'Not found');
+      // Preserve Vite's request and let its own filesystem allowlist handle module access.
+      return next();
+    }
     const pathname = requestPath(request.url);
     if (pathname === null) return sendText(response, 404, 'Not found');
     const asset = lookupAsset(assets, request.url);

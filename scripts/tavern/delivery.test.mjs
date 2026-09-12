@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { createServer, request } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import { copyAssets, createAssetMiddleware } from './delivery.mjs';
@@ -33,12 +34,17 @@ async function serverFor(t, assets) {
   const middleware = createAssetMiddleware(assets);
   const server = createServer((req, res) => middleware(req, res, () => {
     res.setHeader('Content-Type', 'text/plain');
+    res.setHeader('X-STE-Request-URL', req.url);
     res.end('STE route');
   }));
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
-  return (path, method = 'GET') => new Promise((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port: server.address().port, path, method, agent: false }, (response) => {
+  return (path, method = 'GET') => getResponse(server.address().port, path, method);
+}
+
+function getResponse(port, path, method = 'GET') {
+  return new Promise((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port, path, method, agent: false }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString() }));
@@ -69,6 +75,77 @@ test('HEAD sends headers without a body and mutation methods cannot reach static
   assert.equal(response.body, '');
   assert.ok(Number(response.headers['content-length']) > 0);
   assert.equal((await get('/script.js', 'POST')).status, 405);
+});
+
+test('standard Windows and POSIX Vite filesystem module requests fall through unchanged', async (t) => {
+  const { assets } = await fixture(t);
+  const get = await serverFor(t, assets);
+  for (const path of [
+    '/@fs/D:/workspace/node_modules/vite/dist/client/env.mjs',
+    '/@fs/c:/Users/example/My%20Project/src/App.tsx?import&t=123',
+    '/@fs/%44%3A/workspace/node_modules/vite/dist/client/env.mjs',
+    '/@fs/opt/workspace/node_modules/vite/dist/client/env.mjs',
+    '/@fs//opt/workspace/src/App.tsx?import',
+  ]) {
+    const response = await get(path);
+    assert.equal(response.status, 200, path);
+    assert.equal(response.body, 'STE route', path);
+    assert.equal(response.headers['x-ste-request-url'], path);
+  }
+});
+
+test('Vite filesystem requests cannot expose private directories or bypass path validation', async (t) => {
+  const { assets } = await fixture(t);
+  const get = await serverFor(t, assets);
+  for (const root of ['D:/workspace', '/opt/workspace', 'opt/workspace']) {
+    for (const relative of [
+      'vendor/tauritavern/UPSTREAM.json', 'VENDOR/tauritavern/src/script.js', 'vendor',
+      '.cache/tavern/build-manifest.json', '.cache',
+      'scripts/tavern/source.mjs?raw', 'scr%69pts/tavern/build.mjs', 'scripts/tavern',
+      'src/../vendor/tauritavern/package.json', 'src/%2e%2e/.cache/tavern/build-manifest.json',
+      'src/%252e%252e/package.json', 'src%2f..%2fpackage.json', 'src%5c..%5cpackage.json',
+      'src\\..\\package.json', 'src/bad%00name.js', 'src/incomplete%.js', 'src/name:stream',
+    ]) {
+      const path = `/@fs/${root}/${relative}`;
+      assert.equal((await get(path)).status, 404, path);
+    }
+  }
+});
+
+test('real Vite client loads its filesystem env module when Vite is outside the project root', async (t) => {
+  const { createServer: createViteServer, normalizePath } = await import('vite');
+  const root = await mkdtemp(join(tmpdir(), 'ste-tavern-vite-fs-'));
+  let vite;
+  t.after(async () => {
+    await vite?.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  vite = await createViteServer({
+    configFile: false,
+    root,
+    publicDir: false,
+    appType: 'custom',
+    logLevel: 'error',
+    optimizeDeps: { noDiscovery: true, include: [] },
+    server: { host: '127.0.0.1', port: 0, hmr: false },
+    plugins: [{
+      name: 'test-tavern-asset-delivery',
+      configureServer(server) {
+        server.middlewares.use(createAssetMiddleware(new Map()));
+      },
+    }],
+  });
+  await vite.listen();
+  const port = vite.httpServer.address().port;
+  const client = await getResponse(port, '/@vite/client');
+  assert.equal(client.status, 200);
+  assert.match(client.headers['content-type'], /javascript/);
+  const envPath = posix.join('/@fs/', normalizePath(fileURLToPath(new URL('../client/env.mjs', import.meta.resolve('vite')))));
+  assert.ok(client.body.includes(envPath), 'the real client must import the external Vite env module');
+  const env = await getResponse(port, encodeURI(envPath));
+  assert.equal(env.status, 200, envPath);
+  assert.match(env.headers['content-type'], /javascript/);
+  assert.match(env.body, /__DEFINES__|const defines/);
 });
 
 test('unknown reserved paths, traversal and direct metadata requests never fall through to Vite', async (t) => {
