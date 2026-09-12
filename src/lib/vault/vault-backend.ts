@@ -167,6 +167,7 @@ export function createVault(fs: VaultFs): VaultBackend {
   // 否则后续 get() 会拿到缺 pngBase64 / session 的记录，保存时把卡面与正文一起写没。
   const recCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
   const lightCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
+  const cacheVersions = new Map<VaultStore, Map<string, number>>(VAULT_STORES.map((s) => [s, new Map()]));
 
   async function recoverCharacter(id: string, dir: string, requireClean = false): Promise<void> {
     const reports = await recoverCharacterJournals(dir, id, fs);
@@ -184,13 +185,18 @@ export function createVault(fs: VaultFs): VaultBackend {
     const hit = m.get(id);
     // 出入缓存都克隆：调用方拿到的对象与缓存互不别名（与 IDB 每次返回新对象的语义一致）
     if (hit) return structuredClone(hit);
+    const version = cacheVersions.get(store)!.get(id) ?? 0;
     const rec = light ? await readRecordLight(store, path) : await readRecord(store, path);
-    if (rec) m.set(id, structuredClone(rec));
+    // A disk read started before a mutation may finish afterward. Its caller gets
+    // that snapshot, but it must not put the older record back into either cache.
+    if (rec && version === (cacheVersions.get(store)!.get(id) ?? 0)) m.set(id, structuredClone(rec));
     return rec;
   }
 
   /** 记录变更后两池一起失效，避免 light 池留着旧标题/旧楼数 */
   function invalidate(store: VaultStore, id: string): void {
+    const versions = cacheVersions.get(store)!;
+    versions.set(id, (versions.get(id) ?? 0) + 1);
     recCache.get(store)!.delete(id);
     lightCache.get(store)!.delete(id);
   }
@@ -727,7 +733,12 @@ export function createVault(fs: VaultFs): VaultBackend {
           if (path) await recoverCharacter(item.id, path, true);
         }
         invalidate(store, item.id);
-        await putRecord(store, item, opts);
+        try { await putRecord(store, item, opts); }
+        finally {
+          // Catalog reads can overlap the asynchronous write and observe the old
+          // file. The next get after put resolves must read the committed record.
+          invalidate(store, item.id);
+        }
       },
       async remove(id) {
         await ensureIndex();
@@ -736,7 +747,8 @@ export function createVault(fs: VaultFs): VaultBackend {
           if (path) await recoverCharacter(id, path, true);
         }
         invalidate(store, id);
-        await removeRecord(store, id);
+        try { await removeRecord(store, id); }
+        finally { invalidate(store, id); }
       },
     };
   }
