@@ -2,6 +2,7 @@ import { getCurrentRepo } from '@/lib/repo';
 import { getRoleplayPreferences, saveRoleplayPreferences, type ArchiveMetaRecord, getBranchLine, updateCharacter, updateArchiveStory } from '@/lib/archive-db';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import type { ChatSession } from '@/types/chat';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 import { loadApiProfiles } from '@/components/ai-tools/api-profiles';
@@ -15,7 +16,7 @@ import { createAgentRuntime, type AgentRuntime, type AgentStatus, type RuntimeCo
 import { createRuntimeStore } from './runtime-store';
 import { monitorCompletion } from './completion-monitor';
 import { decodeLiveChat, encodeLiveChat } from './live-chat';
-import { digest, refsAreCurrent, stableJson } from './fingerprint';
+import { digest, refsAreCurrent, sourceRefs, stableJson, type SourceRef } from './fingerprint';
 import type { AgentResource } from './tool-agent';
 import { embedCharaInPng } from '@/lib/png-writer';
 import { base64ToBytes, bytesToBase64 } from '@/lib/utils';
@@ -189,9 +190,9 @@ export async function createTavernHost(options: TavernHostOptions) {
     return runtime;
   }
   const defaults = structuredClone(options.defaults);
-  const controllers = new Set<AbortController>();
+  const controllers = new Map<AbortController, { key: string; session: ChatSession; refs: SourceRef[] }>();
   const unsubscribeVault = subscribeActiveVault(() => {
-    for (const controller of controllers) controller.abort();
+    for (const controller of controllers.keys()) controller.abort();
     for (const runtime of runtimes.values()) runtime.close();
   });
   const version = { agent: 'SillyTavern:1.18.0:STE', pkgVersion: '1.18.0', tauriVersion: 'STE', gitRevision: null, gitBranch: null };
@@ -212,7 +213,6 @@ export async function createTavernHost(options: TavernHostOptions) {
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) controller.abort();
-    controllers.add(controller);
     const release = () => {
       controllers.delete(controller);
       signal?.removeEventListener('abort', abort);
@@ -222,6 +222,11 @@ export async function createTavernHost(options: TavernHostOptions) {
     let turnId: string | undefined;
     try {
       const context = object(body.ste_context);
+      // Capture before the first await: saves can change the live history while preparation is running.
+      const source = decodeLiveChat(context.chat ?? sessions.get(locator.key)!.payload(), line.session);
+      // Regenerate has already removed its target in ST; swipe/continue still include theirs.
+      if (['swipe', 'continue'].includes(String(context.type)) && source.messages.at(-1)?.role === 'assistant') source.messages.pop();
+      controllers.set(controller, { key: locator.key, session: source, refs: sourceRefs(source) });
       const configuration = await runtime.configuration();
       const auxiliary = context.type === 'quiet' && (configuration.memoryOwner === 'baibai' || context.source === 'helper');
       let prepared = prepareCompletion(auxiliary ? toolProfile() : mainProfile(), body);
@@ -231,8 +236,6 @@ export async function createTavernHost(options: TavernHostOptions) {
         const story = await repos.stories.get(locator.storyId);
         const current = story && getBranchLine(story, locator.branchId);
         if (!current) throw new Error('生成目标不存在');
-        const source = decodeLiveChat(context.chat, current.session);
-        if (['swipe', 'regenerate', 'continue'].includes(String(context.type)) && source.messages.at(-1)?.role === 'assistant') source.messages.pop();
         const scope = Array.isArray(context.worldEntries) ? context.worldEntries as WorldScopeEntry[] : [];
         const result = await runtime.prepare(prepared, source, scope, controller.signal);
         prepared = result.prepared; turnId = result.turnId;
@@ -243,6 +246,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
       }
       if (!isCurrent() || selected.key !== locator.key) throw new Error('生成期间已切换故事');
+      controller.signal.throwIfAborted();
       const response = await sendPreparedCompletion(prepared, controller.signal);
       const headers = new Headers(response.headers);
       if (turnId) headers.set('x-ste-turn-id', turnId);
@@ -676,6 +680,9 @@ export async function createTavernHost(options: TavernHostOptions) {
             return json((await liveSession(locator)).payload());
           }
           const target = await catalog.resolveForSave(avatar, name, body.chat);
+          for (const [controller, captured] of controllers) {
+            if (captured.key === target.key && !refsAreCurrent(captured.refs, decodeLiveChat(body.chat, captured.session))) controller.abort();
+          }
           await inheritRuntime(target);
           const live = await liveSession(target);
           let commit: StoryCommit;
@@ -757,7 +764,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     close() {
       closed = true;
       unsubscribeVault();
-      for (const controller of controllers) controller.abort();
+      for (const controller of controllers.keys()) controller.abort();
       for (const live of sessions.values()) live.close();
       for (const runtime of runtimes.values()) runtime.close();
     },

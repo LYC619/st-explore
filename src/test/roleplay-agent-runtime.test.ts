@@ -16,9 +16,10 @@ async function fixture() {
     messages: [{ id: 'u', role: 'user', content: '开门' }] });
   await saveArchiveStory(story);
   const store = createRuntimeStore(story.id);
-  const runtime = createAgentRuntime({ storyId: story.id, branchId: null, store,
+  const runtimeOptions: Parameters<typeof createAgentRuntime>[0] = { storyId: story.id, branchId: null, store,
     stories: getCurrentRepo<ArchiveStory>('archiveStories'), toolProfile: () => ({ model: 'tool', apiUrl: 'https://tool.invalid', apiKey: '' }),
-    worldResources: async () => [], isCurrent: () => true });
+    worldResources: async () => [], isCurrent: () => true };
+  const runtime = createAgentRuntime(runtimeOptions);
   await runtime.configure({ mode: 'agent', memoryOwner: 'native-agent' });
   vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
     const request = JSON.parse(init.body);
@@ -28,7 +29,18 @@ async function fixture() {
     return new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'call', type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] }));
   }));
   const prepared = prepareCompletion({ model: 'main', apiUrl: 'https://main.invalid', apiKey: '' }, { messages: [{ role: 'user', content: '开门' }] });
-  return { story, store, runtime, prepared };
+  return { story, store, runtime, prepared, runtimeOptions };
+}
+
+async function persistReply(f: Awaited<ReturnType<typeof fixture>>) {
+  const turn = await f.runtime.prepare(f.prepared, f.story.session, []);
+  await f.runtime.finish(turn.turnId, { status: 'succeeded', content: '门已打开。' });
+  const session = { ...f.story.session, messages: [...f.story.session.messages, { id: 'a', role: 'assistant' as const, content: '门已打开。',
+    rawData: { extra: { ste_runtime: { turnId: turn.turnId, candidateId: 'a:main' } } } }] };
+  await updateArchiveStory(f.story.id, () => ({ session }));
+  await f.runtime.afterCommit({ storyId: f.story.id, branchId: null, previous: f.story.session, session });
+  await f.runtime.flush();
+  return turn;
 }
 
 it('runs memory only after a successful matched candidate is actually persisted and keeps the next turn behind that barrier', async () => {
@@ -123,4 +135,86 @@ it('accepts the original renderer canonical text once, then refuses a later edit
   await f.runtime.resume(true); await f.runtime.flush();
   expect(await f.store.read('memory/main/state.md')).toBeNull();
   expect((await f.runtime.ledger.read(turn.turnId)).status).toBe('cancelled');
+});
+
+it('cancels a send waiting for maintenance without cancelling the already saved turn', async () => {
+  const f = await fixture();
+  const initialFetch = vi.mocked(fetch).getMockImplementation()!;
+  let startMemory!: () => void;
+  const started = new Promise<void>(resolve => { startMemory = resolve; });
+  let releaseMemory!: (response: Response) => void;
+  const response = new Promise<Response>(resolve => { releaseMemory = resolve; });
+  vi.stubGlobal('fetch', vi.fn(async (url, options) => {
+    if (JSON.parse(String(options?.body)).tools.at(-1).function.name === 'submit_memory') {
+      startMemory(); return response;
+    }
+    return initialFetch(url, options);
+  }));
+  const turn = await f.runtime.prepare(f.prepared, f.story.session, []);
+  await f.runtime.finish(turn.turnId, { status: 'succeeded', content: '门已打开。' });
+  const session = { ...f.story.session, messages: [...f.story.session.messages, { id: 'a', role: 'assistant' as const, content: '门已打开。',
+    rawData: { extra: { ste_runtime: { turnId: turn.turnId, candidateId: 'a:main' } } } }] };
+  await updateArchiveStory(f.story.id, () => ({ session }));
+  await f.runtime.afterCommit({ storyId: f.story.id, branchId: null, previous: f.story.session, session });
+  await started;
+  const controller = new AbortController();
+  let outcome: unknown;
+  const next = f.runtime.prepare(f.prepared, session, [], controller.signal).then(value => { outcome = value; }, error => { outcome = error; });
+  controller.abort();
+  try {
+    await vi.waitFor(() => expect(outcome).toMatchObject({ name: 'AbortError' }), { timeout: 100, interval: 5 });
+  } finally {
+    releaseMemory(new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'done', type: 'function',
+      function: { name: 'submit_memory', arguments: JSON.stringify({ changes: [], worldbookVersions: [] }) } }] } }] })));
+    await f.runtime.flush(); await next; f.runtime.close();
+  }
+  expect(f.runtime.status().phase).toBe('idle');
+});
+
+it.each([false, true])('replans an invalidated memory proposal preserving manual files (reopen=%s)', async reopen => {
+  const f = await fixture();
+  const initialFetch = vi.mocked(fetch).getMockImplementation()!;
+  const requests: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url, options) => {
+    if (JSON.parse(String(options?.body)).tools.at(-1).function.name !== 'submit_memory') return initialFetch(url, options);
+    requests.push(String(options?.body));
+    if (requests.length === 1) {
+      await f.store.write('memory/main/state.md', '用户刚写下的笔记，不能覆盖。');
+      return initialFetch(url, options);
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'fresh', type: 'function', function: {
+      name: 'submit_memory', arguments: JSON.stringify({ changes: [{ path: 'events/entry.md', body: '已保存的开门事件。' }], worldbookVersions: [] }),
+    } }] } }] }));
+  }));
+  await persistReply(f);
+  expect(f.runtime.status().phase).toBe('memory-pending');
+  if (reopen) { f.runtime.close(); f.runtime = createAgentRuntime(f.runtimeOptions); }
+  await f.runtime.resume(true); await f.runtime.flush();
+  expect(f.runtime.status().phase).toBe('idle');
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toContain('用户手动维护');
+  expect(await f.store.read('memory/main/state.md')).toBe('用户刚写下的笔记，不能覆盖。');
+  expect(await f.store.read('memory/main/events/entry.md')).toContain('已保存的开门事件');
+  await f.runtime.resume(true); await f.runtime.flush();
+  expect(requests).toHaveLength(2);
+});
+
+it('replays a committed memory transaction after a transient receipt failure without generating it again', async () => {
+  const f = await fixture();
+  const write = f.store.write.bind(f.store);
+  let fail = true;
+  f.store.write = async (path, text) => {
+    if (fail && path.includes('/maintenance/') && JSON.parse(text).status === 'committed') throw new Error('临时写入失败');
+    return write(path, text);
+  };
+  await persistReply(f);
+  expect(f.runtime.status().phase).toBe('memory-pending');
+  const before = await f.store.read('memory/main/state.md');
+  expect(before).toContain('门已打开');
+  fail = false;
+  await f.runtime.resume(true); await f.runtime.flush();
+  expect(f.runtime.status().phase).toBe('idle');
+  expect(await f.store.read('memory/main/state.md')).toBe(before);
+  const maintenanceRequests = vi.mocked(fetch).mock.calls.filter(call => JSON.parse(String(call[1]?.body)).tools.at(-1).function.name === 'submit_memory');
+  expect(maintenanceRequests).toHaveLength(1);
 });

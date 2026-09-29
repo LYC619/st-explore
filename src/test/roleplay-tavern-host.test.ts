@@ -181,6 +181,168 @@ describe('real Tavern host contracts', () => {
     expect(await (await f.host.request('/api/stats/get')).json()).toEqual(stats);
     expect((await getRoleplayPreferences()).stats).toEqual(stats);
   });
+
+  it.each(['edit', 'delete', 'reorder', 'hide', 'candidate'] as const)('aborts a completion when a save changes its captured history: %s', async change => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    chat.push({ name: '旅人', is_user: true, mes: '有人吗？', extra: { ste_runtime: { messageId: 'm2' } } });
+    let requestSignal: AbortSignal | undefined;
+    const cancelled = vi.fn();
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      requestSignal = init.signal as AbortSignal;
+      return new Response(new ReadableStream({ cancel: cancelled }), { headers: { 'Content-Type': 'text/event-stream' } });
+    }));
+    const response = await f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'user', content: '有人吗？' }], stream: true,
+      ste_context: { type: 'normal', chat: structuredClone(chat) },
+    });
+    const received = response.text().catch(error => error);
+    if (change === 'edit') chat[1].mes = '已修改开场';
+    if (change === 'delete') chat.splice(1, 1);
+    if (change === 'reorder') [chat[1], chat[2]] = [chat[2], chat[1]];
+    if (change === 'hide') chat[1].is_system = true;
+    if (change === 'candidate') chat[1].extra.ste_runtime.candidateId = 'different-candidate';
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(requestSignal?.aborted).toBe(true);
+    expect(cancelled).toHaveBeenCalledOnce();
+    expect(await received).toMatchObject({ name: 'AbortError' });
+    f.host.close();
+  });
+
+  it('keeps a completion alive for metadata saves and appended generated text', async () => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      requestSignal = init.signal as AbortSignal;
+      return new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } });
+    }));
+    await f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'assistant', content: '请进' }], stream: true,
+      ste_context: { type: 'normal', chat: structuredClone(chat) },
+    });
+    chat[0].chat_metadata.note = '界面状态';
+    chat[1].extra.display = { expanded: true };
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(requestSignal?.aborted).toBe(false);
+    chat.push({ name: '林', is_user: false, mes: '新的回复', extra: { ste_runtime: { messageId: 'm2' } } });
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    chat[2].mes += '继续生成。';
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(requestSignal?.aborted).toBe(false);
+    f.host.close();
+  });
+
+  it.each(['swipe', 'continue'])('allows %s to replace its target without changing the captured prefix', async type => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    chat.push({ name: '林', is_user: false, mes: '需要继续或换一版的回复', extra: { ste_runtime: { messageId: 'm2' } } });
+    let requestSignal: AbortSignal | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      requestSignal = init.signal as AbortSignal;
+      return new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } });
+    }));
+    await f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'assistant', content: '请进' }], stream: true,
+      ste_context: { type, chat: structuredClone(chat) },
+    });
+    chat[2].mes = '生成中的新正文';
+    chat[2].extra.ste_runtime.candidateId = 'new-candidate';
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(requestSignal?.aborted).toBe(false);
+    chat[1].mes = '较早的历史已变化';
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(requestSignal?.aborted).toBe(true);
+    f.host.close();
+  });
+
+  it('compares each active completion with its own captured input', async () => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      signals.push(init.signal as AbortSignal);
+      return new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } });
+    }));
+    await f.host.request('/api/backends/chat-completions/generate', { messages: [], stream: true });
+    await f.host.request('/api/backends/chat-completions/generate', {
+      messages: [], stream: true, ste_context: { type: 'quiet', chat: [...chat,
+        { name: '旅人', is_user: true, mes: '尚未保存的新输入', extra: { ste_runtime: { messageId: 'm2' } } }],
+      },
+    });
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(signals.map(signal => signal.aborted)).toEqual([false, true]);
+    f.host.close();
+  });
+
+  it.each(['preparing', 'streaming'])('rejects late Agent output after history changes while %s', async phase => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    expect((await f.host.request('/ste/runtime', { mode: 'agent', memoryOwner: 'native-agent' })).ok).toBe(true);
+    let resolveTool!: (response: Response) => void;
+    const toolResponse = () => new Response(JSON.stringify({ choices: [{ message: { tool_calls: [{ id: 'context', type: 'function',
+      function: { name: 'submit_context', arguments: JSON.stringify({ references: [], reminders: [] }) },
+    }] }, finish_reason: 'tool_calls' }] }));
+    const signals: AbortSignal[] = [];
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      signals.push(init.signal as AbortSignal);
+      if (JSON.parse(String(init.body)).tools) return phase === 'preparing' ? new Promise<Response>(resolve => { resolveTool = resolve; }) : toolResponse();
+      return new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const pending = f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'assistant', content: '请进' }], stream: true,
+      ste_context: { type: 'normal', worldHandled: true, chat: structuredClone(chat) },
+    });
+    let response: Response | undefined;
+    if (phase === 'preparing') await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+    else response = await pending;
+    const received = response?.text().catch(error => error);
+    chat[1].mes = '历史已经修改';
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+    expect(signals.at(-1)?.aborted).toBe(true);
+    if (phase === 'preparing') {
+      resolveTool(toolResponse()); // A provider that ignores abort must still not start prose generation.
+      expect((await pending).ok).toBe(false);
+      expect(fetcher).toHaveBeenCalledOnce();
+    } else {
+      expect(await received).toMatchObject({ name: 'AbortError' });
+      expect((await f.host.request('/ste/runtime/confirm-candidate', { turnId: response!.headers.get('x-ste-turn-id'),
+        messageId: 'late', candidateId: 'late:main', content: '迟到的回复',
+      })).ok).toBe(false);
+    }
+    f.host.close();
+  });
+
+  it('retains the preceding assistant when regenerate already removed its target upstream', async () => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    const removed = { name: '林', is_user: false, mes: '需要重新生成的第二条助手回复', extra: { ste_runtime: { messageId: 'm2' } } };
+    expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat: [...chat, removed] })).ok).toBe(true);
+    expect((await f.host.request('/ste/runtime', { mode: 'agent', memoryOwner: 'native-agent' })).ok).toBe(true);
+    const fetcher = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: body.tools
+        ? { tool_calls: [{ id: 'context', type: 'function', function: { name: 'submit_context', arguments: JSON.stringify({ references: [], reminders: [] }) } }] }
+        : { content: '重新生成完成' }, finish_reason: body.tools ? 'tool_calls' : 'stop' }] }), { headers: { 'Content-Type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const response = await f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'assistant', content: '请进' }], stream: false,
+      ste_context: { type: 'regenerate', worldHandled: true, chat },
+    });
+    expect(response.ok).toBe(true);
+    await response.text();
+    const retrieval = JSON.parse(JSON.parse(String(fetcher.mock.calls[0][1].body)).messages[1].content);
+    expect(retrieval.recentMessages).toEqual([{ id: 'm1', role: 'assistant', content: '请进' }]);
+    f.host.close();
+  });
   it('writes edited card metadata into the existing PNG as well as the STE record', async () => {
     const f = await fixture();
     const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];

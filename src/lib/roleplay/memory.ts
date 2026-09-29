@@ -25,6 +25,10 @@ export interface MemoryDocument {
   sourceRefs: SourceRef[];
 }
 export interface MemorySnapshot { documents: MemoryDocument[]; conflicts: string[] }
+/** Re-reading and making a new proposal is safe; never reuse its old transaction identity. */
+export class StaleMemoryProposalError extends Error {
+  override name = 'StaleMemoryProposalError';
+}
 interface Journal {
   schema: 1;
   operationId: string;
@@ -254,6 +258,7 @@ export function createMemoryRepository(options: {
         if (prior) {
           if (prior.proposalDigest !== proposalDigest) throw new Error('同一记忆操作不能使用不同的修改内容');
           if (prior.status === 'committed') return snapshot(session, entries);
+          if (prior.status === 'resolved' || prior.status === 'rolled-back') throw new StaleMemoryProposalError('旧记忆操作已结束，请重新读取当前文件后提交');
           throw new Error('记忆操作已失效或存在冲突，请检查文件后重新提交');
         }
         if (!input.manual && !refsAreCurrent(input.sourceRefs, session)) throw new Error('记忆来源已修改，迟到的更新已停止');
@@ -265,9 +270,9 @@ export function createMemoryRepository(options: {
         const changes: Journal['changes'] = [];
         for (const change of input.changes) {
           const before = await store.read(`${root}/${change.path}`);
-          if ((before === null ? null : digest(before)) !== change.expectedDigest) throw new Error(`记忆已被修改：${change.path}；请重新读取后再保存`);
+          if ((before === null ? null : digest(before)) !== change.expectedDigest) throw new StaleMemoryProposalError(`记忆已被修改：${change.path}；请重新读取后再保存`);
           const previous = before === null ? null : document(change.path, before, session, new Set(), entries);
-          if (!input.manual && previous?.owner === 'manual') throw new Error(`手动记忆需要由用户修改：${change.path}`);
+          if (!input.manual && previous?.owner === 'manual') throw new StaleMemoryProposalError(`手动记忆需要由用户修改：${change.path}`);
           const after = serializeFrontmatter({ schema: 1, id: change.path, kind: change.path.split(/[/.]/)[0],
             revision: (previous?.revision ?? 0) + 1, owner: input.manual ? 'manual' : 'agent', status: 'active',
             sourceRefs: input.manual ? [] : input.sourceRefs, validFrom: input.sourceRefs.at(-1)?.messageId,

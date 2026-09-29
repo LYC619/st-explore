@@ -1,9 +1,10 @@
-import { encode, decode } from 'gpt-tokenizer/encoding/o200k_base';
+import { encode } from 'gpt-tokenizer/encoding/o200k_base';
 import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import type { ChatSession } from '@/types/chat';
 import { sendCompletion } from './provider';
 import type { MemoryChange } from './memory';
 import { isRuntimePath } from './paths';
+import { waitForAbort } from './abort';
 
 export interface AgentResource {
   id: string;
@@ -27,7 +28,36 @@ export interface ToolAgentResult {
 type ObjectValue = Record<string, unknown>;
 const object = (value: unknown): ObjectValue => value && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : {};
 const tokens = (text: string) => encode(text, { disallowedSpecial: new Set() });
-const clip = (text: string, budget: number) => decode(tokens(text).slice(0, budget));
+function clip(text: string, budget: number): string {
+  if (!text || budget <= 0) return '';
+  const prefix = (end: number) => {
+    // Slice only at code-point boundaries, while preserving JS character offsets.
+    if ((text.codePointAt(end - 1) ?? 0) > 0xffff) end--;
+    return text.slice(0, end);
+  };
+  let low = 0;
+  let high = Math.min(text.length, budget);
+  let fitting = '';
+  // Bound the search near the budget instead of tokenizing a potentially huge source.
+  while (true) {
+    const candidate = prefix(high);
+    if (tokens(candidate).length > budget) break;
+    fitting = candidate;
+    low = high;
+    if (high === text.length) return fitting;
+    high = Math.min(text.length, high * 2);
+  }
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = prefix(middle);
+    if (tokens(candidate).length <= budget) {
+      fitting = candidate;
+      low = middle;
+    } else high = middle;
+  }
+  // Token counts need not be monotonic: return only a prefix verified to fit.
+  return fitting;
+}
 const string = { type: 'string' };
 function schema(name: string, description: string, properties: ObjectValue, required = Object.keys(properties)) {
   return { type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } };
@@ -48,8 +78,7 @@ const memoryTool = schema('submit_memory', '提交已保存剧情的记忆增量
   worldbookVersions: { type: 'array', maxItems: 3, items: { type: 'object', properties: { resourceId: string, content: string, reason: string }, required: ['resourceId', 'content', 'reason'], additionalProperties: false } },
 });
 
-/** A bounded tool loop; the prose model never receives this conversation or tool instructions. */
-export async function runToolAgent(options: {
+interface ToolAgentOptions {
   phase: 'context' | 'memory';
   profile: APIConfig;
   session: ChatSession;
@@ -57,7 +86,25 @@ export async function runToolAgent(options: {
   signal?: AbortSignal;
   maxRounds?: number;
   onTool?: (name: string) => void;
-}): Promise<ToolAgentResult> {
+}
+
+/** One deadline covers every round, including response bodies and transports that ignore abort. */
+export async function runToolAgent(options: ToolAgentOptions): Promise<ToolAgentResult> {
+  options.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const abort = () => controller.abort(options.signal?.reason);
+  options.signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(() => controller.abort(new DOMException('工具 Agent 超时，请重试或检查工具模型连接', 'TimeoutError')), 120_000);
+  try {
+    return await runToolLoop({ ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
+/** A bounded tool loop; the prose model never receives this conversation or tool instructions. */
+async function runToolLoop(options: ToolAgentOptions): Promise<ToolAgentResult> {
   const { phase, profile, session, signal } = options;
   signal?.throwIfAborted();
   const resources = new Map(options.resources.map(resource => [resource.id, resource]));
@@ -151,10 +198,10 @@ export async function runToolAgent(options: {
       if (old < 0) throw new Error('工具 Agent 工作上下文超过预算，请缩短近期单条消息');
       messages[old].content = String(messages[old].content).slice(0, 220) + '…（旧观察已缩短，可重新读取；已取得的 handle 仍有效）';
     }
-    const response = await sendCompletion(profile, { messages, tools, stream: false, temperature: 0.2, max_tokens: 1800,
-      parallel_tool_calls: false, tool_choice: round === rounds - 1 ? { type: 'function', function: { name: finalTool.function.name } } : 'auto' }, signal);
+    const response = await waitForAbort(sendCompletion(profile, { messages, tools, stream: false, temperature: 0.2, max_tokens: 1800,
+      parallel_tool_calls: false, tool_choice: round === rounds - 1 ? { type: 'function', function: { name: finalTool.function.name } } : 'auto' }, signal), signal);
     if (!response.ok) throw new Error(`工具模型请求失败（${response.status}）`);
-    const payload = object(await response.json());
+    const payload = object(await waitForAbort(response.json(), signal));
     if (payload.usage) usage.push(payload.usage);
     const choice = object(Array.isArray(payload.choices) ? payload.choices[0] : null);
     const message = object(choice.message);

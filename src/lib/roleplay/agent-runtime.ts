@@ -3,7 +3,7 @@ import type { Repo } from '@/lib/repo';
 import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import type { ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
-import { createMemoryRepository } from './memory';
+import { createMemoryRepository, StaleMemoryProposalError } from './memory';
 import { createContextLedger, type CacheMetrics, type ContextTurn } from './context-ledger';
 import type { CompletionOutcome } from './completion-monitor';
 import { digest, refsAreCurrent, sourceRefs, type SourceRef } from './fingerprint';
@@ -12,6 +12,7 @@ import type { PreparedCompletion } from './provider';
 import type { RuntimeStore } from './runtime-store';
 import type { StoryCommit } from './story-session';
 import { runToolAgent, type AgentResource, type ToolAgentResult, type WorldbookProposal, type AgentReference } from './tool-agent';
+import { waitForAbort } from './abort';
 
 export interface RuntimeConfiguration {
   mode: 'classic' | 'agent';
@@ -50,7 +51,8 @@ interface MaintenanceRecord {
   turnId: string;
   sourceRef: SourceRef;
   proposal: ToolAgentResult;
-  status: 'prepared' | 'committed';
+  status: 'prepared' | 'committed' | 'needs-replan';
+  attempt?: number;
 }
 
 export function createAgentRuntime(options: {
@@ -130,21 +132,35 @@ export function createAgentRuntime(options: {
       report({ ...lastStatus, phase: 'memory', message: '正文已保存，正在整理记忆…', turnId });
       const path = `${root}/maintenance/${digest(turnId)}.json`;
       const saved = await store.read(path);
-      let record: MaintenanceRecord;
+      let record: MaintenanceRecord | undefined;
       if (saved) {
         record = JSON.parse(saved);
-        if (record.schema !== 1 || record.turnId !== turnId || !refsAreCurrent([record.sourceRef], session)) throw new Error('记忆更新记录与当前采用回复不匹配');
+        if (!record || record.schema !== 1 || record.turnId !== turnId || !refsAreCurrent([record.sourceRef], session)
+          || !['prepared', 'committed', 'needs-replan'].includes(record.status)
+          || record.attempt !== undefined && (!Number.isSafeInteger(record.attempt) || record.attempt < 0)) throw new Error('记忆更新记录与当前采用回复不匹配');
         if (record.status === 'committed') { report({ ...lastStatus, phase: 'idle', message: '正文与记忆已保存' }); return; }
-      } else {
+      }
+      if (!record || record.status === 'needs-replan') {
+        const attempt = record ? (record.attempt ?? 0) + 1 : 0;
         const proposal = await runToolAgent({ phase: 'memory', session, resources: await sources(session, turn.scope, 'memory'),
           profile: options.toolProfile(), signal: controller.signal });
         check(); controller.signal.throwIfAborted();
         if (!refsAreCurrent([sourceRef], await currentSession())) return;
-        record = { schema: 1, turnId, sourceRef, proposal, status: 'prepared' };
+        record = { schema: 1, turnId, sourceRef, proposal, status: 'prepared', attempt };
         await store.write(path, JSON.stringify(record, null, 2));
       }
       controller.signal.throwIfAborted();
-      if (record.proposal.changes.length) await memory.commit({ operationId: `memory:${turnId}`, sourceRefs: [sourceRef], changes: record.proposal.changes });
+      try {
+        if (record.proposal.changes.length) await memory.commit({
+          operationId: `memory:${turnId}${record.attempt ? `:${record.attempt}` : ''}`, sourceRefs: [sourceRef], changes: record.proposal.changes,
+        });
+      } catch (error) {
+        if (error instanceof StaleMemoryProposalError) {
+          record.status = 'needs-replan';
+          await store.write(path, JSON.stringify(record, null, 2));
+        }
+        throw error;
+      }
       if (record.proposal.worldbookVersions.length) await options.proposeWorldVersions?.(turnId, record.proposal.worldbookVersions, turn.scope, [sourceRef]);
       record.status = 'committed'; check();
       await store.write(path, JSON.stringify(record, null, 2));
@@ -204,7 +220,7 @@ export function createAgentRuntime(options: {
       report({ phase: 'idle', message: value.mode === 'agent' ? 'Agent · 自动保存' : '无 Agent · 自动保存' });
     },
     async prepare(prepared: PreparedCompletion, session: ChatSession, scope: WorldScopeEntry[], signal?: AbortSignal) {
-      await maintenance; check(); signal?.throwIfAborted();
+      await waitForAbort(maintenance, signal); check(); signal?.throwIfAborted();
       if ((await configuration()).mode !== 'agent') throw new Error('当前分支未开启 Agent');
       // Unadopted completions from a prior attempt must not become memory on a later unrelated save.
       for (const [id, turn] of pending) if (!turn.adoptedRef) pending.delete(id);

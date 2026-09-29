@@ -46,6 +46,82 @@ describe('live ST chat boundary', () => {
     expect(encoded[2].swipes).toEqual(['另一条', '']);
   });
 
+  it.each([
+    ['narrator', false], ['narrator', true],
+    ['comment', false], ['comment', true],
+  ] as const)('preserves %s visibility is_system=%s across repeated save/reopen cycles', (type, hidden) => {
+    const source = session();
+    const payload = encodeLiveChat(source);
+    payload.push({ name: '旁白', mes: '雨停了', is_user: false, is_system: hidden,
+      extra: { type, plugin: { keep: true }, ste_runtime: { messageId: 'narrative-1' } } });
+
+    let current = decodeLiveChat(payload, source);
+    for (let cycle = 0; cycle < 3; cycle++) {
+      expect(current.messages.at(-1)).toMatchObject({ id: 'narrative-1', role: 'system', hidden });
+      const saved = encodeLiveChat(current);
+      expect(saved.at(-1)).toMatchObject({ is_system: hidden, extra: { type, plugin: { keep: true } } });
+      current = decodeLiveChat(saved, current);
+    }
+  });
+
+  it.each(['narrator', 'comment'])('honors explicit hide/unhide of %s over stale raw visibility', type => {
+    const source = session();
+    const payload = encodeLiveChat(source);
+    payload.push({ mes: '雨停了', is_user: false, is_system: false,
+      extra: { type, ste_runtime: { messageId: 'narrative-1' } } });
+    const visible = decodeLiveChat(payload, source);
+    visible.messages.at(-1)!.hidden = true;
+    const hiddenPayload = encodeLiveChat(visible);
+    expect(hiddenPayload.at(-1)?.is_system).toBe(true);
+
+    const hidden = decodeLiveChat(hiddenPayload, visible);
+    hidden.messages.at(-1)!.hidden = false;
+    expect(hidden.messages.at(-1)?.rawData?.is_system).toBe(true);
+    const visiblePayload = encodeLiveChat(hidden);
+    expect(visiblePayload.at(-1)?.is_system).toBe(false);
+    expect(decodeLiveChat(visiblePayload, hidden).messages.at(-1)?.hidden).toBe(false);
+  });
+
+  it('retains native STE system semantics without treating system role as a hidden story message', () => {
+    const source = session();
+    source.messages.push({ id: 'native-system', role: 'system', content: '遵循场景设定' });
+    const saved = encodeLiveChat(source);
+    expect(saved.at(-1)).toMatchObject({ is_system: true, extra: { ste_runtime: { role: 'system' } } });
+    expect(decodeLiveChat(saved, source).messages.at(-1)).toMatchObject({
+      id: 'native-system', role: 'system', hidden: false, content: '遵循场景设定',
+    });
+  });
+
+  it('retains visible narrator candidate identities and metadata after adopting a swipe and reopening', () => {
+    const source = session();
+    const payload = encodeLiveChat(source);
+    payload.push({ mes: '雨停了', is_user: false, is_system: false, swipe_id: 0,
+      swipes: ['雨停了', '天亮了'],
+      swipe_info: [
+        { send_date: 400, extra: { type: 'narrator', plugin: 'first', ste_runtime: { candidateId: 'narrative-a' } } },
+        { send_date: 500, extra: { type: 'narrator', plugin: 'second', ste_runtime: { candidateId: 'narrative-b' } } },
+      ],
+      extra: { type: 'narrator', ste_runtime: { messageId: 'narrative-1' } },
+    });
+    const decoded = decodeLiveChat(payload, source);
+    const saved = encodeLiveChat(decoded);
+    const narrative = saved.at(-1) as STRawMessage;
+    narrative.swipe_id = 1;
+    narrative.mes = '天亮了';
+    narrative.extra = structuredClone(narrative.swipe_info![1].extra);
+    const reopened = decodeLiveChat(saved, decoded);
+    expect(reopened.messages.at(-1)).toMatchObject({
+      id: 'narrative-1', role: 'system', content: '天亮了', hidden: false, timestamp: 500,
+    });
+    const resaved = encodeLiveChat(reopened).at(-1) as STRawMessage;
+    expect(resaved).toMatchObject({ is_system: false, swipe_id: 1, swipes: ['雨停了', '天亮了'],
+      extra: { type: 'narrator', plugin: 'second', ste_runtime: { messageId: 'narrative-1', candidateId: 'narrative-b' } },
+    });
+    expect(resaved.swipe_info?.map(info => [info.extra.plugin, info.extra.ste_runtime.candidateId])).toEqual([
+      ['first', 'narrative-a'], ['second', 'narrative-b'],
+    ]);
+  });
+
   it('accepts a new stamped message and a swipe change while retaining original message IDs', () => {
     const source = session();
     const payload = encodeLiveChat(source);

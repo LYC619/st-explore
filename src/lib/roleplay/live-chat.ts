@@ -7,6 +7,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isNarrativeMessage(raw: STRawMessage): boolean {
+  return raw.extra?.type === 'narrator' || raw.extra?.type === 'comment';
+}
+
 function stampCandidates(raw: STRawMessage, messageId: string, role: ChatMessage['role']) {
   if (!Array.isArray(raw.swipes) || !raw.swipes.length) return;
   raw.swipe_info = raw.swipes.map((_, index) => {
@@ -33,7 +37,8 @@ export function encodeLiveChat(session: ChatSession): LiveChatPayload {
     raw.mes = message.content;
     raw.name = message.name ?? raw.name ?? (message.role === 'user' ? session.user.name : session.character.name);
     raw.is_user = message.role === 'user';
-    raw.is_system = message.role === 'system' || message.hidden === true;
+    // ST narrator/comment roles have independent visibility; current edits override rawData.
+    raw.is_system = message.hidden === true || (message.role === 'system' && !isNarrativeMessage(raw));
     if (raw.send_date === undefined && message.timestamp !== undefined) raw.send_date = message.timestamp;
     raw.extra = {
       ...raw.extra,
@@ -87,7 +92,7 @@ export function decodeLiveChat(payload: unknown, previous: ChatSession): ChatSes
       ...old,
       id, role, content: raw.mes, name: raw.name ?? old?.name,
       is_user: role === 'user',
-      hidden: raw.is_system === true && role !== 'system',
+      hidden: raw.is_system === true && (role !== 'system' || isNarrativeMessage(raw)),
       timestamp: parseSTDate(swipeDate) ?? parseSTDate(raw.send_date) ?? old?.timestamp,
       rawData: raw,
     };
