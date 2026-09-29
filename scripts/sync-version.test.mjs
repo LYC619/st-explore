@@ -114,6 +114,21 @@ test('malformed markers fail before writing any target', async () => {
   }
 });
 
+test('an already synchronized Windows lockfile is not changed just for formatting', async () => {
+  const root = await makeFixture();
+  try {
+    await syncVersion(root, 'write');
+    const lockPath = join(root, 'package-lock.json');
+    const windowsLock = (await readFile(lockPath, 'utf8')).replaceAll('\n', '\r\n');
+    await writeFile(lockPath, windowsLock);
+    assert.deepEqual((await syncVersion(root, 'check')).changedFiles, []);
+    assert.deepEqual((await syncVersion(root, 'write')).changedFiles, []);
+    assert.equal(await readFile(lockPath, 'utf8'), windowsLock);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('Cargo.lock replacement preserves line endings, metadata, and third-party versions', () => {
   for (const eol of ['\n', '\r\n']) {
     const lock = [

@@ -16,7 +16,7 @@
 - [x] Triage remaining September 18 findings against code; repair confirmed merge blockers, record compatibility/performance limitations separately rather than applying unsafe suggested fixes.
 - [x] Run affected tests, TypeScript, lint, source-integrity checks, full unit suite, browser roleplay suite, production build and Rust tests. Inspect every result, record platform and real-model limits.
 - [x] Obtain independent spec/correctness review, resolve important findings, commit exact reviewed files (including the previously corrected navigation assertion and original review report).
-- [ ] Check main's local edits and remote state, preserve overlapping local changes with a recoverable backup, merge locally, verify merged commit/code and restore/check all preserved edits. Keep the existing development checkout and ignored trial artifacts available.
+- [x] Check main's local edits and remote state, preserve overlapping local changes with a recoverable backup, merge locally, verify merged commit/code and restore/check all preserved edits. Keep the existing development checkout and ignored trial artifacts available.
 
 ## Initial evidence
 
@@ -25,3 +25,5 @@ HEAD is `d737396`; main is `25c2dda`. The only pre-existing development changes 
 ## Progress and verification
 
 - 2026-09-29: User authorized repairs after review; root causes checked in runtime, codec, memory transaction and tool transport paths.
+
+- 2026-09-29: Fixes committed as baa7c40 and fast-forwarded into main; local changes preserved, dependency install and 73 merged-directory tests passed. A CRLF-only version-check false positive found after merge was covered by a red/green script test and fixed with independent review. See docs/verification/ste-roleplay-review-repairs-2026-09-29.md for full results.

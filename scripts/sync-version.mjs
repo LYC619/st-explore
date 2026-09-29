@@ -116,7 +116,8 @@ export async function syncVersion(root, mode = 'check') {
   const nextPackageLock = structuredClone(packageLock);
   nextPackageLock.version = version;
   nextPackageLock.packages[''].version = version;
-  nextTexts.set('package-lock.json', `${JSON.stringify(nextPackageLock, null, 2)}\n`);
+  nextTexts.set('package-lock.json', packageLock.version === version && rootPackage.version === version
+    ? sourceTexts.get('package-lock.json') : `${JSON.stringify(nextPackageLock, null, 2)}\n`);
   nextTexts.set(
     'src-tauri/tauri.conf.json',
     tauri.version === version ? sourceTexts.get('src-tauri/tauri.conf.json') : `${JSON.stringify({ ...tauri, version }, null, 2)}\n`,
