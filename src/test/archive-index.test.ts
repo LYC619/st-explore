@@ -142,6 +142,7 @@ describe('客户端文件库：轻量列表', () => {
     expect(entry.lastMessageAt).toBe(4242);
     // 楼数只数主线，不把分支算进去
     expect(entry.floorCount).toBe(5);
+    expect(entry.branchIndex).toEqual([{ id: 'b1', name: '分支' }]);
     expect('session' in entry).toBe(false);
     expect('branches' in entry).toBe(false);
   });
@@ -171,11 +172,14 @@ describe('客户端文件库：轻量列表', () => {
 
 describe('网页版 IDB：没有字段投影也要收窄成同一形状', () => {
   it('故事列表照样给出楼数且不带正文', async () => {
-    await saveArchiveStory(makeStory('s1', '主线', 3, { characterId: 'c1' }));
+    await saveArchiveStory(makeStory('s1', '主线', 3, { characterId: 'c1', branches: [
+      { id: 'b1', name: '另一结局', session: session('分支', 9), markers: [], createdAt: 1, updatedAt: 1 },
+    ] }));
 
     const [entry] = await listStoryIndex();
     expect(entry.title).toBe('主线');
     expect(entry.floorCount).toBe(3);
+    expect(entry.branchIndex).toEqual([{ id: 'b1', name: '另一结局' }]);
     expect('session' in entry).toBe(false);
     expect('branches' in entry).toBe(false);
   });

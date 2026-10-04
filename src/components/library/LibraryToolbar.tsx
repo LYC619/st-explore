@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 import {
   ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List as ListIcon,
-  Plus, Search, SlidersHorizontal, Tags, X,
+  Plus, Search, SlidersHorizontal, Tags, X, PanelsTopLeft,
 } from 'lucide-react';
 import { HelpCard } from '@/components/HelpCard';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,7 @@ interface LibraryToolbarProps {
   fileInputRef: RefObject<HTMLInputElement>;
   onPickFiles: (files: FileList | null) => void;
   storyPackageTools?: ReactNode;
+  reviewFilters?: ReactNode;
 }
 
 /** 顶栏一行：标题 / 搜索 / 激活筛选 / 排序+方向 / 分组 / 外观 / 导入 */
@@ -54,7 +55,7 @@ export function LibraryToolbar({
   viewMode, onViewModeChange, groupBy, onGroupByChange,
   groupTagCategory, groupTagCategories, onGroupTagCategoryChange,
   cardWidth, onCardWidthChange, fontScale, onFontScaleChange,
-  fileInputRef, onPickFiles, storyPackageTools,
+  fileInputRef, onPickFiles, storyPackageTools, reviewFilters,
 }: LibraryToolbarProps) {
   const showClearAll =
     activeFilterChips.length > 1 || (activeFilterChips.length > 0 && searchQuery.trim().length > 0);
@@ -79,7 +80,7 @@ export function LibraryToolbar({
         <Tags className="w-3.5 h-3.5 mr-1.5" />
         标签管理
       </Button>
-      {characterCount > 1 && (
+      {characterCount > 1 && viewMode !== 'review' && (
         <Button
           variant={batchMode ? 'default' : 'outline'}
           size="sm"
@@ -108,6 +109,16 @@ export function LibraryToolbar({
         </button>
       )}
       <span className="flex-1" />
+      <Button
+        variant={viewMode === 'review' ? 'default' : 'outline'}
+        size="sm"
+        aria-pressed={viewMode === 'review'}
+        onClick={() => onViewModeChange(viewMode === 'review' ? 'grid' : 'review')}
+        title={viewMode === 'review' ? '退出回顾，返回网格视图' : '连续切换角色，回顾故事与总结'}
+      >
+        <PanelsTopLeft className="w-4 h-4 mr-1.5" />回顾
+      </Button>
+      {viewMode === 'review' && reviewFilters}
       <Select value={sortKey} onValueChange={(v) => onSortKeyChange(v as LibrarySortKey)}>
         <SelectTrigger className="h-8 w-32 text-xs">
           <SelectValue />
@@ -174,13 +185,15 @@ export function LibraryToolbar({
               {([
                 { mode: 'grid' as const, label: '网格视图', Icon: LayoutGrid, extra: '' },
                 { mode: 'list' as const, label: '列表视图', Icon: ListIcon, extra: 'border-l border-border' },
+                { mode: 'review' as const, label: '回顾视图', Icon: PanelsTopLeft, extra: 'border-l border-border' },
               ]).map(({ mode, label, Icon, extra }) => (
                 <button
                   key={mode}
                   aria-label={label}
+                  aria-pressed={viewMode === mode}
                   onClick={() => onViewModeChange(mode)}
                   className={cn(
-                    'h-8 w-10 flex items-center justify-center transition-colors',
+                    'tap-target h-8 w-10 flex items-center justify-center transition-colors',
                     extra,
                     viewMode === mode
                       ? 'bg-[var(--brand-active-bg)] text-brand'

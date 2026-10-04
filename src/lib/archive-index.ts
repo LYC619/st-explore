@@ -26,6 +26,8 @@ export type CharacterIndexEntry = Omit<ArchiveCharacter, 'pngBase64' | 'portrait
 export type StoryIndexEntry = Omit<ArchiveStory, 'session' | 'branches'> & {
   /** 主线楼数（= 原 session.messages.length）；正文已剥离，列表显示「N 楼」用这个 */
   floorCount: number;
+  /** 分支目录，不包含分支正文；用于回顾时标明总结来源。 */
+  branchIndex?: { id: string; name: string }[];
 };
 
 const characterRepo = createRepo<ArchiveCharacter>('characters');
@@ -41,8 +43,12 @@ function toCharacterIndex(c: ArchiveCharacter): CharacterIndexEntry {
 }
 
 function toStoryIndex(s: ArchiveStory): StoryIndexEntry {
-  const { session, branches, ...rest } = s as ArchiveStory & { floorCount?: number };
-  return { ...rest, floorCount: rest.floorCount ?? session?.messages?.length ?? 0 };
+  const { session, branches, ...rest } = s as ArchiveStory & Pick<StoryIndexEntry, 'floorCount' | 'branchIndex'>;
+  return {
+    ...rest,
+    floorCount: rest.floorCount ?? session?.messages?.length ?? 0,
+    branchIndex: branches?.map(({ id, name }) => ({ id, name })) ?? rest.branchIndex ?? [],
+  };
 }
 
 /** 角色库列表项，按 updatedAt 降序（同 getAllCharacters） */

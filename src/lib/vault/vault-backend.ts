@@ -148,7 +148,11 @@ function serializeMd(rec: BaseRecord): string {
 function stripStoryBody(rec: BaseRecord | null): BaseRecord | null {
   if (!rec) return null;
   const { session, branches, ...rest } = rec as unknown as ArchiveStory;
-  return { ...rest, floorCount: session?.messages?.length ?? 0 } as unknown as BaseRecord;
+  return {
+    ...rest,
+    floorCount: session?.messages?.length ?? 0,
+    branchIndex: branches?.map(({ id, name }) => ({ id, name })) ?? [],
+  } as unknown as BaseRecord;
 }
 
 export function createVault(fs: VaultFs): VaultBackend {

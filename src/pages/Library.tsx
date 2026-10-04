@@ -11,10 +11,10 @@
  * 阶段 C2 拆分：卡面/列表行/操作菜单/工具条/分页条已抽到 components/library/，
  * 外观偏好与批量选择抽到 hooks/，本文件只留数据装载、导入导出删除与组装。
  */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
-import { Plus, BookOpen } from 'lucide-react';
+import { Plus, BookOpen, ListFilter } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AppLayout } from '@/components/AppLayout';
 import { TagManagerDialog } from '@/components/library/TagManagerDialog';
@@ -26,7 +26,8 @@ import {
 } from '@/components/library/LibraryImportDialog';
 import { LibraryListHeader } from '@/components/library/LibraryListHeader';
 import { LibraryToolbar } from '@/components/library/LibraryToolbar';
-import { CARD_W_COMPACT, cardFontSizes, type ActiveFilterChip } from '@/lib/library-view';
+import { CARD_W_COMPACT, cardFontSizes, type ActiveFilterChip, type ViewMode } from '@/lib/library-view';
+import type { LibraryReviewHandle } from '@/components/library/review/LibraryReviewView';
 import { LibraryPager, LibraryBatchBar } from '@/components/library/LibraryPager';
 import { CharacterTile } from '@/components/library/CharacterTile';
 import { CharacterListRow } from '@/components/library/CharacterListRow';
@@ -64,7 +65,10 @@ import {
   saveLibraryTagPreferences,
   updateArchiveStory,
 } from '@/lib/archive-db';
-import { listStoryIndex } from '@/lib/archive-index';
+import { listStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
+import { readLibraryReturnState, writeLibraryReturnState } from '@/lib/library-return-state';
+import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { scopedKey } from '@/lib/vault/vault-scope';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
 import {
   applyLibraryImportType,
@@ -95,6 +99,9 @@ import { useViewport } from '@/hooks/use-viewport';
 /** 类型筛选：all=不筛；none=未分类（type 为空） */
 type TypeFilter = 'all' | CharacterType | 'none';
 
+const LibraryReviewView = lazy(() => import('@/components/library/review/LibraryReviewView')
+  .then((module) => ({ default: module.LibraryReviewView })));
+
 const Library = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -102,6 +109,13 @@ const Library = () => {
   const { isMobile, isCompact } = useViewport();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [characters, setCharacters] = useState<ArchiveCharacter[]>([]);
+  const [storyIndex, setStoryIndex] = useState<StoryIndexEntry[]>([]);
+  const [returnState] = useState(readLibraryReturnState);
+  const [scopeEpoch] = useState(getVaultEpoch);
+  const [reviewFiltersOpen, setReviewFiltersOpen] = useState(false);
+  const loadSequence = useRef(0);
+  const reviewRef = useRef<LibraryReviewHandle>(null);
+  const viewTransition = useRef(false);
   const [storyCounts, setStoryCounts] = useState<Record<string, number>>({});
   /** 每角色最后游玩时间 = 名下故事 lastMessageAt 最大值（10.0 物化） */
   const [lastPlayed, setLastPlayed] = useState<Record<string, number>>({});
@@ -111,16 +125,16 @@ const Library = () => {
   const [refreshing, setRefreshing] = useState(false);
   /** 读档失败：要跟「库是空的」区分开，空库是正常状态，失败得能重试 */
   const [loadFailed, setLoadFailed] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(returnState?.searchQuery ?? '');
   /** 分级标签筛选：类型单选，其余类别组内多选 OR，类别间取交集 */
-  const [tagFilters, setTagFilters] = useState<Partial<Record<TagCategory, string[]>>>({});
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [tagFilters, setTagFilters] = useState<Partial<Record<TagCategory, string[]>>>(returnState?.tagFilters ?? {});
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(returnState?.typeFilter ?? 'all');
   const [tagPreferences, setTagPreferences] = useState<LibraryTagPreferences>(() =>
     normalizeLibraryTagPreferences(undefined),
   );
   const [uncategorizedExpanded, setUncategorizedExpanded] = useState(false);
-  const [sortKey, setSortKey] = useState<LibrarySortKey>('recent');
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortKey, setSortKey] = useState<LibrarySortKey>(returnState?.sortKey ?? 'recent');
+  const [sortAsc, setSortAsc] = useState(returnState?.sortAsc ?? false);
   const [batchExporting, setBatchExporting] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [pendingImport, setPendingImport] = useState<{
@@ -138,12 +152,20 @@ const Library = () => {
   const prefs = useLibraryViewPrefs();
 
   useEffect(() => {
+    if (prefs.viewMode === 'review' && getVaultEpoch() === scopeEpoch) {
+      writeLibraryReturnState({ searchQuery, tagFilters, typeFilter, sortKey, sortAsc });
+    }
+  }, [prefs.viewMode, searchQuery, tagFilters, typeFilter, sortKey, sortAsc, scopeEpoch]);
+
+  useEffect(() => {
     const syncDisplaySettings = () => setHideUnusedTags(getHideUnusedLibraryTags());
     window.addEventListener(LIBRARY_DISPLAY_SETTINGS_EVENT, syncDisplaySettings);
     return () => window.removeEventListener(LIBRARY_DISPLAY_SETTINGS_EVENT, syncDisplaySettings);
   }, []);
 
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    const isCurrent = () => getVaultEpoch() === scopeEpoch && sequence === loadSequence.current;
     setRefreshing(true);
     try {
       const [chars, stories, preferences] = await Promise.all([
@@ -151,8 +173,10 @@ const Library = () => {
         listStoryIndex(),
         getLibraryTagPreferences(),
       ]);
+      if (!isCurrent()) return;
       setLoadFailed(false);
       setCharacters(chars);
+      setStoryIndex(stories);
       setTagPreferences(preferences);
       const counts: Record<string, number> = {};
       const played: Record<string, number> = {};
@@ -166,16 +190,20 @@ const Library = () => {
       setStoryCounts(counts);
       setLastPlayed(played);
     } catch {
+      if (!isCurrent()) return;
       setLoadFailed(true);
       toast({ title: '加载失败', description: '无法读取角色库数据', variant: 'destructive' });
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (isCurrent()) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
-  }, [toast]);
+  }, [toast, scopeEpoch]);
 
   useEffect(() => {
     load();
+    return () => { loadSequence.current += 1; };
   }, [load]);
 
   const handleTagPreferencesChange = useCallback(async (next: LibraryTagPreferences) => {
@@ -411,6 +439,7 @@ const Library = () => {
   );
 
   useEffect(() => {
+    if (loading || loadFailed) return;
     const visible = new Set(
       managedTagOptions
         .filter((option) => option.visible)
@@ -426,7 +455,7 @@ const Library = () => {
       }
       return changed ? next : current;
     });
-  }, [managedTagOptions]);
+  }, [managedTagOptions, loading, loadFailed]);
 
   /** 筛选栏计数：类型按 type 字段，标签按 raw 出现次数 */
   const typeCounts = useMemo(() => {
@@ -445,6 +474,19 @@ const Library = () => {
   }, [searchQuery, tagFilters, typeFilter, sortKey, sortAsc, prefs.pageSize]);
 
   const selection = useLibrarySelection(filtered, page);
+
+  const changeView = async (mode: ViewMode) => {
+    if (viewTransition.current || mode === prefs.viewMode) return;
+    viewTransition.current = true;
+    try {
+      await reviewRef.current?.flushPendingSave();
+      if (scopeEpoch !== getVaultEpoch()) return;
+      selection.exitBatchMode();
+      prefs.setViewMode(mode);
+    } catch (error) {
+      toast({ title: '暂时无法离开回顾', description: error instanceof Error ? error.message : '请先保存当前故事后重试', variant: 'destructive' });
+    } finally { viewTransition.current = false; }
+  };
 
   const { pageSize } = prefs;
   const pageCount = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / Number(pageSize)));
@@ -557,7 +599,7 @@ const Library = () => {
           sortAsc={sortAsc}
           onSortAscToggle={() => setSortAsc((v) => !v)}
           viewMode={prefs.viewMode}
-          onViewModeChange={prefs.setViewMode}
+          onViewModeChange={(mode) => { void changeView(mode); }}
           groupBy={prefs.groupBy}
           onGroupByChange={prefs.setGroupBy}
           groupTagCategory={prefs.groupTagCategory}
@@ -570,12 +612,37 @@ const Library = () => {
           fileInputRef={fileInputRef}
           onPickFiles={handleImportFiles}
           storyPackageTools={<StoryPackageTools />}
+          reviewFilters={!isCompact && (
+            <Button variant="outline" size="sm" aria-expanded={reviewFiltersOpen} onClick={() => setReviewFiltersOpen((open) => !open)}>
+              <ListFilter className="w-4 h-4 mr-1.5" />筛选
+            </Button>
+          )}
         />
 
         {/* ===== 内容区：标签筛选栏 + 卡墙 ===== */}
         <div className="flex-1 min-h-0 flex">
-          {!isCompact && filterRail(false)}
+          {!isCompact && (prefs.viewMode !== 'review' || reviewFiltersOpen) && filterRail(false)}
 
+          {prefs.viewMode === 'review' && !loading && characters.length > 0 ? (
+            <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+              <RefreshIndicator active={refreshing} />
+              {loadFailed && (
+                <div role="alert" className="px-4 py-2 text-sm">
+                  刷新失败，当前显示上次读取的内容。
+                  <Button variant="ghost" size="sm" onClick={() => void load()}>重试</Button>
+                </div>
+              )}
+              <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">正在打开回顾视图…</p>}>
+                <LibraryReviewView
+                  ref={reviewRef}
+                  characters={filtered}
+                  storyIndex={storyIndex}
+                  onCharacterChange={(updated) => setCharacters((current) => current.map((c) => c.id === updated.id ? updated : c))}
+                  onStoriesChange={load}
+                />
+              </Suspense>
+            </div>
+          ) : (
           <div className={cn(
             'flex-1 min-w-0 overflow-y-auto scrollbar-thin py-3',
             isMobile ? 'px-3' : 'px-6',
@@ -699,6 +766,7 @@ const Library = () => {
               </>
             )}
           </div>
+          )}
         </div>
       </div>
 
@@ -791,4 +859,7 @@ const Library = () => {
   );
 };
 
-export default Library;
+export default function LibraryPage() {
+  const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
+  return <Library key={`${scopedKey('library')}:${epoch}`} />;
+}

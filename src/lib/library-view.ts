@@ -6,7 +6,7 @@
  */
 import type { LibrarySortKey } from '@/lib/library-query';
 
-export type ViewMode = 'grid' | 'list';
+export type ViewMode = 'grid' | 'list' | 'review';
 
 export const SORT_LABELS: Record<LibrarySortKey, string> = {
   recent: '按最近修改',

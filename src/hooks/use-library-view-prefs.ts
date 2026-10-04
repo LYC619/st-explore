@@ -32,8 +32,10 @@ export interface LibraryViewPrefs {
  * 读取时一律校验取值范围，坏数据（手改、旧版本残留）退回默认值而不是原样吃进去。
  */
 export function useLibraryViewPrefs(): LibraryViewPrefs {
-  const [viewMode, setViewMode] = useState<ViewMode>(() =>
-    lsGet('ste-library-view') === 'list' ? 'list' : 'grid');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => {
+    const saved = lsGet('ste-library-view');
+    return saved === 'list' || saved === 'review' ? saved : 'grid';
+  });
   const [groupBy, setGroupBy] = useState<LibraryGroupBy>(() => {
     const saved = lsGet('ste-library-group-by');
     return LIBRARY_GROUP_BY_OPTIONS.some((option) => option.value === saved)

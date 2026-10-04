@@ -5,7 +5,7 @@
  *   无章节标记钮、无沉浸阅读钮——插图4 保留清单）
  * - 持久化沿用工作区模式：dirty+防抖 600ms，卸载兜底补存；lastViewedAt/lastFloor 照记
  */
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { forwardRef, useImperativeHandle, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, BookOpenCheck, ChevronDown, ExternalLink, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,29 +25,67 @@ import { useToast } from '@/hooks/use-toast';
 import { useViewport } from '@/hooks/use-viewport';
 import { cn } from '@/lib/utils';
 import { LOADING_LABEL } from '@/lib/ui-copy';
+import { getVaultEpoch } from '@/lib/vault/active';
 
 interface InlineStoryReaderProps {
   storyId: string;
   /** 同角色下的全部故事（下拉切换用，按展示序） */
-  stories: ArchiveStory[];
+  stories: Pick<ArchiveStory, 'id' | 'title'>[];
   onSwitchStory: (id: string) => void;
   onBack: () => void;
   /** 「在编辑器中打开」→ /story/:id */
   onOpenEditor: (id: string) => void;
   /** 进入时直接打开的分支（列表分支行点入）；不传则恢复上次看的脉络 */
   initialBranchId?: string;
+  /** 回顾视图等待正文布局完成后恢复楼内像素位置。 */
+  onReadyChange?: (ready: boolean) => void;
+  restoreFloor?: boolean;
 }
 
-export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onOpenEditor, initialBranchId }: InlineStoryReaderProps) {
+export interface InlineStoryReaderHandle { flushPendingSave: () => Promise<void> }
+
+function createReaderSaver() {
+  const epoch = getVaultEpoch();
+  return new StoryDraftSaver((id, mutation) => {
+    if (epoch !== getVaultEpoch()) return Promise.reject(new Error('文件库已切换，已停止保存原故事'));
+    return updateArchiveStory(id, mutation);
+  });
+}
+
+export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStoryReaderProps>(function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onOpenEditor, initialBranchId, onReadyChange, restoreFloor = true }, ref) {
   const { toast } = useToast();
   const { isCompact } = useViewport();
   const [story, setStory] = useState<ArchiveStory | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const [branchId, setBranchId] = useState<string | null>(null);
   const [novelOpen, setNovelOpen] = useState(false);
   const workbenchRef = useRef<ChatWorkbenchHandle>(null);
   const readerHeaderRef = useRef<HTMLDivElement>(null);
   const [readerHeaderHeight, setReaderHeaderHeight] = useState(0);
+  const initialReaderMounted = useRef(false);
+
+  useLayoutEffect(() => {
+    if (!loading && story) initialReaderMounted.current = true;
+  }, [loading, story]);
+
+  useLayoutEffect(() => {
+    if (!onReadyChange) return;
+    onReadyChange(false);
+    let layoutFrame = 0;
+    let readyFrame = 0;
+    if (!loading && story?.id === storyId) {
+      layoutFrame = requestAnimationFrame(() => {
+        readyFrame = requestAnimationFrame(() => onReadyChange(true));
+      });
+    }
+    return () => {
+      cancelAnimationFrame(layoutFrame);
+      cancelAnimationFrame(readyFrame);
+      onReadyChange(false);
+    };
+  }, [loading, story?.id, storyId, onReadyChange]);
 
   useLayoutEffect(() => {
     const header = readerHeaderRef.current;
@@ -60,7 +98,8 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
   }, [storyId, loading]);
 
   const storyRef = useRef<ArchiveStory | null>(null);
-  const saverRef = useRef(new StoryDraftSaver(updateArchiveStory));
+  const saverRef = useRef(createReaderSaver());
+  useImperativeHandle(ref, () => ({ flushPendingSave: () => saverRef.current.flush() }), []);
   const mutateStory = useCallback((fn: (cur: ArchiveStory) => ArchiveStory) => {
     const current = storyRef.current;
     if (!current) return;
@@ -91,11 +130,16 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
   // 加载 + 记 lastViewedAt（切换故事 id 时重挂）
   useEffect(() => {
     let cancelled = false;
+    const epoch = getVaultEpoch();
+    const isCurrent = () => !cancelled && epoch === getVaultEpoch();
     setLoading(true);
+    setLoadError(null);
+    setStory(null);
+    storyRef.current = null;
     (async () => {
       try {
         const s = await getArchiveStory(storyId);
-        if (cancelled) return;
+        if (!isCurrent()) return;
         if (!s) {
           storyRef.current = null;
           setStory(null);
@@ -113,12 +157,13 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
           lastViewedAt: viewedAt,
           lastViewedBranchId: restoredBranchId ?? undefined,
         }));
-        if (cancelled || !withView) return;
-        saverRef.current = new StoryDraftSaver(updateArchiveStory);
+        if (!isCurrent() || !withView) return;
+        saverRef.current = createReaderSaver();
         storyRef.current = withView;
         setStory(withView);
       } catch (error) {
-        if (!cancelled) {
+        if (isCurrent()) {
+          setLoadError(error instanceof Error ? error.message : '请稍后重试');
           toast({
             title: '读取故事失败',
             description: error instanceof Error ? error.message : '请稍后重试',
@@ -126,11 +171,11 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
           });
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [storyId, initialBranchId, toast]);
+  }, [storyId, initialBranchId, toast, retry]);
 
   const transitionAfterFlush = useCallback(async (transition: () => void) => {
     try {
@@ -168,6 +213,12 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
 
   if (loading) {
     return <div className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</div>;
+  }
+  if (loadError) {
+    return <div role="alert" className="space-y-3 py-12 text-center text-sm">
+      <p>读取故事失败：{loadError}。故事仍保留在库中。</p>
+      <Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试读取故事</Button>
+    </div>;
   }
   if (!story || !line) {
     return (
@@ -294,7 +345,7 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
           onFavoritesChange={handleFavoritesChange}
           onSettingsChange={handleSettingsChange}
           onFloorChange={handleFloorChange}
-          initialFloor={line.lastFloor}
+          initialFloor={!initialReaderMounted.current && !restoreFloor ? undefined : line.lastFloor}
           readerMode
           readerStickyTop={readerHeaderHeight}
           toolbarExtras={
@@ -307,4 +358,4 @@ export function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onO
       )}
     </div>
   );
-}
+});
