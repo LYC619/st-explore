@@ -25,7 +25,13 @@ STE 只随程序提供接口适配和版本校验，不分发柏宝书代码。�
 
 仓库中的授权不据此推定为允许重新分发。完整故事包会省略插件程序；完整用户备份保留其自行安装的内容。
 
-## 接口和设计参考
+## 用户安装的原版酒馆助手（2026-10-06）
+
+新增 [N0VI028/JS-Slash-Runner](https://github.com/N0VI028/JS-Slash-Runner) 4.11.3 原版 ZIP 安装，固定提交 `87ca341a2a2279f4c18cd1918c5ae9dbd1dac492`。安装器检查主程序、样式、JSON 编辑器和 iframe Tailwind 依赖的 SHA-256，保存上游 LICENSE 与所需资源。上游此版本采用 PolyForm Noncommercial 1.0.0；STE 不将其源码或 ZIP 编入发行资源。
+
+安装后的主程序只改写资源地址，以连接原版 ST 模块和包内资源；ChatSurface 使用已固定的 TauriTavern 原接口。原版插件运行时替代内置助手，避免双重执行。开发测试可运行 `npm run tavern:helper-fixture` 获取固定 ZIP，文件保存在忽略的 `.cache/` 下。
+
+## 接口和设计参考（内置实现）
 
 - [JS-Slash-Runner](https://gitlab.com/novi028/JS-Slash-Runner)，参考 4.9.5 / `cd9f523d08d147057043b9939397de8a61be91e4` 的接口和 JSON 形状；其源码未复制进 STE。原项目的 AFPL 文本不套用于 STE 自有实现。
 - SP·数据库与小白X用于早期设计比较，没有成为此实现的代码依赖。

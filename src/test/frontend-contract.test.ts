@@ -54,7 +54,8 @@ describe('前端状态刷新契约', () => {
     const header = read('src/components/character/CharacterHeader.tsx');
     expect(header).toContain("from '@/components/ui/popover'");
     expect(header).toContain("from '@/components/ui/checkbox'");
-    expect(header).toContain("category === '未分类'");
+    expect(header).toContain("getTagCategories(tagPreferences)");
+    expect(header).toContain("quickTagOptions.map(option => option.category)");
     expect(header).toContain('grid-cols-2');
     expect(header).toContain('onCheckedChange');
     expect(header).not.toContain('DropdownMenuContent');

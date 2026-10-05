@@ -30,6 +30,7 @@ import {
   type PortraitViewRow, type PortraitViewItem,
 } from '@/lib/portrait-store';
 import { LOADING_LABEL } from '@/lib/ui-copy';
+import { PortraitCloudImport } from './PortraitCloudImport';
 
 interface PortraitSectionProps {
   character: ArchiveCharacter;
@@ -354,7 +355,8 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
         <span className="text-xs text-muted-foreground">
           按行组织：一行可以是一个角色，也可以是剧情的一个阶段。行内横向滚动，也可展开成网格。
         </span>
-        <div className="ml-auto flex gap-1.5 shrink-0">
+        <div className="ml-auto flex flex-wrap gap-1.5">
+          <PortraitCloudImport key={character.id} character={character} onPatch={patchAndReload} />
           <Button
             variant={selectMode ? 'default' : 'outline'}
             size="sm"

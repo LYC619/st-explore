@@ -10,6 +10,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 import { normalizeCharacterCard, type STCharacterCard } from '@/lib/png-parser';
+vi.mock('@/lib/archive-index', () => ({ listCharacterIndex: vi.fn(async () => [{ tags: ['技术/别人创建的标签'] }]) }));
+vi.mock('@/lib/archive-db', () => ({ getLibraryTagPreferences: vi.fn(async () => ({ version: 1, customTags: [], customCategories: [], categoryOrder: [], order: [], hidden: [] })) }));
 
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock('@/lib/library-tag-preferences', async (importActual) => ({
@@ -57,6 +59,12 @@ afterEach(() => {
 });
 
 describe('NSFW 标记的说明', () => {
+  it('offers tags created on other characters in the quick-add menu', async () => {
+    await act(async () => { root.render(<CharacterHeader character={character} norm={norm} onPatch={vi.fn(async () => character)} />); });
+    const trigger = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('标签'))!;
+    await act(async () => trigger.click());
+    expect(document.body.textContent).toContain('别人创建的标签');
+  });
   it('问号是可聚焦控件，聚焦后给出完整说明，不只靠原生 title', async () => {
     await act(async () => {
       root.render(<CharacterHeader character={character} norm={norm} onPatch={vi.fn(async () => character)} />);

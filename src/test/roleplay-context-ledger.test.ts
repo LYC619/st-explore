@@ -14,6 +14,20 @@ function fixture() {
   return { files, store, session, prepare, ledger: createContextLedger({ store, branchId: null }) };
 }
 
+it('applies preset strict/single processing after inserting Agent supplements', async () => {
+  for (const mode of ['strict', 'single']) {
+    const f = fixture();
+    const prepared = prepareCompletion({ apiUrl: 'https://provider.invalid/completion', model: 'main', apiKey: '' }, {
+      messages: [{ role: 'system', content: '设定' }, { role: 'user', content: '开门' }], custom_prompt_post_processing: mode,
+    });
+    const result = await f.ledger.prepare(prepared, '最新背景', f.session, 't1');
+    const messages = result.prepared.body.messages as { role: string; content: string }[];
+    expect(messages.slice(1).every(m => m.role !== 'system')).toBe(true);
+    expect(messages.at(-1)?.content).toContain('最新背景');
+    if (mode === 'single') expect(messages).toHaveLength(1);
+  }
+});
+
 it('freezes prior supplements in their exact position in the final provider messages across reloads', async () => {
   const f = fixture();
   const base = [{ role: 'system', content: '设定' }, { role: 'user', content: '开门' }];

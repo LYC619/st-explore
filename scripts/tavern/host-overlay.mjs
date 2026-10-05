@@ -31,7 +31,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     overlays.push({ asset: await generated(url, await transform(text)), expectedSha256: original.sha256 });
   }
   await override('/tauri-main.js', () => readFile(path.join(source.projectRoot, 'src/tavern/host-bootstrap.js')));
-  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
+  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js', 'extension-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
   additions.push(await generated('/ste/helper-lodash.js', await readFile(path.join(source.projectRoot, 'node_modules/lodash/lodash.min.js'))));
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'
@@ -39,6 +39,15 @@ export async function createHostAssets(source, cacheRelative = 'host') {
   await override('/init.js', text => replaceOnce(text,
     'await setupDevThirdPartyExtensionServiceWorker();',
     '// STE owns the origin service worker; upstream development proxy is not installed.'));
+  await override('/scripts/personas.js', text => replaceOnce(text,
+    'return `${USER_AVATAR_PATH}${encodeURIComponent(String(avatarImg ?? \'\'))}`;',
+    'return globalThis.__STE_USER_AVATAR__?.(String(avatarImg ?? \'\')) ?? `${USER_AVATAR_PATH}${encodeURIComponent(String(avatarImg ?? \'\'))}`;'));
+  await override('/scripts/tauri/agent-skills/embedded-import.js', text => {
+    text = replaceOnce(text, "throw new Error('TauriTavern Agent Skill API is not available');", 'return null; // This host does not advertise the optional native Skill service.');
+    text = replaceOnce(text, 'export async function maybePromptForPresetEmbeddedSkills({ apiId, name, preset }) {',
+      'export async function maybePromptForPresetEmbeddedSkills({ apiId, name, preset }) {\n    if (!getSkillApi() && preset?.extensions?.tauritavern?.skills?.items?.length) getToastr().info("预设已导入。附带的 TauriTavern Agent Skills 数据已保留，STE 暂不执行这些专用技能。", "预设附带技能");');
+    return text;
+  });
   await override('/scripts/world-info.js', text => replaceOnce(replaceOnce(replaceOnce(text,
     'export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanData) {',
     'export async function getWorldInfoPrompt(chat, maxContext, isDryRun, globalScanData) {\n    if (globalThis.__STE_AGENT_MODE__) return globalThis.__STE_WORLD_PROMPT__(await getSortedEntries());'),

@@ -5,6 +5,25 @@
 @tailwind components;
 @tailwind utilities;
 
+.chat-markdown { white-space: normal; overflow-wrap: anywhere; text-align: left; }
+.chat-markdown p { margin: .65em 0; }
+.chat-markdown > :first-child { margin-top: 0; }
+.chat-markdown > :last-child { margin-bottom: 0; }
+.chat-markdown .chat-dialogue { color: hsl(var(--primary)); font-weight: 500; }
+.chat-markdown em { color: hsl(var(--muted-foreground)); }
+.chat-markdown .chat-search-hit { background: #fde68a; color: #422006; border-radius: 2px; }
+.chat-markdown ul, .chat-markdown ol { padding-left: 1.5em; margin: .7em 0; }
+.chat-markdown ul { list-style: disc; } .chat-markdown ol { list-style: decimal; }
+.chat-markdown pre { white-space: pre-wrap; padding: .8em; background: hsl(var(--muted)); border-radius: .5em; overflow-x: auto; }
+.chat-markdown code { font-family: monospace; background: hsl(var(--muted)); }
+.chat-markdown blockquote { border-left: 3px solid hsl(var(--border)); padding-left: 1em; margin: .7em 0; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 { font-weight: 600; margin: .7em 0; }
+.chat-markdown h1 { font-size: 1.4em; } .chat-markdown h2 { font-size: 1.2em; }
+.chat-markdown a { color: hsl(var(--primary)); text-decoration: underline; }
+.chat-markdown img { max-width: 100%; height: auto; }
+.chat-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.chat-markdown td, .chat-markdown th { border: 1px solid hsl(var(--border)); padding: .3em .6em; }
+
 @layer base {
   /**
    * shadcn 变量的取值不在这里——每套主题的映射在 themes.css 的「shadcn 适配层」，

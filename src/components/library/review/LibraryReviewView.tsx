@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CollapsibleTags } from '@/components/CollapsibleTags';
 import { CharacterPortrait } from '@/components/library/CharacterPortrait';
 import { displayCharacterName } from '@/lib/library-query';
 import { getAllSummaries } from '@/lib/summary-db';
@@ -150,7 +151,7 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
     <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="角色回顾内容">
       {selected ? <div ref={scrollRef} data-review-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain" onScroll={rememberScroll}>
         <header className="space-y-3 border-b border-border px-4 pb-3 pt-4 sm:px-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words font-display text-xl font-semibold">{displayCharacterName(selected)}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.rating !== undefined ? `${selected.rating} 分` : '未评分'} · {selected.type ?? '未分类'}</p></div><div className="flex flex-wrap gap-2"><ReviewEdits character={selected} notesVisible={false} onCharacterChange={onCharacterChange} /><Button size="sm" variant="outline" disabled={transitioning} onClick={() => void transition(() => navigate(`/character/${selected.id}`))}><ExternalLink className="mr-1 h-3.5 w-3.5" />打开角色详情</Button><Button size="icon" variant="ghost" aria-label="刷新回顾" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw className="h-4 w-4" /></Button></div></div>
-          {!!selected.tags.length && <div className="flex flex-wrap gap-1.5">{selected.tags.map(tag => <span key={tag} className="rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tag}</span>)}</div>}
+          <CollapsibleTags count={selected.tags.length}>{selected.tags.map(tag => <span key={tag} className="shrink-0 rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tag}</span>)}</CollapsibleTags>
           <div role="tablist" aria-label="回顾内容" className="flex gap-1 overflow-x-auto">{tabs.map(item => <Button key={item.id} id={`review-tab-${item.id}`} role="tab" aria-controls="review-content" aria-selected={tab === item.id} disabled={transitioning} variant={tab === item.id ? 'secondary' : 'ghost'} size="sm" onClick={() => changeTab(item.id)}>{item.label}</Button>)}</div>
         </header>
         {transitionError && <p role="alert" className="border-b border-border px-4 py-2 text-sm text-[color:var(--status-danger)]">{transitionError}</p>}

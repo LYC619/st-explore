@@ -5,6 +5,7 @@ import type { ChatSession } from '@/types/chat';
 import { digest, stableJson, refsAreCurrent, sourceRefs, type SourceRef } from './fingerprint';
 import { branchKey } from './paths';
 import type { PreparedCompletion } from './provider';
+import { postProcessPrompt } from './prompt-post-processing';
 import type { RuntimeStore } from './runtime-store';
 
 export interface CacheMetrics {
@@ -63,10 +64,12 @@ export function createContextLedger({ store, branchId }: { store: RuntimeStore; 
     prepare(prepared: PreparedCompletion, supplement: string, session: ChatSession, turnId: string) {
       return operations.enqueue(key, async () => {
         const state = await readState();
-        const base = structuredClone(prepared.body.messages) as Record<string, unknown>[];
+        const processing = prepared.promptProcessing;
+        const base = structuredClone(processing?.sourceMessages ?? prepared.body.messages) as Record<string, unknown>[];
         if (!Array.isArray(base) || !base.length || base.some(message => !message || typeof message !== 'object')) throw new Error('Agent 请求缺少有效消息');
         const envelope = { ...prepared.body }; delete envelope.messages;
-        const envelopeDigest = digest(stableJson({ url: prepared.url, headers: prepared.headers, body: envelope }));
+        const envelopeDigest = digest(stableJson({ url: prepared.url, headers: prepared.headers, body: envelope,
+          ...(processing ? { processing: { mode: processing.mode, names: processing.names } } : {}) }));
         let chain = digest('STE provider messages v1');
         const prefixes = base.map(message => chain = digest(chain + stableJson(message)));
         // ST may place post-history instructions at the end. Keep that moving tail after this turn.
@@ -90,14 +93,15 @@ export function createContextLedger({ store, branchId }: { store: RuntimeStore; 
           for (const turn of retained) if (turn.anchorCount === index + 1) messages.push(turn.supplement);
           if (index + 1 === anchorCount) messages.push(frozen);
         });
-        const hashes = messages.map(message => digest(stableJson(message)));
+        const finalMessages = processing ? postProcessPrompt(messages, processing.mode, processing.names) : messages;
+        const hashes = finalMessages.map(message => digest(stableJson(message)));
         let sharedPrefixMessages = 0;
         while (sharedPrefixMessages < Math.min(hashes.length, state.lastMessageDigests.length)
           && hashes[sharedPrefixMessages] === state.lastMessageDigests[sharedPrefixMessages]) sharedPrefixMessages++;
         const metrics: CacheMetrics = { sharedPrefixMessages,
-          estimatedPrefixTokens: sharedPrefixMessages ? encode(stableJson(messages.slice(0, sharedPrefixMessages)), { disallowedSpecial: new Set() }).length : 0,
+          estimatedPrefixTokens: sharedPrefixMessages ? encode(stableJson(finalMessages.slice(0, sharedPrefixMessages)), { disallowedSpecial: new Set() }).length : 0,
           reason };
-        const result: PreparedCompletion = { ...prepared, body: { ...prepared.body, messages } };
+        const result: PreparedCompletion = { ...prepared, body: { ...prepared.body, messages: finalMessages } };
         const refs = sourceRefs(session);
         const record: ContextTurn = { schema: 1, turnId, cycleId, status: 'prepared', envelopeDigest,
           requestDigest: digest(stableJson(result.body)), anchorCount, anchorDigest: prefixes[anchorCount - 1],

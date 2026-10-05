@@ -8,6 +8,7 @@ import { formatMessageModelLabel } from '@/lib/story-meta';
 import { swipeCount, currentSwipeId, isOOCMessage, isSteEditedSwipe } from '@/lib/chat-edit';
 import { calculateSearchRevealScrollTop, cycleSearchPosition, floorJudgementLine, resolveTopVisibleIndex, type SearchDirection } from '@/lib/chat-navigation';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { ChatMarkdown } from './ChatMarkdown';
 
 /**
  * ChatPreview 暴露给父组件的命令式句柄：跳转条/收藏列表通过它驱动滚动。
@@ -100,34 +101,6 @@ function renderPreviewHighlight(content: string, rule: RegexRule): React.ReactNo
   }
   if (last < content.length) nodes.push(content.slice(last));
   return nodes.length > 0 ? nodes : content;
-}
-
-/** 把文本里命中搜索词的部分用 <mark> 标黄（大小写不敏感，纯字符串匹配，非正则）。 */
-function renderTextWithSearch(text: string, query: string): React.ReactNode {
-  if (!query) return text;
-  const lowerText = text.toLowerCase();
-  const lowerQuery = query.toLowerCase();
-  const nodes: React.ReactNode[] = [];
-  let from = 0;
-  let key = 0;
-  let idx = lowerText.indexOf(lowerQuery, from);
-  while (idx !== -1) {
-    if (idx > from) nodes.push(text.slice(from, idx));
-    nodes.push(
-      <mark
-        key={`s${key}`}
-        data-search-match="true"
-        className="rounded-sm bg-[var(--mark-bg)] px-0.5 text-[color:var(--mark-text)]"
-      >
-        {text.slice(idx, idx + query.length)}
-      </mark>
-    );
-    from = idx + query.length;
-    key++;
-    idx = lowerText.indexOf(lowerQuery, from);
-  }
-  if (from < text.length) nodes.push(text.slice(from));
-  return nodes.length > 0 ? nodes : text;
 }
 
 function formatTime(timestamp?: number): string {
@@ -398,9 +371,7 @@ const MessageRow = memo(function MessageRow({
               } whitespace-pre-wrap`}>
                 {previewRule
                   ? renderPreviewHighlight(message.content, previewRule)
-                  : searchQuery
-                    ? renderTextWithSearch(message.content, searchQuery)
-                    : message.content}
+                  : <ChatMarkdown text={message.content} search={searchQuery} />}
               </div>
               {showTimestamp && (
                 <div className="text-xs text-muted-foreground mt-1">
@@ -432,13 +403,7 @@ const MessageRow = memo(function MessageRow({
             <div className={`${classes.content} whitespace-pre-wrap`}>
               {previewRule
                 ? renderPreviewHighlight(message.content, previewRule)
-                : (theme === 'elegant' || theme === 'novel')
-                  ? message.paragraphs.map((p, i) => (
-                      <p key={i} className="reading-paragraph">
-                        {searchQuery ? renderTextWithSearch(p, searchQuery) : p}
-                      </p>
-                    ))
-                  : (searchQuery ? renderTextWithSearch(message.content, searchQuery) : message.content)}
+                : <ChatMarkdown text={message.content} search={searchQuery} />}
             </div>
           </div>
         )}

@@ -58,6 +58,7 @@ scripts/*
 !scripts/tavern/
 !scripts/tavern/**
 # Generated upstream frontend bundles and Rspack cache; source is pinned in vendor/.
+/.cache/
 /.cache/tavern/
 /.cache/roleplay-browser/
 /.cache/roleplay-native-ux/

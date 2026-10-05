@@ -45,6 +45,9 @@ export default function Roleplay() {
   const saveFailureKind = useRef<'chat' | 'flush'>();
   const blocker = useBlocker(({ nextLocation }) => !!src && !allowExit.current
     && nextLocation.pathname + nextLocation.search !== internalLocation.current);
+  const latestBlocker = useRef(blocker);
+  latestBlocker.current = blocker;
+  const blockedNavigation = useRef<string>();
   const backDestination = useCallback((): ExitDestination => fromChats
     ? { kind: 'route', path: '/play' }
     : { kind: 'route', path: '/story/' + encodeURIComponent(returnTarget.current.storyId ?? ''), state: { branchId: returnTarget.current.branchId } }, [fromChats]);
@@ -78,9 +81,18 @@ export default function Roleplay() {
   }, [reportSaveError]);
 
   useEffect(() => {
-    if (blocker.state !== 'blocked') return;
+    if (blocker.state !== 'blocked') { blockedNavigation.current = undefined; return; }
+    const key = blocker.location.key;
+    if (blockedNavigation.current === key) return;
+    blockedNavigation.current = key;
     pendingExit.current = { kind: 'route', path: blocker.location.pathname + blocker.location.search + blocker.location.hash, state: blocker.location.state };
-    void saveBeforeExit().then(() => blocker.proceed(), () => blocker.reset());
+    // Saving updates React state. Settle a blocked destination only once, using the live blocker.
+    const settle = (saved: boolean) => {
+      const current = latestBlocker.current;
+      if (allowExit.current || current.state !== 'blocked' || current.location.key !== key) return;
+      if (saved) current.proceed(); else current.reset();
+    };
+    void saveBeforeExit().then(() => settle(true), () => settle(false));
   }, [blocker, saveBeforeExit]);
 
   useEffect(() => {
@@ -139,6 +151,9 @@ export default function Roleplay() {
           if (disposed) return;
           const previous = returnTarget.current;
           returnTarget.current = { storyId: locator.storyId, branchId: locator.branchId };
+          // A save can publish the selected chat while a blocked Back navigation is waiting.
+          // Replacing the URL here would cancel that pending navigation after its data was saved.
+          if (exitTask.current || latestBlocker.current.state !== 'unblocked') return;
           if (previous.storyId === locator.storyId && previous.branchId === locator.branchId) return;
           const params = new URLSearchParams();
           params.set('branch', locator.branchId ?? '');

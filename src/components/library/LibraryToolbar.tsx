@@ -120,7 +120,7 @@ export function LibraryToolbar({
       </Button>
       {viewMode === 'review' && reviewFilters}
       <Select value={sortKey} onValueChange={(v) => onSortKeyChange(v as LibrarySortKey)}>
-        <SelectTrigger className="h-8 w-32 text-xs">
+        <SelectTrigger aria-label="角色排序" className="h-8 w-32 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

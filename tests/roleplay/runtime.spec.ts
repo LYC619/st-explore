@@ -79,7 +79,10 @@ test.beforeAll(async () => {
   endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/exact-completion`;
 });
 test.afterAll(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
-test.beforeEach(() => { requests = []; stoppedStreams = 0; });
+test.beforeEach(async ({ page }) => {
+  requests = []; stoppedStreams = 0;
+  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
+});
 
 async function seed(page: Page) {
   await page.addInitScript(() => {
@@ -567,6 +570,8 @@ test('stop cancels the actual provider stream and the accepted partial text can 
 });
 
 test('browser Back flushes the current editor before leaving the Tavern', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
   const storyId = await seed(page);
   await page.goto(`/story/${storyId}`);
   await page.getByRole('button', { name: '开始游玩' }).click();
@@ -580,6 +585,7 @@ test('browser Back flushes the current editor before leaving the Tavern', async 
   await expect(page).toHaveURL(new RegExp('/story/'));
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages[0].content).toBe('雨还没停，进来吧。');
+  expect(errors.filter(error => error.includes('blocker state'))).toEqual([]);
 });
 
 test('a failed story write keeps the live chat open and retry preserves the edited prose', async ({ page }) => {

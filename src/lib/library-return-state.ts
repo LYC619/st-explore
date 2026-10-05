@@ -13,9 +13,6 @@ export interface LibraryReturnState {
 // Only navigation context, never archive contents. A new app session starts fresh.
 const states = new Map<string, LibraryReturnState>();
 export function readLibraryReturnState(): LibraryReturnState | undefined {
-  try {
-    if (localStorage.getItem('ste-library-view') !== 'review') return undefined;
-  } catch { return undefined; }
   return states.get(scopedKey('library-return'));
 }
 export function writeLibraryReturnState(state: LibraryReturnState): void {

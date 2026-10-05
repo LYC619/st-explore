@@ -83,7 +83,8 @@ describe('shared profile completion transport', () => {
 
   it('rejects unsupported configured transformations instead of silently sending a different prompt', async () => {
     const profile = { apiUrl: url + '/custom', apiKey: '', model: 'chosen' };
-    await expect(sendCompletion(profile, { messages: [], custom_prompt_post_processing: 'strict' })).rejects.toThrow('后处理');
+    await sendCompletion(profile, { messages: [], custom_prompt_post_processing: 'strict' });
+    expect(received.body.messages).toEqual([{ role: 'user', content: "Let's get started." }]);
     await expect(sendCompletion(profile, { messages: [], custom_include_body: '[broken' })).rejects.toThrow('YAML');
     await expect(sendCompletion(profile, { messages: [], custom_include_headers: 'Authorization: other-key' })).rejects.toThrow('连接配置');
   });

@@ -1,6 +1,7 @@
 import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import { parse as parseYaml } from 'yaml';
 import { isTauri } from '@/lib/runtime';
+import { postProcessPrompt } from './prompt-post-processing';
 
 const COMPLETION_FIELDS = new Set([
   'messages', 'temperature', 'top_p', 'frequency_penalty', 'presence_penalty',
@@ -30,18 +31,21 @@ export function customHeaders(value: unknown): Record<string, string> {
 }
 
 /** The final provider envelope. Cache validation uses this same function as the transport. */
-export function prepareCompletion(profile: APIConfig, request: Record<string, unknown>) {
+export function prepareCompletion(profile: APIConfig, request: Record<string, unknown>): {
+  url: string; body: Record<string, unknown>; headers: Record<string, string>;
+  promptProcessing?: { mode: string; names: Record<string, unknown>; sourceMessages: unknown[] };
+} {
   const endpoint = new URL(profile.apiUrl);
   if (!['http:', 'https:'].includes(endpoint.protocol) || !profile.model.trim()) {
     throw new Error('请配置有效的模型和完整的聊天 API 地址');
   }
   if (!Array.isArray(request.messages)) throw new Error('模型请求缺少消息数组');
-  if (request.custom_prompt_post_processing) throw new Error('当前宿主尚未支持该提示词后处理选项，请在预设中关闭后重试');
   if (request.enable_web_search || request.request_images) throw new Error('当前连接尚未接入联网搜索或模型生图选项');
   const body: Record<string, unknown> = { model: profile.model };
   for (const [key, value] of Object.entries(request)) {
     if (COMPLETION_FIELDS.has(key) && value !== undefined) body[key] = value;
   }
+  body.messages = postProcessPrompt(request.messages, request.custom_prompt_post_processing, request);
   const include = yaml(request.custom_include_body);
   if (include != null) {
     if (typeof include !== 'object' || Array.isArray(include)) throw new Error('自定义请求体 YAML 必须是键值对象');
@@ -61,7 +65,11 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
   if (request.json_schema) body.response_format = { type: 'json_schema', json_schema: request.json_schema };
   const headers = { ...customHeaders(request.custom_include_headers), 'Content-Type': 'application/json',
     ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
-  return { url: profile.apiUrl, body, headers };
+  const promptProcessing = typeof request.custom_prompt_post_processing === 'string' && request.custom_prompt_post_processing
+    && !(include && typeof include === 'object' && Object.hasOwn(include, 'messages'))
+    ? { mode: request.custom_prompt_post_processing,
+      names: { user_name: request.user_name, char_name: request.char_name, group_names: request.group_names }, sourceMessages: structuredClone(request.messages) } : undefined;
+  return { url: profile.apiUrl, body, headers, ...(promptProcessing ? { promptProcessing } : {}) };
 }
 
 /** Preserve the provider's actual Response, status, usage and SSE bytes. */

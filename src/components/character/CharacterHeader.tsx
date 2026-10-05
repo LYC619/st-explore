@@ -7,6 +7,9 @@
  * 标签编辑与评价档位确认逻辑从页面收进本组件。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { listCharacterIndex } from '@/lib/archive-index';
+import { getVaultEpoch } from '@/lib/vault/active';
+import { CollapsibleTags } from '@/components/CollapsibleTags';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Pencil, ChevronDown, HelpCircle, Plus, X, MoreHorizontal,
@@ -66,6 +69,9 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
   const [tagPreferences, setTagPreferences] = useState<LibraryTagPreferences>(() => normalizeLibraryTagPreferences(undefined));
   const [tagDraft, setTagDraft] = useState(character.tags);
   const tagDraftRef = useRef(character.tags);
+  const [libraryTags, setLibraryTags] = useState<string[]>([]);
+  const tagRefresh = useRef(0);
+  const tagScope = useRef<object | null>({});
 
   const displayName = character.displayMeta?.name || character.name;
   const creator = character.displayMeta?.creator || norm.creator;
@@ -73,16 +79,22 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
   const intro = introOf(character);
 
   const refreshTagPreferences = async () => {
+    const version = ++tagRefresh.current, epoch = getVaultEpoch(), scope = tagScope.current;
     try {
-      setTagPreferences(await getLibraryTagPreferences());
+      const [preferences, index] = await Promise.all([getLibraryTagPreferences(), listCharacterIndex()]);
+      if (version !== tagRefresh.current || epoch !== getVaultEpoch() || scope !== tagScope.current) return;
+      setTagPreferences(preferences);
+      setLibraryTags([...new Set(index.flatMap(item => item.tags))]);
     } catch {
       // 标签快捷菜单仍可使用手动输入，不因偏好读取失败阻断角色页。
     }
   };
 
   useEffect(() => {
+    tagScope.current = {};
     void refreshTagPreferences();
-  }, []);
+    return () => { tagScope.current = null; };
+  }, [character.id]);
 
   useEffect(() => {
     tagDraftRef.current = character.tags;
@@ -91,14 +103,13 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
 
   const quickTagOptions = useMemo(
     // 「隐藏」是角色库筛选栏的显示偏好，不限制这里的添加菜单；评价档位保留以走评分确认流程。
-    () => buildManagedTagOptions(tagDraft, tagPreferences),
-    [tagDraft, tagPreferences],
+    () => buildManagedTagOptions([...new Set([...libraryTags, ...tagDraft])], tagPreferences),
+    [tagDraft, libraryTags, tagPreferences],
   );
   const quickTagCategories = useMemo(
     () => {
-      const categories: TagCategory[] = getTagCategories(tagPreferences)
+      const categories: TagCategory[] = [...new Set([...getTagCategories(tagPreferences), ...quickTagOptions.map(option => option.category)])]
         .filter((category) => quickTagOptions.some((option) => option.category === category));
-      if (quickTagOptions.some((option) => option.category === '未分类')) categories.push('未分类');
       return categories;
     },
     [quickTagOptions, tagPreferences],
@@ -246,8 +257,9 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
                   </Tooltip>
                 </TooltipProvider>
               </div>
+              <CollapsibleTags count={tagDraft.length}>
               {tagDraft.map((t) => (
-                <Badge key={t} variant="secondary" className="gap-1 font-normal">
+                <Badge key={t} variant="secondary" className="gap-1 font-normal shrink-0">
                   {t}
                   <button
                     onClick={() => { void setTagChecked(t, false); }}
@@ -258,6 +270,7 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
                   </button>
                 </Badge>
               ))}
+              </CollapsibleTags>
               <Popover onOpenChange={(open) => { if (open) void refreshTagPreferences(); }}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="px-1.5 text-xs text-muted-foreground">

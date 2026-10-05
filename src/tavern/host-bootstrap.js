@@ -6,6 +6,8 @@ import { installRegexAssets } from '/ste/regex-assets.js';
 import { installHelperHost } from '/ste/helper-host.js';
 import { installHelperControls } from '/ste/helper-controls.js';
 import { installPackageControls } from '/ste/package-controls.js';
+import { installExtensionControls } from '/ste/extension-controls.js';
+import { installChatSurfaceApi } from '/tauri/main/api/chat-surface.js';
 
 const channel = new URLSearchParams(location.search).get('host');
 const host = window.parent.__STE_TAVERN_HOSTS__?.get(channel);
@@ -79,7 +81,9 @@ window.__TAURI__ = {
     } },
 };
 window.__TAURITAVERN__ = { invoke: { safeInvoke: invoke, flushAll: () => host.flush() }, api: {}, iosPolicy: null };
+installChatSurfaceApi();
 window.__TAURITAVERN_THUMBNAIL__ = (type, file) => host.thumbnail(type, file);
+window.__STE_USER_AVATAR__ = name => host.userAvatar(name);
 
 function apiPath(input) {
     const url = new URL(typeof input === 'string' ? input : input.url, location.href);
@@ -294,11 +298,11 @@ window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
     const content = drawer.children('.drawer-content');
     if (content.hasClass('closedDrawer')) await (stModule ?? await import('./script.js')).doNavbarIconClick.call(drawer.children('.drawer-toggle')[0]);
     if (runtime || scripts) {
-        const panel = $(scripts ? '#ste_helper_settings' : '#ste_runtime_settings');
+        const panel = $(scripts ? (installedHelper ? '#tavern_helper' : '#ste_helper_settings') : '#ste_runtime_settings');
         if (!panel.find('.inline-drawer-content').is(':visible')) panel.find('.inline-drawer-toggle').trigger('click');
         await panel.find('.inline-drawer-content').promise();
     }
-    const control = document.querySelector(scripts ? '#ste_helper_status_summary' : runtime ? '#ste_play_mode' : '#ste_main_profile');
+    const control = document.querySelector(scripts ? (installedHelper ? '#tavern_helper' : '#ste_helper_status_summary') : runtime ? '#ste_play_mode' : '#ste_main_profile');
     if (!control) throw new Error('聊天界面尚未准备好，请稍后再试');
     control.scrollIntoView({ block: 'center' });
     if (scripts) control.setAttribute('tabindex', '-1');
@@ -523,7 +527,7 @@ function installManagementControls() {
     ];
     const unavailable = [
         ['#rm_button_group_chats', '当前支持单角色聊天和故事分支，群聊尚未接入。'],
-        ['#add_background_button_top, #add_bg_button, #avatar_upload_file', '当前可选择内置背景与用户头像；自定义图片上传尚未接入。'],
+        ['#add_background_button_top, #add_bg_button', '当前可选择内置背景；自定义背景上传尚未接入。'],
     ];
     for (const [selector, , title] of routes) for (const element of document.querySelectorAll(selector)) element.title = title;
     for (const [selector, title] of unavailable) for (const element of document.querySelectorAll(selector)) {
@@ -544,13 +548,14 @@ function installManagementControls() {
 
 window.__STE_TAVERN_READY__ = () => { void import('./script.js').then(async st => {
     stModule = st; await installConnectionControls(); await installRuntimeControls(st);
-    await installHelperControls(await installHelperHost(host, st)); await installPackageControls(host); installManagementControls(); host.ready();
+    if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
+    await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();
 }).catch(error => { toastr.error(error.message); console.error(error); }); };
 // Blob module linking serves the user-installed browser build in WebViews as well as the browser.
 // Imported ST modules still resolve to the original, single module instance in this iframe.
 const extensionUrls = new Map();
-window.__STE_EXTENSION_RESOURCE__ = (name, resource) => name === 'third-party/ST-BaiBai-Book'
-    ? extensionUrls.get(String(resource).split(/[?#]/)[0]) : undefined;
+const helperUrls = new Map();
+window.__STE_EXTENSION_RESOURCE__ = (name, resource) => (name === 'third-party/ST-BaiBai-Book' ? extensionUrls : name === 'third-party/JS-Slash-Runner' ? helperUrls : null)?.get(String(resource).split(/[?#]/)[0]);
 window.__STE_BAIBAI_ASSET_URL__ = relative => {
     const root = new URL('/scripts/extensions/third-party/ST-BaiBai-Book/', location.href);
     const resolved = new URL(relative, new URL('dist/index.js', root));
@@ -575,5 +580,18 @@ if (installedPackage) {
         extensionUrls.set(path, URL.createObjectURL(new Blob([path === 'dist/index.js' ? installedPackage.module : text], { type })));
     }
     window.addEventListener('pagehide', () => { for (const url of extensionUrls.values()) URL.revokeObjectURL(url); }, { once: true });
+}
+const helperResponse = await host.request('/ste/extensions/helper/package');
+if (!helperResponse.ok) throw new Error((await helperResponse.json()).error?.message ?? '酒馆助手安装包无法读取');
+const installedHelper = await helperResponse.json();
+if (installedHelper) {
+    for (const [path, text] of Object.entries(installedHelper.files).sort(([a], [b]) => (a === 'dist/index.js' ? 1 : 0) - (b === 'dist/index.js' ? 1 : 0))) {
+        const type = path.endsWith('.css') ? 'text/css' : path.endsWith('.js') ? 'text/javascript' : path.endsWith('.json') ? 'application/json' : 'text/plain';
+        const linked = path === 'dist/index.js' ? text.replaceAll('../../../../../', new URL('/', location.href).href)
+            .replace('../lib/jsoneditor.js', helperUrls.get('lib/jsoneditor.js'))
+            .replace('/scripts/extensions/third-party/JS-Slash-Runner/lib/tailwindcss.min.js', helperUrls.get('lib/tailwindcss.min.js')) : text;
+        helperUrls.set(path, URL.createObjectURL(new Blob([linked], { type })));
+    }
+    window.addEventListener('pagehide', () => { for (const url of helperUrls.values()) URL.revokeObjectURL(url); }, { once: true });
 }
 window.__TAURITAVERN_MAIN_READY__ = Promise.resolve();

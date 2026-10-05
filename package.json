@@ -32,7 +32,8 @@
     "tauri:build:offline": "tauri build --config src-tauri/tauri.offline.conf.json",
     "//android": "webDir 是 dist，所以顺序永远是先 build 再 sync；sync 只做拷贝+插件登记",
     "android:sync": "npm run build && cap sync android",
-    "android:open": "cap open android"
+    "android:open": "cap open android",
+    "tavern:helper-fixture": "node scripts/tavern/prepare-helper-fixture.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",
@@ -76,7 +77,9 @@
     "react-router-dom": "^6.30.1",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "dompurify": "3.4.3",
+    "showdown": "2.1.0"
   },
   "devDependencies": {
     "@adobe/css-tools": "4.4.4",
@@ -100,7 +103,6 @@
     "chalk": "5.6.0",
     "chevrotain": "11.2.0",
     "diff-match-patch": "1.0.5",
-    "dompurify": "3.4.3",
     "droll": "0.2.1",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
@@ -118,7 +120,6 @@
     "morphdom": "2.7.8",
     "postcss": "^8.5.6",
     "seedrandom": "3.0.5",
-    "showdown": "2.1.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",

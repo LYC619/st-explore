@@ -31,6 +31,8 @@ import { importHelperScripts, normalizeHelperSettings } from './helper-settings'
 import { createStoryPackageAdapter, type StoryPackagePreview } from './story-package';
 import { saveStoryPackageFile } from './export-package-file';
 import { ensureBranchRuntime } from './branch-inheritance';
+import { readUserAvatar, userAvatarName } from './user-avatars';
+import { HELPER_PIN, readTavernHelperZip, validateTavernHelper } from './tavern-helper-package';
 
 export interface TavernDefaults {
   settings: Record<string, unknown>;
@@ -198,16 +200,18 @@ export async function createTavernHost(options: TavernHostOptions) {
   });
   const version = { agent: 'SillyTavern:1.18.0:STE', pkgVersion: '1.18.0', tauriVersion: 'STE', gitRevision: null, gitBranch: null };
 
-  function persistPreferences(patch: Partial<RoleplayPreferences>) {
-    const snapshot = structuredClone(patch);
+  function persistPreferences(patch: Partial<RoleplayPreferences> | ((current: RoleplayPreferences) => Partial<RoleplayPreferences>)) {
+    const snapshot = typeof patch === 'function' ? patch : structuredClone(patch);
     const operation = settingsWrite.then(async () => {
       if (!isCurrent()) throw new Error('游玩会话已切换');
-      await saveRoleplayPreferences(snapshot, repos.meta);
+      await saveRoleplayPreferences(typeof snapshot === 'function' ? snapshot(await getRoleplayPreferences(repos.meta)) : snapshot, repos.meta);
       preferences = await getRoleplayPreferences(repos.meta);
     });
     settingsWrite = operation.then(() => { settingsError = undefined; }, error => { settingsError = error; });
     return operation;
   }
+
+  const avatarNames = () => [...new Set([...(defaults.avatars ?? []).filter(name => !preferences.deletedDefaultAvatars?.includes(name)), ...Object.keys(preferences.userAvatars ?? {})])];
 
   async function generate(body: JsonObject, signal?: AbortSignal) {
     const controller = new AbortController();
@@ -392,7 +396,19 @@ export async function createTavernHost(options: TavernHostOptions) {
           return json(result);
         }
         if (pathname === '/ste/extensions') return json({ baibai: preferences.installedBaiBai
-          ? { version: preferences.installedBaiBai.version, installedAt: preferences.installedBaiBai.installedAt } : null, supported: BAIBAI_PIN });
+          ? { version: preferences.installedBaiBai.version, installedAt: preferences.installedBaiBai.installedAt } : null, supported: BAIBAI_PIN,
+          helper: preferences.installedTavernHelper ? { version: preferences.installedTavernHelper.version } : null, helperSupported: HELPER_PIN });
+        if (pathname === '/ste/extensions/helper/install') {
+          if (generation || controllers.size) throw new Error('请等待生成结束后再安装插件');
+          if (!Array.isArray(body.bytes)) throw new Error('缺少插件 ZIP');
+          const installedTavernHelper = readTavernHelperZip(new Uint8Array(body.bytes));
+          await persistPreferences({ installedTavernHelper }); return json({ version: installedTavernHelper.version });
+        }
+        if (pathname === '/ste/extensions/helper/remove') {
+          if (generation || controllers.size) throw new Error('请等待生成结束后再移除插件');
+          await persistPreferences({ installedTavernHelper: null }); return json({});
+        }
+        if (pathname === '/ste/extensions/helper/package') return json(preferences.installedTavernHelper ? validateTavernHelper(preferences.installedTavernHelper) : null);
         if (pathname === '/ste/extensions/install') {
           if (generation || controllers.size) throw new Error('请等待当前生成与后台请求结束后再安装插件');
           if (!Array.isArray(body.bytes)) throw new Error('缺少插件 ZIP');
@@ -564,7 +580,22 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname.startsWith('/api/tokenizers/')) return json(tokenizeTavern(path, value));
         if (pathname === '/api/secrets/settings') return json({ allowKeysExposure: false });
         if (pathname === '/api/secrets/read') return json({});
-        if (pathname === '/api/avatars/get') return json(defaults.avatars ?? []);
+        if (pathname === '/api/avatars/get') return json(avatarNames());
+        if (pathname === '/api/avatars/upload') {
+          const name = userAvatarName(body.overwrite_name || `${crypto.randomUUID()}.png`);
+          const data = await readUserAvatar(body.avatar);
+          await persistPreferences(current => ({ userAvatars: { ...current.userAvatars, [name]: data },
+            deletedDefaultAvatars: current.deletedDefaultAvatars?.filter(item => item !== name) }));
+          return json({ path: name });
+        }
+        if (pathname === '/api/avatars/delete') {
+          const name = userAvatarName(body.avatar);
+          await persistPreferences(current => {
+            const avatars = { ...current.userAvatars }; delete avatars[name];
+            return { userAvatars: avatars, deletedDefaultAvatars: [...new Set([...(current.deletedDefaultAvatars ?? []), name])] };
+          });
+          return json({ result: 'ok' });
+        }
         if (pathname === '/api/stats/get') return json(preferences.stats ?? {});
         if (pathname === '/api/stats/update') {
           await persistPreferences({ stats: body });
@@ -574,9 +605,10 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/api/backgrounds/folders') return json({ folders: [], imageFolderMap: {} });
         if (pathname === '/api/image-metadata/all') return json({ images: {} });
         if (pathname === '/api/extensions/discover') return json([{ name: 'regex', type: 'system' },
+          ...(preferences.installedTavernHelper ? [{ name: 'third-party/JS-Slash-Runner', type: 'local' }] : []),
           ...(preferences.installedBaiBai ? [{ name: 'third-party/ST-BaiBai-Book', type: 'local' }] : [])]);
         if (pathname === '/api/bootstrap') return json({
-          settings: settingsSnapshot(), characters: await characterDtos(), groups: [], avatars: defaults.avatars ?? [],
+          settings: settingsSnapshot(), characters: await characterDtos(), groups: [], avatars: avatarNames(),
           secret_state: {}, ios_policy: null,
         });
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
@@ -763,6 +795,7 @@ export async function createTavernHost(options: TavernHostOptions) {
       }
     },
     tokenize: tokenizeTavern,
+    userAvatar(name: string) { return preferences.userAvatars?.[name]; },
     thumbnail(type: string, file: string) {
       if (type === 'bg') return `/backgrounds/${encodeURIComponent(file)}`;
       const character = characters.find(c => avatarKey(c.id) === file);

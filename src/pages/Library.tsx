@@ -152,7 +152,7 @@ const Library = () => {
   const prefs = useLibraryViewPrefs();
 
   useEffect(() => {
-    if (prefs.viewMode === 'review' && getVaultEpoch() === scopeEpoch) {
+    if (getVaultEpoch() === scopeEpoch) {
       writeLibraryReturnState({ searchQuery, tagFilters, typeFilter, sortKey, sortAsc });
     }
   }, [prefs.viewMode, searchQuery, tagFilters, typeFilter, sortKey, sortAsc, scopeEpoch]);

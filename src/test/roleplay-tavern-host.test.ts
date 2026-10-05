@@ -16,6 +16,7 @@ import { sourceRefs } from '@/lib/roleplay/fingerprint';
 import type { ArchiveStory } from '@/types/archive';
 import * as liveChat from '@/lib/roleplay/live-chat';
 import { chatKey } from '@/lib/roleplay/catalog';
+import { Blob as NodeBlob } from 'node:buffer';
 
 afterEach(() => { setActiveVault(null); localStorage.clear(); vi.unstubAllGlobals(); });
 
@@ -38,6 +39,22 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('persists concurrent persona avatar uploads, restores them on reopen and deletes one without losing the other', async () => {
+    const f = await fixture();
+    const avatar = new NodeBlob([new Uint8Array([137,80,78,71,13,10,26,10,0])], { type: 'image/png' });
+    const responses = await Promise.all(['旅人.png', '朋友.png'].map(overwrite_name => f.host.request('/api/avatars/upload', { avatar, overwrite_name })));
+    expect(responses.every(response => response.ok)).toBe(true);
+    expect(await (await f.host.request('/api/avatars/get')).json()).toEqual(['旅人.png', '朋友.png']);
+    f.host.close();
+    const reopened = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    expect(reopened.userAvatar('旅人.png')).toMatch(/^data:image\/png;base64,/);
+    expect((await (await reopened.request('/api/bootstrap')).json()).avatars).toHaveLength(2);
+    expect((await reopened.request('/api/avatars/delete', { avatar: '旅人.png' })).ok).toBe(true);
+    expect(await (await reopened.request('/api/avatars/get')).json()).toEqual(['朋友.png']);
+    expect((await reopened.request('/api/avatars/upload', { avatar, overwrite_name: '../escape.png' })).ok).toBe(false);
+    expect((await reopened.request('/api/avatars/upload', { avatar: new NodeBlob(['<svg/>']) })).ok).toBe(false);
+    reopened.close();
+  });
   it('restores the last viewed branch when no branch was requested and honours explicit main', async () => {
     const f = await fixture(); f.host.close();
     const branch = buildBranchFromSession({ ...structuredClone(f.story.session), id: 'branch-session', title: '分支会话' }, '另一个结局');
