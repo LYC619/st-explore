@@ -533,6 +533,7 @@ export default function WorldBookPage() {
                 <EntryEditorPane
                   entry={selectedEntry}
                   entryKey={selectedUid}
+                  usedUids={allEntries.map(([, entry]) => entry.uid)}
                   onChange={entryActions.updateEntry}
                   onDelete={entryActions.deleteEntry}
                   isMobile={isMobile}

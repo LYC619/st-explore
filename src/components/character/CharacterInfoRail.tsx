@@ -4,7 +4,7 @@
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload } from 'lucide-react';
+import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -33,6 +33,7 @@ interface CharacterInfoRailProps {
   onEditCard: () => void;
   onReadEmbedded: () => void;
   onExport: () => void;
+  onExportJson?: () => void;
   onDelete: () => void;
   /**
    * 窄屏堆叠：不再是左侧 304px 独立滚动栏，而是页面顶部的一块
@@ -54,7 +55,7 @@ function InfoRow({ label, value, title }: { label: string; value: React.ReactNod
 }
 
 export function CharacterInfoRail({
-  character, norm, stories, onPatch, onEditCard, onReadEmbedded, onExport, onDelete, stacked = false,
+  character, norm, stories, onPatch, onEditCard, onReadEmbedded, onExport, onExportJson, onDelete, stacked = false,
 }: CharacterInfoRailProps) {
   const [lightbox, setLightbox] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -191,8 +192,11 @@ export function CharacterInfoRail({
             </Button>
             <Button variant="outline" className="justify-start" onClick={onExport}>
               <Upload className="w-4 h-4 mr-2" />
-              导出角色卡
+              导出角色卡（原格式）
             </Button>
+            {onExportJson && <Button variant="outline" className="justify-start" onClick={onExportJson}>
+              <FileJson className="w-4 h-4 mr-2" /> 导出角色卡 JSON
+            </Button>}
             <Button
               variant="outline"
               className="justify-start text-destructive hover:text-destructive"

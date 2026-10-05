@@ -22,7 +22,8 @@ type Settings = {
 };
 type HostApi = {
   readonly settings: Settings;
-  readonly records: { frame: HTMLIFrameElement }[];
+  readonly records: { frame: HTMLIFrameElement; token: string }[];
+  configure(settings: Settings): Promise<void>;
   flush(): Promise<void>;
   button(scriptId: string, name: string): Promise<void>;
 };
@@ -42,7 +43,7 @@ const installHelperHost = new Function('helperClient', 'messageModule', 'loadMod
 }) as (host: unknown, st: unknown) => Promise<HostApi>;
 
 beforeEach(() => {
-  document.body.innerHTML = '<div id="chat"></div>';
+  document.body.innerHTML = '<div id="sheld"><div id="chat"></div><div id="form_sheld"></div></div>';
   vi.stubGlobal('IntersectionObserver', class {
     observe() {}
     unobserve() {}
@@ -61,12 +62,12 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function bridge(generate = async () => 'response') {
+async function bridge(generate = async () => 'response', scriptPatch: Partial<Settings['scripts'][number]> = {}) {
   let persisted: { chatKey: string; revision: number; settings: Settings } = {
     chatKey: 'story:main', revision: 1,
     settings: {
       schema: 1,
-      scripts: [{ id: 'counter', name: 'Counter', content: '', enabled: true, grants: ['read', 'write', 'generate'], data: { count: 0 } }],
+      scripts: [{ id: 'counter', name: 'Counter', content: '', enabled: true, grants: ['read', 'write', 'generate'], data: { count: 0 }, ...scriptPatch }],
       html: { enabled: false, grants: [] },
     },
   };
@@ -142,6 +143,22 @@ function gate() {
 }
 
 describe('helper writes across the real client and host bridge', () => {
+  it.each(['inline', 'floating'] as const)('renders only the built-in status widget in a bounded, collapsible %s container and removes it when disabled', async mode => {
+    const { helper } = await bridge(undefined, { id: 'ste-beautify-status', data: { count: 0, ste_widget: { mode } } as Variables });
+    const widget = document.querySelector<HTMLElement>(`[data-ste-widget="${mode}"]`);
+    expect(widget).not.toBeNull();
+    const record = helper.records[0]; expect(widget!.contains(record.frame)).toBe(true); expect(record.frame.closest('[hidden]')).toBeNull();
+    window.dispatchEvent(new MessageEvent('message', { source: record.frame.contentWindow!, data: { steHelper: record.token, kind: 'height', height: 10000 } }));
+    expect(parseFloat(record.frame.style.height)).toBeLessThanOrEqual(window.innerHeight * .45);
+    widget!.querySelector('button')!.click(); expect(record.frame.hidden).toBe(true);
+    widget!.querySelector('button')!.click(); expect(record.frame.hidden).toBe(false);
+    const settings = helper.settings; settings.scripts[0].enabled = false; await helper.configure(settings);
+    expect(document.querySelector('[data-ste-widget]')).toBeNull();
+  });
+  it('keeps generic scripts hidden even when they carry widget metadata', async () => {
+    const { helper } = await bridge(undefined, { data: { count: 0, ste_widget: { mode: 'floating' } } as Variables });
+    expect(document.querySelector('[data-ste-widget]')).toBeNull(); expect(helper.records[0].frame.closest('[hidden]')).not.toBeNull();
+  });
   it('restores the saved script snapshot after a failed write even when the script consumes its flush error', async () => {
     const { client, helper, saved, failNextSave } = await bridge();
     const scope = { type: 'script' } as const;

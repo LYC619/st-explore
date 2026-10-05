@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { WorldBookEntry } from '@/types/worldbook';
 
-export type SortMode = 'order-asc' | 'order-desc' | 'title' | 'uid';
+export type SortMode = 'order-asc' | 'order-desc' | 'title' | 'uid' | 'uid-desc';
 export type SearchScope = 'all' | 'title';
 
 /** 世界书条目在页面里一律以 [key, entry] 成对流转，key 即 entries 字典的键 */
@@ -73,6 +73,7 @@ export function applyEntryFilters(entries: EntryPair[], c: EntryFilterCriteria):
       case 'order-desc': return eb.order - ea.order;
       case 'title': return ea.comment.localeCompare(eb.comment);
       case 'uid': return ea.uid - eb.uid;
+      case 'uid-desc': return eb.uid - ea.uid;
       default: return 0;
     }
   });

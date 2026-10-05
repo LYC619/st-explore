@@ -59,6 +59,7 @@ const RegexTool = () => {
   // 预览区状态
   const [sampleText, setSampleText] = useState('');
   const [asUser, setAsUser] = useState(false);
+  const [sampleDepth, setSampleDepth] = useState('0');
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   // 从故事取某楼
   const [stories, setStories] = useState<ArchiveStory[]>([]);
@@ -227,8 +228,8 @@ const RegexTool = () => {
   // ---- 可视化预览 ----
 
   const preview = useMemo(
-    () => (sampleText ? previewRegexRules(sampleText, rules, asUser) : null),
-    [sampleText, rules, asUser],
+    () => (sampleText ? previewRegexRules(sampleText, rules, asUser, sampleDepth === '' ? undefined : Number(sampleDepth)) : null),
+    [sampleText, rules, asUser, sampleDepth],
   );
 
   const pickStory = stories.find((s) => s.id === pickStoryId);
@@ -243,6 +244,7 @@ const RegexTool = () => {
     }
     setSampleText(msg.content);
     setAsUser(msg.role === 'user' || !!msg.is_user);
+    setSampleDepth(String(pickStory.session.messages.length - n));
     toast({ title: `已取「${pickStory.title}」第 ${n} 楼` });
   };
 
@@ -387,6 +389,7 @@ const RegexTool = () => {
                   按{asUser ? '用户' : 'AI'}楼预览
                 </Button>
               </div>
+              <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>样例深度（末楼为 0）</span><Input aria-label="样例深度" type="number" min={0} step={1} value={sampleDepth} onChange={event => setSampleDepth(event.target.value)} className="w-24" /></label>
               <Textarea
                 value={sampleText}
                 onChange={(e) => setSampleText(e.target.value)}
@@ -422,7 +425,7 @@ const RegexTool = () => {
                                 <Badge variant="destructive" className="h-5 text-[11px] shrink-0">正则无效</Badge>
                               ) : !e.applied ? (
                                 <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground shrink-0">
-                                  不作用于{asUser ? '用户' : 'AI'}楼
+                                  不符合当前消息角色或楼层范围
                                 </Badge>
                               ) : e.matched ? (
                                 <Badge variant="outline" className="h-5 text-[11px] shrink-0 bg-[var(--status-ok-bg)] text-[color:var(--status-ok)] border-[var(--status-ok-bg)]">命中</Badge>

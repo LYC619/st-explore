@@ -1,4 +1,5 @@
 /** Controls live in the original ST extension drawer and use its popup implementation. */
+import { helperScriptStatus } from './helper-status.js';
 export async function installHelperControls(helper) {
     const { Popup, POPUP_TYPE } = await import('/scripts/popup.js');
     const panel = document.createElement('div'); panel.className = 'extension_container'; panel.id = 'ste_helper_settings';
@@ -37,9 +38,18 @@ export async function installHelperControls(helper) {
     }
     function render() {
         const list = panel.querySelector('#ste_helper_scripts'); list.replaceChildren();
+        const summary = document.createElement('p');
+        const enabled = helper.settings.scripts.filter(script => script.enabled);
+        summary.id = 'ste_helper_status_summary';
+        summary.textContent = `当前聊天 · ${enabled.length} 个已启用 · ${enabled.filter(script => helperScriptStatus(script, helper.records).state === 'running').length} 个运行中`;
+        list.append(summary);
+        if (!helper.settings.scripts.length) { const empty = document.createElement('p'); empty.textContent = '当前聊天还没有脚本'; list.append(empty); }
         for (const script of helper.settings.scripts) {
             const row = document.createElement('div'); row.className = 'ste-helper-script'; row.style.cssText = 'border-top:1px solid var(--SmartThemeBorderColor);padding:8px 0'; row.dataset.scriptId = script.id;
             const title = document.createElement('b'); title.textContent = script.name; row.append(title);
+            const status = helperScriptStatus(script, helper.records);
+            const badge = document.createElement('span'); badge.dataset.helperState = status.state; badge.textContent = status.label;
+            badge.style.cssText = 'margin-left:8px;font-size:12px'; row.append(badge);
             const save = () => { const settings = helper.settings; settings.scripts = settings.scripts.map(current => current.id === script.id ? { ...script, data: current.data } : current); return helper.configure(settings); };
             row.append(checkbox('启用 ' + script.name, script.enabled, async enabled => { script.enabled = enabled; await save(); })); grants(row, script, save);
             const actions = document.createElement('div'); actions.className = 'flex-container';
@@ -48,7 +58,7 @@ export async function installHelperControls(helper) {
             }));
             if (script.enabled && script.button.enabled) for (const item of script.button.buttons.filter(item => item.visible)) actions.append(button(item.name, () => helper.button(script.id, item.name)));
             row.append(actions);
-            const error = helper.records.find(record => record.scriptId === script.id)?.error;
+            const error = status.error;
             if (error) { const detail = document.createElement('small'); detail.textContent = error; row.append(detail); }
             list.append(row);
         }

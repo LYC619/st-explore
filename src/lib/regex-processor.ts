@@ -71,27 +71,47 @@ export function formatRegex(regexStr: string): string {
   return `/${regexStr}/gs`;
 }
 
-/**
- * 应用正则规则到消息内容
- */
+/** 兼容尚未提升到顶层字段的旧导入规则；显式 null 可清空旧 _raw 限制。 */
+export function getRegexDepthRange(rule: Pick<RegexRule, 'minDepth' | 'maxDepth' | '_raw'>): { minDepth: number | null; maxDepth: number | null } {
+  const read = (field: 'minDepth' | 'maxDepth') => {
+    const value = Object.prototype.hasOwnProperty.call(rule, field) ? rule[field] : rule._raw?.[field];
+    return typeof value === 'number' && Number.isInteger(value) && value >= (field === 'minDepth' ? -1 : 0) ? value : null;
+  };
+  return { minDepth: read('minDepth'), maxDepth: read('maxDepth') };
+}
+
+/** 深度始终相对完整会话，不能在隐藏楼层或导出范围裁剪后重新计数。 */
+export function getMessageDepths(messages: Pick<ChatMessage, 'id'>[]): Map<string, number> {
+  return new Map(messages.map((message, index) => [message.id, messages.length - index - 1]));
+}
+
+export function isRegexRuleApplicable(rule: RegexRule, isUser: boolean, depth?: number): boolean {
+  if (rule.disabled) return false;
+  const placementMatches = rule.placement.length === 0 || rule.placement.includes('all')
+    || (isUser ? rule.placement.includes('user') : rule.placement.includes('assistant'));
+  if (!placementMatches) return false;
+  const { minDepth, maxDepth } = getRegexDepthRange(rule);
+  const bounded = (minDepth !== null && minDepth >= 0) || maxDepth !== null;
+  // 纯文本没有消息位置时，不猜测它属于最近几楼。
+  if (bounded && (depth === undefined || !Number.isFinite(depth))) return false;
+  if (depth !== undefined) {
+    if (minDepth !== null && depth < minDepth) return false;
+    if (maxDepth !== null && depth > maxDepth) return false;
+  }
+  return true;
+}
+
+/** 应用正则；depth=0 表示完整会话的最后一楼。 */
 export function applyRegexRules(
   content: string,
   rules: RegexRule[],
-  isUser: boolean
+  isUser: boolean,
+  depth?: number,
 ): string {
   let result = content;
 
   for (const rule of rules) {
-    if (rule.disabled) continue;
-
-    // 检查规则是否应用于当前消息类型
-    const shouldApply =
-      rule.placement.length === 0 ||
-      rule.placement.includes('all') ||
-      (isUser && rule.placement.includes('user')) ||
-      (!isUser && rule.placement.includes('assistant'));
-
-    if (!shouldApply) continue;
+    if (!isRegexRuleApplicable(rule, isUser, depth)) continue;
 
     const regex = parseRegex(rule.findRegex);
     if (regex) {
@@ -160,9 +180,11 @@ export function convertMessagesToTxt(
   messages: ChatMessage[],
   rules: RegexRule[],
   prefixMode: PrefixMode,
-  markers: ChapterMarker[] = []
+  markers: ChapterMarker[] = [],
+  sourceMessages: ChatMessage[] = messages,
 ): string {
   const lines: string[] = [];
+  const depths = getMessageDepths(sourceMessages);
 
   // 章节标记按 messageId 匹配（稳定锚点，消息增删/重排后不会错位）；
   // 对没有 messageId 的旧数据回退到 messageIndex。
@@ -184,7 +206,7 @@ export function convertMessagesToTxt(
     }
     
     // 应用正则规则
-    const content = applyRegexRules(message.content, rules, isUser);
+    const content = applyRegexRules(message.content, rules, isUser, depths.get(message.id));
     
     // 跳过空内容
     if (!content.trim()) continue;
@@ -213,8 +235,10 @@ export function convertMessagesToMarkdown(
   messages: ChatMessage[],
   rules: RegexRule[],
   prefixMode: PrefixMode,
-  markers: ChapterMarker[] = []
+  markers: ChapterMarker[] = [],
+  sourceMessages: ChatMessage[] = messages,
 ): string {
+  const depths = getMessageDepths(sourceMessages);
   const markerById = new Map<string, ChapterMarker>();
   const markerByIndex = new Map<number, ChapterMarker>();
   for (const marker of markers) {
@@ -235,7 +259,7 @@ export function convertMessagesToMarkdown(
       }
     }
 
-    const content = applyRegexRules(message.content, rules, isUser);
+    const content = applyRegexRules(message.content, rules, isUser, depths.get(message.id));
     if (!content.trim()) continue;
 
     if (prefixMode === 'none') {

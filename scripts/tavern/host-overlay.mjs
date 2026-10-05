@@ -31,7 +31,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     overlays.push({ asset: await generated(url, await transform(text)), expectedSha256: original.sha256 });
   }
   await override('/tauri-main.js', () => readFile(path.join(source.projectRoot, 'src/tavern/host-bootstrap.js')));
-  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'package-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
+  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
   additions.push(await generated('/ste/helper-lodash.js', await readFile(path.join(source.projectRoot, 'node_modules/lodash/lodash.min.js'))));
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'

@@ -413,8 +413,8 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     const prevMessages = cur.messages;
     const prevRules = settings.regexRules;
     let changed = 0;
-    const nextMessages = cur.messages.map(msg => {
-      const next = applyRegexRules(msg.content, activeRules, msg.role === 'user').trim();
+    const nextMessages = cur.messages.map((msg, index) => {
+      const next = applyRegexRules(msg.content, activeRules, msg.role === 'user', cur.messages.length - index - 1).trim();
       if (next === msg.content) return msg;
       changed++;
       return syncEditedMessage({ ...msg, content: next });
@@ -627,6 +627,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
 
           {/* Regex Sidebar */}
           <RegexSidebar
+            stickyTop={(readerMode ? readerStickyTop : 0) + toolbarHeight + 8}
             rules={settings.regexRules}
             onRulesChange={(rules) => { if (!readerMode) onSettingsChange({ ...settings, regexRules: rules }); }}
             readOnly={readerMode}

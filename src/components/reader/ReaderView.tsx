@@ -119,7 +119,7 @@ const ReaderView = ({
     messages.forEach((msg, idx) => {
       if (msg.role === 'system') return;
       
-      const cleanContent = applyRegexRules(msg.content, regexRules, msg.role === 'user');
+      const cleanContent = applyRegexRules(msg.content, regexRules, msg.role === 'user', messages.length - idx - 1);
       if (!cleanContent.trim()) return;
 
       // Check if this message has a chapter marker（优先按 id 匹配，回退到 index 以兼容旧数据）

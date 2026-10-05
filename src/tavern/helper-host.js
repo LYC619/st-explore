@@ -47,6 +47,7 @@ export async function installHelperHost(host, st) {
         if (record.generating) st.stopGeneration();
         for (const [id, waiter] of eventWaiters) if (waiter.record === record) { clearTimeout(waiter.timer); eventWaiters.delete(id); waiter.resolve(); }
         record.frame.remove();
+        record.widget?.remove();
     }
     function dispose() {
         generation++;
@@ -177,7 +178,10 @@ export async function installHelperHost(host, st) {
         if (!record || event.source !== record.frame.contentWindow || !live(record)) return;
         const message = event.data;
         if (message.kind === 'ready') { record.ready = true; controlsChanged(); return; }
-        if (message.kind === 'height') { if (record.messageId !== null) record.frame.style.height = `${Math.max(80, Math.min(1200, Number(message.height) || 200))}px`; return; }
+        if (message.kind === 'height') {
+            if (record.messageId !== null || record.widget) record.frame.style.height = `${Math.max(80, Math.min(record.widget ? Math.max(80, innerHeight * .45) : 1200, Number(message.height) || 200))}px`;
+            return;
+        }
         if (message.kind === 'error') { showError(message.message, record); return; }
         if (message.kind === 'event-done') {
             const waiter = eventWaiters.get(message.id);
@@ -241,12 +245,27 @@ export async function installHelperHost(host, st) {
     }
     function scheduleScan() { clearTimeout(scanTimer); scanTimer = setTimeout(scan, 80); }
     const mutations = new MutationObserver(scheduleScan); mutations.observe(document.querySelector('#chat'), { childList: true, subtree: true });
+    function mountScript(script) {
+        const mode = script.id === 'ste-beautify-status' ? script.data?.ste_widget?.mode : undefined;
+        if (mode !== 'inline' && mode !== 'floating') return makeFrame({ container: scriptContainer, ...script, scriptId: script.id });
+        const widget = document.createElement('section'); widget.dataset.steWidget = mode;
+        widget.style.cssText = 'flex:none;overflow:hidden;border:1px solid var(--SmartThemeBorderColor);border-radius:8px;background:var(--SmartThemeBlurTintColor);color:var(--SmartThemeBodyColor);margin:4px 8px;max-width:calc(100% - 16px)';
+        if (mode === 'floating') widget.style.cssText += ';position:fixed;z-index:120;right:8px;bottom:104px;width:320px;max-width:calc(100vw - 32px)';
+        const toggle = document.createElement('button'); toggle.className = 'menu_button'; toggle.style.cssText = 'width:100%;margin:0;text-align:left;min-height:32px';
+        toggle.textContent = `${script.name} · 收起`; toggle.setAttribute('aria-expanded', 'true'); widget.append(toggle);
+        const form = document.querySelector('#form_sheld');
+        if (mode === 'inline' && form) form.before(widget); else document.body.append(widget);
+        const record = makeFrame({ container: widget, ...script, scriptId: script.id }); record.widget = widget;
+        record.frame.style.maxHeight = '45vh';
+        toggle.addEventListener('click', () => { record.frame.hidden = !record.frame.hidden; toggle.setAttribute('aria-expanded', String(!record.frame.hidden)); toggle.textContent = `${script.name} · ${record.frame.hidden ? '展开' : '收起'}`; });
+        return record;
+    }
     async function refresh() {
         dispose(); const current = generation;
         const loaded = await request('/ste/helpers');
         if (generation !== current) return;
         config = loaded;
-        for (const script of config.settings.scripts.filter(script => script.enabled)) makeFrame({ container: scriptContainer, ...script, scriptId: script.id });
+        for (const script of config.settings.scripts.filter(script => script.enabled)) mountScript(script);
         scheduleScan(); controlsChanged();
     }
     st.eventSource.makeFirst(st.event_types.CHAT_CHANGED, refresh);

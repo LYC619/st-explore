@@ -2,7 +2,7 @@ import { forwardRef, useMemo, useState, useEffect, useLayoutEffect, useRef, useI
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { User, Bot, Bookmark, BookmarkPlus, Pencil, EyeOff, MessageSquareDashed, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ChatSession, ThemeStyle, RegexRule, ChapterMarker, STRawMessage } from '@/types/chat';
-import { applyRegexRules, parseRegex } from '@/lib/regex-processor';
+import { applyRegexRules, isRegexRuleApplicable, parseRegex } from '@/lib/regex-processor';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
 import { formatMessageModelLabel } from '@/lib/story-meta';
 import { swipeCount, currentSwipeId, isOOCMessage, isSteEditedSwipe } from '@/lib/chat-edit';
@@ -133,6 +133,7 @@ function renderTextWithSearch(text: string, query: string): React.ReactNode {
 function formatTime(timestamp?: number): string {
   if (!timestamp) return '';
   return new Date(timestamp).toLocaleString('zh-CN', {
+    year: 'numeric',
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -142,6 +143,7 @@ function formatTime(timestamp?: number): string {
 
 /** processedMessages 的单条形态：原始消息 + 派生的渲染字段（自包含，不依赖相邻行） */
 interface ProcessedMessage {
+  depth: number;
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -501,14 +503,15 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
         : debouncedRules;
       const out: ProcessedMessage[] = [];
       let prevRole: string | null = null; // 记录上一条已保留消息的 role，预算 isNewSpeaker
-      for (const msg of session.messages) {
+      for (const [index, msg] of session.messages.entries()) {
+        const depth = session.messages.length - index - 1;
         const ooc = isOOCMessage(msg);
         // 隐藏楼/OOC 分开开关：OOC 也是 is_system 隐藏楼，但用户可能只想关掉注释、保留剧情隐藏楼
         if (msg.hidden && !(ooc ? showOOC : showHidden)) continue;
         const isUser = msg.role === 'user';
         // 去除首尾空白：正则删除开头/结尾的标签块后常残留换行，
         // 否则 text-indent 会缩进到这条残留空行上，导致正文看起来没缩进、缩进忽有忽无。
-        const processedContent = applyRegexRules(msg.content, activeRules, isUser).trim();
+        const processedContent = applyRegexRules(msg.content, activeRules, isUser, depth).trim();
         const swipeTotal = swipeCount(msg);
         // 空消息过滤——但有多候选的楼保留：当前候选可能恰好为空（或被正则清空），
         // 过滤掉该行用户就永远切不回其他候选了。
@@ -519,6 +522,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
         // isNewSpeaker 预算进 memo：虚拟化后行不连续渲染，不能在 render 里读 [index-1]。
         out.push({
           ...msg,
+          depth,
           content: processedContent,
           paragraphs,
           isNewSpeaker: prevRole !== msg.role,
@@ -793,7 +797,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     showAvatar={showAvatar}
                     showModel={showModel}
                     editMode={editMode}
-                    previewRule={previewRule}
+                    previewRule={previewRule && isRegexRuleApplicable(previewRule, message.role === 'user', message.depth) ? previewRule : null}
                     searchQuery={searchQuery}
                     isActiveMatch={vItem.index === activeMatchIndex}
                     userName={session.user.name}

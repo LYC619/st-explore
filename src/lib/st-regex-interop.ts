@@ -1,12 +1,13 @@
 import type { RegexRule } from '@/types/chat';
+import { getRegexDepthRange } from '@/lib/regex-processor';
 
 /**
  * SillyTavern 正则脚本互通层。
  * 依据 _reference/st-docs/04-regex-script-format.md。
  *
- * 本应用内部用精简的 RegexRule（findRegex/replaceString/placement('all'|'user'|'assistant')/disabled）。
- * ST 正则脚本字段更全（trimStrings/markdownOnly/promptOnly/runOnEdit/substituteRegex/min,maxDepth）。
- * 导入时把 ST 多出的字段原样存到 RegexRule._raw，导出时拼回去，做到无损 round-trip。
+ * 本应用内执行匹配、替换、消息角色和 minDepth/maxDepth 范围。
+ * ST 独有字段（trimStrings/markdownOnly/promptOnly/runOnEdit/substituteRegex）
+ * 原样存到 RegexRule._raw，导出时拼回；已支持的深度字段以编辑后的顶层值为准。
  */
 
 /** ST placement 数字枚举：1=User Input, 2=AI Output, 3=Slash, 4=World Info, 5=Reasoning */
@@ -68,6 +69,7 @@ export function stScriptToRule(script: STRegexScript): RegexRule {
     replaceString: replaceString ?? '',
     placement: placementFromST(placement),
     disabled: !!disabled,
+    ...getRegexDepthRange({ minDepth: script.minDepth, maxDepth: script.maxDepth }),
     // 保留 ST 独有字段（trimStrings/markdownOnly/... 及任何未知字段），导出时拼回
     _raw: { ...rest, ...(Array.isArray(placement) ? { placement: [...placement] } : {}) },
   };
@@ -88,8 +90,6 @@ export function ruleToSTScript(rule: RegexRule): STRegexScript {
     promptOnly: false,
     runOnEdit: true,
     substituteRegex: 0,
-    minDepth: null,
-    maxDepth: null,
     ...raw,
     // 应用内权威字段始终覆盖
     id: rule.id,
@@ -98,6 +98,7 @@ export function ruleToSTScript(rule: RegexRule): STRegexScript {
     replaceString: rule.replaceString,
     placement: placementUnchanged ? [...original] : placementToST(rule.placement),
     disabled: rule.disabled,
+    ...getRegexDepthRange(rule),
   };
 }
 

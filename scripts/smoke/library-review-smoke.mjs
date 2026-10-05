@@ -15,7 +15,7 @@ try {
     const { saveSummary } = await import('/src/lib/summary-db.ts');
     await setArchiveSchemaVersion(2);
     const now = 1791100000000;
-    for (const [id, name, notes] of [['a', '林间旅人', '第一次走了冒险线，后来又试了一次归乡结局。'], ['b', '旧城书店', '一段慢慢熟悉彼此的日常。'], ['c', '海边来信', '留待下次游玩。']]) {
+    for (const [id, name, notes] of [['a', '林间旅人', '## 归乡记录\n\n**冒险线索**\n\n' + '第一次走了冒险线，后来又试了一次归乡结局。\n\n'.repeat(35) + '**备注末尾**'], ['b', '旧城书店', '一段慢慢熟悉彼此的日常。'], ['c', '海边来信', '留待下次游玩。']]) {
       await saveCharacter({ id, name, card: { name, description: name }, tags: ['人物/归档'], notes: [{ id: 'n-' + id, body: notes, at: now }], status: '未开始', type: '人物', rating: id === 'a' ? 8 : undefined, createdAt: now, updatedAt: now });
     }
     const session = title => ({ id: title, title, character: { name: title }, user: { name: '我' }, messages: [{ id: 'm1', name: title, role: 'assistant', content: '我们又在故事中相遇。\n\n' + '这是一段很长的第一楼，用来验证楼内阅读位置。\n\n'.repeat(60), timestamp: now }], createdAt: now });
@@ -23,7 +23,7 @@ try {
       await saveArchiveStory({ id, characterId, title, session: session(title), markers: [], branches: id === 's1' ? [{ id:'alt', name:'另一条路', session:session(title), markers:[], createdAt:now, updatedAt:now }] : [], status:'已完结', meta:{modelsUsed:[], playTimeMs:null}, createdAt:now, updatedAt:now });
     }
     for (const [id, bookId, title, branchId, content] of [
-      ['r1','s1','第 1 卷 · 初入森林',undefined,'旅人遇见了向导，一起寻找回家的路。\n\n' + '沿途的对话让两人逐渐信任彼此。\n\n'.repeat(35)],
+      ['r1','s1','第 1 卷 · 初入森林',undefined,'## 林间回忆\n\n**同行伙伴**\n\n旅人遇见了向导，一起寻找回家的路。\n\n' + '沿途的对话让两人逐渐信任彼此。\n\n'.repeat(35) + '**总结末尾**'],
       ['r2','s1','分支 · 留在森林','alt','这次选择留下，帮助村庄度过冬天。'],
       ['r3','s2','归乡后的生活',undefined,'回到故乡，重新见到了久别的朋友。'],
       ['r4','s3','书店的雨天',undefined,'雨天的书店里，他们交换了各自最喜欢的一本书。'],
@@ -32,6 +32,19 @@ try {
   });
   await page.reload();
   await page.getByRole('button', { name: '选择林间旅人', exact: true }).click();
+  for (const [label, tail] of [['最近备注正文', '备注末尾'], ['第 1 卷 · 初入森林正文', '总结末尾']]) {
+    const excerpt = page.getByRole('region', { name: label, exact: true });
+    await expect(excerpt.locator('h2')).toBeVisible();
+    await excerpt.scrollIntoViewIfNeeded();
+    const parentScroll = await page.locator('[data-review-scroll]').evaluate(element => element.scrollTop);
+    const box = await excerpt.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 500);
+    await expect.poll(() => excerpt.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    expect(await page.locator('[data-review-scroll]').evaluate(element => element.scrollTop)).toBe(parentScroll);
+    await excerpt.evaluate(element => { element.scrollTop = element.scrollHeight; });
+    await expect(excerpt.locator('strong').filter({ hasText: tail })).toBeVisible();
+  }
   await page.getByRole('tab', { name: '总结', exact: true }).click();
   await expect(page.locator('#review-record-r3')).toBeAttached();
   await expect(page.locator('#review-record-r2')).toContainText('另一条路');
@@ -47,6 +60,10 @@ try {
   await page.getByRole('button', { name: '阅读 第一段 · 森林之旅', exact: true }).click();
   await expect(page.locator('[data-review-scroll]')).toContainText('我们又在故事中相遇');
   await page.locator('[data-review-scroll]').evaluate(element => { element.scrollTop = 450; element.dispatchEvent(new Event('scroll')); });
+  await expect.poll(() => page.locator('[aria-label="角色回顾内容"] header').evaluate(element => element.getBoundingClientRect().bottom <= document.querySelector('[aria-label="角色回顾内容"]').getBoundingClientRect().top)).toBe(true);
+  await expect(page.locator('[data-reader-header]')).toBeInViewport();
+  const readingSpace = await page.locator('[data-review-scroll]').evaluate(element => ({ viewport: element.clientHeight, headerBottom: document.querySelector('[aria-label="角色回顾内容"] header').getBoundingClientRect().bottom, top: element.getBoundingClientRect().top }));
+  await page.screenshot({ path: `${out}/desktop-reading.png`, fullPage: true });
   await page.getByRole('button', { name: '选择旧城书店', exact: true }).click();
   await page.getByRole('button', { name: '选择林间旅人', exact: true }).click();
   await expect.poll(() => page.locator('[data-review-scroll]').evaluate(element => element.scrollTop)).toBe(450);
@@ -70,6 +87,18 @@ try {
   await page.screenshot({ path: `${out}/mobile.png`, fullPage: true });
   const viewport = await page.evaluate(() => ({ width:document.documentElement.scrollWidth, viewport:innerWidth, height:document.documentElement.scrollHeight, viewportHeight:innerHeight }));
   expect(viewport.width).toBe(viewport.viewport);
-  console.log(JSON.stringify({ passed: ['grouped summaries', 'summary scroll restore', 'long first-message scroll restore', 'note and rating writes', 'return search', 'mobile layout'], errors, viewport }));
+  await page.getByRole('button', { name: '打开角色详情', exact: true }).click();
+  await page.getByRole('tab', { name: /^备注/ }).click();
+  await expect(page.getByRole('heading', { name: '归乡记录', exact: true })).toBeVisible();
+  await page.getByRole('tab', { name: /^故事/ }).click();
+  await page.getByRole('button', { name: '总结', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '林间回忆', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '故事列表', exact: true }).click();
+  await page.getByRole('button', { name: '阅读', exact: true }).first().click();
+  await expect(page.locator('[data-reader-header]').getByRole('button', { name: '继续聊天', exact: true })).toBeInViewport();
+  const mobileReader = await page.evaluate(() => ({ width:document.documentElement.scrollWidth, viewport:innerWidth }));
+  expect(mobileReader.width).toBe(mobileReader.viewport);
+  await page.screenshot({ path: `${out}/mobile-detail-reading.png`, fullPage: true });
+  console.log(JSON.stringify({ passed: ['overview Markdown and independent scrolling', 'grouped summaries', 'summary scroll restore', 'scrolling character header', 'sticky reader toolbar', 'long first-message scroll restore', 'note and rating writes', 'return search', 'mobile layout', 'detail Markdown previews', 'mobile reader continue button'], errors, viewport, readingSpace, mobileReader }));
   expect(errors).toEqual([]);
 } finally { await browser.close(); }

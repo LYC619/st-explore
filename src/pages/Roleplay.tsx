@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CircleHelp, FileUp, Loader2, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ClientTitleBar } from '@/components/ClientTitleBar';
@@ -20,7 +20,7 @@ const errorMessage = (reason: unknown) => reason && typeof reason === 'object' &
 export default function Roleplay() {
   const { id } = useParams<{ id: string }>();
   const [query] = useSearchParams();
-  const branchId = query.get('branch');
+  const branchId = query.has('branch') ? query.get('branch') || null : undefined;
   const fromChats = query.get('from') === 'chats';
   const [launch, setLaunch] = useState({ storyId: id, branchId });
   const navigate = useNavigate();
@@ -141,7 +141,7 @@ export default function Roleplay() {
           returnTarget.current = { storyId: locator.storyId, branchId: locator.branchId };
           if (previous.storyId === locator.storyId && previous.branchId === locator.branchId) return;
           const params = new URLSearchParams();
-          if (locator.branchId) params.set('branch', locator.branchId);
+          params.set('branch', locator.branchId ?? '');
           if (fromChats) params.set('from', 'chats');
           const path = '/play/' + encodeURIComponent(locator.storyId) + (params.size ? '?' + params : '');
           internalLocation.current = path;
@@ -188,7 +188,7 @@ export default function Roleplay() {
     } catch (reason) { setExportNotice('导出未完成：' + errorMessage(reason)); }
     finally { setExporting(false); }
   };
-  const openSettings = (section: 'runtime' | 'models') => {
+  const openSettings = (section: 'runtime' | 'models' | 'scripts' | 'branches' | 'chat') => {
     const child = frame.current?.contentWindow as TavernFrameWindow | null;
     void child?.__STE_TAVERN_OPEN_SETTINGS__?.(section).catch(reason => setError(errorMessage(reason)));
   };
@@ -207,6 +207,9 @@ export default function Roleplay() {
       </Button>
       <span role="status" title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground sm:order-none sm:flex-1 sm:basis-auto">{status}</span>
       <div className="ml-auto flex items-center gap-1">
+        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('branches')}><GitBranch className="mr-1 h-4 w-4" />分支</Button>
+        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('scripts')}><Code className="mr-1 h-4 w-4" />脚本</Button>
+        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('chat')}><Menu className="mr-1 h-4 w-4" />聊天工具</Button>
         <Button variant="ghost" size="sm" disabled={!ready} onClick={() => openSettings('runtime')}><SlidersHorizontal className="mr-1 h-4 w-4" />玩法设置</Button>
         <Button variant="ghost" size="sm" onClick={() => changeGuide(true)}><CircleHelp className="mr-1 h-4 w-4" />使用帮助</Button>
       </div>

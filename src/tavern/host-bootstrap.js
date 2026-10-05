@@ -243,18 +243,65 @@ window.__STE_BEFORE_CHAT_SWITCH__ = async () => {
 let stModule;
 window.__STE_TAVERN_SNAPSHOT__ = async () => captureRecoveryFile(stModule ?? await import('./script.js'));
 window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
+    if (section === 'chat') {
+        // Invoke the native menu handler without bubbling an off-frame click to
+        // upstream's document handler, which closes menus without hover/focus.
+        $('#options_button').triggerHandler('click');
+        return;
+    }
+    if (section === 'branches') {
+        const { Popup, POPUP_TYPE } = await import('./scripts/popup.js');
+        const st = stModule ?? await import('./script.js');
+        const response = await host.request('/ste/branches');
+        const snapshot = await response.json();
+        if (!response.ok) throw new Error(snapshot.error?.message ?? '读取分支失败');
+        const panel = document.createElement('div'); panel.style.textAlign = 'left';
+        const heading = document.createElement('h3'); heading.textContent = snapshot.title;
+        const label = document.createElement('label'); label.textContent = '当前故事的分支';
+        const select = document.createElement('select'); select.id = 'ste_branch_select'; select.setAttribute('aria-label', '选择故事分支');
+        for (const line of snapshot.lines) select.append(new Option(line.name, line.key));
+        select.value = snapshot.current.key; label.append(select);
+        const hint = document.createElement('p'); hint.textContent = '切换前会保存当前聊天，后续回复只写入所选分支。';
+        const actions = document.createElement('div'); actions.className = 'flex-container';
+        const switchButton = document.createElement('button'); switchButton.className = 'menu_button'; switchButton.textContent = '切换分支'; switchButton.disabled = true;
+        const createButton = document.createElement('button'); createButton.className = 'menu_button'; createButton.textContent = '从最后一楼新建分支'; createButton.disabled = !st.chat.length;
+        const error = document.createElement('p'); error.setAttribute('role', 'alert');
+        actions.append(switchButton, createButton); panel.append(heading, label, hint, actions, error);
+        const popup = new Popup(panel, POPUP_TYPE.TEXT, '', { okButton: '关闭' });
+        let busy = false;
+        select.addEventListener('change', () => { switchButton.disabled = select.value === snapshot.current.key; });
+        const run = async action => {
+            if (busy) return;
+            busy = true; select.disabled = switchButton.disabled = createButton.disabled = true; error.textContent = '';
+            try {
+                const current = await host.request('/ste/branches');
+                if (!current.ok || (await current.json()).current.key !== snapshot.current.key) throw new Error('当前聊天已切换，请重新打开分支列表');
+                await action(); await popup.complete(1);
+            } catch (reason) { error.textContent = String(reason?.message ?? reason); }
+            finally { busy = false; select.disabled = false; switchButton.disabled = select.value === snapshot.current.key; createButton.disabled = !st.chat.length; }
+        };
+        switchButton.addEventListener('click', () => { void run(() => st.openCharacterChat(select.value)); });
+        createButton.addEventListener('click', () => { void run(async () => {
+            await window.__STE_BEFORE_CHAT_SWITCH__();
+            const result = await (await import('./scripts/bookmarks.js')).branchChat(st.chat.length - 1);
+            if (!result) throw new Error('未能创建分支，当前聊天已保留');
+        }); });
+        await popup.show(); return;
+    }
     const runtime = section === 'runtime';
-    const drawer = $(runtime ? '#extensions-settings-button' : '#sys-settings-button');
+    const scripts = section === 'scripts';
+    const drawer = $(runtime || scripts ? '#extensions-settings-button' : '#sys-settings-button');
     const content = drawer.children('.drawer-content');
     if (content.hasClass('closedDrawer')) await (stModule ?? await import('./script.js')).doNavbarIconClick.call(drawer.children('.drawer-toggle')[0]);
-    if (runtime) {
-        const panel = $('#ste_runtime_settings');
+    if (runtime || scripts) {
+        const panel = $(scripts ? '#ste_helper_settings' : '#ste_runtime_settings');
         if (!panel.find('.inline-drawer-content').is(':visible')) panel.find('.inline-drawer-toggle').trigger('click');
         await panel.find('.inline-drawer-content').promise();
     }
-    const control = document.querySelector(runtime ? '#ste_play_mode' : '#ste_main_profile');
+    const control = document.querySelector(scripts ? '#ste_helper_status_summary' : runtime ? '#ste_play_mode' : '#ste_main_profile');
     if (!control) throw new Error('聊天界面尚未准备好，请稍后再试');
     control.scrollIntoView({ block: 'center' });
+    if (scripts) control.setAttribute('tabindex', '-1');
     control.focus({ preventScroll: true });
 };
 window.__STE_TAVERN_DIRTY__ = () => host.isGenerating() || stModule?.hasUnsavedChat() || !!document.querySelector('#chat .edit_textarea')

@@ -80,6 +80,9 @@ export interface RegexRule {
   replaceString: string;
   placement: ('all' | 'user' | 'assistant')[];
   disabled: boolean;
+  /** ST 深度：最后一楼为 0；闭区间，null/undefined 不限。 */
+  minDepth?: number | null;
+  maxDepth?: number | null;
   /** 从 ST 正则脚本导入时，保留 ST 独有字段(trimStrings/markdownOnly/substituteRegex 等)，导出时无损拼回 */
   _raw?: Record<string, unknown>;
 }

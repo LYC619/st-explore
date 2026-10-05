@@ -4,6 +4,13 @@
  */
 import type { ArchiveCharacter } from '@/types/archive';
 import { exportCardJson } from '@/lib/card-export';
+import { saveTextFile } from '@/lib/roleplay/export-package-file';
+
+/** Explicit JSON export also works for cards originally imported as PNG. */
+export function downloadCharacterJson(c: ArchiveCharacter) {
+  const name = c.name.replace(/[\\/:*?"<>|]/g, '_').replace(/[. ]+$/, '') || '角色卡';
+  return saveTextFile({ fileName: `${name}.json`, text: exportCardJson(c.card), label: '角色卡 JSON', extension: 'json' });
+}
 
 export function downloadCharacterFile(c: ArchiveCharacter) {
   let blob: Blob;

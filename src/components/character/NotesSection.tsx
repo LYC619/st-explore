@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { CharacterNote } from '@/types/archive';
 import { formatListTime, formatFullTime } from '@/lib/time-display';
+import { MarkdownLite } from '@/components/MarkdownLite';
 
 interface NotesSectionProps {
   notes: CharacterNote[];
@@ -84,7 +85,7 @@ export function NotesSection({ notes, onChange }: NotesSectionProps) {
                   </Button>
                 </div>
               </div>
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{n.body}</p>
+              <MarkdownLite text={n.body} className="break-words text-sm leading-relaxed" />
             </CardContent>
           </Card>
         ))

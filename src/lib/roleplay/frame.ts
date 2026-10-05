@@ -5,7 +5,7 @@ export interface TavernFrameWindow extends Window {
   __STE_TAVERN_FLUSH__?: () => Promise<void>;
   __STE_TAVERN_DIRTY__?: () => boolean;
   __STE_TAVERN_SNAPSHOT__?: () => Promise<{ fileName: string; text: string }>;
-  __STE_TAVERN_OPEN_SETTINGS__?: (section: 'runtime' | 'models') => Promise<void>;
+  __STE_TAVERN_OPEN_SETTINGS__?: (section: 'runtime' | 'models' | 'scripts' | 'branches' | 'chat') => Promise<void>;
 }
 declare global {
   interface Window {

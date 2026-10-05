@@ -21,6 +21,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
   getCharacter,
+  getArchiveStory,
   updateCharacter,
   getStoriesByCharacter,
   updateArchiveStory,
@@ -32,7 +33,10 @@ import {
 import { normalizeCharacterCard } from '@/lib/adapters/st';
 import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character-tag-domain';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
-import { downloadCharacterFile } from '@/lib/character-file';
+import { downloadCharacterFile, downloadCharacterJson } from '@/lib/character-file';
+import { buildStoryFileExport, type StoryFileFormat } from '@/lib/story-file-export';
+import { saveTextFile } from '@/lib/roleplay/export-package-file';
+import { getVaultEpoch } from '@/lib/vault/active';
 import { editsFromNormalized, exportCardJson, type CardEdits } from '@/lib/card-export';
 import { applyCharacterPageCardEdits, applyCharacterPageDisplayMeta } from '@/lib/character-page-edit';
 import { setPendingToolFile } from '@/lib/tool-handoff';
@@ -57,7 +61,7 @@ import { PortraitSection } from '@/components/character/PortraitSection';
 import { CharacterImportDialog } from '@/components/character/CharacterImportDialog';
 import { StoryListSection } from '@/components/character/StoryListSection';
 import { ReadingPackExportDialog } from '@/components/character/ReadingPackExportDialog';
-import { InlineStoryReader } from '@/components/character/InlineStoryReader';
+import { InlineStoryReader, type InlineStoryReaderHandle } from '@/components/character/InlineStoryReader';
 import { StoryRecordsView, type RecordViewKind } from '@/components/character/StoryRecordsView';
 import { CharacterCardEditSection } from '@/components/character/CharacterCardEditSection';
 import { GreetingsSection } from '@/components/character/GreetingsSection';
@@ -103,6 +107,8 @@ const CharacterPage = () => {
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [cardSaving, setCardSaving] = useState(false);
   const [startingPlay, setStartingPlay] = useState(false);
+  const readerRef = useRef<InlineStoryReaderHandle>(null);
+  const playPendingRef = useRef(false);
   const playStartLock = useRef(false);
   const contentColumnRef = useRef<HTMLDivElement>(null);
 
@@ -369,6 +375,40 @@ const CharacterPage = () => {
     navigate(buildEditorStoryPath(storyId, view), state);
   }, [navigate]);
 
+  const exportJsonCard = async () => {
+    if (!character) return;
+    try {
+      const result = await downloadCharacterJson(character);
+      if (result !== 'cancelled') toast({ title: '已导出角色卡 JSON' });
+    } catch (error) { toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' }); }
+  };
+
+  const exportStoryFile = async (storyId: string, branchId: string | null, format: StoryFileFormat) => {
+    const epoch = getVaultEpoch();
+    try {
+      await readerRef.current?.flushPendingSave();
+      const current = await getArchiveStory(storyId);
+      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
+      if (!current) throw new Error('故事不存在');
+      const result = await saveTextFile(buildStoryFileExport(current, branchId, format));
+      if (result !== 'cancelled') toast({ title: '导出成功', description: branchId ? '已导出所选分支' : '已导出故事主线' });
+    } catch (error) { toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' }); }
+  };
+
+  const playStory = async (storyId: string, branchId: string | null) => {
+    if (playPendingRef.current) return;
+    playPendingRef.current = true;
+    const epoch = getVaultEpoch();
+    try {
+      await readerRef.current?.flushPendingSave();
+      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
+      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
+      const target = await prepareStoryPlay(storyId, branchId);
+      navigate(target.path);
+    } catch (error) { toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' }); }
+    finally { playPendingRef.current = false; }
+  };
+
   if (loading) {
     // 骨架照着真实版面摆：窄屏是封面+信息横排在顶部，桌面是左信息栏 272px + 右内容列。
     // 原来是一行居中的「加载中…」，数据到位那一瞬整页版面会跳一下。
@@ -446,6 +486,7 @@ const CharacterPage = () => {
             onEditCard={handleEditCard}
             onReadEmbedded={handleReadEmbedded}
             onExport={() => downloadCharacterFile(character)}
+            onExportJson={() => { void exportJsonCard(); }}
             onDelete={() => setCharDeleteOpen(true)}
           />
         )}
@@ -463,6 +504,7 @@ const CharacterPage = () => {
               onEditCard={handleEditCard}
               onReadEmbedded={handleReadEmbedded}
               onExport={() => downloadCharacterFile(character)}
+              onExportJson={() => { void exportJsonCard(); }}
               onDelete={() => setCharDeleteOpen(true)}
             />
           )}
@@ -528,12 +570,14 @@ const CharacterPage = () => {
             <TabsContent value="stories" className="mt-3">
               {readingStoryId ? (
                 <InlineStoryReader
+                  ref={readerRef}
                   storyId={readingStoryId}
                   stories={sortedStories}
                   initialBranchId={readingBranchId}
                   onSwitchStory={(sid) => openReader(sid)}
                   onBack={closeReader}
                   onOpenEditor={(sid) => goWorkspace(sid)}
+                  onOpenChat={(sid, branchId) => { void playStory(sid, branchId); }}
                 />
               ) : (
                 <div className="space-y-3">
@@ -582,6 +626,8 @@ const CharacterPage = () => {
                       onRead={openReader}
                       onProcess={(sid) => goWorkspace(sid)}
                       onExport={(sid) => goWorkspace(sid, 'io')}
+                      onExportFile={(sid, branchId, format) => { void exportStoryFile(sid, branchId, format); }}
+                      onPlay={(sid, branchId) => { void playStory(sid, branchId); }}
                       onDelete={setStoryToDelete}
                       onPatchStory={(sid, patch) => void patchStory(sid, patch)}
                       onRenameStory={async (sid, title) => {

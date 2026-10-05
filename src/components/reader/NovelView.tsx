@@ -903,21 +903,23 @@ const NovelView = ({
                 {novelBookmarks.length === 0 ? (
                   <p className="px-3 py-5 text-center text-xs text-muted-foreground">还没有书签</p>
                 ) : (
-                  <ScrollArea className="max-h-72">
+                  <div className="max-h-72 overflow-y-auto">
                     <div className="py-1">
                       {novelBookmarks.map((bookmark) => (
+                        <div key={bookmark.messageId} className="flex items-center">
                         <button
-                          key={bookmark.messageId}
                           type="button"
-                          className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
+                          className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
                           onClick={() => jumpToPage(bookmark.pageIndex)}
                         >
                           <span className="shrink-0 font-mono text-xs text-primary">#{bookmark.floor}</span>
                           <span className="line-clamp-2 text-xs text-muted-foreground" title={bookmark.snippet}>{bookmark.snippet}</span>
                         </button>
+                        {onFavoritesChange && <Button variant="ghost" size="icon" className="mr-1 shrink-0" aria-label={`删除第 ${bookmark.floor} 楼书签`} title="删除书签" onClick={() => onFavoritesChange(favorites.filter(id => id !== bookmark.messageId))}><Trash2 className="h-4 w-4" /></Button>}
+                        </div>
                       ))}
                     </div>
-                  </ScrollArea>
+                  </div>
                 )}
               </PopoverContent>
             </Popover>

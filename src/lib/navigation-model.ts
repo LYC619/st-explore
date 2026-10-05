@@ -8,6 +8,7 @@ import {
   MessageCircle,
   Network,
   PenLine,
+  Palette,
   Regex,
   SlidersHorizontal,
   Users,
@@ -72,7 +73,7 @@ export const NAV_AREAS: NavArea[] = [
     description: '处理聊天与整理故事资料',
     icon: PenLine,
     path: '/chat',
-    prefixes: ['/tools', '/chat', '/worldbook', '/card-viewer', '/preset', '/regex', '/story'],
+    prefixes: ['/tools', '/chat', '/worldbook', '/card-viewer', '/preset', '/regex', '/story', '/beautify'],
     children: [
       { key: 'chat', label: '聊天处理', description: '正则清理、转换与导出', icon: MessageSquare, path: '/chat', prefixes: ['/chat'] },
       { key: 'summary', label: '总结', description: '生成分卷、日记和自定义记录', icon: BookOpen, path: '/tools?focus=summary', prefixes: ['/tools'], query: { focus: 'summary' } },
@@ -89,6 +90,7 @@ export const NAV_AREAS: NavArea[] = [
         activeMatches: [{ prefix: '/tools', query: { focus: 'preset' } }, { prefix: '/preset' }],
       },
       { key: 'regex', label: '正则', description: '编辑规则集并预览生效结果', icon: Regex, path: '/regex', prefixes: ['/regex'] },
+      { key: 'beautify', label: '美化', description: '状态栏、悬浮窗与 MVU 变量', icon: Palette, path: '/beautify', prefixes: ['/beautify'] },
     ],
   },
   {

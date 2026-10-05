@@ -15,7 +15,7 @@ vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect()
 let host: HTMLDivElement; let root: Root;
 const story = { id: 'reader-s', title: '故事', session: { messages: [], character: { name: 'a' }, user: { name: 'u' } }, markers: [], meta: { modelsUsed: [], playTimeMs: null }, createdAt: 1, updatedAt: 1 } as unknown as ArchiveStory;
 const ref = createRef<InlineStoryReaderHandle>();
-async function render(restoreFloor = true) { await act(async () => root.render(<InlineStoryReader ref={ref} storyId={story.id} stories={[story]} onBack={() => {}} onSwitchStory={() => {}} onOpenEditor={() => {}} restoreFloor={restoreFloor} />)); }
+async function render(restoreFloor = true, onOpenChat?: (id: string, branchId: string | null) => void, initialBranchId?: string) { await act(async () => root.render(<InlineStoryReader ref={ref} storyId={story.id} stories={[story]} onBack={() => {}} onSwitchStory={() => {}} onOpenEditor={() => {}} onOpenChat={onOpenChat} initialBranchId={initialBranchId} restoreFloor={restoreFloor} />)); }
 beforeEach(() => { vi.clearAllMocks(); api.initialFloors = []; api.read.mockResolvedValue(story); api.update.mockImplementation(async (_id, updater) => ({ ...story, ...await updater(story) })); host = document.createElement('div'); document.body.append(host); root = createRoot(host); });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 it('exposes pending progress save and rejects rather than approving a failed transition', async () => {
@@ -41,4 +41,27 @@ it('suppresses floor restoration only for the initial pixel-restored mount', asy
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent?.trim() === '小说视图')!.click());
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '关闭小说')!.click());
   expect(api.initialFloors).toEqual([undefined, 7]);
+});
+
+it.each([null, 'alt'])('continues the current %s line only after pending reading changes save successfully', async branchId => {
+  const saved = { ...story, branches: [{ id: 'alt', name: '另一条路', session: story.session, markers: [], createdAt: 1, updatedAt: 1 }] } as ArchiveStory;
+  api.read.mockResolvedValue(saved);
+  api.update.mockImplementation(async (_id, updater) => ({ ...saved, ...await updater(saved) }));
+  const openChat = vi.fn();
+  await render(true, openChat, branchId ?? undefined);
+  await act(async () => api.floor!(5));
+  const continueButton = host.querySelector<HTMLButtonElement>('[aria-label="继续聊天"]');
+  expect(continueButton).not.toBeNull();
+  api.update.mockRejectedValueOnce(new Error('只读目录'));
+  await act(async () => continueButton!.click());
+  expect(openChat).not.toHaveBeenCalled();
+  expect(api.toast).toHaveBeenCalledWith(expect.objectContaining({ title: '故事尚未保存，已取消离开' }));
+
+  let finish!: () => void;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  api.update.mockImplementationOnce(async (_id, updater) => { await gate; return { ...saved, ...await updater(saved) }; });
+  await act(async () => continueButton!.click());
+  expect(openChat).not.toHaveBeenCalled();
+  await act(async () => finish());
+  expect(openChat).toHaveBeenCalledExactlyOnceWith(story.id, branchId);
 });

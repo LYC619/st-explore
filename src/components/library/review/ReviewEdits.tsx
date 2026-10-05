@@ -10,6 +10,7 @@ import { applyCharacterTagPatch } from '@/lib/character-tag-domain';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { formatFullTime } from '@/lib/time-display';
 import { displayCharacterName } from '@/lib/library-query';
+import { MarkdownLite } from '@/components/MarkdownLite';
 
 type Draft = { characterId: string; name: string; epoch: number } & ({ kind: 'note'; noteId?: string; body: string } | { kind: 'metadata'; rating: string; tags: string });
 export function ReviewEdits({ character, notesVisible, onCharacterChange }: { character: ArchiveCharacter; notesVisible: boolean; onCharacterChange: (character: ArchiveCharacter) => void }) {
@@ -51,7 +52,7 @@ export function ReviewEdits({ character, notesVisible, onCharacterChange }: { ch
       {!(character.notes?.length) && <p className="py-10 text-center text-sm text-muted-foreground">还没有备注</p>}
       {[...(character.notes ?? [])].sort((a, b) => b.at - a.at).map(note => <article key={note.id} className="rounded-lg border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between gap-2"><time className="text-xs text-muted-foreground">{formatFullTime(note.at)}</time><Button variant="ghost" size="sm" onClick={() => openNote(note.id, note.body)}>编辑备注</Button></div>
-        <p className="whitespace-pre-wrap text-sm leading-7">{note.body}</p>
+        <MarkdownLite text={note.body} className="break-words text-sm leading-7" />
       </article>)}
     </div>}
     <Dialog open={!!draft} onOpenChange={open => { if (!open && !busy) setDraft(null); }}>

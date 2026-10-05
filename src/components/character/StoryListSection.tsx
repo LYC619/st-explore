@@ -5,7 +5,7 @@
  * 当前就地阅读中的故事左侧高亮条。
  */
 import { useState } from 'react';
-import { BookOpen, GitBranch, Pencil, Settings2, Star, Trash2, Upload } from 'lucide-react';
+import { BookOpen, GitBranch, Pencil, Settings2, Star, Trash2, Upload, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
@@ -18,7 +18,8 @@ import { useToast } from '@/hooks/use-toast';
 import type { ArchiveStory, StoryStatus } from '@/types/archive';
 import { STORY_STATUSES } from '@/lib/archive-db';
 import { formatWordCount } from '@/lib/story-meta';
-import { formatListTime, formatFullTime } from '@/lib/time-display';
+import { formatFullTime } from '@/lib/time-display';
+import type { StoryFileFormat } from '@/lib/story-file-export';
 
 interface StoryListSectionProps {
   stories: ArchiveStory[];
@@ -29,6 +30,8 @@ interface StoryListSectionProps {
   onProcess: (id: string) => void;
   /** 导出：进工作区「导入与导出」界面 */
   onExport: (id: string) => void;
+  onExportFile?: (id: string, branchId: string | null, format: StoryFileFormat) => void;
+  onPlay?: (id: string, branchId: string | null) => void;
   onDelete: (story: ArchiveStory) => void;
   onPatchStory: (id: string, patch: Partial<ArchiveStory>) => void;
   onRenameStory?: (id: string, title: string) => Promise<void>;
@@ -103,11 +106,27 @@ function StatusChip({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: 
 }
 
 export function StoryListSection({
-  stories, activeStoryId, onRead, onProcess, onExport, onDelete, onPatchStory, onRenameStory,
+  stories, activeStoryId, onRead, onProcess, onExport, onExportFile, onPlay, onDelete, onPatchStory, onRenameStory,
 }: StoryListSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const { toast } = useToast();
+  const exportMenu = (storyId: string, branchId: string | null = null) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="px-2.5 text-xs" aria-label={branchId ? '导出分支' : '导出故事'}>
+          <Upload className="w-3.5 h-3.5 mr-1" />导出
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {onExportFile && <>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'json')}>JSON 文件</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl')}>SillyTavern JSONL</DropdownMenuItem>
+        </>}
+        <DropdownMenuItem onClick={() => onExport(storyId)}>更多导出与清理选项…</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
   const beginRename = (story: ArchiveStory) => {
     setEditingId(story.id);
     setDraft(story.title);
@@ -174,8 +193,9 @@ export function StoryListSection({
                     {story.wordCount !== undefined && <span>{formatWordCount(story.wordCount)}</span>}
                     <RatingPopover story={story} onPatch={(p) => onPatchStory(story.id, p)} />
                     <span title={story.lastViewedAt ? formatFullTime(story.lastViewedAt) : undefined}>
-                      {story.lastViewedAt ? `${formatListTime(story.lastViewedAt)}看过` : '未读'}
+                      {story.lastViewedAt ? `${formatFullTime(story.lastViewedAt)} 看过` : '未读'}
                     </span>
+                    {story.lastMessageAt != null && <span>游玩于 {formatFullTime(story.lastMessageAt)}</span>}
                   </p>
                 </div>
                 {/* 三按钮：阅读 · 处理 · 导出（+hover 删除） */}
@@ -188,10 +208,10 @@ export function StoryListSection({
                     <Settings2 className="w-3.5 h-3.5 mr-1" />
                     处理
                   </Button>
-                  <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onExport(story.id)} title="进入工作区「导入与导出」">
-                    <Upload className="w-3.5 h-3.5 mr-1" />
-                    导出
-                  </Button>
+                  {onPlay && <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onPlay(story.id, null)}>
+                    <MessageSquare className="w-3.5 h-3.5 mr-1" />继续聊天
+                  </Button>}
+                  {exportMenu(story.id)}
                   {onRenameStory && editingId !== story.id && (
                     <Button variant="ghost" size="icon" className="shrink-0" onClick={() => beginRename(story)} aria-label="重命名故事" title="重命名故事">
                       <Pencil className="w-3.5 h-3.5" />
@@ -214,9 +234,10 @@ export function StoryListSection({
             {(story.branches ?? []).length > 0 && (
               <div className="ml-6 border-l border-border/70">
                 {story.branches!.map((b) => (
+                  <div key={b.id} className="flex items-center gap-1">
                   <button
                     key={b.id}
-                    className="w-full flex items-center gap-2 text-left pl-0 pr-2 py-1 group/branch"
+                    className="min-w-0 flex-1 flex items-center gap-2 text-left pl-0 pr-2 py-1 group/branch"
                     onClick={() => onRead(story.id, b.id)}
                     title={`阅读分支「${b.name}」`}
                   >
@@ -227,6 +248,9 @@ export function StoryListSection({
                     </span>
                     <span className="text-[11px] text-muted-foreground/60 shrink-0">{b.session.messages.length} 段</span>
                   </button>
+                  {onPlay && <Button variant="ghost" size="sm" className="text-xs shrink-0" onClick={() => onPlay(story.id, b.id)}>继续聊天</Button>}
+                  {exportMenu(story.id, b.id)}
+                  </div>
                 ))}
               </div>
             )}

@@ -5,14 +5,14 @@
  * 应用顺序与导出/阅读一致（regex-processor.applyRegexRules 的逐条展开版）。
  */
 import type { RegexRule } from '@/types/chat';
-import { parseRegex } from '@/lib/regex-processor';
+import { isRegexRuleApplicable, parseRegex } from '@/lib/regex-processor';
 
 export interface RegexRuleEffect {
   ruleId: string;
   ruleName: string;
   /** 规则被禁用，未参与 */
   disabled: boolean;
-  /** 启用且作用对象（用户楼/AI楼）匹配，参与了应用 */
+  /** 启用且消息角色、楼层范围匹配，参与了应用 */
   applied: boolean;
   /** 正则本身无法编译（写错了），参与但无效 */
   invalid: boolean;
@@ -31,7 +31,7 @@ export interface RegexPreviewResult {
   matchedCount: number;
 }
 
-export function previewRegexRules(text: string, rules: RegexRule[], isUser = false): RegexPreviewResult {
+export function previewRegexRules(text: string, rules: RegexRule[], isUser = false, depth?: number): RegexPreviewResult {
   let current = text;
   const effects: RegexRuleEffect[] = [];
 
@@ -46,12 +46,7 @@ export function previewRegexRules(text: string, rules: RegexRule[], isUser = fal
       effects.push({ ...base, applied: false, invalid: false, matched: false, after: current });
       continue;
     }
-    const shouldApply =
-      rule.placement.length === 0 ||
-      rule.placement.includes('all') ||
-      (isUser && rule.placement.includes('user')) ||
-      (!isUser && rule.placement.includes('assistant'));
-    if (!shouldApply) {
+    if (!isRegexRuleApplicable(rule, isUser, depth)) {
       effects.push({ ...base, applied: false, invalid: false, matched: false, after: current });
       continue;
     }

@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { HelpCard } from '@/components/HelpCard';
 import { useToast } from '@/hooks/use-toast';
-import { applyRegexRules, convertMessagesToTxt, convertMessagesToMarkdown } from '@/lib/regex-processor';
+import { applyRegexRules, convertMessagesToTxt, convertMessagesToMarkdown, getMessageDepths } from '@/lib/regex-processor';
 import type { ChatSession, ExportSettings, ChapterMarker, STRawMessage, STMetadata } from '@/types/chat';
 
 interface ExportButtonProps {
@@ -103,6 +103,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
     () => getMessagesInRange(session.messages, exportRange, recentCount, customStart, customEnd),
     [session.messages, exportRange, recentCount, customStart, customEnd]
   );
+  const messageDepths = useMemo(() => getMessageDepths(session.messages), [session.messages]);
 
   const stats = useMemo(() => {
     const totalMessages = session.messages.length;
@@ -132,7 +133,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
 
     const estMsgSize = selectedMessages.reduce((acc, m) => {
       const isUser = m.role === 'user' || m.is_user === true;
-      const cleanedContent = applyRegexRules(m.content, settings.regexRules, isUser);
+      const cleanedContent = applyRegexRules(m.content, settings.regexRules, isUser, messageDepths.get(m.id));
       if (!cleanedContent.trim()) return acc;
       const base: STRawMessage = m.rawData
         ? { ...m.rawData, mes: cleanedContent }
@@ -149,7 +150,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
     const savings = originalSize > 0 ? Math.round((1 - estimatedSize / originalSize) * 100) : 0;
 
     return { totalMessages, selectedCount, userCount, charCount, originalSize, estimatedSize, savings };
-  }, [selectedMessages, session, settings.regexRules, cleanPluginCache, slimExport]);
+  }, [selectedMessages, session, settings.regexRules, cleanPluginCache, slimExport, messageDepths]);
 
   const getExportMessages = () => selectedMessages;
 
@@ -186,7 +187,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
 
   const exportAsTxt = () => {
     const msgs = getExportMessages();
-    const body = convertMessagesToTxt(msgs, settings.regexRules, settings.prefixMode, markers);
+    const body = convertMessagesToTxt(msgs, settings.regexRules, settings.prefixMode, markers, session.messages);
 
     // 归档元数据头：标题 / 角色与用户 / 导出日期。
     const cleanTitle = getCleanTitle();
@@ -207,7 +208,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
 
   const exportAsMd = () => {
     const msgs = getExportMessages();
-    const body = convertMessagesToMarkdown(msgs, settings.regexRules, settings.prefixMode, markers);
+    const body = convertMessagesToMarkdown(msgs, settings.regexRules, settings.prefixMode, markers, session.messages);
 
     const cleanTitle = getCleanTitle();
     const headerLines = [`# ${cleanTitle}`, ''];
@@ -235,7 +236,7 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
       const msgs = getExportMessages();
       for (const message of msgs) {
         const isUser = message.role === 'user' || message.is_user === true;
-        const cleanedContent = applyRegexRules(message.content, settings.regexRules, isUser);
+        const cleanedContent = applyRegexRules(message.content, settings.regexRules, isUser, messageDepths.get(message.id));
         if (!cleanedContent.trim()) continue;
 
         let exportMessage: STRawMessage;

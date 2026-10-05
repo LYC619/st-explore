@@ -224,7 +224,7 @@ export function buildNovelDocument(
       ensureChapter(idx);
     }
 
-    const text = applyRegexRules(msg.content, regexRules, isUser);
+    const text = applyRegexRules(msg.content, regexRules, isUser, messages.length - idx - 1);
     const segments = reflowContent(text);
     if (segments.length === 0) return;
 

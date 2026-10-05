@@ -1,5 +1,5 @@
 import { getCurrentRepo } from '@/lib/repo';
-import { getRoleplayPreferences, saveRoleplayPreferences, type ArchiveMetaRecord, getBranchLine, updateCharacter, updateArchiveStory } from '@/lib/archive-db';
+import { getRoleplayPreferences, saveRoleplayPreferences, type ArchiveMetaRecord, getBranchLine, resolveInitialBranchId, updateCharacter, updateArchiveStory } from '@/lib/archive-db';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
@@ -11,7 +11,7 @@ import { tokenizeTavern } from './tokenizer';
 import { customHeaders, prepareCompletion, sendPreparedCompletion } from './provider';
 import type { RoleplayPreferences } from '@/types/roleplay';
 import { createRoleplayAssets } from './assets';
-import { avatarKey, createRoleplayCatalog, type ChatLocator } from './catalog';
+import { avatarKey, chatKey, createRoleplayCatalog, type ChatLocator } from './catalog';
 import { createAgentRuntime, type AgentRuntime, type AgentStatus, type RuntimeConfiguration, type WorldScopeEntry } from './agent-runtime';
 import { createRuntimeStore } from './runtime-store';
 import { monitorCompletion } from './completion-monitor';
@@ -83,7 +83,8 @@ export async function createTavernHost(options: TavernHostOptions) {
   let generation: { fileName: string; key: string; id: string } | null = null;
   if (!loadedStory) throw new Error('故事不存在');
   const story = loadedStory;
-  const branchId = options.branchId ?? null;
+  if (options.branchId && !getBranchLine(story, options.branchId)) throw new Error('故事分支不存在');
+  const branchId = resolveInitialBranchId(story, options.branchId);
   const initialLine = getBranchLine(story, branchId);
   if (!initialLine) throw new Error('故事分支不存在');
   const line = initialLine;
@@ -223,7 +224,10 @@ export async function createTavernHost(options: TavernHostOptions) {
     try {
       const context = object(body.ste_context);
       // Capture before the first await: saves can change the live history while preparation is running.
-      const source = decodeLiveChat(context.chat ?? sessions.get(locator.key)!.payload(), line.session);
+      const capturedChat = structuredClone(context.chat ?? sessions.get(locator.key)!.payload());
+      const current = await catalog.existingLine(locator.avatar, locator.fileName);
+      if (!current || !isCurrent() || selected.key !== locator.key) throw new Error('生成目标已切换，请重新发送');
+      const source = decodeLiveChat(capturedChat, current.line.session);
       // Regenerate has already removed its target in ST; swipe/continue still include theirs.
       if (['swipe', 'continue'].includes(String(context.type)) && source.messages.at(-1)?.role === 'assistant') source.messages.pop();
       controllers.set(controller, { key: locator.key, session: source, refs: sourceRefs(source) });
@@ -335,6 +339,15 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/csrf-token') return json({ token: 'ste-local-host' });
         if (pathname === '/version') return json(version);
         if (pathname === '/api/ping') return json({});
+        if (pathname === '/ste/branches') {
+          const locator = { ...selected };
+          const current = await repos.stories.get(locator.storyId);
+          if (!current || !isCurrent() || selected.key !== locator.key) throw new Error('故事已切换，请重新打开分支列表');
+          return json({ current: locator, title: current.title, lines: [
+            { branchId: null, name: '主线', key: chatKey(current.id, null) },
+            ...(current.branches ?? []).map(branch => ({ branchId: branch.id, name: branch.name, key: chatKey(current.id, branch.id) })),
+          ] });
+        }
         if (pathname === '/ste/story-package/export') {
           if (generation || controllers.size) throw new Error('请先结束当前生成再导出故事');
           const output = await packageAdapter.exportStory(selected.storyId);

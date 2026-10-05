@@ -69,6 +69,18 @@ async function renderNovel() {
   });
 }
 
+it('removes a bookmark from the list without changing the current page', async () => {
+  const onFavoritesChange = vi.fn();
+  await act(async () => root.render(<NovelView session={session} markers={[]} regexRules={[]} favorites={favorites} onFavoritesChange={onFavoritesChange} onClose={vi.fn()} readOnly embedded />));
+  await openBookmarkList();
+  const page = leftPageNumber();
+  const remove = document.querySelector<HTMLButtonElement>('[aria-label="删除第 5 楼书签"]');
+  expect(remove).not.toBeNull();
+  await act(async () => remove!.click());
+  expect(onFavoritesChange).toHaveBeenCalledWith(favorites.filter(id => id !== 'm5'));
+  expect(leftPageNumber()).toBe(page);
+});
+
 /** 页脚形如「3–4 / 21」或末页「21 / 21」，取左页的 1 基页码 */
 function leftPageNumber(): number {
   const text = container.querySelector('[data-novel-progress]')?.textContent ?? '';

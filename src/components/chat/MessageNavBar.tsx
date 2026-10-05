@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
-import { ChevronUp, ChevronDown, Star, Bookmark } from 'lucide-react';
+import { ChevronUp, ChevronDown, Star, Bookmark, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 /** 收藏楼层在列表里展示用的信息（由父组件按 messageId 解析好传入） */
@@ -123,6 +122,7 @@ export function MessageNavBar({
             <Button
               variant="ghost"
               size="icon"
+              aria-label={isCurrentFavorited ? '取消收藏当前楼层' : '收藏当前楼层'}
               disabled={!currentMessageId}
               onClick={() => currentMessageId && onToggleFavorite(currentMessageId)}
             >
@@ -137,7 +137,7 @@ export function MessageNavBar({
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative">
+                <Button variant="ghost" size="icon" className="relative" aria-label="收藏列表">
                   <Bookmark className="h-4 w-4" />
                   {favorites.length > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-medium text-primary-foreground">
@@ -156,23 +156,25 @@ export function MessageNavBar({
                 <span className="text-xs">用上方星标收藏当前楼层</span>
               </div>
             ) : (
-              <ScrollArea className="max-h-72">
+              <div className="max-h-72 overflow-y-auto">
                 <div className="py-1">
                   {favorites.map((f) => (
+                    <div key={f.messageId} className="flex items-center">
                     <button
-                      key={f.messageId}
                       type="button"
                       onClick={() => onJumpToMessageId(f.messageId)}
-                      className="flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
+                      className="flex min-w-0 flex-1 items-start gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
                     >
                       <span className="mt-0.5 shrink-0 font-mono text-xs text-primary">
                         {f.floor !== null ? `#${f.floor}` : '—'}
                       </span>
                       <span className="line-clamp-2 text-xs text-muted-foreground" title={f.snippet}>{f.snippet}</span>
                     </button>
+                    <Button variant="ghost" size="icon" className="mr-1 shrink-0" aria-label={f.floor !== null ? `删除第 ${f.floor} 楼书签` : '删除失效书签'} title="删除书签" onClick={() => onToggleFavorite(f.messageId)}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
                   ))}
                 </div>
-              </ScrollArea>
+              </div>
             )}
           </PopoverContent>
         </Popover>

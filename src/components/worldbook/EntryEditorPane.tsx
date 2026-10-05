@@ -10,6 +10,7 @@ interface EntryEditorPaneProps {
   entryKey: string | null;
   onChange: (key: string, updated: WorldBookEntry) => void;
   onDelete: (key: string) => void;
+  usedUids?: number[];
   isMobile: boolean;
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -17,11 +18,11 @@ interface EntryEditorPaneProps {
 
 /** 条目编辑器：桌面固定右栏，移动端底部抽屉，两处共用同一份编辑体 */
 export function EntryEditorPane({
-  entry, entryKey, onChange, onDelete, isMobile, mobileOpen, onMobileOpenChange,
+  entry, entryKey, onChange, onDelete, isMobile, mobileOpen, onMobileOpenChange, usedUids,
 }: EntryEditorPaneProps) {
   const body = entry && entryKey ? (
     <>
-      <EntryEditor entry={entry} onChange={(updated) => onChange(entryKey, updated)} />
+      <EntryEditor key={entryKey} entry={entry} usedUids={usedUids} onChange={(updated) => onChange(entryKey, updated)} />
       <div className="px-4 pb-4">
         <Button variant="destructive" size="sm" onClick={() => onDelete(entryKey)}>
           <Trash2 className="w-4 h-4 mr-1" /> 删除此条目

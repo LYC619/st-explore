@@ -7,26 +7,20 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { RegexRule } from '@/types/chat';
+import { RegexDepthEditor } from '@/components/chat/RegexDepthEditor';
+import { previewRegexRules } from '@/lib/regex-preview';
 
 interface PresetRegexEditorProps {
   rules: RegexRule[];
   onRulesChange: (rules: RegexRule[]) => void;
 }
 
-/** 解析 /pattern/flags 或裸 pattern 为 RegExp（测试区用，固定补 g） */
-function buildRegExp(findRegex: string): RegExp {
-  const m = findRegex.match(/^\/(.*)\/([gimsuy]*)$/);
-  if (m) {
-    const flags = m[2].includes('g') ? m[2] : m[2] + 'g';
-    return new RegExp(m[1], flags);
-  }
-  return new RegExp(findRegex, 'g');
-}
-
 export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
   const [testInput, setTestInput] = useState('');
+  const [testDepth, setTestDepth] = useState('0');
+  const [testAsUser, setTestAsUser] = useState(false);
 
   const updateRule = (id: string, updates: Partial<RegexRule>) =>
     onRulesChange(rules.map((r) => (r.id === id ? { ...r, ...updates } : r)));
@@ -51,12 +45,9 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
     if (!testId || !testInput) return testInput;
     const rule = rules.find((r) => r.id === testId);
     if (!rule) return testInput;
-    try {
-      return testInput.replace(buildRegExp(rule.findRegex), rule.replaceString);
-    } catch {
-      return '[正则无效]';
-    }
-  }, [testId, testInput, rules]);
+    const preview = previewRegexRules(testInput, [rule], testAsUser, testDepth === '' ? undefined : Number(testDepth));
+    return preview.effects[0].invalid ? '[正则无效]' : preview.final;
+  }, [testId, testInput, rules, testDepth, testAsUser]);
 
   if (rules.length === 0) {
     return <p className="text-sm text-muted-foreground text-center py-8">该预设没有内嵌正则脚本（extensions.regex_scripts）</p>;
@@ -101,6 +92,7 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
                       <Input value={rule.replaceString} onChange={(e) => updateRule(rule.id, { replaceString: e.target.value })}
                         placeholder="留空表示删除" className="text-sm" />
                     </div>
+                    <RegexDepthEditor rule={rule} onChange={patch => updateRule(rule.id, patch)} />
                     <div className="space-y-1.5">
                       <Label className="text-xs">应用于</Label>
                       <div className="flex items-center gap-3 flex-wrap">
@@ -126,6 +118,8 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
           实时测试{testId ? `：${rules.find((r) => r.id === testId)?.name ?? ''}` : '（点规则旁的烧瓶图标选中）'}
         </h3>
         <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs"><span>样例深度（末楼为 0）</span><Input aria-label="样例深度" type="number" min={0} step={1} value={testDepth} onChange={event => setTestDepth(event.target.value)} className="w-24" /></label>
+          <label className="flex items-center gap-2 text-xs"><Checkbox checked={testAsUser} onCheckedChange={checked => setTestAsUser(!!checked)} />按用户楼测试（默认 AI 楼）</label>
           <div className="space-y-1.5">
             <Label className="text-xs">输入样例</Label>
             <Textarea value={testInput} onChange={(e) => setTestInput(e.target.value)} placeholder="粘贴一段文本，查看选中规则的替换效果" className="text-xs min-h-[180px]" />

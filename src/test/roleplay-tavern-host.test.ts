@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildCharacterFromCard, buildStoryFromSession, getArchiveStory, getCharacter, getRoleplayPreferences, saveArchiveStory, saveCharacter, updateCharacter } from '@/lib/archive-db';
+import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, getArchiveStory, getCharacter, getRoleplayPreferences, saveArchiveStory, saveCharacter, updateArchiveStory, updateCharacter } from '@/lib/archive-db';
 import { createTavernHost } from '@/lib/roleplay/tavern-host';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
@@ -14,6 +14,8 @@ import { createWorldbookVersions } from '@/lib/roleplay/worldbook-versions';
 import { createRuntimeStore } from '@/lib/roleplay/runtime-store';
 import { sourceRefs } from '@/lib/roleplay/fingerprint';
 import type { ArchiveStory } from '@/types/archive';
+import * as liveChat from '@/lib/roleplay/live-chat';
+import { chatKey } from '@/lib/roleplay/catalog';
 
 afterEach(() => { setActiveVault(null); localStorage.clear(); vi.unstubAllGlobals(); });
 
@@ -36,6 +38,39 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('restores the last viewed branch when no branch was requested and honours explicit main', async () => {
+    const f = await fixture(); f.host.close();
+    const branch = buildBranchFromSession({ ...structuredClone(f.story.session), id: 'branch-session', title: '分支会话' }, '另一个结局');
+    await updateArchiveStory(f.story.id, () => ({ branches: [branch], lastViewedBranchId: branch.id }));
+    const restored = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    const state = await (await restored.request('/ste/branches')).json();
+    expect(state.current.branchId).toBe(branch.id); expect(state.lines.map((line: { branchId: string | null }) => line.branchId)).toEqual([null, branch.id]); restored.close();
+    const main = await createTavernHost({ storyId: f.story.id, branchId: null, defaults: { settings: {} } });
+    expect((await (await main.request('/ste/branches')).json()).current.branchId).toBeNull(); main.close();
+  });
+  it('switches main → existing branch → main with each generation and save bound to that line', async () => {
+    const f = await fixture();
+    const branch = buildBranchFromSession({ ...structuredClone(f.story.session), id: 'branch-session', title: '不同结局', user: { name: '分支旅人' } }, '另一个结局');
+    await updateArchiveStory(f.story.id, () => ({ branches: [branch] }));
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const decoded = vi.spyOn(liveChat, 'decodeLiveChat');
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { role: 'assistant', content: '本地模拟回复' }, finish_reason: 'stop' }] })));
+    try {
+      for (const [branchId, expectedSessionId] of [[null, f.story.session.id], [branch.id, branch.session.id], [null, f.story.session.id]] as const) {
+        const file = chatKey(f.story.id, branchId);
+        const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: file })).json();
+        decoded.mockClear();
+        const response = await f.host.request('/api/backends/chat-completions/generate', { messages: [{ role: 'user', content: '继续' }], stream: false, ste_context: { chat, type: 'normal' } });
+        expect(response.ok).toBe(true); await response.text();
+        expect(decoded.mock.calls[0][1].id).toBe(expectedSessionId);
+        chat.push({ name: '林', is_user: false, mes: `回复 ${branchId ?? '主线'}`, extra: { ste_runtime: { messageId: crypto.randomUUID() } } });
+        expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: file, chat })).ok).toBe(true);
+      }
+      const saved = (await getArchiveStory(f.story.id))!;
+      expect(saved.session.messages).toHaveLength(3); expect(saved.branches![0].session.messages).toHaveLength(2);
+      expect(saved.branches![0].session.id).toBe('branch-session');
+    } finally { decoded.mockRestore(); f.host.close(); }
+  });
   it('bootstraps from STE cards, story and profile with ST stringified settings and no credentials', async () => {
     const f = await fixture();
     const response = await f.host.request('/api/bootstrap');

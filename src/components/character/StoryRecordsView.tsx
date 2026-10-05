@@ -255,20 +255,20 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
             return (
               <Card key={item.id} className="cursor-pointer" onClick={() => setExpandedId(expanded ? null : item.id)}>
                 <CardContent className="py-3 px-4">
-                  <p className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                  <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                     <span className="truncate" title={item.title}>{item.title}</span>
                     {item.volumeNumber !== undefined && (
                       <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal shrink-0">第 {item.volumeNumber} 卷</Badge>
                     )}
                     <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(item.branchId)}</Badge>
-                  </p>
+                  </div>
                   {/* 生成于 X · 覆盖 A-B 楼（不判断过期）；手动录入单独标 */}
                   <p className="text-xs text-muted-foreground mt-0.5" title={formatFullTime(item.updatedAt)}>
                     {manual ? '手动录入' : '生成'}于{formatListTime(item.updatedAt)}
                     {!manual && ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
                   </p>
-                  <div className={cn('text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')} title={item.content}>
-                    {expanded ? <MarkdownLite text={item.content} /> : item.content}
+                  <div className={cn('break-words text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')} title={item.content}>
+                    <MarkdownLite text={item.content} />
                   </div>
                   {!expanded && item.content.length > 160 && (
                     <p className="text-xs text-primary/80 mt-1">点击展开全文</p>

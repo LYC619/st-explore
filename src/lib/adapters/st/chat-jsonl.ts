@@ -154,7 +154,9 @@ export function parseJson(content: string): { messages: ChatMessage[]; metadata?
         rawData: item as STRawMessage,
       }))
       .filter((m: ChatMessage) => m.content);
-    return { messages };
+    const metadata = data.metadata && typeof data.metadata === 'object' && !Array.isArray(data.metadata)
+      ? data.metadata as STMetadata : undefined;
+    return { messages, metadata };
   }
   throw new Error('无法识别的 JSON 格式（应为消息数组，或含 messages / chat 字段的对象）');
 }

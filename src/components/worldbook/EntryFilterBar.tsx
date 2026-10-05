@@ -69,7 +69,8 @@ export function EntryFilterBar({
             <SelectItem value="order-asc">Order 升序</SelectItem>
             <SelectItem value="order-desc">Order 降序</SelectItem>
             <SelectItem value="title">标题排序</SelectItem>
-            <SelectItem value="uid">创建顺序</SelectItem>
+            <SelectItem value="uid">UID 升序</SelectItem>
+            <SelectItem value="uid-desc">UID 降序</SelectItem>
           </SelectContent>
         </Select>
 

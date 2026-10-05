@@ -150,6 +150,27 @@ afterEach(() => {
 });
 
 describe('世界书条目筛选与排序', () => {
+  it('修改 UID 保持选中，拒绝占用，并且新增不会覆盖旧字典键', async () => {
+    await renderBook(mkBook([mkEntry(2), mkEntry(10)]));
+    await click(document.querySelector('[data-entry-key="10"]'));
+    const input = document.querySelector<HTMLInputElement>('#entry-uid')!;
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    const fillUid = async (value: string) => act(async () => {
+      setter.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await fillUid('2');
+    expect(buttonByText('应用 UID')?.disabled).toBe(true);
+    expect(document.body.textContent).toContain('已被占用');
+    await fillUid('0');
+    await click(buttonByText('应用 UID'));
+    expect(document.querySelector<HTMLInputElement>('#entry-uid')?.value).toBe('0');
+    await chooseFromSelect('Order 升序', 'UID 升序');
+    expect(visibleKeys()).toEqual(['10', '2']);
+    await click(buttonByText('新增'));
+    expect(visibleKeys()).toContain('10');
+    expect(visibleKeys()).toHaveLength(3);
+  });
   it('默认按 Order 升序展示，不受 entries 记录顺序影响', async () => {
     await renderBook(mkBook([
       mkEntry(1, { order: 30 }),
@@ -174,7 +195,7 @@ describe('世界书条目筛选与排序', () => {
     await chooseFromSelect('Order 降序', '标题排序');
     expect(visibleKeys()).toEqual(['2', '3', '1']);
 
-    await chooseFromSelect('标题排序', '创建顺序');
+    await chooseFromSelect('标题排序', 'UID 升序');
     expect(visibleKeys()).toEqual(['1', '2', '3']);
   });
 

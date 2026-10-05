@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { X, Plus, Trash2, RotateCcw, ChevronDown, ChevronUp, Regex, GripVertical, Eye, Bookmark, Upload, Download, Stamp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,9 +17,9 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RegexQuickAdd } from '@/components/chat/RegexQuickAdd';
+import { RegexDepthEditor } from '@/components/chat/RegexDepthEditor';
 import { HelpCard } from '@/components/HelpCard';
 import type { RegexRule } from '@/types/chat';
 import type { ChatMessage } from '@/types/chat';
@@ -32,7 +32,6 @@ import {
   deleteRegexPreset,
   type RegexPreset,
 } from '@/lib/session-storage';
-import { applyRegexRules } from '@/lib/regex-processor';
 import { parseSTRegexImport, exportSTRegex } from '@/lib/st-regex-interop';
 import { useToast } from '@/hooks/use-toast';
 import { useViewport } from '@/hooks/use-viewport';
@@ -53,9 +52,11 @@ interface RegexSidebarProps {
   onApplyToOriginal?: () => void;
   /** 可预览和导出已有规则，但不能修改规则或原文。 */
   readOnly?: boolean;
+  /** 当前滚动容器内，上方阅读/工作台工具栏实际占用高度。 */
+  stickyTop?: number;
 }
 
-export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMessages = [], onPreviewChange, previewId = null, onApplyToOriginal, readOnly = false }: RegexSidebarProps) {
+export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewChange, previewId = null, onApplyToOriginal, readOnly = false, stickyTop = 0 }: RegexSidebarProps) {
   const { toast } = useToast();
   const { isCompact } = useViewport();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -68,6 +69,29 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
   const [scrollToId, setScrollToId] = useState<string | null>(null);
   const newRuleRef = useRef<HTMLDivElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const [availableHeight, setAvailableHeight] = useState<number>();
+
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!isOpen || !sidebar || isCompact) { setAvailableHeight(undefined); return; }
+    let scrollHost = sidebar.parentElement;
+    while (scrollHost && scrollHost !== document.body && !/^(auto|scroll|overlay)$/.test(getComputedStyle(scrollHost).overflowY)) scrollHost = scrollHost.parentElement;
+    const host = scrollHost === document.body ? null : scrollHost;
+    const measure = () => {
+      const bounds = host?.getBoundingClientRect();
+      const top = Math.max(0, (bounds?.top ?? 0) + stickyTop, sidebar.getBoundingClientRect().top);
+      const bottom = Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight);
+      setAvailableHeight(Math.max(0, bottom - top - 8));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (host) observer.observe(host);
+    if (sidebar.parentElement) observer.observe(sidebar.parentElement);
+    window.addEventListener('resize', measure);
+    (host ?? window).addEventListener('scroll', measure, { passive: true });
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); (host ?? window).removeEventListener('scroll', measure); };
+  }, [isOpen, isCompact, stickyTop]);
 
   // 添加规则后滚动到新规则位置（否则用户在列表上方时完全感知不到末尾新增了规则）
   useEffect(() => {
@@ -277,14 +301,14 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
   const enabledCount = rules.filter(r => !r.disabled).length;
 
   return (
-    <aside className={cn(
+    <aside ref={sidebarRef} data-regex-sidebar style={isCompact ? undefined : { top: stickyTop, height: availableHeight }} className={cn(
       'border border-border rounded-lg bg-card flex flex-col animate-fade-in overflow-hidden',
       isCompact
-        ? 'w-full max-h-[70vh]'
-        : 'w-80 flex-shrink-0 h-[calc(100vh-200px)] sticky top-24',
+        ? 'w-full max-h-[70dvh]'
+        : 'w-80 flex-shrink-0 self-start sticky',
     )}>
       {/* Header */}
-      <div className="p-4 border-b border-border flex items-center justify-between">
+      <div className="shrink-0 p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Regex className="w-4 h-4 text-primary" />
           <h3 className="font-display font-medium">正则清理规则</h3>
@@ -302,13 +326,14 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
         )}
       </div>
 
+      <div data-regex-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {/* Description */}
       <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border">
         使用正则表达式移除思维链、状态栏等无关内容
       </div>
 
       {/* Rules List */}
-      <ScrollArea className="flex-1 min-h-0">
+      <div>
         <div className="p-4 space-y-2">
           {rules.map((rule, index) => (
             <div
@@ -450,6 +475,8 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
                     </div>
                   </div>
 
+                  <RegexDepthEditor rule={rule} readOnly={readOnly} onChange={patch => handleUpdateRule(rule.id, patch)} />
+
                   {/* 在主界面阅读区原地预览该规则效果 */}
                   {rule.findRegex && onPreviewChange && (
                     <Button
@@ -467,7 +494,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Footer Actions */}
       <div className="p-4 border-t border-border space-y-2" data-tour="regex-quickadd">
@@ -626,6 +653,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, sampleMess
             重置为默认
           </Button>
         )}
+      </div>
       </div>
     </aside>
   );

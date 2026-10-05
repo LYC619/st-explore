@@ -27,6 +27,7 @@ const PAGE_LOADERS = {
   cardViewer: () => import("./pages/CardViewer"),
   preset: () => import("./pages/Preset"),
   regex: () => import("./pages/RegexTool"),
+  beautify: () => import("./pages/Beautify"),
   notFound: () => import("./pages/NotFound"),
 };
 
@@ -43,6 +44,7 @@ const AssetLibrary = lazy(PAGE_LOADERS.assets);
 const CardViewer = lazy(PAGE_LOADERS.cardViewer);
 const Preset = lazy(PAGE_LOADERS.preset);
 const RegexTool = lazy(PAGE_LOADERS.regex);
+const Beautify = lazy(PAGE_LOADERS.beautify);
 const NotFound = lazy(PAGE_LOADERS.notFound);
 // The original Tavern and its tokenizer are loaded only when opening a story for play.
 const Roleplay = lazy(() => import("./pages/Roleplay"));
@@ -80,6 +82,7 @@ const App = () => {
       <Route path="/card-viewer" element={<CardViewer />} />
       <Route path="/preset" element={<Preset />} />
       <Route path="/regex" element={<RegexTool />} />
+      <Route path="/beautify" element={<Beautify />} />
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/ai-tools" element={<Navigate to="/settings" replace />} />
       <Route path="*" element={<NotFound />} />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -18,6 +18,7 @@ import { AIRewriteContent } from '@/components/worldbook/AIRewriteContent';
 interface Props {
   entry: WorldBookEntry;
   onChange: (updated: WorldBookEntry) => void;
+  usedUids?: number[];
 }
 
 function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
@@ -114,8 +115,14 @@ function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
   );
 }
 
-export function EntryEditor({ entry, onChange }: Props) {
+export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
   const [contentExpanded, setContentExpanded] = useState(false);
+  const [uidDraft, setUidDraft] = useState(String(entry.uid));
+  useEffect(() => setUidDraft(String(entry.uid)), [entry.uid]);
+  const nextUid = Number(uidDraft);
+  const uidError = !uidDraft.trim() || !Number.isSafeInteger(nextUid) || nextUid < 0
+    ? 'UID 必须是非负安全整数'
+    : nextUid !== entry.uid && usedUids.includes(nextUid) ? `UID ${nextUid} 已被占用` : '';
   const update = <K extends keyof WorldBookEntry>(key: K, value: WorldBookEntry[K]) => {
     onChange({ ...entry, [key]: value });
   };
@@ -123,6 +130,17 @@ export function EntryEditor({ entry, onChange }: Props) {
   return (
     <div className="space-y-4 p-4 overflow-y-auto">
       <h3 className="font-semibold text-base text-foreground">编辑条目</h3>
+
+      <div className="space-y-1">
+        <Label htmlFor="entry-uid">UID</Label>
+        <div className="flex gap-2">
+          <Input id="entry-uid" inputMode="numeric" value={uidDraft} aria-invalid={!!uidError}
+            onChange={event => setUidDraft(event.target.value)} />
+          <Button variant="outline" disabled={!!uidError || nextUid === entry.uid}
+            onClick={() => update('uid', nextUid)}>应用 UID</Button>
+        </div>
+        {uidError && <p role="alert" className="text-xs text-destructive">{uidError}</p>}
+      </div>
 
       {/* Title */}
       <div className="space-y-1">

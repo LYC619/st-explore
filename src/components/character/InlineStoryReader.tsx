@@ -6,7 +6,7 @@
  * - 持久化沿用工作区模式：dirty+防抖 600ms，卸载兜底补存；lastViewedAt/lastFloor 照记
  */
 import { forwardRef, useImperativeHandle, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, BookOpenCheck, ChevronDown, ExternalLink, GitBranch } from 'lucide-react';
+import { ArrowLeft, BookOpenCheck, ChevronDown, ExternalLink, GitBranch, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -35,6 +35,8 @@ interface InlineStoryReaderProps {
   onBack: () => void;
   /** 「在编辑器中打开」→ /story/:id */
   onOpenEditor: (id: string) => void;
+  /** 保存阅读变更后继续当前主线或分支的聊天。 */
+  onOpenChat?: (id: string, branchId: string | null) => void;
   /** 进入时直接打开的分支（列表分支行点入）；不传则恢复上次看的脉络 */
   initialBranchId?: string;
   /** 回顾视图等待正文布局完成后恢复楼内像素位置。 */
@@ -52,7 +54,7 @@ function createReaderSaver() {
   });
 }
 
-export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStoryReaderProps>(function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onOpenEditor, initialBranchId, onReadyChange, restoreFloor = true }, ref) {
+export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStoryReaderProps>(function InlineStoryReader({ storyId, stories, onSwitchStory, onBack, onOpenEditor, onOpenChat, initialBranchId, onReadyChange, restoreFloor = true }, ref) {
   const { toast } = useToast();
   const { isCompact } = useViewport();
   const [story, setStory] = useState<ArchiveStory | null>(null);
@@ -304,6 +306,17 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           </Badge>
         )}
         {!isCompact && <div className="flex-1" />}
+        {onOpenChat && <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
+          title="继续当前故事的聊天"
+          aria-label="继续聊天"
+        >
+          <MessageSquare className={cn('w-4 h-4', !isCompact && 'mr-1.5')} />
+          {!isCompact && '继续聊天'}
+        </Button>}
         <Button
           variant="outline"
           size="sm"

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { DEFAULT_ENTRY } from '@/types/worldbook';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
+import { availableWorldbookIdentity, changeWorldbookUid } from '@/lib/worldbook-uid';
 import type { ToastActionElement } from '@/components/ui/toast';
 import type { useToast } from '@/hooks/use-toast';
 
@@ -37,8 +38,20 @@ export function useWorldbookEntries({
   switchToEditTab, toast, renderUndoAction,
 }: UseWorldbookEntriesOptions): WorldbookEntryActions {
   const updateEntry = useCallback((key: string, updated: WorldBookEntry) => {
-    setWorldbook((prev) => (prev ? { ...prev, entries: { ...prev.entries, [key]: updated } } : prev));
-  }, [setWorldbook]);
+    if (!worldbook?.entries[key]) return;
+    try { changeWorldbookUid(worldbook, key, updated.uid); }
+    catch (error) {
+      toast({ title: '无法修改 UID', description: String((error as Error).message), variant: 'destructive' });
+      return;
+    }
+    setWorldbook((prev) => {
+      if (!prev?.entries[key]) return prev;
+      try {
+        const changed = changeWorldbookUid(prev, key, updated.uid);
+        return { ...changed, entries: { ...changed.entries, [key]: updated } };
+      } catch { return prev; }
+    });
+  }, [setWorldbook, worldbook, toast]);
 
   const toggleEnabled = useCallback((key: string, enabled: boolean) => {
     setWorldbook((prev) => {
@@ -50,9 +63,7 @@ export function useWorldbookEntries({
 
   const addEntry = useCallback(() => {
     if (!worldbook) return;
-    const maxUid = Object.values(worldbook.entries).reduce((max, e) => Math.max(max, e.uid), -1);
-    const newUid = maxUid + 1;
-    const key = String(newUid);
+    const { uid: newUid, key } = availableWorldbookIdentity(worldbook);
     const newEntry = { ...DEFAULT_ENTRY, uid: newUid, comment: '新条目' } as WorldBookEntry;
     setWorldbook((prev) => (prev ? { ...prev, entries: { ...prev.entries, [key]: newEntry } } : prev));
     selectEntry(key);
@@ -73,7 +84,11 @@ export function useWorldbookEntries({
         title: '已删除条目',
         description: restore.comment || `条目 ${restore.uid}`,
         action: renderUndoAction(() => {
-          setWorldbook((prev) => (prev ? { ...prev, entries: { ...prev.entries, [key]: restore } } : prev));
+          setWorldbook((prev) => {
+            if (!prev) return prev;
+            const identity = availableWorldbookIdentity(prev, restore.uid, key);
+            return { ...prev, entries: { ...prev.entries, [identity.key]: { ...restore, uid: identity.uid } } };
+          });
         }),
       });
     }
@@ -82,11 +97,10 @@ export function useWorldbookEntries({
   const appendWorldbook = useCallback((wb: WorldBook) => {
     setWorldbook((prev) => {
       if (!prev) return wb;
-      const maxKey = Math.max(-1, ...Object.keys(prev.entries).map(Number).filter((n) => !isNaN(n)));
-      const maxUid = Object.values(prev.entries).reduce((max, e) => Math.max(max, e.uid), -1);
       const updated = { ...prev.entries };
-      Object.values(wb.entries).forEach((e, i) => {
-        updated[String(maxKey + 1 + i)] = { ...e, uid: maxUid + 1 + i };
+      Object.values(wb.entries).forEach((e) => {
+        const { key, uid } = availableWorldbookIdentity({ entries: updated });
+        updated[key] = { ...e, uid };
       });
       return { ...prev, entries: updated };
     });
@@ -101,7 +115,10 @@ export function useWorldbookEntries({
   const quickAddEntries = useCallback((newEntries: WorldBookEntry[]) => {
     setWorldbook((prev) => {
       const updated: Record<string, WorldBookEntry> = prev ? { ...prev.entries } : {};
-      newEntries.forEach((e) => { updated[String(e.uid)] = e; });
+      newEntries.forEach((e) => {
+        const { key, uid } = availableWorldbookIdentity({ entries: updated }, e.uid);
+        updated[key] = { ...e, uid };
+      });
       return prev ? { ...prev, entries: updated } : { entries: updated };
     });
     switchToEditTab();
