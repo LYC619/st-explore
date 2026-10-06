@@ -8,6 +8,15 @@ export async function installExtensionControls(host, st) {
       <label class="menu_button">安装 ZIP<input class="ste_original_zip" type="file" accept=".zip" style="max-width:220px"></label><button class="menu_button ste_original_remove">移除原版助手</button>
       <small>原版扩展及其脚本可以操作酒馆页面、聊天和设定，请使用你信任的脚本。底层文件操作、创建/导入角色卡仍由 STE 资产管理承接。</small></div></div>`;
     panel.querySelector('.ste_original_download').href = `https://codeload.github.com/N0VI028/JS-Slash-Runner/zip/${info.helperSupported.commit}`;
+    for (const link of panel.querySelectorAll('a[href]')) {
+        link.addEventListener('click', async event => {
+            event.preventDefault();
+            try {
+                const response = await host.request('/ste/open-url', { url: link.href });
+                if (!response.ok) throw new Error((await response.json()).error?.message ?? '打开链接失败');
+            } catch (error) { toastr.error(error.message); }
+        });
+    }
     panel.querySelector('.ste_original_status').textContent = info.helper ? `已安装 ${info.helper.version}` : '尚未安装 · 当前使用内置助手';
     panel.querySelector('.ste_original_remove').disabled = !info.helper;
     const reload = async () => { await st.flushDebouncedChatSave(); await host.flush(); location.reload(); };

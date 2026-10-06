@@ -10,6 +10,42 @@ function renderMessage(text: string, search: string): string {
     USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'form', 'input', 'button', 'video', 'audio'],
     FORBID_ATTR: ['style', 'id', 'name'],
   });
+  // A single newline is a prose paragraph in the reader. Split sanitized DOM,
+  // not Markdown source, so lists, fences, tables and nested emphasis survive.
+  for (const paragraph of root.querySelectorAll(':scope > p')) {
+    // Showdown leaves soft newlines inside emphasis as text instead of <br>.
+    const textWalker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+    const lines: Text[] = [];
+    while (textWalker.nextNode()) {
+      const node = textWalker.currentNode as Text;
+      if (node.data.includes('\n') && !node.parentElement?.closest('code, pre')) lines.push(node);
+    }
+    for (const node of lines) {
+      const parts = document.createDocumentFragment();
+      node.data.split(/\r?\n/).forEach((line, index) => {
+        if (index) parts.append(document.createElement('br'));
+        parts.append(document.createTextNode(line));
+      });
+      node.replaceWith(parts);
+    }
+    const replacement = document.createDocumentFragment();
+    const range = document.createRange();
+    range.setStart(paragraph, 0);
+    const appendParagraph = () => {
+      const next = document.createElement('p');
+      next.className = 'reading-paragraph';
+      next.append(range.cloneContents());
+      if (next.textContent?.trim() || next.querySelector('img')) replacement.append(next);
+    };
+    for (const br of paragraph.querySelectorAll('br')) {
+      range.setEndBefore(br);
+      appendParagraph();
+      range.setStartAfter(br);
+    }
+    range.setEnd(paragraph, paragraph.childNodes.length);
+    appendParagraph();
+    paragraph.replaceWith(replacement);
+  }
   for (const link of root.querySelectorAll('a')) { link.target = '_blank'; link.rel = 'noopener noreferrer'; }
   for (const img of root.querySelectorAll('img')) { img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);

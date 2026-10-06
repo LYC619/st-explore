@@ -33,6 +33,7 @@ import { saveStoryPackageFile } from './export-package-file';
 import { ensureBranchRuntime } from './branch-inheritance';
 import { readUserAvatar, userAvatarName } from './user-avatars';
 import { HELPER_PIN, readTavernHelperZip, validateTavernHelper } from './tavern-helper-package';
+import { openExternalUrl } from './external-url';
 
 export interface TavernDefaults {
   settings: Record<string, unknown>;
@@ -231,9 +232,16 @@ export async function createTavernHost(options: TavernHostOptions) {
       const capturedChat = structuredClone(context.chat ?? sessions.get(locator.key)!.payload());
       const current = await catalog.existingLine(locator.avatar, locator.fileName);
       if (!current || !isCurrent() || selected.key !== locator.key) throw new Error('生成目标已切换，请重新发送');
+      // Native overswipe points at swipes.length until completion fills the new slot.
+      // Exclude the generation target BEFORE strict saved-chat decoding, without
+      // relaxing persistence validation or changing ST's live candidate array.
+      if (Array.isArray(capturedChat) && capturedChat.length > 1 && ['swipe', 'continue'].includes(String(context.type))) {
+        const target = object(capturedChat.at(-1));
+        const extra = object(target.extra);
+        const system = object(extra.ste_runtime).role === 'system' || ['system', 'narrator', 'comment'].includes(String(extra.type));
+        if (!target.is_user && !system) capturedChat.pop();
+      }
       const source = decodeLiveChat(capturedChat, current.line.session);
-      // Regenerate has already removed its target in ST; swipe/continue still include theirs.
-      if (['swipe', 'continue'].includes(String(context.type)) && source.messages.at(-1)?.role === 'assistant') source.messages.pop();
       controllers.set(controller, { key: locator.key, session: source, refs: sourceRefs(source) });
       const configuration = await runtime.configuration();
       const auxiliary = context.type === 'quiet' && (configuration.memoryOwner === 'baibai' || context.source === 'helper');
@@ -343,6 +351,11 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/csrf-token') return json({ token: 'ste-local-host' });
         if (pathname === '/version') return json(version);
         if (pathname === '/api/ping') return json({});
+        if (pathname === '/ste/open-url') {
+          if (typeof body.url !== 'string') throw new Error('网页链接无效');
+          await openExternalUrl(body.url);
+          return json({});
+        }
         if (pathname === '/ste/branches') {
           const locator = { ...selected };
           const current = await repos.stories.get(locator.storyId);

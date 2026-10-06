@@ -39,6 +39,31 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('generates a native overswipe without decoding its pending slot or creating a branch', async () => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    chat[1].swipes = ['请进']; chat[1].swipe_id = 1;
+    const before = structuredClone(chat);
+    const fetcher = vi.fn(async () => new Response(JSON.stringify({ choices: [{ message: { content: '另一种回答' } }] }), { headers: { 'Content-Type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      const response = await f.host.request('/api/backends/chat-completions/generate', {
+        messages: [{ role: 'user', content: '继续' }], stream: false, ste_context: { chat, type: 'swipe' },
+      });
+      expect(await response.json()).toMatchObject({ choices: [{ message: { content: '另一种回答' } }] });
+      expect(fetcher).toHaveBeenCalledOnce();
+      expect(chat).toEqual(before);
+      // Upstream fills the pending slot only after completion, then performs a normal save.
+      chat[1].mes = '另一种回答'; chat[1].swipes.push('另一种回答');
+      expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+      const saved = (await getArchiveStory(f.story.id))!;
+      expect(saved.branches ?? []).toHaveLength(0);
+      expect(saved.session.messages).toHaveLength(1);
+      expect(saved.session.messages[0].rawData?.swipes).toEqual(['请进', '另一种回答']);
+      expect(saved.session.messages[0].rawData?.swipe_id).toBe(1);
+    } finally { f.host.close(); }
+  });
   it('persists concurrent persona avatar uploads, restores them on reopen and deletes one without losing the other', async () => {
     const f = await fixture();
     const avatar = new NodeBlob([new Uint8Array([137,80,78,71,13,10,26,10,0])], { type: 'image/png' });

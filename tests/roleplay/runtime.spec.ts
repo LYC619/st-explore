@@ -524,6 +524,94 @@ test('a 2000-message story stays virtualized with bounded Agent input and no per
   await info.attach('long-story-measurements', { path: measurementPath, contentType: 'application/json' });
 });
 
+test('helper download and project links reach the parent external browser bridge', async ({ page }) => {
+  const storyId = await seed(page);
+  await page.goto(`/play/${storyId}`);
+  const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(tavern.locator('#chat')).toContainText('请进');
+  await page.evaluate(() => {
+    (window as any).openedLinks = [];
+    window.open = ((url, target, features) => { (window as any).openedLinks.push({ url, target, features }); return null; }) as typeof window.open;
+  });
+  await tavern.locator('#extensions-settings-button .drawer-toggle').click();
+  await tavern.locator('#ste_original_extensions .inline-drawer-toggle').click();
+  await tavern.getByRole('link', { name: '下载已验证的 4.11.3 原版 ZIP' }).click();
+  await tavern.getByRole('link', { name: '原项目与说明', exact: true }).click();
+  const links = await page.evaluate(() => (window as any).openedLinks);
+  expect(links).toEqual([
+    { url: 'https://codeload.github.com/N0VI028/JS-Slash-Runner/zip/87ca341a2a2279f4c18cd1918c5ae9dbd1dac492', target: '_blank', features: 'noopener,noreferrer' },
+    { url: 'https://github.com/N0VI028/JS-Slash-Runner', target: '_blank', features: 'noopener,noreferrer' },
+  ]);
+});
+
+test('Markdown prose keeps two-character indentation on every reading paragraph', async ({ page }, info) => {
+  const storyId = await seed(page);
+  await page.evaluate(async id => {
+    const db = await import('/src/lib/archive-db.ts');
+    await db.updateArchiveStory(id, current => ({ session: { ...current.session, messages: [{ id: 'greeting', role: 'assistant',
+      content: '第一段正文。\n第二段正文。\n\n**第三段加粗。**\n\n- 列表项目\n\n```text\n代码保持原样\n```',
+    }] } }));
+  }, storyId);
+  await page.goto(`/story/${storyId}`);
+  const paragraphs = page.locator('.reading-flow .reading-paragraph');
+  await expect(paragraphs).toHaveCount(3);
+  for (const paragraph of await paragraphs.all()) {
+    const geometry = await paragraph.evaluate(p => {
+      const first = document.createTreeWalker(p, NodeFilter.SHOW_TEXT).nextNode()!;
+      const range = document.createRange(); range.setStart(first, 0); range.setEnd(first, 1);
+      return { offset: range.getBoundingClientRect().left - p.getBoundingClientRect().left, size: parseFloat(getComputedStyle(p).fontSize) };
+    });
+    expect(geometry.offset).toBeCloseTo(geometry.size * 2, 0);
+  }
+  await expect(page.locator('.chat-markdown li')).toHaveCSS('text-indent', '0px');
+  await expect(page.locator('.chat-markdown pre')).toHaveCSS('text-indent', '0px');
+  await page.screenshot({ path: info.outputPath('paragraph-indent.png') });
+});
+
+for (const stream of [true, false]) test(`native overswipe generates and reopens candidates without a branch (stream=${stream})`, async ({ page }) => {
+  const storyId = await seed(page);
+  await page.evaluate(async id => {
+    const db = await import('/src/lib/archive-db.ts');
+    await db.updateArchiveStory(id, current => ({ session: { ...current.session, messages: [...current.session.messages,
+      { id: 'user', role: 'user', content: '门外有人吗？' },
+      { id: 'reply', role: 'assistant', content: '原来的回答' },
+    ] } }));
+  }, storyId);
+  await page.goto(`/play/${storyId}`);
+  const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  const message = tavern.locator('#chat .mes').last();
+  await expect(message.locator('.mes_text')).toHaveText('原来的回答');
+  const frame = page.frames().find(f => f.url().includes('tavern.html'))!;
+  await frame.evaluate(async enabled => { (await import('/scripts/openai.js')).oai_settings.stream_openai = enabled; }, stream);
+  await message.locator('.swipe_right').click();
+  await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
+  await expect.poll(() => requests.length).toBe(1);
+  await expect(tavern.locator('#send_but')).toBeVisible();
+  await page.getByRole('button', { name: '返回故事' }).click();
+  await expect(page).toHaveURL(/\/story\//);
+  const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
+  expect(saved.branches ?? []).toHaveLength(0);
+  expect(saved.session.messages).toHaveLength(3);
+  expect(saved.session.messages[2]).toMatchObject({ id: 'reply', rawData: { swipe_id: 1, swipes: ['原来的回答', '门外传来轻轻的敲门声。'] } });
+  await page.getByRole('button', { name: '开始游玩' }).click();
+  await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
+  await message.locator('.swipe_left').click();
+  await expect(message.locator('.mes_text')).toHaveText('原来的回答');
+  // Reusing the stored candidate must not send a new completion.
+  await message.locator('.swipe_right').click();
+  await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
+  expect(requests).toHaveLength(1);
+  await tavern.locator('#send_textarea').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect.poll(() => requests.length).toBe(2);
+  await expect(tavern.locator('#send_but')).toBeVisible();
+  await page.getByRole('button', { name: '返回故事' }).click();
+  await expect(page).toHaveURL(/\/story\//);
+  const next = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
+  expect(next.session.messages[2].rawData.swipes).toHaveLength(3);
+  expect(next.branches ?? []).toHaveLength(0);
+});
+
 test('existing swipes and original message editing keep STE IDs and candidate data', async ({ page }) => {
   const storyId = await seed(page);
   await page.evaluate(async id => {
