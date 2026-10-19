@@ -5,20 +5,15 @@
  * 「转移」= 复制到目标 + 调用方从来源书删除（删除复用现有批量删除逻辑）。
  */
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
+import { availableWorldbookIdentity } from './worldbook-uid';
 
 export function appendEntries(target: WorldBook, entries: WorldBookEntry[]): WorldBook {
   const merged = { ...target.entries };
-  let nextUid = -1;
-  for (const [key, e] of Object.entries(merged)) {
-    const n = typeof e.uid === 'number' ? e.uid : Number(key);
-    if (Number.isFinite(n) && n > nextUid) nextUid = n;
-  }
-  nextUid += 1;
   for (const e of entries) {
     const clone = JSON.parse(JSON.stringify(e)) as WorldBookEntry;
-    clone.uid = nextUid;
-    merged[String(nextUid)] = clone;
-    nextUid += 1;
+    const { key, uid } = availableWorldbookIdentity({ ...target, entries: merged });
+    clone.uid = uid;
+    merged[key] = clone;
   }
   return { ...target, entries: merged };
 }

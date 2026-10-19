@@ -72,6 +72,7 @@ interface LibraryBatchBarProps {
   filteredCount: number;
   onSelectAllToggle: () => void;
   onTag: () => void;
+  onType: () => void;
   onExport: () => void;
   exporting: boolean;
   onDelete: () => void;
@@ -80,7 +81,7 @@ interface LibraryBatchBarProps {
 
 /** 批量模式的常驻底栏：全选筛选结果 / 打标签 / 导出 / 删除 */
 export function LibraryBatchBar({
-  selectedCount, filteredCount, onSelectAllToggle, onTag, onExport, exporting, onDelete, onExit,
+  selectedCount, filteredCount, onSelectAllToggle, onTag, onType, onExport, exporting, onDelete, onExit,
 }: LibraryBatchBarProps) {
   const allSelected = selectedCount === filteredCount && filteredCount > 0;
   return (
@@ -98,6 +99,9 @@ export function LibraryBatchBar({
       >
         <Tags className="w-3.5 h-3.5 mr-1" />
         打标签
+      </Button>
+      <Button variant="outline" size="sm" className="px-3 text-xs" disabled={selectedCount === 0} onClick={onType}>
+        设置类型
       </Button>
       <Button
         variant="outline" size="sm" className="px-3 text-xs"

@@ -18,6 +18,9 @@ import { safeName, ensureUnique } from '@/lib/vault/naming';
 import { abToBase64 } from '@/lib/archive-db';
 import { embedCharaInPng } from '@/lib/png-writer';
 import { buildPortraitSnapshot } from '@/lib/portrait-snapshot';
+import { sniffImageBytes, imageExtension } from '@/lib/image-signature';
+import { portraitContentHash, hasPortraitSource } from '@/lib/portrait-import-identity';
+import type { PortraitImportSource } from '@/types/archive';
 export { buildPortraitSnapshot } from '@/lib/portrait-snapshot';
 import type { PreparedCharacterMutation } from '@/lib/character-mutation';
 import { joinPath } from '@/lib/vault/fs';
@@ -43,6 +46,7 @@ const IMAGE_MIME: Record<string, string> = {
   jpeg: 'image/jpeg',
   webp: 'image/webp',
   gif: 'image/gif',
+  avif: 'image/avif',
 };
 
 /** 文件名 → mime；非图片扩展返回 undefined */
@@ -169,8 +173,8 @@ async function vaultCtx(characterId: string, vault: VaultBackend | null = getAct
 const rowDirPath = (ctx: VaultCtx, title: string) => `${ctx.dir}/${PORTRAIT_DIR}/${rowDirOf(title)}`;
 
 /** 客户端派生快照落盘（只写不读；网页版无操作） */
-async function writeSnapshot(characterId: string, rows: PortraitRow[], currentId?: string): Promise<void> {
-  const ctx = await vaultCtx(characterId);
+async function writeSnapshot(characterId: string, rows: PortraitRow[], currentId?: string, vault: VaultBackend | null = getActiveVault()): Promise<void> {
+  const ctx = await vaultCtx(characterId, vault);
   if (!ctx) return;
   await ctx.vault.fs.writeText(
     `${ctx.dir}/${PORTRAIT_DIR}/${SNAPSHOT_FILE}`,
@@ -217,6 +221,7 @@ async function preparePortraitCopies(
   rows: PortraitRow[],
   jobs: PortraitCopyJob[],
   operationId: string,
+  deletion?: { deleteFiles: boolean },
 ): Promise<PreparedCharacterMutation> {
   await ctx.vault.assertCharacterWritable(c.id);
   const fs = ctx.vault.fs;
@@ -241,6 +246,7 @@ async function preparePortraitCopies(
     createdFiles,
     cleanupFiles: [...beforeFiles].filter((path) => !afterKeys.has(path.toLowerCase())),
     createdAt: Date.now(),
+    ...(deletion ? { deletion } : {}),
   };
   beginPortraitOperation(fs, c.id, operationId);
   try {
@@ -305,6 +311,7 @@ export async function replacePortraitItemMutation(
   if (vault && !ctx) throw new Error('角色档案不存在');
   item.name = file.name;
   item.mime = mime;
+  item.importSource = undefined; item.contentSha256 = undefined;
   if (!ctx) {
     item.dataBase64 = base64;
     item.fileName = undefined;
@@ -512,74 +519,66 @@ export async function renamePortraitItem(
   return { portraitRows: rows };
 }
 
-/**
- * 删一个立绘文件。用户主动删自己的图 → 优先进系统回收站（客户端有 trashFile），
- * 捞得回来；网页版/内存实现没有回收站，退回直接删。
- */
-async function dropPortraitFile(ctx: VaultCtx, path: string): Promise<void> {
-  const fs = ctx.vault.fs;
-  if (fs.trashFile) await fs.trashFile(path);
-  else await fs.removeFile(path);
-}
-
-/** 删除受管立绘条目；当前卡面会被清空，但不会删除角色卡 PNG。 */
-export async function removePortraitItem(c: ArchiveCharacter, itemId: string): Promise<Partial<ArchiveCharacter>> {
-  return removePortraitItems(c, [itemId], true);
+/** 删除受管立绘条目；当前卡面指针会被清空，但不会删除角色卡 PNG。 */
+export async function removePortraitItem(
+  c: ArchiveCharacter,
+  itemId: string,
+  deleteFiles = false,
+  vault: VaultBackend | null = getActiveVault(),
+): Promise<PreparedCharacterMutation> {
+  return removePortraitItems(c, [itemId], deleteFiles, vault);
 }
 
 /**
- * 批量删除受管立绘条目（单条删除也走这里，守卫只写一份）。
- * deleteFiles=false 时只撤记录，图片文件原样留在分行文件夹里（之后按「散图」只读展示）。
+ * 落库前只写恢复日志；确认落库后，图片进入保留区或系统回收站。
  * 散图没有 itemId，不受这个 API 影响——用户手放的文件永不删改。
  */
 export async function removePortraitItems(
   c: ArchiveCharacter,
   itemIds: string[],
   deleteFiles: boolean,
-): Promise<Partial<ArchiveCharacter>> {
+  vault: VaultBackend | null = getActiveVault(),
+): Promise<PreparedCharacterMutation> {
   const targets = new Set(itemIds);
-  if (targets.size === 0) return {};
-  const rows = (c.portraitRows ?? []).map((row) => ({ ...row, items: [...row.items] }));
-  const ctx = deleteFiles ? await vaultCtx(c.id) : null;
+  if (targets.size === 0) return inlinePortraitMutation(c, structuredClone(c.portraitRows ?? []));
+  const rows = structuredClone(c.portraitRows ?? []);
   let removed = 0;
   for (const row of rows) {
-    const gone = row.items.filter((item) => targets.has(item.id));
-    if (gone.length === 0) continue;
-    row.items = row.items.filter((item) => !targets.has(item.id));
-    removed += gone.length;
-    if (!ctx) continue;
-    const dir = rowDirPath(ctx, row.title);
-    for (const item of gone) {
-      if (item.fileName) await dropPortraitFile(ctx, `${dir}/${item.fileName}`);
-    }
+    const kept = row.items.filter(item => !targets.has(item.id));
+    removed += row.items.length - kept.length;
+    row.items = kept;
   }
   if (removed === 0) throw new Error('立绘不存在');
-  const patch: Partial<ArchiveCharacter> = { portraitRows: rows };
-  if (c.portraitCurrentId && targets.has(c.portraitCurrentId)) patch.portraitCurrentId = undefined;
-  await writeSnapshot(c.id, rows, patch.portraitCurrentId ?? c.portraitCurrentId);
-  return patch;
+  return preparePortraitDeletion(c, rows, deleteFiles, vault);
 }
 
-/**
- * 删除整个分行：行内受管条目一起走。deleteFiles=true 时图片进回收站，
- * 之后试着收走空文件夹——里面还有用户手放的散图就保留，一个字节都不动。
- */
+/** 删除整个分行；只处理受管且无剩余引用的图片，用户文件和非空文件夹保留。 */
 export async function removePortraitRow(
   c: ArchiveCharacter,
   rowId: string,
   deleteFiles: boolean,
-): Promise<Partial<ArchiveCharacter>> {
-  const row = (c.portraitRows ?? []).find((entry) => entry.id === rowId);
-  if (!row) throw new Error('分行不存在');
-  const patch = row.items.length
-    ? await removePortraitItems(c, row.items.map((item) => item.id), deleteFiles)
-    : {};
-  const rows = (patch.portraitRows ?? c.portraitRows ?? []).filter((entry) => entry.id !== rowId);
-  const ctx = await vaultCtx(c.id);
-  if (ctx && deleteFiles) await ctx.vault.fs.removeEmptyDir(rowDirPath(ctx, row.title)).catch(() => false);
-  const currentId = 'portraitCurrentId' in patch ? patch.portraitCurrentId : c.portraitCurrentId;
-  await writeSnapshot(c.id, rows, currentId);
-  return { ...patch, portraitRows: rows };
+  vault: VaultBackend | null = getActiveVault(),
+): Promise<PreparedCharacterMutation> {
+  if (!(c.portraitRows ?? []).some(row => row.id === rowId)) throw new Error('分行不存在');
+  const rows = structuredClone((c.portraitRows ?? []).filter(row => row.id !== rowId));
+  return preparePortraitDeletion(c, rows, deleteFiles, vault);
+}
+
+async function preparePortraitDeletion(
+  c: ArchiveCharacter,
+  rows: PortraitRow[],
+  deleteFiles: boolean,
+  vault: VaultBackend | null,
+): Promise<PreparedCharacterMutation> {
+  const ctx = await vaultCtx(c.id, vault);
+  if (vault && !ctx) throw new Error('角色档案不存在');
+  const mutation = ctx
+    ? await preparePortraitCopies(c, ctx, rows, [], crypto.randomUUID(), { deleteFiles })
+    : inlinePortraitMutation(c, rows);
+  if (c.portraitCurrentId && !rows.some(row => row.items.some(item => item.id === c.portraitCurrentId))) {
+    mutation.patch.portraitCurrentId = undefined;
+  }
+  return mutation;
 }
 
 /** Blob → 纯 base64（FileReader.readAsDataURL：浏览器/ jsdom 都在，且免大文件手动拼 binary string） */
@@ -597,6 +596,7 @@ export async function addPortraitFiles(
   c: ArchiveCharacter,
   rowId: string | null,
   files: File[],
+  vault: VaultBackend | null = getActiveVault(),
 ): Promise<{ patch: Partial<ArchiveCharacter>; ok: number; fail: number }> {
   let rows = (c.portraitRows ?? []).map((r) => ({ ...r, items: [...r.items] }));
   let row = rowId ? rows.find((r) => r.id === rowId) : rows.find((r) => r.title === DEFAULT_ROW_TITLE);
@@ -605,7 +605,7 @@ export async function addPortraitFiles(
     row = { id: crypto.randomUUID(), title: DEFAULT_ROW_TITLE, items: [] };
     rows = [...rows, row];
   }
-  const ctx = await vaultCtx(c.id);
+  const ctx = await vaultCtx(c.id, vault);
   const dir = ctx ? rowDirPath(ctx, row.title) : '';
   const taken = ctx
     ? new Set((await ctx.vault.fs.list(dir)).map((e) => e.name))
@@ -637,7 +637,7 @@ export async function addPortraitFiles(
       fail++;
     }
   }
-  await writeSnapshot(c.id, rows, c.portraitCurrentId);
+  await writeSnapshot(c.id, rows, c.portraitCurrentId, vault);
   return { patch: { portraitRows: rows }, ok, fail };
 }
 
@@ -647,14 +647,6 @@ function base64ToAb(b64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
-/** 各图片格式的文件头（webp 另需第 8-11 字节是 WEBP，这里只用前缀够区分） */
-const IMAGE_MAGIC: [string, number[]][] = [
-  ['image/png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
-  ['image/jpeg', [0xff, 0xd8, 0xff]],
-  ['image/gif', [0x47, 0x49, 0x46, 0x38]],
-  ['image/webp', [0x52, 0x49, 0x46, 0x46]],
-];
-
 /**
  * 按字节认图片格式。文件名和 mime 都不可信——用户把 JPG 改名成 .png 很常见，
  * 之前直接把这种图当 PNG 送去嵌卡数据，embedCharaInPng 就抛「不是有效的 PNG 文件」
@@ -663,18 +655,49 @@ const IMAGE_MAGIC: [string, number[]][] = [
 export function sniffImageMime(b64: string): string | undefined {
   let head: string;
   try {
-    head = atob(b64.slice(0, 24));
+    head = atob(b64.slice(0, 1368));
   } catch {
     return undefined;
   }
-  return IMAGE_MAGIC.find(([, magic]) => magic.every((byte, i) => head.charCodeAt(i) === byte))?.[0];
+  return sniffImageBytes(Uint8Array.from(head, char => char.charCodeAt(0)));
+}
+
+/** Called inside the character queue; source and image bytes commit in one recoverable mutation. */
+export async function prepareImportedPortraitFile(c: ArchiveCharacter, rowId: string | null, file: File, source: PortraitImportSource,
+  force = false, vault: VaultBackend | null = getActiveVault()): Promise<{ skipped: boolean; mutation?: PreparedCharacterMutation }> {
+  const rows = structuredClone(c.portraitRows ?? []);
+  let row = rowId ? rows.find(row => row.id === rowId) : rows.find(row => row.title === DEFAULT_ROW_TITLE);
+  if (rowId && !row) throw new Error('图片保存失败或目标分行已删除');
+  if (!force && hasPortraitSource(c, source)) return { skipped: true };
+  const ctx = await vaultCtx(c.id, vault); if (vault && !ctx) throw new Error('角色档案不存在');
+  const base64 = await blobToBase64(file), hash = portraitContentHash(base64), mime = sniffImageMime(base64);
+  if (!mime) throw new Error('图片内容格式无效');
+  if (!force) for (const oldRow of rows) for (const item of oldRow.items) {
+    let oldHash = item.contentSha256 ?? item.importSource?.sha256;
+    if (!oldHash) try {
+      const bytes = item.dataBase64 ?? (ctx && item.fileName ? await ctx.vault.fs.readBinary(joinPath(ctx.dir, portraitMediaPath(rowDirOf(oldRow.title), item.fileName))) : undefined);
+      if (bytes) { oldHash = portraitContentHash(bytes); item.contentSha256 = oldHash; }
+    } catch { /* A missing old file is never evidence that a new image is a duplicate. */ }
+    if (oldHash === hash) return { skipped: true, mutation: inlinePortraitMutation(c, rows) };
+  }
+  if (!row) { row = { id: crypto.randomUUID(), title: DEFAULT_ROW_TITLE, items: [] }; rows.push(row); }
+  const operationId = crypto.randomUUID();
+  const item: PortraitItem = { id: crypto.randomUUID(), source: 'manual', name: file.name, mime, addedAt: Date.now(), contentSha256: hash,
+    importSource: { ...source, sha256: hash } };
+  row.items.push(item);
+  if (!ctx) { item.dataBase64 = base64; return { skipped: false, mutation: inlinePortraitMutation(c, rows) }; }
+  const finalName = `.ste-portrait-${operationId}-0.${imageExtension(mime)}`, directory = rowDirOf(row.title);
+  item.fileName = finalName;
+  return { skipped: false, mutation: await preparePortraitCopies(c, ctx, rows, [{ dataBase64: base64,
+    temporaryPath: portraitMediaPath(directory, `.ste-portrait-${operationId}-0.tmp`), finalPath: portraitMediaPath(directory, finalName) }], operationId) };
 }
 
 /** 非 PNG 图 → PNG base64（canvas 光栅化；透明度保留，动图取首帧） */
 async function rasterToPngBase64(b64: string, mime: string): Promise<string> {
   const img = new Image();
   img.src = `data:${mime};base64,${b64}`;
-  await img.decode();
+  try { await img.decode(); }
+  catch { throw new Error(mime === 'image/avif' ? '当前环境无法解码 AVIF，原始立绘已保留；转换为 PNG 后可再设为卡面' : '图片无法解码，可能已损坏或当前环境不支持'); }
   const canvas = document.createElement('canvas');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;

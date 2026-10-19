@@ -10,25 +10,22 @@ import { ExternalLink, NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { ArchiveStory } from '@/types/archive';
 import type { SummaryItem, SummaryKind } from '@/types/summary';
-import type { StoryTree, StoryNodeTree } from '@/types/story-tree';
-import { NODE_TYPE_DOT } from '@/types/story-tree';
-import { getAllSummaries, saveSummary } from '@/lib/summary-db';
+import type { StoryTree } from '@/types/story-tree';
+import { getAllSummaries } from '@/lib/summary-db';
 import { getAllStoryTrees } from '@/lib/story-tree-db';
-import { toForest } from '@/lib/story-tree-model';
 import { loadAPIConfig } from '@/components/ai-tools';
 import { formatFullTime, formatListTime } from '@/lib/time-display';
-import { buildManualSummaryItem } from '@/lib/summary-factory';
 import { MarkdownLite } from '@/components/MarkdownLite';
+import { MoveStoryRecordDialog } from './MoveStoryRecordDialog';
+import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
+import { RecordsToWorldbookDialog } from '@/components/summary/RecordsToWorldbookDialog';
+import { StoryTreePreview } from './StoryTreePreview';
 
 export type RecordViewKind = 'volume' | 'diary' | 'tree';
 
@@ -43,25 +40,6 @@ interface StoryRecordsViewProps {
 
 type RecordBranchFilter = 'all' | 'main' | string;
 
-/** 树节点大纲（只读递归渲染） */
-function TreeOutline({ nodes, depth = 0 }: { nodes: StoryNodeTree[]; depth?: number }) {
-  return (
-    <div className={cn(depth > 0 && 'ml-4 border-l border-border/60 pl-3')}>
-      {nodes.map((n) => (
-        <div key={n.id} className="py-0.5">
-          <p className="text-sm flex items-center gap-1.5 min-w-0">
-            <span className={cn('w-1.5 h-1.5 rounded-full shrink-0', NODE_TYPE_DOT[n.type ?? 'custom'])} />
-            <span className="font-medium truncate" title={n.title}>{n.title}</span>
-            {n.hint && <span className="text-xs text-muted-foreground truncate" title={n.hint}>{n.hint}</span>}
-          </p>
-          {n.content && <p className="text-xs text-muted-foreground ml-3 whitespace-pre-wrap line-clamp-3" title={n.content}>{n.content}</p>}
-          {n.children.length > 0 && <TreeOutline nodes={n.children} depth={depth + 1} />}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsViewProps) {
   const { toast } = useToast();
   const [storyId, setStoryId] = useState<string | null>(stories[0]?.id ?? null);
@@ -70,20 +48,30 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const [branchFilter, setBranchFilter] = useState<RecordBranchFilter>('main');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
-  const [manualTitle, setManualTitle] = useState('');
-  const [manualContent, setManualContent] = useState('');
-  const [manualVolume, setManualVolume] = useState('');
+  const [loadingRecords, setLoadingRecords] = useState(true);
+  const [recordsError, setRecordsError] = useState('');
+  const [moveRecord, setMoveRecord] = useState<SummaryItem | StoryTree | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [worldbookOpen, setWorldbookOpen] = useState(false);
   const hasAI = !!loadAPIConfig().apiKey;
 
   const story = stories.find((s) => s.id === storyId) ?? null;
 
   useEffect(() => {
+    if (!stories.some(item => item.id === storyId)) setStoryId(stories[0]?.id ?? null);
+  }, [stories, storyId]);
+
+  useEffect(() => {
     setBranchFilter('main');
     setExpandedId(null);
+    setMoveRecord(null);
   }, [storyId]);
+  useEffect(() => { setSelected(new Set()); setWorldbookOpen(false); setManualOpen(false); }, [storyId, kind, branchFilter]);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadingRecords(true); setRecordsError(''); setSummaries([]); setTrees([]);
     (async () => {
       if (!storyId) return;
       if (kind === 'tree') {
@@ -97,9 +85,10 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
             .sort((a, b) => b.updatedAt - a.updatedAt));
         }
       }
-    })();
+    })().catch((error: unknown) => { if (!cancelled) setRecordsError(error instanceof Error ? error.message : String(error)); })
+      .finally(() => { if (!cancelled) setLoadingRecords(false); });
     return () => { cancelled = true; };
-  }, [storyId, kind, manualOpen]);
+  }, [storyId, kind, manualOpen, revision]);
 
   const branchNameOf = (branchId?: string) => (
     branchId
@@ -123,31 +112,6 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const items = kind === 'tree' ? visibleTrees : visibleSummaries;
   const selectedBranchId = branchFilter !== 'all' && branchFilter !== 'main' ? branchFilter : null;
   const branchSelectionReady = branchFilter !== 'all';
-
-  const handleManualSave = async () => {
-    if (!story || !branchSelectionReady || !manualContent.trim()) return;
-    const hasVolumeInput = manualVolume.trim().length > 0;
-    const parsedVolume = hasVolumeInput ? Number(manualVolume) : undefined;
-    if (hasVolumeInput && (parsedVolume === undefined || !Number.isInteger(parsedVolume) || parsedVolume < 1)) {
-      toast({ title: '卷号无效', description: '请输入大于 0 的整数卷号', variant: 'destructive' });
-      return;
-    }
-    const item = buildManualSummaryItem({
-      story,
-      kind: kind as SummaryKind,
-      branchId: selectedBranchId,
-      content: manualContent,
-      title: manualTitle,
-      volumeNumber: parsedVolume,
-      existingVolumes: summaries.filter((summary) => summary.kind === 'volume' && summary.branchId === (selectedBranchId ?? undefined)),
-    });
-    await saveSummary(item);
-    setManualOpen(false);
-    setManualTitle('');
-    setManualContent('');
-    setManualVolume('');
-    toast({ title: `已保存${KIND_LABELS[kind]}`, description: '手动录入的条目也可在处理区继续编辑' });
-  };
 
   if (stories.length === 0) {
     return (
@@ -188,6 +152,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
           </Select>
         )}
         <div className="flex-1" />
+        {kind !== 'tree' && story?.characterId && <Button variant="outline" size="sm" disabled={!selected.size} onClick={() => setWorldbookOpen(true)}>加入世界书（{selected.size}）</Button>}
         {kind !== 'tree' && (
           <Button
             variant="outline"
@@ -216,7 +181,9 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
         )}
       </div>
 
-      {items.length === 0 ? (
+      {recordsError ? <p role="alert" className="text-sm text-destructive">读取记录失败：{recordsError}</p>
+        : loadingRecords ? <p role="status" className="text-sm text-muted-foreground">正在读取记录…</p>
+        : items.length === 0 ? (
         <Card>
           <CardContent className="py-10 flex flex-col items-center gap-2 text-center">
             <NotebookPen className="w-8 h-8 text-muted-foreground/40" />
@@ -241,8 +208,9 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                   </span>
                 </p>
                 <div className="mt-2">
-                  <TreeOutline nodes={toForest(t.nodes, false)} />
+                  <StoryTreePreview key={t.id} tree={t} />
                 </div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => setMoveRecord(t)}>移动到其他故事</Button>
               </CardContent>
             </Card>
           ))}
@@ -256,7 +224,11 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
               <Card key={item.id} className="cursor-pointer" onClick={() => setExpandedId(expanded ? null : item.id)}>
                 <CardContent className="py-3 px-4">
                   <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
+                    <span onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={checked => setSelected(previous => {
+                      const next = new Set(previous); if (checked === true) next.add(item.id); else next.delete(item.id); return next;
+                    })} /></span>
                     <span className="truncate" title={item.title}>{item.title}</span>
+                    {(item.diaryOwner || item.genParams?.diaryOwner) && <Badge variant="secondary">{item.diaryOwner || item.genParams?.diaryOwner}</Badge>}
                     {item.volumeNumber !== undefined && (
                       <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal shrink-0">第 {item.volumeNumber} 卷</Badge>
                     )}
@@ -265,14 +237,20 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                   {/* 生成于 X · 覆盖 A-B 楼（不判断过期）；手动录入单独标 */}
                   <p className="text-xs text-muted-foreground mt-0.5" title={formatFullTime(item.updatedAt)}>
                     {manual ? '手动录入' : '生成'}于{formatListTime(item.updatedAt)}
-                    {!manual && ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
+                    {item.source && ` · 收录自第 ${item.source.floor} 楼`}
+                    {item.rangeDetached ? item.provenance ? ` · 原故事 ${item.floorStart}-${item.floorEnd} 楼` : ' · 覆盖范围未指定'
+                      : ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
                   </p>
-                  <div className={cn('break-words text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')} title={item.content}>
+                  <div className={cn('break-words text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')}>
                     <MarkdownLite text={item.content} />
                   </div>
                   {!expanded && item.content.length > 160 && (
                     <p className="text-xs text-primary/80 mt-1">点击展开全文</p>
                   )}
+                  <div className="mt-2 flex gap-2" onClick={event => event.stopPropagation()}>
+                    <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
+                    <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(item.content).then(() => toast({ title: '已复制正文' })).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}>复制正文</Button>
+                  </div>
                 </CardContent>
               </Card>
             );
@@ -280,41 +258,12 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
         </div>
       )}
 
-      {/* 手动录入弹窗 */}
-      <Dialog open={manualOpen} onOpenChange={setManualOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>手动录入{KIND_LABELS[kind]}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <Input
-              value={manualTitle}
-              onChange={(e) => setManualTitle(e.target.value)}
-              placeholder="标题（留空自动按时间命名）"
-            />
-            {kind === 'volume' && (
-              <Input
-                type="number"
-                min={1}
-                step={1}
-                value={manualVolume}
-                onChange={(e) => setManualVolume(e.target.value)}
-                placeholder="卷号（留空自动取下一卷）"
-              />
-            )}
-            <Textarea
-              value={manualContent}
-              onChange={(e) => setManualContent(e.target.value)}
-              placeholder={`粘贴或输入${KIND_LABELS[kind]}正文…`}
-              rows={10}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setManualOpen(false)}>取消</Button>
-            <Button onClick={handleManualSave} disabled={!manualContent.trim()}>保存</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {moveRecord && story?.characterId && <MoveStoryRecordDialog record={moveRecord} kind={kind === 'tree' ? 'tree' : 'summary'} stories={stories}
+        characterId={story.characterId} onClose={() => setMoveRecord(null)} onMoved={() => setRevision(value => value + 1)} />}
+      {manualOpen && story && kind !== 'tree' && <CaptureRecordDialog storyId={story.id} branchId={selectedBranchId} initialKind={kind}
+        onClose={() => setManualOpen(false)} onSaved={() => { setRevision(value => value + 1); toast({ title: `已保存${KIND_LABELS[kind]}` }); }} />}
+      {worldbookOpen && story?.characterId && <RecordsToWorldbookDialog characterId={story.characterId} records={visibleSummaries.filter(item => selected.has(item.id))}
+        onClose={() => setWorldbookOpen(false)} onSaved={() => { setSelected(new Set()); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }} />}
     </div>
   );
 }

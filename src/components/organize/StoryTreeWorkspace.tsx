@@ -1,3 +1,5 @@
+import type { RemoveOptions } from '@/lib/repo';
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { useCallback, useEffect, useState } from 'react';
 import { Download, Network, Plus, Trash2, Upload } from 'lucide-react';
 import { HelpCard } from '@/components/HelpCard';
@@ -7,16 +9,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { getBranchLine } from '@/lib/archive-db';
 import { downloadMarkdown, storyTreeToObsidian } from '@/lib/obsidian-export';
@@ -99,9 +91,9 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
     toast({ title: '已导入故事树', description: `${item.nodes.length} 个节点` });
   };
 
-  const deleteTree = async () => {
+  const deleteTree = async (options: RemoveOptions) => {
     if (!currentTree) return;
-    await deleteStoryTree(currentTree.id);
+    await deleteStoryTree(currentTree.id, options);
     setDeleteOpen(false);
     await reload(null);
     toast({ title: '已删除故事树' });
@@ -140,7 +132,7 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
           <TreeWorkbench
             key={currentTree.id}
             tree={currentTree}
-            session={currentLine.session}
+            session={getBranchLine(story, currentTree.branchId ?? null)?.session ?? null}
             onChanged={() => { void reload(currentTree.id); }}
             renderHeader={({ title, onTitleChange }) => (
               <Card data-story-tree-selector>
@@ -165,7 +157,9 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
         ) : <div className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</div>}
       </div>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除整棵故事树？</AlertDialogTitle><AlertDialogDescription>此操作不可撤销，该树的所有节点将被永久删除。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><AlertDialogAction onClick={deleteTree}>删除</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <DeleteConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="删除整棵故事树？"
+        description="该故事树将从列表移除。" fileTarget={currentTree ? { store: 'stories', id: currentTree.id } : undefined}
+        onConfirm={deleteTree} />
     </div>
   );
 }

@@ -12,7 +12,9 @@ import {
   saveArchiveStory,
   updateArchiveStory,
   updateBranchLine,
+  getBranchLine,
 } from '@/lib/archive-db';
+import { stableJson } from '@/lib/roleplay/fingerprint';
 import { getAllSummaries } from '@/lib/summary-db';
 import { getAllStoryTrees } from '@/lib/story-tree-db';
 
@@ -20,6 +22,8 @@ export interface BindArgs {
   characterId: string;
   /** 未绑定故事 id；null = 内存里的会话尚未落库（如示例数据），绑定时新建 */
   storyId: string | null;
+  branchId?: string | null;
+  expectedSession?: ChatSession;
   session: ChatSession;
   markers: ChapterMarker[];
   favorites: string[];
@@ -32,7 +36,10 @@ export async function bindSessionToCharacter(args: BindArgs): Promise<{ story: A
   let story: ArchiveStory;
   if (existing) {
     const saved = await updateArchiveStory(existing.id, (current) => {
-      const updated = updateBranchLine(current, null, {
+      if (args.expectedSession && stableJson(getBranchLine(current, args.branchId ?? null)?.session) !== stableJson(args.expectedSession)) {
+        throw new Error('这条分支有新的聊天内容，请重新打开后再绑定；当前内容未覆盖');
+      }
+      const updated = updateBranchLine(current, args.branchId ?? null, {
         session: args.session,
         markers: args.markers,
         favorites: args.favorites,
@@ -40,7 +47,7 @@ export async function bindSessionToCharacter(args: BindArgs): Promise<{ story: A
       return {
         ...updated,
         characterId: args.characterId,
-        ...(args.session.title ? { title: args.session.title } : {}),
+        ...(!args.branchId && args.session.title ? { title: args.session.title } : {}),
         settings: args.settings ?? updated.settings,
         updatedAt: Date.now(),
       };

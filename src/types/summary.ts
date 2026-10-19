@@ -52,11 +52,25 @@ export interface SummaryItem {
   title: string;
   /** kind=volume 时的卷号（从 1 开始） */
   volumeNumber?: number;
+  diaryOwner?: string;
+  /** Where this record was captured, independent of its coverage range. */
+  source?: { messageId: string; floor: number; capturedAt: number };
   /**
    * 来源脉络（2.0 阶段3）：归档故事的分支 id；undefined=主线。
    * 书架时代的旧条目无此字段，按主线对待。
    */
   branchId?: string;
+  /** Original generation source, retained across moves; not a destination floor mapping. */
+  provenance?: {
+    bookId: string | null;
+    bookTitle: string;
+    branchId?: string;
+    branchTitle?: string;
+    floorStart: number;
+    floorEnd: number;
+  };
+  /** Requires the user to explicitly attach a range in the current story. */
+  rangeDetached?: boolean;
   /** 覆盖楼层闭区间起点，0-based，与聊天页楼层号一致 */
   floorStart: number;
   /** 覆盖楼层闭区间终点，0-based */

@@ -135,9 +135,9 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
         <Label htmlFor="entry-uid">UID</Label>
         <div className="flex gap-2">
           <Input id="entry-uid" inputMode="numeric" value={uidDraft} aria-invalid={!!uidError}
-            onChange={event => setUidDraft(event.target.value)} />
-          <Button variant="outline" disabled={!!uidError || nextUid === entry.uid}
-            onClick={() => update('uid', nextUid)}>应用 UID</Button>
+            onChange={event => setUidDraft(event.target.value)}
+            onBlur={() => { if (!uidError && nextUid !== entry.uid) update('uid', nextUid); }}
+            onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing && !uidError && nextUid !== entry.uid) update('uid', nextUid); }} />
         </div>
         {uidError && <p role="alert" className="text-xs text-destructive">{uidError}</p>}
       </div>

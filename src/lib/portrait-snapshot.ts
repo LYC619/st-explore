@@ -14,6 +14,7 @@ export function buildPortraitSnapshot(rows: PortraitRow[], currentId?: string): 
         名称: i.name ?? i.fileName ?? '图片',
         来源: i.source === 'manual' ? '手动导入' : '替换自动存档',
         加入时间: new Date(i.addedAt).toLocaleString(),
+        ...(i.importSource ? { 导入来源: i.importSource } : {}),
       })),
     })),
   };

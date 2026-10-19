@@ -1,4 +1,4 @@
-import { ratingTier } from '@/lib/tag-taxonomy';
+import { characterFilterTags, ratingTier } from '@/lib/tag-taxonomy';
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
 
 export const LIBRARY_GROUP_BY_OPTIONS = [
@@ -52,7 +52,7 @@ export function collapseLibraryGroups(
 }
 
 const TYPE_ORDER: readonly (CharacterType | '未分类')[] = ['人物', '剧情', '玩法', '综合', '同人', '未分类'];
-const RATING_ORDER = ['神作', '精品', '及格', '低创', '未评分'] as const;
+const RATING_ORDER = ['神作', '精品', '及格', '6分以下', '未评分'] as const;
 
 function collectByLabels(
   items: readonly ArchiveCharacter[],
@@ -117,7 +117,7 @@ function buildTagGroups(
   const groups = new Map<string, ArchiveCharacter[]>();
   const unset: ArchiveCharacter[] = [];
   for (const character of items) {
-    const labels = [...new Set(character.tags
+    const labels = [...new Set((category === '评价' ? characterFilterTags(character) : character.tags)
       .filter((raw) => raw.startsWith(prefix) && raw.length > prefix.length)
       .map((raw) => raw.slice(prefix.length)))];
     if (labels.length === 0) unset.push(character);

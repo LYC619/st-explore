@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ClientTitleBar } from '@/components/ClientTitleBar';
@@ -12,21 +13,21 @@ import { saveSettingsSection } from '@/lib/settings-navigation';
 import { isTauri } from '@/lib/runtime';
 import { useReaderBack } from '@/lib/immersive-mode';
 import { useAndroidBackButton } from '@/hooks/use-android-back';
+import { getVaultEpoch } from '@/lib/vault/active';
 
-type ExitDestination = { kind: 'route'; path: string; state?: unknown } | { kind: 'close' };
+type ExitDestination = { kind: 'route'; path: string; state?: unknown } | { kind: 'close' } | { kind: 'release' };
 const errorMessage = (reason: unknown) => reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : String(reason);
 
 /** STE owns navigation and recovery; the actual chat DOM belongs entirely to ST. */
-export default function Roleplay() {
-  const { id } = useParams<{ id: string }>();
-  const [query] = useSearchParams();
-  const branchId = query.has('branch') ? query.get('branch') || null : undefined;
-  const fromChats = query.get('from') === 'chats';
+export default function Roleplay({ id, branchId, fromChats, active, onRelease, taskDock }: {
+  id: string; branchId?: string | null; fromChats: boolean; active: boolean; onRelease: () => void; taskDock: HTMLDivElement | null;
+}) {
+  const activeRef = useRef(active); activeRef.current = active;
+  const fromChatsRef = useRef(fromChats); fromChatsRef.current = fromChats;
   const [launch, setLaunch] = useState({ storyId: id, branchId });
   const navigate = useNavigate();
   const frame = useRef<HTMLIFrameElement>(null);
   const returnTarget = useRef({ storyId: id, branchId });
-  const internalLocation = useRef<string>();
   const [src, setSrc] = useState<string>();
   const [status, setStatus] = useState('正在打开酒馆…');
   const [ready, setReady] = useState(false);
@@ -43,27 +44,17 @@ export default function Roleplay() {
   const exitTask = useRef<Promise<void>>();
   const runtimeStatus = useRef<string>();
   const saveFailureKind = useRef<'chat' | 'flush'>();
-  const blocker = useBlocker(({ nextLocation }) => !!src && !allowExit.current
-    && nextLocation.pathname + nextLocation.search !== internalLocation.current);
-  const latestBlocker = useRef(blocker);
-  latestBlocker.current = blocker;
-  const blockedNavigation = useRef<string>();
+  const generating = useRef(false);
+  const switching = useRef(false);
   const backDestination = useCallback((): ExitDestination => fromChats
     ? { kind: 'route', path: '/play' }
-    : { kind: 'route', path: '/story/' + encodeURIComponent(returnTarget.current.storyId ?? ''), state: { branchId: returnTarget.current.branchId } }, [fromChats]);
+    : { kind: 'route', path: '/chat?storyId=' + encodeURIComponent(returnTarget.current.storyId ?? '')
+      + '&branch=' + encodeURIComponent(returnTarget.current.branchId ?? '') }, [fromChats]);
   const reportSaveError = useCallback((reason: unknown, kind: 'chat' | 'flush' = 'flush') => {
     saveFailureKind.current = kind;
     setSaveFailed(true);
     setError('尚未保存全部内容，当前聊天仍保留在窗口中：' + errorMessage(reason));
   }, []);
-
-  useEffect(() => {
-    internalLocation.current = undefined;
-    if (id !== returnTarget.current.storyId || branchId !== returnTarget.current.branchId) {
-      returnTarget.current = { storyId: id, branchId };
-      setLaunch({ storyId: id, branchId });
-    }
-  }, [id, branchId]);
 
   const saveBeforeExit = useCallback(() => {
     if (exitTask.current) return exitTask.current;
@@ -80,20 +71,39 @@ export default function Roleplay() {
     return task;
   }, [reportSaveError]);
 
+  const navigateToModule = useCallback(async (path: string) => {
+    if (!generating.current) {
+      try { await saveBeforeExit(); } catch { return; }
+    }
+    navigate(path);
+  }, [navigate, saveBeforeExit]);
+
+  const wasActive = useRef(active);
   useEffect(() => {
-    if (blocker.state !== 'blocked') { blockedNavigation.current = undefined; return; }
-    const key = blocker.location.key;
-    if (blockedNavigation.current === key) return;
-    blockedNavigation.current = key;
-    pendingExit.current = { kind: 'route', path: blocker.location.pathname + blocker.location.search + blocker.location.hash, state: blocker.location.state };
-    // Saving updates React state. Settle a blocked destination only once, using the live blocker.
-    const settle = (saved: boolean) => {
-      const current = latestBlocker.current;
-      if (allowExit.current || current.state !== 'blocked' || current.location.key !== key) return;
-      if (saved) current.proceed(); else current.reset();
-    };
-    void saveBeforeExit().then(() => settle(true), () => settle(false));
-  }, [blocker, saveBeforeExit]);
+    const parked = wasActive.current && !active;
+    wasActive.current = active;
+    // Browser Back can park the page without using our toolbar. Commit idle edits
+    // while retaining the document; an in-progress generation must keep running.
+    if (parked && !generating.current) void saveBeforeExit().catch(() => {});
+  }, [active, saveBeforeExit]);
+
+  useEffect(() => {
+    // A list entry omits branch to resume the already selected line. Guard the actual
+    // replacement here, so other pages may own their own navigation confirmation.
+    if (id === returnTarget.current.storyId && (branchId === undefined || branchId === returnTarget.current.branchId)) return;
+    let cancelled = false;
+    switching.current = true;
+    void saveBeforeExit().then(() => {
+      if (cancelled) return;
+      returnTarget.current = { storyId: id, branchId };
+      setLaunch({ storyId: id, branchId });
+    }, () => {
+      if (cancelled) return;
+      navigate('/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
+        + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? ''), { replace: true });
+    }).finally(() => { if (!cancelled) switching.current = false; });
+    return () => { cancelled = true; switching.current = false; };
+  }, [id, branchId, navigate, saveBeforeExit]);
 
   useEffect(() => {
     let disposed = false;
@@ -120,15 +130,19 @@ export default function Roleplay() {
   useEffect(() => {
     let disposed = false;
     let remove: (() => void) | undefined;
+    const epoch = getVaultEpoch();
     setReady(false);
     setSrc(undefined);
     const open = async () => {
       allowExit.current = false;
       if (!launch.storyId) throw new Error('缺少故事 ID');
       const response = await fetch('/ste/tavern-defaults.json');
+      if (disposed || epoch !== getVaultEpoch()) return;
       if (!response.ok) throw new Error('酒馆资源尚未准备完成，请重新构建应用');
+      const defaults = await response.json();
+      if (disposed || epoch !== getVaultEpoch()) return;
       const host = await createTavernHost({
-        storyId: launch.storyId, branchId: launch.branchId, defaults: await response.json(),
+        storyId: launch.storyId, branchId: launch.branchId, defaults,
         onCommit: () => {
           if (disposed) return;
           setStatus('正文已保存');
@@ -142,24 +156,23 @@ export default function Roleplay() {
           setReady(true); setStatus(runtimeStatus.current ?? '无 Agent · 自动保存');
           try { if (!localStorage.getItem('ste-play-guide-seen')) setGuideOpen(true); } catch { /* Help remains available without local preferences. */ }
         },
-        onGeneration: active => { if (!disposed) setStatus(active ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存'); },
+        onGeneration: active => { if (!disposed) { generating.current = active; setStatus(active ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存'); } },
         onAgentStatus: state => { runtimeStatus.current = state.message; if (!disposed) setStatus(state.message); },
-        onManageProfiles: () => { saveSettingsSection('ai'); navigate('/settings'); },
-        onManagePage: path => navigate(path),
-        onOpenStory: storyId => navigate('/story/' + encodeURIComponent(storyId)),
+        onManageProfiles: () => { saveSettingsSection('ai'); void navigateToModule('/settings'); },
+        onManagePage: path => { void navigateToModule(path); },
+        onOpenStory: storyId => { void navigateToModule('/chat?storyId=' + encodeURIComponent(storyId)); },
         onSelect: locator => {
           if (disposed) return;
           const previous = returnTarget.current;
           returnTarget.current = { storyId: locator.storyId, branchId: locator.branchId };
           // A save can publish the selected chat while a blocked Back navigation is waiting.
           // Replacing the URL here would cancel that pending navigation after its data was saved.
-          if (exitTask.current || latestBlocker.current.state !== 'unblocked') return;
+          if (!activeRef.current || exitTask.current || switching.current) return;
           if (previous.storyId === locator.storyId && previous.branchId === locator.branchId) return;
           const params = new URLSearchParams();
           params.set('branch', locator.branchId ?? '');
-          if (fromChats) params.set('from', 'chats');
+          if (fromChatsRef.current) params.set('from', 'chats');
           const path = '/play/' + encodeURIComponent(locator.storyId) + (params.size ? '?' + params : '');
-          internalLocation.current = path;
           navigate(path, { replace: true });
         },
       });
@@ -175,22 +188,28 @@ export default function Roleplay() {
     };
     void open().catch(reason => { if (!disposed) setError(errorMessage(reason)); });
     return () => { disposed = true; remove?.(); flushRef.current = async () => {}; };
-  }, [launch, navigate, fromChats, reportSaveError]);
+  }, [launch, navigate, navigateToModule, reportSaveError]);
 
   const goToDestination = useCallback(async (destination: ExitDestination) => {
-    allowExit.current = true;
     if (destination.kind === 'close') {
+      allowExit.current = true;
       try { const { getCurrentWindow } = await import('@tauri-apps/api/window'); await getCurrentWindow().close(); }
       catch (reason) { allowExit.current = false; reportSaveError(reason); }
-    } else navigate(destination.path, { state: destination.state });
-  }, [navigate, reportSaveError]);
+    } else if (destination.kind === 'release') onRelease();
+    else navigate(destination.path, { state: destination.state });
+  }, [navigate, onRelease, reportSaveError]);
   const leave = useCallback(async () => {
     if (leaving) return;
     const destination = backDestination();
-    pendingExit.current = destination;
-    try { await saveBeforeExit(); await goToDestination(destination); }
-    catch { /* Keep the live frame mounted so retry and independent export remain possible. */ }
-  }, [leaving, backDestination, saveBeforeExit, goToDestination]);
+    if (!generating.current) {
+      try { await saveBeforeExit(); } catch { return; }
+    }
+    if (destination.kind === 'route') navigate(destination.path, { state: destination.state });
+  }, [leaving, backDestination, navigate, saveBeforeExit]);
+  const closeChat = async () => {
+    pendingExit.current = { kind: 'release' };
+    try { await saveBeforeExit(); await goToDestination({ kind: 'release' }); } catch { /* Keep recovery available. */ }
+  };
   const exportRecovery = async () => {
     setExporting(true); setExportNotice(undefined);
     try {
@@ -211,14 +230,23 @@ export default function Roleplay() {
     setGuideOpen(open);
     if (!open) try { localStorage.setItem('ste-play-guide-seen', '1'); } catch { /* Optional preference. */ }
   };
-  useAndroidBackButton();
-  useReaderBack(true, () => { void leave(); });
+  useAndroidBackButton(active);
+  useReaderBack(active, () => { void leave(); });
 
-  return <div className="flex h-dvh min-h-0 flex-col bg-background">
+  return <>
+    {!active && taskDock && createPortal(<div className="flex max-w-full shrink-0 items-center gap-2 rounded-lg border bg-background p-2 shadow-lg">
+      <Button variant={saveFailed ? 'destructive' : 'outline'} size="sm" onClick={() => navigate('/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
+        + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? '') + (fromChats ? '&from=chats' : ''))}>
+        返回聊天 · {saveFailed ? '保存未完成' : status}
+      </Button>
+      <Button variant="ghost" size="icon" aria-label="关闭后台聊天" disabled={leaving} onClick={() => { void closeChat(); }}><X className="h-4 w-4" /></Button>
+    </div>, taskDock)}
+    {/* Keep layout dimensions while parked: ST's virtual list skips updates at zero size. */}
+    <div aria-hidden={!active} style={active ? undefined : { position: 'fixed', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}><div className="flex h-dvh min-h-0 flex-col bg-background">
     {isTauri() && <ClientTitleBar titleBarContent="聊天" />}
     <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1.5">
       <Button variant="ghost" size="sm" disabled={leaving} onClick={() => { void leave(); }}>
-        {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-1 h-4 w-4" />}{fromChats ? '返回聊天' : '返回故事'}
+        {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-1 h-4 w-4" />}{fromChats ? '返回聊天列表' : '返回聊天处理'}
       </Button>
       <span role="status" title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground sm:order-none sm:flex-1 sm:basis-auto">{status}</span>
       <div className="ml-auto flex items-center gap-1">
@@ -227,6 +255,7 @@ export default function Roleplay() {
         <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('chat')}><Menu className="mr-1 h-4 w-4" />聊天工具</Button>
         <Button variant="ghost" size="sm" disabled={!ready} onClick={() => openSettings('runtime')}><SlidersHorizontal className="mr-1 h-4 w-4" />玩法设置</Button>
         <Button variant="ghost" size="sm" onClick={() => changeGuide(true)}><CircleHelp className="mr-1 h-4 w-4" />使用帮助</Button>
+        <Button variant="ghost" size="sm" disabled={leaving} onClick={() => { void closeChat(); }}><X className="mr-1 h-4 w-4" />关闭聊天</Button>
       </div>
     </header>
     {(error || saveFailed) && <div role="alert" className="shrink-0 border-b bg-destructive/10 px-4 py-3 text-sm">
@@ -245,7 +274,7 @@ export default function Roleplay() {
     </div>}
     {src ? <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
       : !error && <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}
-    <RoleplayGuide open={guideOpen} onOpenChange={changeGuide} runtimeReady={ready} onModels={() => {
+    <RoleplayGuide open={guideOpen && active} onOpenChange={changeGuide} runtimeReady={ready} onModels={() => {
       if (ready) openSettings('models'); else { saveSettingsSection('ai'); navigate('/settings'); }
     }} onRuntime={() => { if (ready) openSettings('runtime'); }} />
     <AlertDialog open={confirmExit} onOpenChange={setConfirmExit}>
@@ -256,9 +285,9 @@ export default function Roleplay() {
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>留在聊天</AlertDialogCancel>
-          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { void goToDestination(pendingExit.current ?? backDestination()); }}>确认离开</AlertDialogAction>
+          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { void goToDestination(pendingExit.current ?? { kind: 'release' }); }}>确认离开</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  </div>;
+  </div></div></>;
 }

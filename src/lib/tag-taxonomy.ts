@@ -19,7 +19,7 @@ export const BUILTIN_TAGS: Record<BuiltinTagCategory, string[]> = {
   玩法: ['模拟', 'RPG', '解谜', '经营', '养成'],
   世界观: ['玄幻', '奇幻', '科幻', '现代', '古风'],
   卡面: ['SFW', 'NSFW'],
-  评价: ['低创', '及格', '精品', '神作'],
+  评价: ['未评分', '及格', '精品', '神作'],
   未分类: [],
 };
 
@@ -30,7 +30,7 @@ export const CATEGORY_HELP: Record<BuiltinTagCategory, string> = {
   玩法: '卡的玩法机制，如模拟、RPG（可多选）',
   世界观: '故事世界背景，如玄幻、现代（可多选）',
   卡面: '卡面尺度标记；NSFW 用开关维护，可在设置里开启模糊显示',
-  评价: '与你的评分联动：打分后自动更新档位；手动点档位会弹出评分确认',
+  评价: '未评分按实际评分字段筛选；打分后自动更新档位，已有低分显示为 6分以下',
   未分类: '没有归入任何类别的自定义标签',
 };
 
@@ -46,7 +46,7 @@ export function parseTag(raw: string, customCategories: readonly string[] = []):
   if (i > 0) {
     const cat = raw.slice(0, i);
     if ((TAG_CATEGORIES as readonly string[]).includes(cat) || customCategories.includes(cat)) {
-      return { category: cat as TagCategory, label: raw.slice(i + 1) || raw, raw };
+      return { category: cat as TagCategory, label: raw === '评价/低创' ? '6分以下' : raw.slice(i + 1) || raw, raw };
     }
   }
   return { category: '未分类', label: raw, raw };
@@ -90,12 +90,12 @@ export function syncNsfwTag(tags: string[], nsfw: boolean): string[] {
 
 // ---------- 评价（评分 → 档位标签，单向自动；点标签 → 评分确认弹窗预填） ----------
 
-export const RATING_TIER_LABELS = ['低创', '及格', '精品', '神作'] as const;
+export const RATING_TIER_LABELS = ['6分以下', '及格', '精品', '神作'] as const;
 export type RatingTier = (typeof RATING_TIER_LABELS)[number];
 
-/** 档位区间（用户定稿）：低创 <6、及格 6~7.5、精品 7.5~9、神作 9~10（下含上不含，神作含 10） */
+/** 数字评分档位；未评分是独立状态，不占任何数值区间。 */
 export function ratingTier(rating: number): RatingTier {
-  if (rating < 6) return '低创';
+  if (rating < 6) return '6分以下';
   if (rating < 7.5) return '及格';
   if (rating < 9) return '精品';
   return '神作';
@@ -103,7 +103,7 @@ export function ratingTier(rating: number): RatingTier {
 
 /** 点评价标签弹评分确认时的预填值 = 档区间中值取 0.5 步进（6.75→7、8.25→8.5 向上取半） */
 export const RATING_TIER_PREFILL: Record<RatingTier, number> = {
-  低创: 3,
+  '6分以下': 3,
   及格: 7,
   精品: 8.5,
   神作: 9.5,
@@ -114,9 +114,20 @@ export const RATING_TIER_PREFILL: Record<RatingTier, number> = {
  * rating undefined = 清除档位标签（取消评分）。
  */
 export function applyRatingTierTag(tags: string[], rating: number | undefined): string[] {
-  const tierRaws = RATING_TIER_LABELS.map((l) => `评价/${l}`);
+  const tierRaws = [...RATING_TIER_LABELS.map((l) => `评价/${l}`), '评价/低创', '评价/未评分'];
   const rest = tags.filter((t) => !tierRaws.includes(t));
   return rating === undefined ? rest : [...rest, `评价/${ratingTier(rating)}`];
+}
+
+/** Legacy labels remain readable without rewriting imported files or inventing a numeric rating. */
+export function normalizeRatingTag(raw: string): string {
+  return raw === '评价/低创' ? '评价/6分以下' : raw;
+}
+
+/** Virtual filter values: actual scores win over stale tags; no score always includes 未评分. */
+export function characterFilterTags(character: { tags: string[]; rating?: number }): string[] {
+  const tags = applyRatingTierTag(character.tags, character.rating);
+  return character.rating === undefined ? [...tags, '评价/未评分'] : tags;
 }
 
 /**
@@ -127,7 +138,7 @@ export function validateUserTagInput(raw: string): string | null {
   if (raw === '类型' || raw.startsWith('类型/')) {
     return '「类型」是独立字段，请使用类型选择维护，不能作为标签';
   }
-  if (RATING_TIER_LABELS.some((label) => raw === `评价/${label}`)) {
+  if (raw === '评价/未评分' || raw === '评价/低创' || RATING_TIER_LABELS.some((label) => raw === `评价/${label}`)) {
     return '评价档位随评分自动维护，请通过评分调整';
   }
   return null;

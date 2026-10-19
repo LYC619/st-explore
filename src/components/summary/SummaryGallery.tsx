@@ -101,7 +101,7 @@ export function SummaryGallery({ currentBookId, refreshKey, kind, charName, onEd
                   </Button>
                   <div className="min-w-0">
                     <h2 className="font-display text-xl font-semibold truncate" title={active.title || SUMMARY_KIND_LABELS[active.kind]}>{active.title || SUMMARY_KIND_LABELS[active.kind]}</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">{active.bookTitle} · 楼层 {active.floorStart}~{active.floorEnd} · {new Date(active.updatedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{active.bookTitle} · {active.rangeDetached ? "原故事楼层" : "楼层"} {active.floorStart}~{active.floorEnd} · {new Date(active.updatedAt).toLocaleDateString()}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">

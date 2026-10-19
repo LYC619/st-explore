@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 import type { CardItem } from '@/types/character-card';
 import { createRepo, pruneAutoSaved } from '@/lib/repo';
 
@@ -15,8 +16,8 @@ export async function saveCard(item: CardItem): Promise<void> {
   return repo.put(item);
 }
 
-export async function deleteCard(id: string): Promise<void> {
-  return repo.remove(id);
+export async function deleteCard(id: string, options?: RemoveOptions): Promise<void> {
+  return repo.remove(id, options);
 }
 
 /**

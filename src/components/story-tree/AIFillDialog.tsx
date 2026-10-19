@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Square, Loader2, Check, Pencil, RotateCcw, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,19 +12,31 @@ import { loadAPIConfig } from '@/components/ai-tools';
 import { ApiStatusLine } from '@/components/ai-tools/ApiStatusLine';
 import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
 import { FloorRangePicker } from '@/components/summary/FloorRangePicker';
-import { loadSessionPointer } from '@/lib/session-storage';
 import { getAllSummaries } from '@/lib/summary-db';
-import type { ChatSession } from '@/types/chat';
-import type { StoryNode } from '@/types/story-tree';
+import { getAllPresets } from '@/lib/preset-db';
+import { getAllWorldBooks } from '@/lib/worldbook-db';
+import { getArchiveStory, getBranchLine } from '@/lib/archive-db';
+import { getCurrentRepo } from '@/lib/repo';
+import { getVaultEpoch } from '@/lib/vault/active';
+import { AttachPanel, type AttachState } from '@/components/summary/AttachPanel';
+import { buildScopedTreeRequest } from '@/lib/story-tree-context';
+import type { SummaryItem } from '@/types/summary';
+import type { PresetItem } from '@/types/preset';
+import type { WorldBookItem } from '@/types/worldbook';
+import type { ChatSession, RegexRule } from '@/types/chat';
+import type { StoryNode, StoryTree } from '@/types/story-tree';
 import { NODE_TYPE_LABELS, isStoryNodeType } from '@/types/story-tree';
 import {
-  buildTreeFillMessages, parseTreeOps, applyTreeOps,
+  parseTreeOpsResult, applyTreeOps,
   DEFAULT_TREE_FILL_PROMPT, floorsToText, type TreeOp,
 } from '@/lib/story-tree-ai';
 
 const PROMPT_LS_KEY = 'st-story-tree-fill-prompt';
 
 interface AIFillDialogProps {
+  storyId?: string | null;
+  branchId?: string | null;
+  treeId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   session: ChatSession;
@@ -50,7 +62,7 @@ const OP_BADGE: Record<TreeOp['op'], { text: string; cls: string }> = {
  * AI 从选定楼层生成事实节点：选楼层 → 生成 ops → 逐条预览/编辑/取舍 → 确认 apply。
  * API 配置在「AI 配置」页统一维护（此处只显示状态）；提示词可查看/编辑（localStorage 记忆）。
  */
-export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AIFillDialogProps) {
+export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, storyId = null, branchId = null, treeId }: AIFillDialogProps) {
   const { toast } = useToast();
   const [floorStart, setFloorStart] = useState(0);
   const [floorEnd, setFloorEnd] = useState(Math.max(0, session.messages.length - 1));
@@ -58,10 +70,24 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
   const [streaming, setStreaming] = useState(false);
   const [rawOutput, setRawOutput] = useState('');
   const [opItems, setOpItems] = useState<OpItem[] | null>(null);
+  const [references, setReferences] = useState<SummaryItem[]>([]), [selectedRefs, setSelectedRefs] = useState<Set<string>>(new Set());
+  const [presets, setPresets] = useState<PresetItem[]>([]), [books, setBooks] = useState<WorldBookItem[]>([]);
+  const [rules, setRules] = useState<RegexRule[]>([]), [processed, setProcessed] = useState(false), [crossBranch, setCrossBranch] = useState(false);
+  const [attach, setAttach] = useState<AttachState>({ presetId: null, worldbookId: null, worldbookMode: 'constant', worldbookUids: [] });
+  const [contextError, setContextError] = useState(''), [contextLoading, setContextLoading] = useState(false), [outputError, setOutputError] = useState('');
+  const generation = useRef(0), generatedNodes = useRef('');
+  const generatedRequest = useRef('');
+  const requestEpoch = useRef(getVaultEpoch());
 
   // 可编辑提示词（改后记忆；空=用默认）
   const [promptOpen, setPromptOpen] = useState(false);
   const [customPrompt, setCustomPrompt] = useState(DEFAULT_TREE_FILL_PROMPT);
+  const request = useMemo(() => buildScopedTreeRequest({ storyId, branchId, session, nodes, floorStart, floorEnd,
+    references: references.filter(record => selectedRefs.has(record.id)), allowCrossBranch: crossBranch,
+    preset: presets.find(preset => preset.id === attach.presetId)?.preset,
+    worldbook: books.find(book => book.id === attach.worldbookId)?.worldbook, worldbookMode: attach.worldbookMode, worldbookUids: attach.worldbookUids,
+    processed, regexRules: rules, instruction, systemPrompt: customPrompt }),
+  [storyId, branchId, session, nodes, floorStart, floorEnd, references, selectedRefs, crossBranch, presets, books, attach, processed, rules, instruction, customPrompt]);
 
   useEffect(() => {
     const saved = localStorage.getItem(PROMPT_LS_KEY);
@@ -81,8 +107,25 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
 
   const abortRef = useRef<AbortController | null>(null);
   const outputRef = useRef('');
+  useEffect(() => {
+    if (!open) return;
+    let active = true; requestEpoch.current = getVaultEpoch();
+    setContextLoading(true); setContextError(''); setSelectedRefs(new Set()); setReferences([]);
+    setOpItems(null); setRawOutput(''); setOutputError(''); setStreaming(false);
+    void Promise.all([getAllSummaries(), getAllPresets(), getAllWorldBooks(), storyId ? getArchiveStory(storyId) : Promise.resolve(undefined)]).then(([records, presets, books, story]) => {
+      if (!active || requestEpoch.current !== getVaultEpoch()) return;
+      if (storyId && (!story || !getBranchLine(story, branchId))) throw new Error('来源故事或分支不存在');
+      setReferences(records.filter(record => record.bookId === storyId && (record.kind === 'volume' || record.kind === 'diary')));
+      setPresets(presets); setBooks(books); setRules(story?.settings?.regexRules ?? []);
+    }).catch(error => { if (active) setContextError(String(error)); }).finally(() => { if (active) setContextLoading(false); });
+    // This is a sequence counter, deliberately invalidated at cleanup, not a DOM ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { active = false; generation.current++; abortRef.current?.abort(); };
+  }, [open, storyId, branchId, treeId]);
 
   const handleGenerate = async () => {
+    if (streaming || contextLoading || contextError) return;
+    if (requestEpoch.current !== getVaultEpoch()) { setOutputError('资料库已切换，请重新打开。'); return; }
     const config = loadAPIConfig(); // 即时读取全局配置
     if (!config.apiKey) {
       toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
@@ -93,7 +136,13 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
       toast({ title: '选中的楼层没有内容', variant: 'destructive' });
       return;
     }
-    const messages = buildTreeFillMessages(nodes, floorText, instruction, customPrompt);
+    if ((attach.presetId && !presets.some(preset => preset.id === attach.presetId)) || (attach.worldbookId && !books.some(book => book.id === attach.worldbookId))) {
+      setOutputError('所选预设或世界书已不存在，请重新选择'); return;
+    }
+    const messages = request.messages;
+    const sequence = ++generation.current;
+    generatedNodes.current = JSON.stringify(nodes); setOutputError('');
+    generatedRequest.current = JSON.stringify({ floorStart, floorEnd, messages });
     setStreaming(true);
     setRawOutput('');
     setOpItems(null);
@@ -102,19 +151,19 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
     abortRef.current = controller;
     try {
       await callOpenAIMessages(config, messages, {
-        onChunk: (c) => { outputRef.current += c; setRawOutput(outputRef.current); },
+        onChunk: (c) => { if (generation.current === sequence && requestEpoch.current === getVaultEpoch()) { outputRef.current += c; setRawOutput(outputRef.current); } },
         signal: controller.signal,
-        params: { temperature: 0.2 }, // 求稳定结构化输出
+        params: { ...request.params, temperature: 0.2 },
       });
-      const parsed = parseTreeOps(outputRef.current);
-      setOpItems(parsed.map((op) => ({ op, included: true, expanded: false })));
-      if (parsed.length === 0) toast({ title: '未解析出有效操作', description: '可重试或调整楼层范围', variant: 'destructive' });
+      if (generation.current !== sequence || requestEpoch.current !== getVaultEpoch()) return;
+      const parsed = parseTreeOpsResult(outputRef.current);
+      if (parsed.status !== 'ok') { setOutputError(parsed.status === 'refused' ? '模型拒绝了本次请求，原始输出已保留。' : parsed.status === 'invalid-json' ? '模型输出不是有效 JSON，原始输出已保留。' : '没有有效树操作，原始输出已保留。'); return; }
+      setOpItems(parsed.ops.map((op) => ({ op, included: true, expanded: false })));
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') toast({ title: '已停止' });
       else toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
     } finally {
-      setStreaming(false);
-      abortRef.current = null;
+      if (generation.current === sequence) { setStreaming(false); abortRef.current = null; }
     }
   };
 
@@ -128,6 +177,9 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
   const includedCount = opItems?.filter((it) => it.included).length ?? 0;
 
   const handleConfirm = async () => {
+    const sequence = generation.current;
+    if (requestEpoch.current !== getVaultEpoch() || generatedNodes.current !== JSON.stringify(nodes)
+      || generatedRequest.current !== JSON.stringify({ floorStart, floorEnd, messages: request.messages })) { setOutputError('目标、输入或树内容已变化，请重新生成。'); return; }
     const activeOps = opItems?.filter((it) => it.included).map((it) => it.op) ?? [];
     if (activeOps.length === 0) return;
     // 本批事实的卷/楼层标记（仅角色节点会按它分卷归档，见 applyTreeOps）。
@@ -136,13 +188,19 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
     const hi = Math.max(floorStart, floorEnd);
     let sectionLabel = `楼层 ${lo}~${hi}`;
     try {
-      const bid = loadSessionPointer()?.currentBookId ?? null;
       const vol = (await getAllSummaries()).find((s) =>
-        s.kind === 'volume' && s.volumeNumber != null && s.bookId === bid
+        s.kind === 'volume' && s.volumeNumber != null && s.bookId === storyId && (s.branchId ?? null) === branchId && !s.rangeDetached
         && lo >= s.floorStart && hi <= s.floorEnd
       );
       if (vol) sectionLabel = `第${vol.volumeNumber}卷 · 楼层 ${lo}~${hi}`;
     } catch { /* 查不到分卷就用楼层区间 */ }
+    if (treeId) {
+      try {
+        const current = await getCurrentRepo<StoryTree>('stories').get(treeId);
+        if (!current || current.bookId !== storyId || (current.branchId ?? null) !== branchId) { setOutputError('故事树已移动或删除，请重新打开。'); return; }
+      } catch (error) { setOutputError(`读取目标故事树失败：${String(error)}`); return; }
+    }
+    if (sequence !== generation.current || requestEpoch.current !== getVaultEpoch()) return;
     const result = applyTreeOps(nodes, activeOps, { sectionLabel });
     onApply(result.nodes);
     toast({
@@ -180,6 +238,22 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
             end={floorEnd}
             onChange={(s, e) => { setFloorStart(s); setFloorEnd(e); }}
           />
+          {contextError && <p role="alert" className="text-sm text-destructive">读取上下文失败：{contextError}</p>}
+          <fieldset disabled={streaming} className="space-y-2">
+            <AttachPanel value={attach} onChange={setAttach} tokenEstimate={request.tokenEstimate} />
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={processed} onCheckedChange={value => setProcessed(value === true)} />使用本故事正则处理后的正文（不修改原文）</label>
+            <p className="text-xs text-muted-foreground">实际规则：{processed ? rules.filter(rule => !rule.disabled).map(rule => rule.name).join('、') || '无启用规则' : '原文'}；楼层 {floorStart}–{floorEnd}</p>
+            <details><summary className="cursor-pointer text-sm">参考总结/日记</summary>
+              <label className="flex items-center gap-2 text-sm"><Checkbox checked={crossBranch} onCheckedChange={value => { setCrossBranch(value === true); setSelectedRefs(new Set()); }} />显示本故事其他脉络，供显式引用</label>
+              {references.filter(record => crossBranch || (record.branchId ?? null) === branchId).map(record => <label key={record.id} className="flex items-center gap-2 py-1 text-sm">
+                <Checkbox checked={selectedRefs.has(record.id)} onCheckedChange={value => setSelectedRefs(previous => { const next = new Set(previous); if (value === true) next.add(record.id); else next.delete(record.id); return next; })} />
+                {record.title} · {record.kind === 'diary' ? `日记/${record.diaryOwner || record.genParams?.diaryOwner || '未指定人物'}` : '总结'} · {record.branchId ? '分支' : '主线'}
+              </label>)}
+            </details>
+          </fieldset>
+          <details><summary className="cursor-pointer text-sm">最终请求预览（约 {request.tokenEstimate.toLocaleString()} tokens）</summary>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded border border-border p-2 text-xs">{request.messages.map(message => `[${message.role}]\n${message.content}`).join('\n\n')}</pre></details>
+          {outputError && <p role="alert" className="text-sm text-destructive">{outputError}</p>}
 
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">额外要求（可选）</Label>
@@ -221,7 +295,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply }: AI
 
           <div className="flex items-center gap-2">
             {!streaming ? (
-              <Button className="gap-2" onClick={handleGenerate}>
+              <Button className="gap-2" disabled={contextLoading || !!contextError} onClick={handleGenerate}>
                 <Sparkles className="w-4 h-4" />生成
               </Button>
             ) : (

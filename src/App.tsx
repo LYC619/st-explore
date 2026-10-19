@@ -3,16 +3,16 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { createBrowserRouter, createRoutesFromElements, RouterProvider, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, useState } from "react";
 import { VaultGate } from "@/components/vault/VaultGate";
 import { MigrationNotice } from "@/components/MigrationNotice";
 import { ThemeSync } from "@/components/ThemeSync";
 import { AppLayout } from "@/components/AppLayout";
 import { THEME_KEYS, DEFAULT_THEME } from "@/lib/theme";
+import { RoleplayWorkspace } from '@/components/roleplay/RoleplayWorkspace';
 
 // 路由级代码分割：每个页面单独打包，首屏只加载首页所需 chunk。
-// loader 表单独列出：首屏渲染后空闲时预热全部 chunk（10.1-A7 切换卡顿专项——
-// 消除首次切页的 Suspense 白屏，本地静态资源预热成本可忽略）。
+// 页面按访问加载；避免启动时解析所有编辑器和大型依赖。
 const PAGE_LOADERS = {
   home: () => import("./pages/Home"),
   chats: () => import("./pages/ChatHub"),
@@ -46,29 +46,10 @@ const Preset = lazy(PAGE_LOADERS.preset);
 const RegexTool = lazy(PAGE_LOADERS.regex);
 const Beautify = lazy(PAGE_LOADERS.beautify);
 const NotFound = lazy(PAGE_LOADERS.notFound);
-// The original Tavern and its tokenizer are loaded only when opening a story for play.
-const Roleplay = lazy(() => import("./pages/Roleplay"));
-
-/** 空闲时预热全部页面 chunk（失败静默：预热失败不影响正常懒加载兜底） */
-function usePrefetchPages() {
-  useEffect(() => {
-    const prefetch = () => {
-      for (const load of Object.values(PAGE_LOADERS)) load().catch(() => {});
-    };
-    const idle = (window as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
-    if (idle) idle(prefetch);
-    else {
-      const t = setTimeout(prefetch, 1500);
-      return () => clearTimeout(t);
-    }
-  }, []);
-}
-
 const App = () => {
-  usePrefetchPages();
   // Data-router blockers let the live editor finish its save before Back/search/navigation.
-  const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<>
-    <Route path="/play/:id" element={<Suspense fallback={<div>正在打开酒馆…</div>}><Roleplay /></Suspense>} />
+  const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<Route element={<RoleplayWorkspace />}>
+    <Route path="/play/:id" element={null} />
     <Route element={<AppLayout />}>
       <Route path="/" element={<Home />} />
       <Route path="/play" element={<ChatHub />} />
@@ -87,7 +68,7 @@ const App = () => {
       <Route path="/ai-tools" element={<Navigate to="/settings" replace />} />
       <Route path="*" element={<NotFound />} />
     </Route>
-  </>)));
+  </Route>)));
   return (
   <ThemeProvider
     attribute="data-theme"

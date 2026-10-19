@@ -1,78 +1,134 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { CloudDownload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { downloadPortrait, type PortraitLink } from '@/lib/portrait-cloud';
-import { addPortraitFiles } from '@/lib/portrait-store';
-import { getVaultEpoch } from '@/lib/vault/active';
+import { CATBOX_WORLDBOOK_PRESET } from '@/lib/portrait-cloud';
+import { portraitCloudTasks } from '@/lib/portrait-cloud-task';
+import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { normalizePortraitUrl, parsePortraitList, DEFAULT_PORTRAIT_HOST, type PortraitParseResult } from '@/lib/portrait-list-parser';
+import { buildPortraitPreview, recommendPortraitRow, loadPortraitImportPreferences, savePortraitImportPreferences, type PortraitPreviewRow } from '@/lib/portrait-import-preferences';
+import type { PortraitExampleRule } from '@/lib/portrait-example-rule';
+import { portraitPreviewCache } from '@/lib/portrait-preview-cache';
+import { PortraitImportPreview } from './PortraitImportPreview';
+import { PortraitExampleRuleEditor } from './PortraitExampleRuleEditor';
+import { PortraitCloudTaskProgress } from './PortraitCloudTasks';
 import type { ArchiveCharacter } from '@/types/archive';
-import type { CharacterPatch } from '@/lib/character-write';
 
-type LinkState = PortraitLink & { selected: boolean; result?: string; saved?: boolean };
-export function PortraitCloudImport({ character, onPatch }: { character: ArchiveCharacter; onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter> }) {
-  const [open, setOpen] = useState(false), [source, setSource] = useState(''), [pattern, setPattern] = useState('');
-  const [template, setTemplate] = useState(''), [encode, setEncode] = useState(true), [row, setRow] = useState('');
-  const [links, setLinks] = useState<LinkState[]>([]), [error, setError] = useState(''), [busy, setBusy] = useState(false), [previewing, setPreviewing] = useState(false);
-  const controller = useRef<AbortController>(), worker = useRef<Worker>(), mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort(); worker.current?.terminate(); }; }, []);
-  const invalidate = () => { worker.current?.terminate(); worker.current = undefined; setPreviewing(false); setLinks([]); setError(''); };
-  const preview = () => {
-    invalidate(); setPreviewing(true);
-    const current = new Worker(new URL('../../lib/portrait-cloud.worker.ts', import.meta.url), { type: 'module' }); worker.current = current;
-    const finish = (message: { links?: PortraitLink[]; error?: string }) => {
-      current.terminate(); clearTimeout(timer);
-      if (!mounted.current || worker.current !== current) return;
-      worker.current = undefined; setPreviewing(false); setError(message.error ?? (message.links?.length ? '' : '未提取到名称，请检查文本和正则'));
-      setLinks(message.links?.map(link => ({ ...link, selected: true })) ?? []);
-    };
-    const timer = setTimeout(() => finish({ error: '正则处理超时，请简化规则或缩小文本范围' }), 1500);
-    current.onmessage = ({ data }) => finish(data); current.onerror = () => finish({ error: '无法解析规则，请检查正则表达式' });
-    current.postMessage({ source, pattern, template, encode });
-  };
-  const download = async () => {
-    setBusy(true); setError('');
-    const abort = new AbortController(); controller.current = abort; const epoch = getVaultEpoch();
-    for (const link of links.filter(link => link.selected && !link.saved)) {
-      if (abort.signal.aborted || epoch !== getVaultEpoch()) break;
-      let result = '已保存', saved = false;
+const EMPTY: PortraitParseResult = { items: [], failed: [], skipped: [] };
+export function PortraitCloudImport({ character }: { character: ArchiveCharacter }) {
+  const [preferences] = useState(loadPortraitImportPreferences);
+  const [open, setOpen] = useState(false), [source, setSource] = useState('');
+  const [mode, setMode] = useState<'auto' | 'advanced'>(preferences?.mode ?? 'auto');
+  const [host, setHost] = useState(preferences?.host ?? DEFAULT_PORTRAIT_HOST), [pattern, setPattern] = useState(preferences?.pattern ?? '');
+  const [template, setTemplate] = useState(preferences?.template ?? ''), [encode, setEncode] = useState(preferences?.encode ?? true);
+  const [rule, setRule] = useState<PortraitExampleRule | undefined>(preferences?.rule);
+  const [rows, setRows] = useState<PortraitPreviewRow[]>([]), [error, setError] = useState(''), [previewing, setPreviewing] = useState(false);
+  const [globalRow, setGlobalRow] = useState('__auto__'), [parsed, setParsed] = useState(EMPTY);
+  const worker = useRef<Worker>(), currentCharacter = useRef(character), parsedRef = useRef(EMPTY), sequence = useRef(0), globalRowRef = useRef(globalRow);
+  currentCharacter.current = character; globalRowRef.current = globalRow;
+  const task = useSyncExternalStore(portraitCloudTasks.subscribe, portraitCloudTasks.getSnapshot);
+  const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
+  const currentTask = task?.target.characterId === character.id && task.epoch === getVaultEpoch() ? task : null;
+  const busy = task?.status === 'running' || task?.status === 'cancelling';
+  useEffect(() => {
+    const counter = sequence, token = ++counter.current, epoch = getVaultEpoch();
+    worker.current?.terminate(); setError('');
+    if (!open) { setPreviewing(false); return; }
+    if (!source.trim()) { setRows([]); setParsed(EMPTY); parsedRef.current = EMPTY; setPreviewing(false); return; }
+    setPreviewing(true);
+    let current: Worker | undefined, timeout: ReturnType<typeof setTimeout> | undefined;
+    const debounce = setTimeout(() => {
+      const finish = (message: { result?: PortraitParseResult; error?: string }) => {
+        current?.terminate(); clearTimeout(timeout);
+        if (counter.current !== token || epoch !== getVaultEpoch()) return;
+        worker.current = undefined; setPreviewing(false); setError(message.error ?? '');
+        const result = message.result ?? EMPTY; setParsed(result); parsedRef.current = result;
+        setRows(previous => buildPortraitPreview(result, previous, currentCharacter.current).map(row =>
+          globalRowRef.current !== '__auto__' && !row.manualRow ? { ...row, rowId: globalRowRef.current || null, manualRow: true } : row));
+      };
       try {
-        const file = await downloadPortrait(link, abort.signal);
-        abort.signal.throwIfAborted(); if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，下载停止');
-        await onPatch(async current => {
-          if (epoch !== getVaultEpoch()) throw new Error('资料库已切换');
-          const outcome = await addPortraitFiles(current, row || null, [file]);
-          if (!outcome.ok) throw new Error('图片保存失败或目标分行已删除');
-          return outcome.patch;
-        });
-        saved = true;
-      } catch (cause) { result = abort.signal.aborted ? '已取消' : cause instanceof Error ? cause.message : '下载失败（网页端可能受图床跨域限制，可用客户端重试）'; }
-      if (mounted.current) setLinks(current => current.map(item => item.url === link.url ? { ...item, result, saved } : item));
+        current = new Worker(new URL('../../lib/portrait-cloud.worker.ts', import.meta.url), { type: 'module' }); worker.current = current;
+        current.onmessage = ({ data }) => finish(data); current.onerror = () => finish({ error: '无法解析，请检查高级规则或逐行修改' });
+        timeout = setTimeout(() => finish({ error: '解析超过 1.5 秒，请简化高级规则或缩小文本范围' }), 1500);
+        current.postMessage(mode === 'auto' ? { mode, source, host, rule } : { mode, source, pattern, template, encode });
+      } catch (error) { finish({ error: String(error) }); }
+    }, 250);
+    return () => { counter.current++; clearTimeout(debounce); clearTimeout(timeout); current?.terminate(); };
+  }, [open, source, mode, host, pattern, template, encode, rule, character.id]);
+  useEffect(() => { setRows(previous => buildPortraitPreview(parsedRef.current, previous, character)); }, [character]);
+  useEffect(() => { setRows([]); setSource(''); setGlobalRow('__auto__'); setOpen(false); }, [character.id]);
+  useEffect(() => { setRows([]); setSource(''); setOpen(false); }, [epoch]);
+  useEffect(() => () => { worker.current?.terminate(); setTimeout(() => portraitPreviewCache.clearUnused(), 0); }, []);
+  const changeRow = (id: string, patch: Partial<PortraitPreviewRow>, validate = false) => setRows(previous => previous.map(row => {
+    if (row.id !== id) return row;
+    const next = { ...row, ...patch };
+    if (patch.name !== undefined && !next.manualRow) next.rowId = recommendPortraitRow(next.name, character.portraitRows ?? []);
+    if (validate) {
+      try {
+        if (mode === 'advanced' && /^https?:\/\//i.test(next.input.trim())) {
+          const url = normalizePortraitUrl(next.input.trim());
+          const name = next.name.trim();
+          if (!name) throw new Error('名称不能为空');
+          return { ...next, name, manualName: true, manualUrl: true, url: url.href, issue: undefined, selected: true };
+        }
+        const result = parsePortraitList(next.input.trim(), host), item = result.items[0];
+        if (!item || result.items.length !== 1 || result.failed.length) throw new Error(result.failed[0]?.reason ?? '请输入一个有效图片链接或文件码');
+        return { ...next, name: next.name.trim() || item.name, manualName: true, manualUrl: true, url: item.url, issue: undefined, selected: true };
+      } catch (error) { return { ...next, url: undefined, selected: false, issue: String(error instanceof Error ? error.message : error) }; }
     }
-    if (mounted.current) { setBusy(false); if (epoch !== getVaultEpoch()) setError('资料库已切换，导入已停止'); }
+    if (patch.name !== undefined && !patch.name.trim()) return { ...next, issue: '名称不能为空', selected: false };
+    if (row.issue === '名称不能为空' && next.name.trim()) return { ...next, issue: undefined };
+    return next;
+  }));
+  const selected = rows.filter(row => row.selected && row.url && !row.issue && row.name.trim());
+  const download = () => {
+    setError('');
+    try {
+      for (const row of selected) if (row.rowId && !character.portraitRows?.some(item => item.id === row.rowId)) throw new Error('第 ' + row.line + ' 行目标分行已删除，请重新选择');
+      const remembered = { version: 1 as const, mode, host, pattern, template, encode, rule };
+      portraitCloudTasks.start({ characterId: character.id, characterName: character.displayMeta?.name || character.name, rowId: null, rowTitle: '逐行保存' },
+        selected.map(row => ({ name: row.name, url: row.url!, rowId: row.rowId, rowTitle: character.portraitRows?.find(item => item.id === row.rowId)?.title ?? '未分行', force: row.force })),
+        { onFirstSave: () => savePortraitImportPreferences(remembered) });
+    } catch (error) { setError(error instanceof Error ? error.message : String(error)); }
   };
   return <>
     <Button variant="outline" size="sm" onClick={() => setOpen(true)}><CloudDownload className="mr-1.5 h-4 w-4" />从图床导入</Button>
-    <Dialog open={open} onOpenChange={value => { if (!value && busy) return; setOpen(value); }}>
+    <Dialog open={open} onOpenChange={value => { setOpen(value); if (!value) setTimeout(() => portraitPreviewCache.clearUnused(), 0); }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader><DialogTitle>从图床导入立绘</DialogTitle><DialogDescription>粘贴世界书里的立绘名称，预览拼接后的链接，再选择下载到本地。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>从图床导入立绘</DialogTitle><DialogDescription>粘贴即可自动预览，名称、链接和分行可逐行修改。有效行可先导入；开始后可关闭弹窗，前往其他模块。</DialogDescription></DialogHeader>
         <fieldset disabled={busy} className="space-y-3 min-w-0">
-          <label className="block text-sm">名称或世界书片段<Textarea aria-label="名称或世界书片段" value={source} onChange={e => { setSource(e.target.value); invalidate(); }} rows={5} placeholder={'开心\n生气\n害羞'} /></label>
-          <label className="block text-sm">提取正则（可留空，默认每行一个名称）<Input value={pattern} onChange={e => { setPattern(e.target.value); invalidate(); }} placeholder="例如：立绘名：(\S+)" /></label>
-          <label className="block text-sm">图片链接模板<Input value={template} onChange={e => { setTemplate(e.target.value); invalidate(); }} placeholder="https://example.com/角色/{name}.png" /></label>
-          <p className="text-xs text-muted-foreground">{'{name}'} 使用第一个捕获组或整行；支持 $1、$2、$& 和 $&lt;分组名&gt;。直接粘贴完整链接时填 $&amp;，并取消编码。</p>
-          <label className="flex gap-2 text-sm"><input type="checkbox" checked={encode} onChange={e => { setEncode(e.target.checked); invalidate(); }} />对提取的名称进行 URL 编码（中文、空格等）</label>
-          <label className="flex gap-2 items-center text-sm">保存到<select className="bg-background border rounded p-1.5" value={row} onChange={e => setRow(e.target.value)}><option value="">未分行</option>{character.portraitRows?.map(item => <option value={item.id} key={item.id}>{item.title}</option>)}</select></label>
-          <Button variant="secondary" onClick={preview} disabled={previewing || !source.trim() || !template.trim()}>{previewing ? '正在提取…' : '预览链接'}</Button>
+          <label className="block text-sm">名称或世界书片段<Textarea aria-label="名称或世界书片段" value={source} onChange={event => setSource(event.target.value)} rows={5} placeholder={'不开心: 不开心_hv26xb.png\nAndrea_happy_2ctstv.png\nhttps://files.catbox.moe/abcd.png'} /></label>
+          <label className="flex gap-2 items-center text-sm">保存到<select aria-label="保存到分行" className="min-w-0 bg-background border rounded p-1.5" value={globalRow} onChange={event => {
+            const value = event.target.value; setGlobalRow(value);
+            const recommended = buildPortraitPreview(parsedRef.current, [], character);
+            setRows(previous => previous.map(row => ({ ...row, rowId: value === '__auto__' ? recommended.find(item => item.id === row.id)?.rowId ?? null : value || null, manualRow: value !== '__auto__' })));
+          }}>
+            <option value="__auto__">按名称推荐，可逐行修改</option><option value="">全部保存到未分行</option>{character.portraitRows?.map(row => <option value={row.id} key={row.id}>{row.title}</option>)}
+          </select></label>
+          <details open={mode === 'advanced'}><summary className="cursor-pointer text-sm">高级设置</summary><div className="space-y-2 pt-2">
+            <label className="flex gap-2 text-sm">解析模式<select aria-label="解析模式" className="rounded border bg-background p-1.5" value={mode} onChange={event => setMode(event.target.value as 'auto' | 'advanced')}><option value="auto">自动识别</option><option value="advanced">模板与正则</option></select></label>
+            <label className="block text-sm">裸文件码使用的图床<Input aria-label="图床地址" value={host} onChange={event => setHost(event.target.value)} /></label>
+            <Button variant="secondary" size="sm" onClick={() => { setMode('advanced'); setPattern(CATBOX_WORLDBOOK_PRESET.pattern); setTemplate(CATBOX_WORLDBOOK_PRESET.template); }}>Catbox 世界书列表</Button>
+            {mode === 'advanced' && <><label className="block text-sm">提取正则（空为逐行）<Input aria-label="提取正则" value={pattern} onChange={event => setPattern(event.target.value)} /></label>
+              <label className="block text-sm">图片链接模板<Input aria-label="图片链接模板" value={template} onChange={event => setTemplate(event.target.value)} /></label>
+              <p className="text-xs text-muted-foreground">{'{name}'} 使用第一个捕获组或整行；支持 $1、$2、$&amp; 和命名捕获。完整 URL 使用 $&amp; 并取消编码。</p>
+              <label className="flex gap-2 text-sm"><input type="checkbox" checked={encode} onChange={event => setEncode(event.target.checked)} />对提取的组件进行 URL 编码</label></>}
+            {rule && <Button variant="outline" size="sm" onClick={() => setRule(undefined)}>停用示例规则</Button>}
+          </div></details>
         </fieldset>
+        <p role="status" className="text-sm">{previewing ? '正在解析…' : rows.filter(row => row.url && !row.issue).length + ' 行有效 · ' + rows.filter(row => !!row.issue).length + ' 行待修正 · ' + parsed.skipped.length + ' 行空白/标签/重复已跳过'} · 裸文件默认图床：{host}</p>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        {!!links.length && <>
-          <div className="flex justify-between text-sm"><label><input type="checkbox" disabled={busy} checked={links.every(link => link.selected)} onChange={e => setLinks(current => current.map(link => ({ ...link, selected: e.target.checked })))} /> 全选 · {links.length} 个链接</label><span>已保存 {links.filter(link => link.saved).length} 张</span></div>
-          <div className="max-h-60 overflow-auto border rounded divide-y">{links.map(link => <label key={link.url} className="flex gap-2 p-2 text-sm items-start"><input type="checkbox" disabled={busy || link.saved} checked={link.selected} onChange={e => setLinks(current => current.map(item => item.url === link.url ? { ...item, selected: e.target.checked } : item))} /><span className="min-w-0"><strong className="font-medium">{link.name}</strong><span className="block text-xs text-muted-foreground break-all">{link.url}</span>{link.result && <span className={link.saved ? 'text-primary' : 'text-destructive'}>{link.result}</span>}</span></label>)}</div>
-          <div className="flex justify-end gap-2">{busy ? <Button variant="outline" onClick={() => controller.current?.abort()}>停止下载</Button> : <Button onClick={() => void download()} disabled={!links.some(link => link.selected && !link.saved)}>下载所选{links.some(link => link.result && !link.saved) ? ' / 重试失败项' : ''}</Button>}</div>
-          <p className="text-xs text-muted-foreground">逐张保存，失败项可重试；停止后已保存的图片会保留。每张上限 20 MB。</p>
-        </>}
+        {!!rows.length && <><label className="flex gap-2 text-sm"><input type="checkbox" aria-label="全选有效立绘" disabled={busy || previewing}
+          checked={rows.filter(row => row.url && !row.issue && (!row.alreadySaved || row.force)).length > 0 && rows.filter(row => row.url && !row.issue && (!row.alreadySaved || row.force)).every(row => row.selected)}
+          onChange={event => setRows(previous => previous.map(row => ({ ...row, selected: !!row.url && !row.issue && (!row.alreadySaved || !!row.force) && event.target.checked })))} />全选有效立绘 · 已选 {selected.length}</label>
+          <PortraitImportPreview rows={rows} character={character} disabled={busy || previewing} onChange={changeRow} />
+          <div className="flex justify-end"><Button onClick={download} disabled={busy || previewing || !selected.length}>导入所选（{selected.length}）</Button></div></>}
+        {parsed.failed[0] && !busy && <PortraitExampleRuleEditor key={parsed.failed[0].text} sample={parsed.failed[0].text} source={source} host={host} onUse={rule => { setRule(rule); setMode('auto'); }} />}
+        {busy && !currentTask && <p role="status" className="text-sm text-muted-foreground">其他角色的立绘正在导入，请完成或停止当前任务后再开始。</p>}
+        {currentTask && <div className="rounded border p-3"><PortraitCloudTaskProgress task={currentTask} /></div>}
+        <p className="text-xs text-muted-foreground">后台最多同时导入 4 张，每张上限 20 MB；预览按可见区域加载。已保存来源默认跳过，可明确重新导入。切换资料库会停止后续任务。</p>
       </DialogContent>
     </Dialog>
   </>;

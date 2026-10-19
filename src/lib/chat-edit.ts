@@ -5,7 +5,7 @@
  * - 编辑当前 swipe 必须同步 mes 与 swipes[swipe_id]，否则导回 ST 后一刷新就回到旧文本。
  * - 切换 swipe 后模型/时间要读 swipe_info[swipe_id]，不能只看顶层字段。
  */
-import type { ChatMessage } from '@/types/chat';
+import type { ChatMessage, ChatSession } from '@/types/chat';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
 import { STE_EDIT_SWIPE_FLAG } from '@/lib/adapters/st/reimport-merge';
 
@@ -83,6 +83,18 @@ export function hideMessage(message: ChatMessage): ChatMessage {
 /** OOC/注释楼（ST 的 /comment，extra.type='comment'）；与普通隐藏楼分开标注 */
 export function isOOCMessage(msg: ChatMessage): boolean {
   return (msg.rawData?.extra as { type?: unknown } | undefined)?.type === 'comment';
+}
+
+export function isManagedHidden(message: ChatMessage): boolean {
+  return message.role === 'system' || isOOCMessage(message) || message.rawData?.extra?.bbs_hidden === true
+    || message.rawData?.extra?.ste_runtime?.role === 'system';
+}
+
+/** One immutable edit for one persistence operation; plugin ownership remains intact. */
+export function setManualHiddenRange(session: ChatSession, start: number, end: number, hidden: boolean): ChatSession {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || end >= session.messages.length) throw new Error('隐藏范围无效');
+  return { ...session, messages: session.messages.map((message, index) => index < start || index > end || isManagedHidden(message)
+    ? message : hidden ? hideMessage(message) : unhideMessage(message)) };
 }
 
 /**

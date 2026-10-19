@@ -122,6 +122,10 @@ export function saveTextExport(output: { fileName: string; extension: string; co
   return invoke('save_text_export', output);
 }
 
+export function saveBinaryExport(output: { fileName: string; extension: 'png'; base64: string }): Promise<boolean> {
+  return invoke('save_binary_export', output);
+}
+
 /** 按绝对路径写二进制（阅读包导出用）。载荷走 base64——zip 塞不进 String。 */
 export function writeAbsBytes(path: string, bytes: Uint8Array): Promise<void> {
   let bin = '';

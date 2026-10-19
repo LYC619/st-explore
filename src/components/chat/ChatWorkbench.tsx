@@ -19,7 +19,9 @@ import { MessageEditDialog } from '@/components/chat/MessageEditDialog';
 import { RegexSidebar } from '@/components/chat/RegexSidebar';
 import { SettingsPanel } from '@/components/chat/SettingsPanel';
 import { applyRegexRules } from '@/lib/regex-processor';
-import { selectSwipe, syncEditedMessage, isOOCMessage, hideMessage, unhideMessage } from '@/lib/chat-edit';
+import { selectSwipe, syncEditedMessage, isOOCMessage, isManagedHidden, hideMessage, unhideMessage, setManualHiddenRange } from '@/lib/chat-edit';
+import { HiddenRangeControls } from './HiddenRangeControls';
+import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
 import { useViewport } from '@/hooks/use-viewport';
 import { cn } from '@/lib/utils';
 import type { ChatSession, ExportSettings, ChapterMarker, ChatMessage, RegexRule } from '@/types/chat';
@@ -34,6 +36,7 @@ export interface ChatWorkbenchHandle {
 }
 
 interface ChatWorkbenchProps {
+  recordContext?: { storyId: string; branchId: string | null; flush: () => Promise<void> };
   session: ChatSession;
   markers: ChapterMarker[];
   favorites: string[];
@@ -64,10 +67,12 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     onSessionChange, onMarkersChange, onFavoritesChange, onSettingsChange,
     onFloorChange, initialFloor, titleBadge, toolbarExtras, onReset, readerMode,
     readerStickyTop = 0,
+    recordContext,
   },
   ref,
 ) {
   const { toast } = useToast();
+  const [capture, setCapture] = useState<{ messageId: string; content: string } | null>(null);
   const { isCompact } = useViewport();
   // 撤销闭包/连续操作要读「最新」数据，props 在闭包里会过期，走 ref 中转
   const sessionRef = useRef(session);
@@ -234,7 +239,8 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   const setMessageHidden = useCallback((messageId: string, messageIndex: number, hidden: boolean) => {
     if (readerMode) return;
     const current = sessionRef.current.messages[messageIndex];
-    if (!current || current.id !== messageId || current.hidden === hidden || isOOCMessage(current)) return;
+    if (!current || current.id !== messageId || current.hidden === hidden) return;
+    if (isManagedHidden(current)) { toast({ title: '此楼层由系统或记忆插件管理', description: '请在对应记忆设置中处理隐藏。' }); return; }
     mutateSession((currentSession) => ({
       ...currentSession,
       messages: currentSession.messages.map((message) => (
@@ -502,6 +508,9 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
         </div>
       </div>
 
+      {capture && recordContext && <CaptureRecordDialog storyId={recordContext.storyId} branchId={recordContext.branchId}
+        messageId={capture.messageId} initialContent={capture.content} beforeSave={recordContext.flush}
+        onClose={() => setCapture(null)} onSaved={() => toast({ title: '已收录，可在角色详情中查看' })} />}
       <div className={cn('py-6', isCompact ? 'px-3' : 'px-4')}>
         {/* Preview + Sidebars Row */}
         {/* 窄屏改成上下叠：正则侧栏是固定 320px，390px 视口里横着放会把正文挤成一条。
@@ -509,6 +518,10 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
         <div className={cn('flex gap-4 items-start', isCompact && 'flex-col')}>
           {/* Preview Area */}
           <div className="flex-1 min-w-0">
+            {!readerMode && onSessionChange && <HiddenRangeControls key={session.id} count={session.messages.length} onApply={(start, end, hidden) => {
+              mutateSession(current => setManualHiddenRange(current, start, end, hidden));
+              toast({ title: hidden ? '已设置范围手动隐藏' : '已取消范围手动隐藏', description: '系统、OOC 和记忆插件管理的隐藏保持不变。' });
+            }} />}
             {!readerMode && <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0 flex-wrap">
                 {titleBadge}
@@ -617,6 +630,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                     searchQuery={searchQuery}
                     onSearchResult={handleSearchResult}
                     showHidden={showHidden}
+                    onCaptureMessage={!readerMode && recordContext ? (messageId, content) => setCapture({ messageId, content }) : undefined}
                     showOOC={showOOC}
                     scrollPaddingStart={(readerMode ? readerStickyTop : 0) + toolbarHeight + 8}
                   />

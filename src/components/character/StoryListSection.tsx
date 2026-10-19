@@ -5,11 +5,9 @@
  * 当前就地阅读中的故事左侧高亮条。
  */
 import { useState } from 'react';
-import { BookOpen, GitBranch, Pencil, Settings2, Star, Trash2, Upload, MessageSquare } from 'lucide-react';
+import { BookOpen, GitBranch, Pencil, Settings2, Trash2, Upload, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Slider } from '@/components/ui/slider';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -33,47 +31,9 @@ interface StoryListSectionProps {
   onExportFile?: (id: string, branchId: string | null, format: StoryFileFormat) => void;
   onPlay?: (id: string, branchId: string | null) => void;
   onDelete: (story: ArchiveStory) => void;
+  onCopy?: (id: string) => void | Promise<void>;
   onPatchStory: (id: string, patch: Partial<ArchiveStory>) => void;
   onRenameStory?: (id: string, title: string) => Promise<void>;
-}
-
-/** 行内评分 popover：0-10 分、0.5 步进；可清除 */
-function RatingPopover({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: Partial<ArchiveStory>) => void }) {
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState(story.rating ?? 7);
-  return (
-    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (o) setDraft(story.rating ?? 7); }}>
-      <PopoverTrigger asChild>
-        <button
-          className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0"
-          onClick={(e) => e.stopPropagation()}
-          title="故事评分（0.5 步进）"
-        >
-          <Star className={cn('w-3.5 h-3.5', story.rating !== undefined && 'fill-amber-400 text-amber-400')} />
-          {story.rating !== undefined ? story.rating : '未评分'}
-        </button>
-      </PopoverTrigger>
-      <PopoverContent className="w-56" onClick={(e) => e.stopPropagation()}>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="font-medium">故事评分</span>
-            <span className="text-primary font-semibold">{draft}</span>
-          </div>
-          <Slider value={[draft]} onValueChange={([v]) => setDraft(v)} min={0} max={10} step={0.5} />
-          <div className="flex justify-end gap-2">
-            {story.rating !== undefined && (
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground" onClick={() => { onPatch({ rating: undefined }); setOpen(false); }}>
-                清除
-              </Button>
-            )}
-            <Button size="sm" className="text-xs" onClick={() => { onPatch({ rating: draft }); setOpen(false); }}>
-              确定
-            </Button>
-          </div>
-        </div>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 /** 状态 chip：点击换四档 */
@@ -106,9 +66,10 @@ function StatusChip({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: 
 }
 
 export function StoryListSection({
-  stories, activeStoryId, onRead, onProcess, onExport, onExportFile, onPlay, onDelete, onPatchStory, onRenameStory,
+  stories, activeStoryId, onRead, onProcess, onExport, onExportFile, onPlay, onDelete, onCopy, onPatchStory, onRenameStory,
 }: StoryListSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [copying, setCopying] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const { toast } = useToast();
   const exportMenu = (storyId: string, branchId: string | null = null) => (
@@ -120,8 +81,9 @@ export function StoryListSection({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {onExportFile && <>
-          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'json')}>JSON 文件</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl')}>SillyTavern JSONL</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl-slim')}>SillyTavern JSONL（精简）</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl')}>完整 JSONL 备份</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'json')}>完整 JSON 备份</DropdownMenuItem>
         </>}
         <DropdownMenuItem onClick={() => onExport(storyId)}>更多导出与清理选项…</DropdownMenuItem>
       </DropdownMenuContent>
@@ -190,8 +152,8 @@ export function StoryListSection({
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap mt-0.5">
                     <span>{msgCount} 段聊天</span>
+                    {story.copiedFrom && <span title="这是包含总结、日记和故事树的独立副本；原故事的成果仍然保留">复制自「{story.copiedFrom.title}」</span>}
                     {story.wordCount !== undefined && <span>{formatWordCount(story.wordCount)}</span>}
-                    <RatingPopover story={story} onPatch={(p) => onPatchStory(story.id, p)} />
                     <span title={story.lastViewedAt ? formatFullTime(story.lastViewedAt) : undefined}>
                       {story.lastViewedAt ? `${formatFullTime(story.lastViewedAt)} 看过` : '未读'}
                     </span>
@@ -226,6 +188,12 @@ export function StoryListSection({
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
+                  {onCopy && <Button variant="ghost" size="sm" title="复制正文、分支、总结、日记和故事树，原故事保持不变" disabled={!!copying} onClick={() => {
+                    setCopying(story.id);
+                    void Promise.resolve().then(() => onCopy(story.id))
+                      .catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
+                      .finally(() => setCopying(null));
+                  }}>{copying === story.id ? '正在复制…' : '复制故事'}</Button>}
                 </div>
               </div>
             </div>

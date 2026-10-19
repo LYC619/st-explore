@@ -1,3 +1,5 @@
+import type { RemoveOptions } from '@/lib/repo';
+import { duplicateArchiveStory } from '@/lib/story-maintenance';
 /**
  * 聊天处理页（2.0 阶段2 起 = 未绑定模式的统一聊天工作台，定稿第六章）。
  * 界面主体在 ChatWorkbench（与故事工作区同一套）；本页只负责：
@@ -30,6 +32,7 @@ import {
   getAllArchiveStories,
   deleteArchiveStory,
   updateBranchLine,
+  getBranchLine,
 } from '@/lib/archive-db';
 import { bindSessionToCharacter } from '@/lib/bind-story';
 import { takePendingToolFile } from '@/lib/tool-handoff';
@@ -49,12 +52,15 @@ import {
 } from '@/lib/editor-story-context';
 import { pickRecentEditorStories } from '@/lib/home-layout';
 import { executeDeleteAction } from '@/lib/destructive-action';
+import { stableJson } from '@/lib/roleplay/fingerprint';
+import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 
 const Index = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const routeStoryId = searchParams.get('storyId');
+  const routeBranchId = searchParams.get('branch') || null;
   const [showTour, setShowTour] = useState(false);
   const [session, setSession] = useState<ChatSession | null>(null);
   const [settings, setSettings] = useState<ExportSettings>(getDefaultExportSettings);
@@ -66,12 +72,17 @@ const Index = () => {
   const [restoreFloor, setRestoreFloor] = useState<number | undefined>(undefined);
   // 当前会话对应的归档故事 id（兼容旧指针字段 currentBookId）。
   const [currentStoryId, setCurrentStoryId] = useState<string | null>(null);
+  const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
+  const settingsRef = useRef(settings); settingsRef.current = settings;
+  const savedDraft = useRef<{ storyId: string; branchId: string | null; session: ChatSession;
+    markers: ChapterMarker[]; favorites: string[]; settings: ExportSettings }>();
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   // 小说视图（阶段6）：未绑定聊天也可用；润色上下文用当前暂存的归档故事
   const [novelStory, setNovelStory] = useState<ArchiveStory | null>(null);
   const [novelOpen, setNovelOpen] = useState(false);
   const [allStories, setAllStories] = useState<ArchiveStory[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<ArchiveStory | null>(null);
+  const [copyingStory, setCopyingStory] = useState<string | null>(null);
   // 处理区入口交接来的文件（挂载时取一次，交给 ChatImporter 自动解析）
   const [handoffFile] = useState<File | null>(() => takePendingToolFile('chat'));
 
@@ -90,14 +101,19 @@ const Index = () => {
     }
   }, []);
 
-  const hydrateStory = useCallback((story: ArchiveStory, pointer = loadSessionPointer()) => {
-    setSession(story.session);
-    setMarkers(story.markers ?? []);
-    setFavorites(story.favorites ?? []);
-    if (story.settings) setSettings(story.settings);
+  const hydrateStory = useCallback((story: ArchiveStory, pointer = loadSessionPointer(), branchId: string | null = null) => {
+    const line = getBranchLine(story, branchId);
+    if (!line) throw new Error('故事分支不存在');
+    const markers = line.markers ?? [], favorites = line.favorites ?? [], settings = story.settings ?? settingsRef.current;
+    savedDraft.current = { storyId: story.id, branchId, session: line.session, markers, favorites, settings };
+    setCurrentBranchId(branchId);
+    setSession(line.session);
+    setMarkers(markers);
+    setFavorites(favorites);
+    setSettings(settings);
     setCurrentStoryId(story.id);
     setEditorStoryId(story.id);
-    const lastFloor = pointer?.currentBookId === story.id ? pointer.lastFloor : story.lastFloor;
+    const lastFloor = branchId === null && pointer?.currentBookId === story.id ? pointer.lastFloor : line.lastFloor;
     setRestoreFloor(typeof lastFloor === 'number' && lastFloor > 0 ? lastFloor : undefined);
   }, []);
 
@@ -127,12 +143,12 @@ const Index = () => {
         if (routeStoryId) toast({ title: '找不到这条故事', variant: 'destructive' });
         return;
       }
-      hydrateStory(story, pointer);
+      hydrateStory(story, pointer, routeBranchId);
     }).catch(() => {
       if (!cancelled && routeStoryId) toast({ title: '故事加载失败', variant: 'destructive' });
     });
     return () => { cancelled = true; };
-  }, [handoffFile, hydrateStory, routeStoryId, showTour, toast]);
+  }, [handoffFile, hydrateStory, routeStoryId, routeBranchId, showTour, toast]);
 
   useEffect(() => { void refreshStories(); }, [refreshStories]);
 
@@ -182,26 +198,43 @@ const Index = () => {
   // 自动落库：正则规则/楼层编辑/章节标记等处理状态随未绑定故事保存（防抖），
   // 否则暂存的记录永远停留在导入时的快照，重新打开会丢失之后的全部处理。
   const storySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveQueue = useRef(new KeyedSerialQueue());
   const persistCurrentStory = useCallback(async () => {
     if (!session || !currentStoryId) return;
-    await updateArchiveStory(currentStoryId, (current) => {
-      const updated = updateBranchLine(current, null, { session, markers, favorites });
-      return {
-        ...updated,
-        title: session.title || current.title,
-        settings,
-      };
+    return saveQueue.current.enqueue('editor', async () => {
+      const base = savedDraft.current;
+      if (!base || base.storyId !== currentStoryId || base.branchId !== currentBranchId) return;
+      if (base.session === session && base.markers === markers && base.favorites === favorites && base.settings === settings) return;
+      const next = { storyId: currentStoryId, branchId: currentBranchId, session, markers, favorites, settings };
+      await updateArchiveStory(currentStoryId, (current) => {
+        const line = getBranchLine(current, currentBranchId);
+        if (!line) throw new Error('故事分支不存在');
+        if (base.session !== session && stableJson(line.session) !== stableJson(base.session)) {
+          throw new Error('这条分支有新的聊天内容，请重新打开后再编辑；当前内容未覆盖');
+        }
+        const updated = updateBranchLine(current, currentBranchId, {
+          ...(base.session !== session ? { session } : {}),
+          ...(base.markers !== markers ? { markers } : {}),
+          ...(base.favorites !== favorites ? { favorites } : {}),
+        });
+        return {
+          ...updated,
+          ...(currentBranchId === null && base.session !== session ? { title: session.title || current.title } : {}),
+          ...(base.settings !== settings ? { settings } : {}),
+        };
+      });
+      if (savedDraft.current?.storyId === currentStoryId && savedDraft.current.branchId === currentBranchId) savedDraft.current = next;
     });
-  }, [currentStoryId, favorites, markers, session, settings]);
+  }, [currentStoryId, currentBranchId, favorites, markers, session, settings]);
 
   useEffect(() => {
     if (!session || !currentStoryId) return;
     if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current);
     storySyncTimerRef.current = setTimeout(() => {
-      void persistCurrentStory().catch(() => { /* 自动同步失败不打扰用户，下次修改会重试 */ });
+      void persistCurrentStory().catch(error => { toast({ title: '聊天处理内容尚未保存', description: error instanceof Error ? error.message : '保存失败，请重试', variant: 'destructive' }); });
     }, 800);
     return () => { if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current); };
-  }, [currentStoryId, persistCurrentStory, session]);
+  }, [currentStoryId, persistCurrentStory, session, toast]);
 
   const handleImport = async (newSession: ChatSession, stats?: ImportStats) => {
     setSession(newSession);
@@ -212,6 +245,8 @@ const Index = () => {
       const story = buildStoryFromSession(newSession);
       story.settings = settings;
       await saveArchiveStory(story);
+      savedDraft.current = { storyId: story.id, branchId: null, session: newSession, markers: [], favorites: [], settings };
+      setCurrentBranchId(null);
       setCurrentStoryId(story.id);
       setEditorStoryId(story.id);
       setFavorites([]);
@@ -236,6 +271,8 @@ const Index = () => {
   };
 
   const handleReset = () => {
+    savedDraft.current = undefined;
+    setCurrentBranchId(null);
     setSession(null);
     setMarkers([]);
     setFavorites([]);
@@ -271,11 +308,11 @@ const Index = () => {
     navigate(buildEditorChatPath(story.id));
   };
 
-  const handleDeleteUnbound = async () => {
+  const handleDeleteUnbound = async (options: RemoveOptions) => {
     if (!deleteTarget) return;
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
-      await deleteArchiveStory(target.id);
+      await deleteArchiveStory(target.id, options);
       setAllStories((current) => current.filter((story) => story.id !== target.id));
       if (target.id === currentStoryId) handleReset();
     }, {
@@ -283,15 +320,19 @@ const Index = () => {
       onFailure: () => toast({ title: '删除暂存故事失败', variant: 'destructive' }),
     });
     if (deleted) setDeleteTarget(null);
+    return deleted;
   };
 
   // 绑定到角色：未绑定故事补上 characterId 原地升级，总结/故事树成果带走，跳故事工作区
   const handleBind = async (character: ArchiveCharacter) => {
     if (!session) return;
     try {
+      await persistCurrentStory();
       const { story, carried } = await bindSessionToCharacter({
         characterId: character.id,
         storyId: currentStoryId,
+        branchId: currentBranchId,
+        expectedSession: savedDraft.current?.session,
         session,
         markers,
         favorites,
@@ -304,7 +345,7 @@ const Index = () => {
         title: `已绑定到「${character.name}」`,
         description: carried > 0 ? `${carried} 条总结/故事树已一并带走` : undefined,
       });
-      navigate(buildEditorChatPath(story.id), { replace: true });
+      navigate(buildEditorChatPath(story.id) + (currentBranchId ? '&branch=' + encodeURIComponent(currentBranchId) : ''), { replace: true });
     } catch (error) {
       console.error('Bind failed:', error);
       toast({ title: '绑定失败', variant: 'destructive' });
@@ -372,6 +413,15 @@ const Index = () => {
                           </span>
                         </p>
                       </div>
+                      <Button variant="ghost" size="sm" disabled={!!copyingStory}
+                        onClick={event => {
+                          event.stopPropagation(); setCopyingStory(story.id);
+                          void duplicateArchiveStory(story.id).then(copy => {
+                            setAllStories(current => [...current, copy]);
+                            toast({ title: '已复制故事', description: copy.title });
+                          }).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
+                            .finally(() => setCopyingStory(null));
+                        }}>{copyingStory === story.id ? '正在复制…' : '复制故事'}</Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -460,8 +510,8 @@ const Index = () => {
           onFavoritesChange={setFavorites}
           initialFloor={restoreFloor ?? currentFloor}
           onFloorChange={handleFloorChange}
-          progressKey={currentStoryId ? `${currentStoryId}:main` : undefined}
-          polish={novelStory ? { story: novelStory, branchId: null } : undefined}
+          progressKey={currentStoryId ? `${currentStoryId}:${currentBranchId ?? 'main'}` : undefined}
+          polish={novelStory ? { story: novelStory, branchId: currentBranchId } : undefined}
         />
       )}
 
@@ -470,9 +520,10 @@ const Index = () => {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除暂存故事「${deleteTarget?.title ?? ''}」？`}
-        description={`此操作不可恢复，将删除正文、章节标记、收藏与处理设置。当前共 ${deleteTarget?.session.messages.length ?? 0} 楼。`}
+        description={`日记、总结和故事树会保留为未绑定记录。当前共 ${deleteTarget?.session.messages.length ?? 0} 楼。`}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        onConfirm={() => void handleDeleteUnbound()}
+        fileTarget={deleteTarget ? { store: 'archiveStories', id: deleteTarget.id } : undefined}
+        onConfirm={handleDeleteUnbound}
       />
 
       {/* Guided Tour */}

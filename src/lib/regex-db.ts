@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 /**
  * 正则规则集资产的数据访问（2.0 阶段5，定稿第六/七章「规则入资产库」）。
  * 记录类型见 `@/types/regex`——放在那边是为了断开
@@ -21,8 +22,8 @@ export async function saveRegexCollection(item: RegexCollectionItem): Promise<vo
   return repo.put(item);
 }
 
-export async function deleteRegexCollection(id: string): Promise<void> {
-  return repo.remove(id);
+export async function deleteRegexCollection(id: string, options?: RemoveOptions): Promise<void> {
+  return repo.remove(id, options);
 }
 
 export function generateRegexCollectionId(): string {

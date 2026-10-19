@@ -5,12 +5,13 @@ import {
   RATING_TIER_LABELS,
   ratingTier,
   syncNsfwTag,
+  normalizeRatingTag,
 } from '@/lib/tag-taxonomy';
 
 type CharacterTagFields = Pick<Partial<ArchiveCharacter>, 'tags' | 'nsfw' | 'rating'>;
 
 function isRatingTierTag(raw: string): boolean {
-  return raw.startsWith('评价/') && RATING_TIER_LABELS.includes(raw.slice('评价/'.length) as (typeof RATING_TIER_LABELS)[number]);
+  return raw === '评价/低创' || (raw.startsWith('评价/') && RATING_TIER_LABELS.includes(raw.slice('评价/'.length) as (typeof RATING_TIER_LABELS)[number]));
 }
 
 function validateRating(rating: number | undefined): void {
@@ -40,7 +41,7 @@ export function applyCharacterTagPatch(
   } else if (current.rating !== undefined) {
     const expected = `评价/${ratingTier(current.rating)}`;
     const suppliedTiers = tags.filter(isRatingTierTag);
-    if (suppliedTiers.some((raw) => raw !== expected)) {
+    if (suppliedTiers.some((raw) => normalizeRatingTag(raw) !== expected)) {
       throw new Error('评价档位与评分不一致');
     }
     tags = applyRatingTierTag(tags, current.rating);

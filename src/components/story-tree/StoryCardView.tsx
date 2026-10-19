@@ -95,7 +95,7 @@ export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCard
                     <span className="text-[11px] text-primary/80 truncate" title={`最新 · ${preview.label}`}>最新 · {preview.label}</span>
                   )}
                   {preview.text && (
-                    <span className="line-clamp-3 whitespace-pre-line text-xs leading-relaxed text-muted-foreground" title={preview.text}>
+                    <span className="line-clamp-3 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
                       {preview.text}
                     </span>
                   )}

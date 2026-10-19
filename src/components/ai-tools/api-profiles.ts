@@ -74,6 +74,15 @@ export function getActiveProfile(): ApiProfile {
   return profiles.find((p) => p.id === activeId) ?? profiles[0];
 }
 
+/** A late catalog response belongs only to the exact connection that requested it. */
+export function storeProfileModelsIfCurrent(profile: Pick<ApiProfile, 'id' | 'apiUrl' | 'apiKey'>, models: string[]): boolean {
+  const { profiles, activeId } = loadApiProfiles();
+  const index = profiles.findIndex(item => item.id === profile.id && item.apiUrl === profile.apiUrl && item.apiKey === profile.apiKey);
+  if (index < 0) return false;
+  profiles[index] = { ...profiles[index], modelList: models };
+  persistProfiles(profiles, activeId); return true;
+}
+
 /** 兼容旧签名：返回活跃提供商的调用配置。全部 AI 调用点（总结/故事树/世界书/批量）继续用它。 */
 export function loadAPIConfig(): APIConfig {
   const p = getActiveProfile();

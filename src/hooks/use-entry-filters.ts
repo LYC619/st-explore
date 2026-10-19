@@ -29,7 +29,7 @@ const EMPTY_CRITERIA: EntryFilterCriteria = {
   filterEnabled: false,
   filterDisabled: false,
   filterPosition: 'all',
-  sortMode: 'order-asc',
+  sortMode: 'uid',
 };
 
 /** 纯函数：按条件筛选并排序。抽出来是为了能脱离 DOM 单测 */
@@ -130,7 +130,14 @@ export function useEntryFilters(allEntries: EntryPair[]): EntryFilterResult {
   const [filterEnabled, setFilterEnabled] = useState(false);
   const [filterDisabled, setFilterDisabled] = useState(false);
   const [filterPosition, setFilterPosition] = useState(EMPTY_CRITERIA.filterPosition);
-  const [sortMode, setSortMode] = useState<SortMode>(EMPTY_CRITERIA.sortMode);
+  const [sortMode, setSortMode] = useState<SortMode>(() => {
+    try {
+      const stored = localStorage.getItem('ste.worldbook.entry-sort');
+      if (stored && ['order-asc', 'order-desc', 'title', 'uid', 'uid-desc'].includes(stored)) return stored as SortMode;
+    } catch { /* Storage is optional for display preferences. */ }
+    return EMPTY_CRITERIA.sortMode;
+  });
+  useEffect(() => { try { localStorage.setItem('ste.worldbook.entry-sort', sortMode); } catch { /* Optional preference. */ } }, [sortMode]);
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
 

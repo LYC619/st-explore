@@ -306,7 +306,7 @@ describe('TagManagerDialog', () => {
 
     await click(buttonByText('类型'));
     await click(buttonByLabel('选择类型 人物'));
-    await click(buttonByText('添加到已选 1 张卡'));
+    await click(buttonByText('为所选 1 张卡设置类型'));
 
     expect(mocks.updateCharacter).toHaveBeenCalledTimes(1);
     const result = mocks.updateCharacter.mock.calls[0][1](owner);

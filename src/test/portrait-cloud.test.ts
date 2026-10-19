@@ -1,9 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildPortraitLinks, downloadPortrait } from '@/lib/portrait-cloud';
+import { buildPortraitLinks, downloadPortrait, CATBOX_WORLDBOOK_PRESET } from '@/lib/portrait-cloud';
+import { tinyPngBytes } from './fixtures/images';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 describe('portrait cloud import', () => {
+  it('extracts Catbox filenames and Chinese portrait names with the ready-to-use preset', () => {
+    const links = buildPortraitLinks({ ...CATBOX_WORLDBOOK_PRESET, source: '小雨 开心：立绘文件abc123.png\n星 空:默认xY9.webp', encode: true });
+    expect(links).toMatchObject([
+      { name: '小雨 开心', url: 'https://files.catbox.moe/abc123.png' },
+      { name: '星 空', url: 'https://files.catbox.moe/xY9.webp' },
+    ]);
+  });
   it('extracts captures, encodes names, and deduplicates generated URLs', () => {
-    expect(buildPortraitLinks({ source: '名：开心\n名：生气\n名：开心', pattern: '名：(\\S+)', template: 'https://example.com/{name}.png', encode: true })).toEqual([
+    expect(buildPortraitLinks({ source: '名：开心\n名：生气\n名：开心', pattern: '名：(\\S+)', template: 'https://example.com/{name}.png', encode: true })).toMatchObject([
       { name: '开心', url: 'https://example.com/%E5%BC%80%E5%BF%83.png' }, { name: '生气', url: 'https://example.com/%E7%94%9F%E6%B0%94.png' },
     ]);
     expect(buildPortraitLinks({ source: 'a-2', pattern: '(?<name>\\w+)-(\\d+)', template: 'https://x.test/$<name>/$2.webp', encode: false })[0].url).toBe('https://x.test/a/2.webp');
@@ -14,12 +24,29 @@ describe('portrait cloud import', () => {
     expect(() => buildPortraitLinks({ source: 'a', pattern: '', template: 'javascript:alert(1)', encode: false })).toThrow(/HTTP/);
   });
   it('checks actual file content and preserves extension for names without an extension', async () => {
-    const send = vi.fn(async () => new Response(new Uint8Array([137,80,78,71,13,10,26,10]), { headers: { 'content-type': 'application/octet-stream' } }));
+    const send = vi.fn(async () => new Response(tinyPngBytes(), { headers: { 'content-type': 'application/octet-stream' } }));
     const file = await downloadPortrait({ name: '开心', url: 'https://x.test/a' }, new AbortController().signal, send);
     expect(file.name).toBe('开心.png'); expect(file.type).toBe('image/png');
     await expect(downloadPortrait({ name: 'a', url: 'https://x.test/a' }, new AbortController().signal, async () => new Response('<html>denied</html>'))).rejects.toThrow(/不是/);
   });
   it('rejects oversized images before reading the body', async () => {
     await expect(downloadPortrait({ name: 'a', url: 'https://x.test/a' }, new AbortController().signal, async () => new Response('x', { headers: { 'content-length': '99999999' } }))).rejects.toThrow(/20 MB/);
+  });
+  it('rejects a truncated PNG instead of saving its signature as an image', async () => {
+    await expect(downloadPortrait({ name: '坏图', url: 'https://x.test/a.png' }, new AbortController().signal,
+      async () => new Response(tinyPngBytes().slice(0, 12)))).rejects.toThrow(/损坏|不完整/);
+  });
+  it.each(['jpeg', 'gif', 'webp', 'avif'])('accepts a real %s fixture but rejects its truncated download', async extension => {
+    const bytes = new Uint8Array(readFileSync(resolve('src/test/fixtures', `portrait-tiny.${extension}`)));
+    const link = { name: '真实图片', url: `https://x.test/a.${extension}` };
+    const signal = new AbortController().signal;
+    const file = await downloadPortrait(link, signal, async () => new Response(bytes));
+    expect(file.type).toBe(`image/${extension}`);
+    expect(file.size).toBe(bytes.length);
+    await expect(downloadPortrait(link, signal, async () => new Response(bytes.slice(0, -1)))).rejects.toThrow(/损坏|不完整/);
+  });
+  it('rejects a JPEG signature without image data', async () => {
+    await expect(downloadPortrait({ name: '坏图', url: 'https://x.test/a.jpg' }, new AbortController().signal,
+      async () => new Response(new Uint8Array([255, 216, 255])))).rejects.toThrow(/损坏|不完整/);
   });
 });

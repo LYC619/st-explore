@@ -9,9 +9,13 @@ export async function updateCharacterAssetReference(
   fromAssetId: string,
   toAssetId: string,
   updatedAt = Date.now(),
+  validate?: (current: ArchiveCharacter) => void,
 ): Promise<ArchiveCharacter | undefined> {
-  return updateCharacter(characterId, (current) => ({
+  return updateCharacter(characterId, (current) => {
+    validate?.(current);
+    return {
     assets: switchAssetRef(current.assets, kind, fromAssetId, toAssetId),
     updatedAt,
-  }));
+    };
+  });
 }

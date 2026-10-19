@@ -34,7 +34,7 @@ import type { CharacterPatch } from '@/lib/character-write';
 import type { NormalizedCharacterCard } from '@/lib/png-parser';
 import { introOf } from '@/lib/character-intro';
 import {
-  RATING_TIER_LABELS, RATING_TIER_PREFILL, type RatingTier, type TagCategory,
+  RATING_TIER_LABELS, RATING_TIER_PREFILL, normalizeRatingTag, type RatingTier, type TagCategory,
 } from '@/lib/tag-taxonomy';
 import { getLibraryTagPreferences } from '@/lib/archive-db';
 import {
@@ -260,10 +260,10 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
               <CollapsibleTags count={tagDraft.length}>
               {tagDraft.map((t) => (
                 <Badge key={t} variant="secondary" className="gap-1 font-normal shrink-0">
-                  {t}
+                  {normalizeRatingTag(t)}
                   <button
                     onClick={() => { void setTagChecked(t, false); }}
-                    aria-label={`删除标签 ${t}`}
+                    aria-label={`删除标签 ${normalizeRatingTag(t)}`}
                     className="tap-target inline-flex items-center justify-center"
                   >
                     <X className="w-3 h-3" />
@@ -286,9 +286,9 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
                     <section key={cat} className="min-w-0 rounded-md border border-[color:var(--hairline-inner)] p-2">
                       <p className="mb-1.5 truncate text-xs font-semibold text-[color:var(--text-primary)]" title={cat}>{cat}</p>
                       <div className="space-y-0.5">
-                      {quickTagOptions.filter((option) => option.category === cat).map((option) => {
+                      {quickTagOptions.filter((option) => option.category === cat && option.raw !== '评价/未评分').map((option) => {
                         const raw = option.raw;
-                        const has = tagDraft.includes(raw);
+                        const has = tagDraft.some(tag => normalizeRatingTag(tag) === raw);
                         // 评价档位不直接打标签：走评分确认（评分→标签单向自动）
                         const isTier = cat === '评价' && (RATING_TIER_LABELS as readonly string[]).includes(option.label);
                         return (

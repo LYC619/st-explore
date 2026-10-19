@@ -26,6 +26,20 @@ function character(
 const baseFilters: LibraryFilterState = { search: '', type: 'all', tags: {} };
 
 describe('library query rules', () => {
+  it('finds truly unscored imports from the rating field, even with legacy or stale tags', () => {
+    const chars = [
+      character('new import'),
+      character('legacy unrated', { tags: ['评价/低创'] }),
+      character('zero', { rating: 0, tags: ['评价/未评分'] }),
+      character('rated', { rating: 8, tags: ['评价/未评分', '评价/低创'] }),
+    ];
+    expect(filterCharacters(chars, { ...baseFilters, tags: { 评价: ['评价/未评分'] } }).map(c => c.id))
+      .toEqual(['new import', 'legacy unrated']);
+    expect(filterCharacters(chars, { ...baseFilters, tags: { 评价: ['评价/低创'] } }).map(c => c.id))
+      .toEqual(['zero']);
+    expect(filterCharacters(chars, { ...baseFilters, tags: { 评价: ['评价/精品'] } }).map(c => c.id))
+      .toEqual(['rated']);
+  });
   it('supports OR within a tag category and AND across categories', () => {
     const chars = [
       character('恋爱悬疑', { tags: ['剧情/恋爱', '剧情/悬疑', '玩法/RPG'] }),
@@ -79,6 +93,10 @@ describe('library query rules', () => {
       剧情: ['剧情/恋爱'],
       类型: ['剧情'],
     });
+  });
+
+  it('clears a restored legacy evaluation filter when its renamed option is clicked again', () => {
+    expect(toggleTagFilter({ 评价: ['评价/低创'] }, '评价', '评价/6分以下')).toEqual({});
   });
 
   it('intersects selected ids with a changed filtered result', () => {

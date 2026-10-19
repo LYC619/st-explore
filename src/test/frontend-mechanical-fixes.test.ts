@@ -113,7 +113,6 @@ describe('前端机械修复契约', () => {
     '/src/components/preset/prompt-block-style.ts': '同上，块左边框的对应色（从 PresetRoleBadge 拆出）',
     '/src/components/reader/ReaderView.tsx': '发言人两侧配色（用户/角色），由 reader-view-theme 测试钉住',
     '/src/components/story-tree/StoryTimeline.tsx': '时间轴的装饰性主色',
-    '/src/components/character/StoryListSection.tsx': '评分星标的琥珀色（状态 chip 已走 token）',
     '/src/components/character/RatingPanel.tsx': '评分星标的琥珀色',
     '/src/components/workspace/OutlinePanel.tsx': '书签标记的琥珀色',
   };

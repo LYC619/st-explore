@@ -13,10 +13,9 @@ import { Button } from '@/components/ui/button';
 import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
+import type { RemoveOptions } from '@/lib/repo';
+import { duplicateArchiveStory } from '@/lib/story-maintenance';
 import { useToast } from '@/hooks/use-toast';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
@@ -33,10 +32,13 @@ import {
 import { normalizeCharacterCard } from '@/lib/adapters/st';
 import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character-tag-domain';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
-import { downloadCharacterFile, downloadCharacterJson } from '@/lib/character-file';
+import { characterExportName, downloadCharacterFile, downloadCharacterJson } from '@/lib/character-file';
+import { CharacterWorldbookChoiceRequired } from '@/lib/character-export-snapshot';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { buildStoryFileExport, type StoryFileFormat } from '@/lib/story-file-export';
 import { saveTextFile } from '@/lib/roleplay/export-package-file';
 import { getVaultEpoch } from '@/lib/vault/active';
+import { subscribePortraitCloudSaves } from '@/lib/portrait-cloud-task';
 import { editsFromNormalized, exportCardJson, type CardEdits } from '@/lib/card-export';
 import { applyCharacterPageCardEdits, applyCharacterPageDisplayMeta } from '@/lib/character-page-edit';
 import { setPendingToolFile } from '@/lib/tool-handoff';
@@ -103,6 +105,7 @@ const CharacterPage = () => {
   const [activeTab, setActiveTab] = useState('stories');
   const [importOpen, setImportOpen] = useState(false);
   const [packExportOpen, setPackExportOpen] = useState(false);
+  const [exportChoice, setExportChoice] = useState<{ format: 'json' | 'file'; choices: { id: string; title: string }[] } | null>(null);
   const [cardEdits, setCardEdits] = useState<CardEdits | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [cardSaving, setCardSaving] = useState(false);
@@ -133,6 +136,10 @@ const CharacterPage = () => {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => subscribePortraitCloudSaves(saved => {
+    if (saved.id === id) setCharacter(saved);
+  }), [id]);
 
   useEffect(() => {
     if (!character) return;
@@ -254,9 +261,9 @@ const CharacterPage = () => {
     toast({ title: `已添加引用「${title}」` });
   };
 
-  const handleConfirmDeleteStory = async () => {
+  const handleConfirmDeleteStory = async (options: RemoveOptions) => {
     if (!storyToDelete) return;
-    await deleteArchiveStory(storyToDelete.id);
+    await deleteArchiveStory(storyToDelete.id, options);
     setStoryToDelete(null);
     await load();
     toast({ title: '故事已删除' });
@@ -312,13 +319,10 @@ const CharacterPage = () => {
   };
 
   /** 删除角色：名下故事转未绑定，不连带删除 */
-  const handleConfirmDeleteChar = async () => {
+  const handleConfirmDeleteChar = async (options: RemoveOptions) => {
     if (!character) return;
     try {
-      await Promise.all(
-        stories.map((s) => updateArchiveStory(s.id, () => ({ characterId: undefined, updatedAt: Date.now() }))),
-      );
-      await deleteCharacter(character.id);
+      await deleteCharacter(character.id, options);
       toast({ title: `已删除「${character.name}」（名下故事已转为未绑定）` });
       navigate('/library');
     } catch (e) {
@@ -327,8 +331,7 @@ const CharacterPage = () => {
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
-    } finally {
-      setCharDeleteOpen(false);
+      return false;
     }
   };
 
@@ -375,12 +378,27 @@ const CharacterPage = () => {
     navigate(buildEditorStoryPath(storyId, view), state);
   }, [navigate]);
 
-  const exportJsonCard = async () => {
+  const exportJsonCard = async (worldbookId?: string) => {
     if (!character) return;
     try {
-      const result = await downloadCharacterJson(character);
-      if (result !== 'cancelled') toast({ title: '已导出角色卡 JSON' });
-    } catch (error) { toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' }); }
+      const result = await downloadCharacterJson(character, worldbookId);
+      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡 JSON', description: `${characterExportName(character)}.json` });
+    } catch (error) {
+      if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'json', choices: error.choices });
+      else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const exportCardFile = async (worldbookId?: string) => {
+    if (!character) return;
+    try {
+      const result = await downloadCharacterFile(character, worldbookId);
+      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡',
+        description: `${characterExportName(character)}.${character.pngBase64 ? 'png' : 'json'}` });
+    } catch (error) {
+      if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'file', choices: error.choices });
+      else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
+    }
   };
 
   const exportStoryFile = async (storyId: string, branchId: string | null, format: StoryFileFormat) => {
@@ -485,7 +503,7 @@ const CharacterPage = () => {
             onPatch={patchCharacter}
             onEditCard={handleEditCard}
             onReadEmbedded={handleReadEmbedded}
-            onExport={() => downloadCharacterFile(character)}
+            onExport={() => { void exportCardFile(); }}
             onExportJson={() => { void exportJsonCard(); }}
             onDelete={() => setCharDeleteOpen(true)}
           />
@@ -503,7 +521,7 @@ const CharacterPage = () => {
               onPatch={patchCharacter}
               onEditCard={handleEditCard}
               onReadEmbedded={handleReadEmbedded}
-              onExport={() => downloadCharacterFile(character)}
+              onExport={() => { void exportCardFile(); }}
               onExportJson={() => { void exportJsonCard(); }}
               onDelete={() => setCharDeleteOpen(true)}
             />
@@ -629,6 +647,11 @@ const CharacterPage = () => {
                       onExportFile={(sid, branchId, format) => { void exportStoryFile(sid, branchId, format); }}
                       onPlay={(sid, branchId) => { void playStory(sid, branchId); }}
                       onDelete={setStoryToDelete}
+                      onCopy={async sid => {
+                        const copy = await duplicateArchiveStory(sid);
+                        await load();
+                        toast({ title: '已复制故事', description: copy.title });
+                      }}
                       onPatchStory={(sid, patch) => void patchStory(sid, patch)}
                       onRenameStory={async (sid, title) => {
                         await renameArchiveStory(sid, title);
@@ -737,6 +760,16 @@ const CharacterPage = () => {
         onPasteQuote={handlePasteQuote}
       />
 
+      <Dialog open={!!exportChoice} onOpenChange={open => { if (!open) setExportChoice(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>选择本次导出的世界书</DialogTitle>
+          <DialogDescription>当前角色有多个同级绑定。仅将所选世界书装入这次角色卡，不改变库内关联。</DialogDescription></DialogHeader>
+          {exportChoice?.choices.map(choice => <Button key={choice.id} variant="outline" onClick={() => {
+            const format = exportChoice.format; setExportChoice(null);
+            void (format === 'json' ? exportJsonCard(choice.id) : exportCardFile(choice.id));
+          }}>{choice.title}</Button>)}
+        </DialogContent>
+      </Dialog>
+
       <ReadingPackExportDialog
         open={packExportOpen}
         onOpenChange={setPackExportOpen}
@@ -744,35 +777,17 @@ const CharacterPage = () => {
         stories={sortedStories}
       />
 
-      <AlertDialog open={!!storyToDelete} onOpenChange={(open) => !open && setStoryToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除故事「{storyToDelete?.title}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              删除后无法恢复（不影响 ST 里的原文件）。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDeleteStory}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog open={!!storyToDelete} onOpenChange={open => !open && setStoryToDelete(null)}
+        title={`删除故事「${storyToDelete?.title}」？`}
+        description="日记、总结和故事树会保留为未绑定记录。"
+        fileTarget={storyToDelete ? { store: 'archiveStories', id: storyToDelete.id } : undefined}
+        onConfirm={handleConfirmDeleteStory} />
 
-      <AlertDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除「{character.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              只删除 STE 里的角色档案（类型、标签、评分等整理信息），不影响 ST 原目录里的文件。名下故事不会被删除，会转为「未绑定」状态。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDeleteChar}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}
+        title={`删除「${character.name}」？`}
+        description="名下故事不会被删除，会转为未绑定状态。"
+        fileTarget={{ store: 'characters', id: character.id }}
+        onConfirm={handleConfirmDeleteChar} />
     </AppLayout>
   );
 };

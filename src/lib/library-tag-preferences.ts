@@ -3,10 +3,14 @@ import {
   TAG_CATEGORIES,
   makeTag,
   parseTag,
+  characterFilterTags,
+  normalizeRatingTag,
   type ParsedTag,
   type TagCategory,
 } from '@/lib/tag-taxonomy';
 import type { BuiltinTagCategory } from '@/lib/tag-taxonomy';
+import type { ArchiveCharacter } from '@/types/archive';
+import { filterCharacters, type LibraryFilterState } from '@/lib/library-query';
 
 export interface LibraryTagPreferences {
   version: 1;
@@ -38,12 +42,13 @@ export interface LibraryFilterSections {
 }
 
 const BUILTIN_RAWS = new Set(
-  TAG_CATEGORIES.flatMap((category) => BUILTIN_TAGS[category].map((label) => makeTag(category, label))),
+  [...TAG_CATEGORIES.flatMap((category) => BUILTIN_TAGS[category].map((label) => makeTag(category, label))), '评价/6分以下', '评价/低创'],
 );
 
 const DEFAULT_HIDDEN = [
   ...BUILTIN_TAGS['卡面'].map((label) => makeTag('卡面', label)),
   ...BUILTIN_TAGS['评价'].map((label) => makeTag('评价', label)),
+  '评价/6分以下',
 ];
 
 export const DEFAULT_LIBRARY_TAG_PREFERENCES: LibraryTagPreferences = {
@@ -118,10 +123,11 @@ export function getTagCategories(preferences: LibraryTagPreferences): TagCategor
 export function buildManagedTagOptions(
   assignedTags: string[],
   preferences: LibraryTagPreferences,
+  characters?: readonly ArchiveCharacter[],
 ): ManagedTagOption[] {
   const counts = new Map<string, number>();
-  for (const item of assignedTags) {
-    const raw = item.trim();
+  for (const item of characters ? characters.flatMap(characterFilterTags) : assignedTags) {
+    const raw = normalizeRatingTag(item.trim());
     if (raw && !raw.startsWith('类型/')) counts.set(raw, (counts.get(raw) ?? 0) + 1);
   }
 
@@ -132,7 +138,8 @@ export function buildManagedTagOptions(
       definitions.set(raw, { parsed: parseTag(raw), builtIn: true });
     }
   }
-  for (const raw of preferences.customTags) {
+  for (const storedRaw of preferences.customTags) {
+    const raw = normalizeRatingTag(storedRaw);
     if (!raw.startsWith('类型/') && !definitions.has(raw)) {
       definitions.set(raw, { parsed: parseTag(raw, preferences.customCategories), builtIn: false });
     }
@@ -141,7 +148,7 @@ export function buildManagedTagOptions(
     if (!definitions.has(raw)) definitions.set(raw, { parsed: parseTag(raw, preferences.customCategories), builtIn: BUILTIN_RAWS.has(raw) });
   }
 
-  const order = new Map(preferences.order.map((raw, index) => [raw, index]));
+  const order = new Map(preferences.order.map((raw, index) => [normalizeRatingTag(raw), index]));
   const categoryOrder = new Map(getTagCategories(preferences).map((category, index) => [category, index]));
   return [...definitions.entries()]
     .map(([raw, definition]) => ({
@@ -149,7 +156,7 @@ export function buildManagedTagOptions(
       raw,
       builtIn: definition.builtIn,
       count: counts.get(raw) ?? 0,
-      visible: !preferences.hidden.includes(raw),
+      visible: !preferences.hidden.some(hidden => normalizeRatingTag(hidden) === raw),
     }))
     .sort((a, b) => {
       const ai = order.get(a.raw);
@@ -163,6 +170,21 @@ export function buildManagedTagOptions(
         - (categoryOrder.get(b.category) ?? Number.MAX_SAFE_INTEGER);
       return categoryDiff || a.label.localeCompare(b.label, 'zh-CN');
     });
+}
+
+/** Keep global definitions and preferences while counting the current type/search scope. */
+export function scopeLibraryTagOptions(
+  options: readonly ManagedTagOption[],
+  characters: ArchiveCharacter[],
+  filters: Pick<LibraryFilterState, 'search' | 'type'>,
+): ManagedTagOption[] {
+  const counts = new Map<string, number>();
+  const scopedCharacters = filterCharacters(characters, { search: filters.search, type: filters.type, tags: {} });
+  for (const character of scopedCharacters) {
+    const tags = new Set(characterFilterTags(character).map(raw => normalizeRatingTag(raw.trim())));
+    for (const raw of tags) counts.set(raw, (counts.get(raw) ?? 0) + 1);
+  }
+  return options.map(option => ({ ...option, count: counts.get(option.raw) ?? 0 }));
 }
 
 export function addCustomCategory(
@@ -189,9 +211,8 @@ export function setTagVisibility(
   raw: string,
   visible: boolean,
 ): LibraryTagPreferences {
-  const hidden = new Set(preferences.hidden);
-  if (visible) hidden.delete(raw);
-  else hidden.add(raw);
+  const hidden = new Set(preferences.hidden.filter(item => normalizeRatingTag(item) !== normalizeRatingTag(raw)));
+  if (!visible) hidden.add(normalizeRatingTag(raw));
   return { ...preferences, hidden: [...hidden] };
 }
 
@@ -249,14 +270,19 @@ export function buildLibraryFilterSections(
   uncategorizedExpanded: boolean,
   preferences: LibraryTagPreferences = DEFAULT_LIBRARY_TAG_PREFERENCES,
   hideUnused = false,
+  selectedTags: readonly string[] = [],
 ): LibraryFilterSections {
-  const eligible = options.filter((option) => option.visible && (!hideUnused || option.count > 0));
+  const selected = new Set(selectedTags.map(normalizeRatingTag));
+  const eligible = options.filter((option) => option.visible
+    && (!hideUnused || option.count > 0 || selected.has(option.raw)));
   const categories = getTagCategories(preferences)
     .map((category) => ({ category, options: eligible.filter((option) => option.category === category) }))
     .filter((section) => section.options.length > 0
       || (!hideUnused && preferences.customCategories.includes(section.category)));
-  const uncategorizedAll = eligible.filter((option) => option.category === '未分类' && option.count > 0);
-  const optionsToShow = uncategorizedExpanded ? uncategorizedAll : uncategorizedAll.slice(0, 6);
+  const uncategorizedAll = eligible.filter((option) => option.category === '未分类'
+    && (option.count > 0 || selected.has(option.raw)));
+  const optionsToShow = uncategorizedExpanded ? uncategorizedAll
+    : uncategorizedAll.filter((option, index) => index < 6 || selected.has(option.raw));
   return {
     categories,
     uncategorized: {

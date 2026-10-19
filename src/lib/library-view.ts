@@ -50,10 +50,3 @@ export const PAGE_SIZE_LABELS: Record<PageSize, string> = {
   '96': '每页 96 张',
   all: '不分页',
 };
-
-/** 激活筛选 chip：搜索+筛选叠加要可感知，点一下就能摘掉 */
-export interface ActiveFilterChip {
-  key: string;
-  label: string;
-  clear: () => void;
-}

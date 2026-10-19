@@ -12,6 +12,9 @@ export interface ManualSummaryInput {
   volumeNumber?: number;
   existingVolumes?: Pick<SummaryItem, 'volumeNumber'>[];
   now?: number;
+  diaryOwner?: string;
+  range?: { start: number; end: number };
+  source?: SummaryItem['source'];
 }
 
 /** Build a manual record with the same branch/range semantics as the generation workbench. */
@@ -30,8 +33,11 @@ export function buildManualSummaryItem(input: ManualSummaryInput): SummaryItem {
     kind: input.kind,
     title: input.title?.trim() || `手动录入 · ${new Date(now).toLocaleString('zh-CN')}`,
     branchId: input.branchId ?? undefined,
-    floorStart: 0,
-    floorEnd: Math.max(line.session.messages.length - 1, 0),
+    floorStart: input.range?.start ?? 0,
+    floorEnd: input.range?.end ?? (input.source ? 0 : Math.max(line.session.messages.length - 1, 0)),
+    ...(input.source && !input.range ? { rangeDetached: true } : {}),
+    source: input.source,
+    diaryOwner: input.kind === 'diary' ? input.diaryOwner?.trim() || undefined : undefined,
     content: input.content.trim(),
     volumeNumber: volume,
     createdAt: now,

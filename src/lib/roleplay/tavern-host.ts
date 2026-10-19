@@ -1,17 +1,19 @@
 import { getCurrentRepo } from '@/lib/repo';
+import { beginStoryGeneration } from '@/lib/story-activity';
 import { getRoleplayPreferences, saveRoleplayPreferences, type ArchiveMetaRecord, getBranchLine, resolveInitialBranchId, updateCharacter, updateArchiveStory } from '@/lib/archive-db';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
-import { loadApiProfiles } from '@/components/ai-tools/api-profiles';
+import { loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
+import { fetchModels } from '@/components/ai-tools/useOpenAI';
 import { openStorySession, type StoryCommit, type RoleplayStorySession } from './story-session';
 import { tokenizeTavern } from './tokenizer';
 import { customHeaders, prepareCompletion, sendPreparedCompletion } from './provider';
 import type { RoleplayPreferences } from '@/types/roleplay';
 import { createRoleplayAssets } from './assets';
-import { avatarKey, chatKey, createRoleplayCatalog, type ChatLocator } from './catalog';
+import { avatarKey, chatKey, createRoleplayCatalog, type CatalogCharacterDto, type ChatLocator } from './catalog';
 import { createAgentRuntime, type AgentRuntime, type AgentStatus, type RuntimeConfiguration, type WorldScopeEntry } from './agent-runtime';
 import { createRuntimeStore } from './runtime-store';
 import { monitorCompletion } from './completion-monitor';
@@ -26,7 +28,7 @@ import { checkpointDraft, recoverDraft, type DraftCheckpoint } from './draft';
 import { branchKey } from './paths';
 import type { RegexCollectionItem } from '@/types/regex';
 import { createRoleplayRegexAssets, type RoleplayRegexAssets, type RegexAssetSaveInput } from './regex-assets';
-import { ruleToSTScript } from '@/lib/st-regex-interop';
+import { embeddedRegexState, withoutEmbeddedRegex } from './embedded-regex';
 import { importHelperScripts, normalizeHelperSettings } from './helper-settings';
 import { createStoryPackageAdapter, type StoryPackagePreview } from './story-package';
 import { saveStoryPackageFile } from './export-package-file';
@@ -76,29 +78,37 @@ export async function createTavernHost(options: TavernHostOptions) {
   const isCurrent = () => !closed && getVaultEpoch() === vaultEpoch;
   const packageAdapter = createStoryPackageAdapter({ isCurrent });
   const packagePreviews = new Map<string, StoryPackagePreview>();
-  const [loadedStory, characters, assets, initialPreferences] = await Promise.all([
-    repos.stories.get(options.storyId), repos.characters.list(), createRoleplayAssets({ ...repos, isCurrent }), getRoleplayPreferences(repos.meta),
+  const [startup, assets, initialPreferences] = await Promise.all([
+    (async () => {
+      const story = await repos.stories.get(options.storyId);
+      if (!story) throw new Error('故事不存在');
+      if (options.branchId && !getBranchLine(story, options.branchId)) throw new Error('故事分支不存在');
+      const branchId = resolveInitialBranchId(story, options.branchId);
+      const line = getBranchLine(story, branchId);
+      if (!line) throw new Error('故事分支不存在');
+      return { storyId: story.id, branchId, characterId: story.characterId, assets: story.assets, userName: line.session.user.name };
+    })(), createRoleplayAssets({ ...repos, isCurrent }), getRoleplayPreferences(repos.meta),
   ]);
   let preferences = initialPreferences;
-  const cardEditorVersions = new Map(characters.map(character => [character.id, digest(stableJson(character.card))]));
+  const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64'> & { cardRevision: string }>();
+  const cardEditorVersions = new Map<string, string>();
+  function rememberCharacter(character: ArchiveCharacter) {
+    const cardRevision = digest(stableJson(character.card));
+    characters.set(avatarKey(character.id), { id: character.id, assets: character.assets, pngBase64: character.pngBase64, cardRevision });
+    if (!cardEditorVersions.has(character.id)) cardEditorVersions.set(character.id, cardRevision);
+  }
   let settingsWrite = Promise.resolve();
   let settingsError: unknown;
-  let generation: { fileName: string; key: string; id: string } | null = null;
-  if (!loadedStory) throw new Error('故事不存在');
-  const story = loadedStory;
-  if (options.branchId && !getBranchLine(story, options.branchId)) throw new Error('故事分支不存在');
-  const branchId = resolveInitialBranchId(story, options.branchId);
-  const initialLine = getBranchLine(story, branchId);
-  if (!initialLine) throw new Error('故事分支不存在');
-  const line = initialLine;
-  const catalog = await createRoleplayCatalog({ ...repos, storyId: story.id, branchId, isCurrent });
+  let generation: { fileName: string; key: string; id: string; release: () => void } | null = null;
+  const catalog = await createRoleplayCatalog({ ...repos, storyId: startup.storyId, branchId: startup.branchId, isCurrent,
+    onCharacterRead: rememberCharacter });
   async function inheritRuntime(locator: ChatLocator) {
     return ensureBranchRuntime({ storyId: locator.storyId, branchId: locator.branchId, store: createRuntimeStore(locator.storyId),
       stories: repos.stories, worldbooks: repos.worldbooks, isCurrent });
   }
   await inheritRuntime(catalog.initial);
   let selected = catalog.initial;
-  const session = await openStorySession(story.id, branchId, { repo: repos.stories, isCurrent });
+  const session = await openStorySession(startup.storyId, startup.branchId, { repo: repos.stories, isCurrent });
   const sessions = new Map<string, RoleplayStorySession>([[selected.key, session]]);
   const selectedChats = new Map<string, string>([[selected.avatar, selected.fileName]]);
   const runtimes = new Map<string, AgentRuntime>();
@@ -121,9 +131,8 @@ export async function createTavernHost(options: TavernHostOptions) {
     const snapshot = await (await regexFor(locator)).read();
     const story = await repos.stories.get(locator.storyId);
     const character = story?.characterId ? await repos.characters.get(story.characterId) : undefined;
-    const embedded = await Promise.all((character?.assets ?? []).filter(ref => ref.kind === 'regex' && ref.relations?.includes('embedded'))
-      .map(ref => repos.regexes.get(ref.assetId)));
-    return { ...snapshot, chatKey: locator.key, suppressedEmbeddedIds: embedded.flatMap(asset => asset?.rules.map(rule => rule.id) ?? []) };
+    const { suppressedEmbeddedIds, suppressedEmbeddedScripts } = await embeddedRegexState(character, repos.regexes);
+    return { ...snapshot, chatKey: locator.key, suppressedEmbeddedIds, suppressedEmbeddedScripts };
   }
   function versionsFor(locator: ChatLocator) {
     let versions = worldVersions.get(locator.key);
@@ -241,7 +250,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         const system = object(extra.ste_runtime).role === 'system' || ['system', 'narrator', 'comment'].includes(String(extra.type));
         if (!target.is_user && !system) capturedChat.pop();
       }
-      const source = decodeLiveChat(capturedChat, current.line.session);
+      const source = decodeLiveChat(capturedChat, current.line.session, typeof context.userName === 'string' ? context.userName : undefined);
       controllers.set(controller, { key: locator.key, session: source, refs: sourceRefs(source) });
       const configuration = await runtime.configuration();
       const auxiliary = context.type === 'quiet' && (configuration.memoryOwner === 'baibai' || context.source === 'helper');
@@ -280,15 +289,15 @@ export async function createTavernHost(options: TavernHostOptions) {
     }
   }
 
+  function decorateCharacter(dto: CatalogCharacterDto) {
+    const character = characters.get(dto.avatar);
+    const primary = character?.assets?.find(ref => ref.kind === 'worldbook' && (!ref.relations || ref.relations.includes('primary') || ref.relations.includes('embedded')));
+    const world = primary ? assets.worldName(primary.assetId) : undefined;
+    return { ...dto, ...(character ? { _ste_revision: character.cardRevision } : {}), ...(selectedChats.has(dto.avatar) ? { chat: selectedChats.get(dto.avatar)! } : {}),
+      data: { ...dto.data, extensions: { ...object(dto.data.extensions), ...(world ? { world } : {}) } } };
+  }
   async function characterDtos() {
-    return Promise.all((await catalog.characters()).map(async dto => {
-      const known = characters.find(c => avatarKey(c.id) === dto.avatar);
-      const character = known ? await repos.characters.get(known.id) : undefined;
-      const primary = character?.assets?.find(ref => ref.kind === 'worldbook' && (!ref.relations || ref.relations.includes('primary') || ref.relations.includes('embedded')));
-      const world = primary ? assets.worldName(primary.assetId) : undefined;
-      return { ...dto, ...(character ? { _ste_revision: digest(stableJson(character.card)) } : {}), ...(selectedChats.has(dto.avatar) ? { chat: selectedChats.get(dto.avatar)! } : {}),
-        data: { ...dto.data, extensions: { ...object(dto.data.extensions), ...(world ? { world } : {}) } } };
-    }));
+    return (await catalog.characters()).map(decorateCharacter);
   }
 
   function settingsSnapshot() {
@@ -297,17 +306,17 @@ export async function createTavernHost(options: TavernHostOptions) {
     const worldSettings = object(base.world_info_settings);
     const worldInfo = object(worldSettings.world_info);
     const savedWorldInfo = object(object(preferences.tavern?.world_info_settings).world_info);
-    const primaryPreset = [...story.assets ?? [], ...characters.find(c => c.id === story.characterId)?.assets ?? []].find(ref => ref.kind === 'preset');
+    const primaryPreset = [...startup.assets ?? [], ...characters.get(avatarKey(startup.characterId ?? ''))?.assets ?? []].find(ref => ref.kind === 'preset');
     const presetName = primaryPreset ? assets.presetName(primaryPreset.assetId) : undefined;
     const presetSettings = presetName ? assets.presetData().get(presetName) : undefined;
     const settings = {
-      ...base, firstRun: false, username: line.session.user.name,
+      ...base, firstRun: false, username: typeof preferences.tavern?.username === 'string' && preferences.tavern.username.trim() ? preferences.tavern.username : startup.userName,
       main_api: 'openai', active_character: selected.avatar, active_group: null,
       amount_gen: base.amount_gen ?? 600, max_context: base.max_context ?? 32768,
       power_user: { ...object(defaults.settings.power_user), ...object(base.power_user), auto_load_chat: true, auto_connect: true },
       world_info_settings: { ...worldSettings, world_info: { ...worldInfo,
         globalSelect: savedWorldInfo.globalSelect ?? assets.worldItems().filter(item => item.stGlobal).map(item => assets.worldName(item.id)),
-        charLore: savedWorldInfo.charLore ?? characters.map(character => ({ name: avatarKey(character.id).slice(0, -4),
+        charLore: savedWorldInfo.charLore ?? [...characters.values()].map(character => ({ name: avatarKey(character.id).slice(0, -4),
           extraBooks: (character.assets ?? []).filter(ref => ref.kind === 'worldbook' && ref.relations?.includes('extra')).map(ref => assets.worldName(ref.assetId)).filter(Boolean) })),
       } },
       oai_settings: { ...object(defaults.settings.oai_settings), ...presetSettings, ...object(preferences.tavern?.oai_settings),
@@ -579,12 +588,12 @@ export async function createTavernHost(options: TavernHostOptions) {
             }
             if (body.command === 'chat_history_generation_started') {
               if (generation) throw new Error('已有生成尚未结束');
-              generation = { fileName: String(locator.fileName), key: target.key, id: crypto.randomUUID() };
+              generation = { fileName: String(locator.fileName), key: target.key, id: crypto.randomUUID(), release: beginStoryGeneration(target.storyId) };
               options.onGeneration?.(true);
             } else {
               if (!generation || generation.key !== target.key) throw new Error('没有匹配的生成任务');
               try { await (await liveSession(target)).flush(); }
-              finally { generation = null; options.onGeneration?.(false); }
+              finally { generation.release(); generation = null; options.onGeneration?.(false); }
             }
             return json(null);
           }
@@ -635,15 +644,24 @@ export async function createTavernHost(options: TavernHostOptions) {
           await persistPreferences({ tavern });
           return json({ result: 'ok' });
         }
-        if (pathname === '/api/backends/chat-completions/status') return json({
-          bypass: true, data: [...new Set([mainProfile().model, ...mainProfile().modelList ?? []])].map(id => ({ id })),
-        });
+        if (pathname === '/api/backends/chat-completions/status') {
+          const profile = mainProfile();
+          let models = profile.modelList ?? [], warning: string | undefined;
+          try {
+            models = await fetchModels(profile.apiUrl, profile.apiKey, signal);
+            if (!isCurrent() || mainProfile().id !== profile.id || !storeProfileModelsIfCurrent(profile, models)) throw new Error('连接已变化，请在当前连接重新刷新');
+          } catch (error) {
+            models = mainProfile().modelList ?? [];
+            warning = error instanceof Error ? error.message : String(error);
+          }
+          return json({ bypass: true, data: [...new Set([mainProfile().model, ...models])].map(id => ({ id })), ...(warning ? { ste_warning: `模型刷新失败，显示缓存：${warning}` } : {}) });
+        }
         if (pathname === '/api/backends/chat-completions/generate') return await generate(body, signal);
         if (pathname === '/api/characters/all') return json(await characterDtos());
         if (pathname === '/api/characters/get') {
-          const character = (await characterDtos()).find(c => c.avatar === body.avatar_url);
+          const character = await catalog.character(String(body.avatar_url));
           if (!character) throw new Error('角色不存在');
-          return json(character);
+          return json(decorateCharacter(character));
         }
         if (pathname === '/api/characters/chats') {
           return json(await catalog.chats(String(body.avatar_url)));
@@ -667,11 +685,12 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/api/characters/edit' || pathname === '/api/characters/merge-attributes') {
           const avatar = String(body.avatar_url ?? body.avatar);
-          const character = characters.find(item => avatarKey(item.id) === avatar);
+          const known = characters.get(avatar);
+          const character = known ? await repos.characters.get(known.id) : undefined;
           // Synthetic characters belong to an unbound story; chat selection still works.
           if (typeof body.chat === 'string') selectedChats.set(avatar, body.chat);
           if (!character) {
-            if ((await catalog.characters()).some(item => item.avatar === avatar) && typeof body.chat === 'string') return json({});
+            if (await catalog.character(avatar) && typeof body.chat === 'string') return json({});
             throw new Error('角色不存在');
           }
           const avatarFile = object(body.avatar);
@@ -680,11 +699,8 @@ export async function createTavernHost(options: TavernHostOptions) {
           // Embedded collections are authoritative; keep the card's exported copy synchronized.
           const incomingExtensions = object(object(body.data).extensions);
           if (Array.isArray(incomingExtensions.regex_scripts)) {
-            const embedded = await Promise.all((character.assets ?? []).filter(ref => ref.kind === 'regex' && ref.relations?.includes('embedded'))
-              .map(ref => repos.regexes.get(ref.assetId)));
-            const linked = embedded.flatMap(asset => asset?.rules.map(ruleToSTScript) ?? []);
-            const ids = new Set(linked.map(script => script.id));
-            incomingExtensions.regex_scripts = [...incomingExtensions.regex_scripts.filter(script => !ids.has(object(script).id as string)), ...linked];
+            const embedded = await embeddedRegexState(character, repos.regexes);
+            incomingExtensions.regex_scripts = [...withoutEmbeddedRegex(incomingExtensions.regex_scripts, embedded), ...embedded.linked];
           }
           const updated = await updateCharacter(character.id, current => {
             if (!isCurrent()) throw new Error('文件库已切换');
@@ -718,7 +734,7 @@ export async function createTavernHost(options: TavernHostOptions) {
             return { card: nextCard, name: String(data.name ?? current.name), updatedAt: Date.now(), pngBase64,
               ...(typeof body.world === 'string' ? { assets: [...refs ?? [], ...(worldId ? [{ kind: 'worldbook' as const, assetId: worldId, relations: ['primary' as const] }] : [])] } : {}) };
           });
-          if (updated) characters.splice(characters.indexOf(character), 1, updated);
+          if (updated) rememberCharacter(updated);
           if (updated && pathname.endsWith('/edit')) cardEditorVersions.set(character.id, digest(stableJson(updated.card)));
           return json(updated ? { _ste_revision: digest(stableJson(updated.card)) } : {});
         }
@@ -747,7 +763,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           if (target.created) {
             const current = (await catalog.existingLine(avatar, name))!.line.session;
             commit = { storyId: target.storyId, branchId: target.branchId, previous: { ...current, messages: [] }, session: current };
-          } else commit = await live.save(body.chat);
+          } else commit = await live.save(body.chat, typeof body.ste_persona_name === 'string' ? body.ste_persona_name : undefined);
           // Checkpoint saves target a new branch without necessarily navigating to it.
           if (!object((body.chat as unknown[])?.[0]).chat_metadata || !object(object((body.chat as unknown[])?.[0]).chat_metadata).main_chat) {
             selected = target; options.onSelect?.(target);
@@ -811,7 +827,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     userAvatar(name: string) { return preferences.userAvatars?.[name]; },
     thumbnail(type: string, file: string) {
       if (type === 'bg') return `/backgrounds/${encodeURIComponent(file)}`;
-      const character = characters.find(c => avatarKey(c.id) === file);
+      const character = characters.get(file);
       return character?.pngBase64 ? `data:image/png;base64,${character.pngBase64}` : '/img/ai4.png';
     },
     async flush() {
@@ -821,11 +837,14 @@ export async function createTavernHost(options: TavernHostOptions) {
       for (const runtime of runtimes.values()) await runtime.flush();
     },
     close() {
+      generation?.release(); generation = null;
       closed = true;
       unsubscribeVault();
       for (const controller of controllers.keys()) controller.abort();
       for (const live of sessions.values()) live.close();
       for (const runtime of runtimes.values()) runtime.close();
+      sessions.clear(); runtimes.clear(); worldVersions.clear(); regexBindings.clear();
+      characters.clear(); cardEditorVersions.clear(); packagePreviews.clear();
     },
   };
 }

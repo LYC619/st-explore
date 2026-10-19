@@ -20,6 +20,7 @@ const exportCharactersToDirectory = vi.hoisted(() => vi.fn().mockResolvedValue({
 const pickDirectory = vi.hoisted(() => vi.fn().mockResolvedValue('D:/导出'));
 const isTauri = vi.hoisted(() => vi.fn().mockReturnValue(true));
 const toast = vi.hoisted(() => vi.fn());
+const updateCharacter = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast }), toast }));
 vi.mock('@/components/AppLayout', () => ({
@@ -32,6 +33,7 @@ vi.mock('@/lib/archive-db', () => ({
   getAllCharacters,
   deleteCharacter,
   saveCharacter: vi.fn().mockResolvedValue(undefined),
+  updateCharacter,
   // 真实实现永远返回规整后的对象，不会是 null；用真的 normalizer 免得测试造出不可能的形状
   getLibraryTagPreferences: vi.fn(async () => {
     const { normalizeLibraryTagPreferences } = await import('@/lib/library-tag-preferences');
@@ -138,6 +140,7 @@ beforeEach(() => {
   pickDirectory.mockClear().mockResolvedValue('D:/导出');
   isTauri.mockReturnValue(true);
   toast.mockClear();
+  updateCharacter.mockClear().mockImplementation(async (id, updater) => ({ ...mkCharacter(id), ...await updater(mkCharacter(id)) }));
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -150,6 +153,18 @@ afterEach(() => {
 
 describe('角色库批量选择', () => {
   const five = () => ['a', 'b', 'c', 'd', 'e'].map((id) => mkCharacter(id));
+
+  it('从批量栏直接设置所选卡类型，提交时按最新字段更新且不改未选卡', async () => {
+    await renderLibrary(five()); await enterBatchMode();
+    await clickCard('a'); await clickCard('c');
+    const typeButton = buttonByText('设置类型'); expect(typeButton).toBeTruthy();
+    await click(typeButton);
+    await click(document.querySelector('[aria-label="选择类型 剧情"]'));
+    await click(buttonContaining('为所选 2 张卡设置类型'));
+    expect(updateCharacter.mock.calls.map(call => call[0])).toEqual(['a', 'c']);
+    const patch = updateCharacter.mock.calls[0][1](mkCharacter('a', { tags: ['世界观/新标签', '类型/人物'] }));
+    expect(patch).toMatchObject({ type: '剧情', tags: ['世界观/新标签'] });
+  });
 
   it('普通点击切换单个，再点一次取消', async () => {
     await renderLibrary(five());

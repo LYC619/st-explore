@@ -20,7 +20,7 @@ export interface RoleplayStorySession {
   readonly storyId: string;
   readonly branchId: string | null;
   payload(): LiveChatPayload;
-  save(payload: unknown): Promise<StoryCommit>;
+  save(payload: unknown, activeUserName?: string): Promise<StoryCommit>;
   flush(): Promise<void>;
   close(): void;
 }
@@ -54,7 +54,7 @@ export async function openStorySession(storyId: string, branchId: string | null,
   return {
     storyId, branchId,
     payload: () => encodeLiveChat(acknowledged),
-    save(payload) {
+    save(payload, activeUserName) {
       const incoming = structuredClone(payload);
       const operation = tail.then(async () => {
         assertCurrent();
@@ -66,7 +66,7 @@ export async function openStorySession(storyId: string, branchId: string | null,
           if (sessionVersion(currentLine.session) !== version) {
             throw new Error('这条故事分支已被其他编辑修改，请重新打开后继续；当前正文未覆盖');
           }
-          const session = decodeLiveChat(incoming, currentLine.session);
+          const session = decodeLiveChat(incoming, currentLine.session, activeUserName);
           const indices = new Map(session.messages.map((message, index) => [message.id, index]));
           return updateBranchLine(current, branchId, {
             session,

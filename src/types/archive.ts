@@ -49,6 +49,7 @@ export interface PortraitRow {
   items: PortraitItem[];
 }
 
+export interface PortraitImportSource { url: string; host?: string; file?: string; sha256?: string }
 export interface PortraitItem {
   id: string;
   /** 来源：manual=手动导入；replaced=被替换的旧卡面自动存档 */
@@ -60,6 +61,8 @@ export interface PortraitItem {
   /** 网页版：图片数据（纯 base64 无前缀）；客户端为空（图片在文件夹） */
   dataBase64?: string;
   mime?: string;
+  importSource?: PortraitImportSource;
+  contentSha256?: string;
   addedAt: number;
 }
 
@@ -218,6 +221,8 @@ export interface ArchiveStory {
   lastImportedAt?: number;
   /** 最近一次导出副本的时间（阶段4，io 页显示） */
   lastExportedAt?: number;
+  /** 库内副本的来源快照；不作为 ST 写回目标。 */
+  copiedFrom?: { storyId: string; title: string; copiedAt: number };
   /** ST 对话元数据恢复出的资产引用。 */
   assets?: AssetRef[];
   /** 对话元数据指向但库内未找到的资产。 */

@@ -160,25 +160,24 @@ describe('世界书条目筛选与排序', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await fillUid('2');
-    expect(buttonByText('应用 UID')?.disabled).toBe(true);
+    expect(input.getAttribute('aria-invalid')).toBe('true');
     expect(document.body.textContent).toContain('已被占用');
     await fillUid('0');
-    await click(buttonByText('应用 UID'));
+    await act(async () => input.dispatchEvent(new FocusEvent('focusout', { bubbles: true })));
     expect(document.querySelector<HTMLInputElement>('#entry-uid')?.value).toBe('0');
-    await chooseFromSelect('Order 升序', 'UID 升序');
     expect(visibleKeys()).toEqual(['10', '2']);
     await click(buttonByText('新增'));
     expect(visibleKeys()).toContain('10');
     expect(visibleKeys()).toHaveLength(3);
   });
-  it('默认按 Order 升序展示，不受 entries 记录顺序影响', async () => {
+  it('默认按 UID 升序展示，不改变注入 Order', async () => {
     await renderBook(mkBook([
       mkEntry(1, { order: 30 }),
       mkEntry(2, { order: 10 }),
       mkEntry(3, { order: 20 }),
     ]));
 
-    expect(visibleKeys()).toEqual(['2', '3', '1']);
+    expect(visibleKeys()).toEqual(['1', '2', '3']);
   });
 
   it('切到 Order 降序、标题排序和创建顺序各自生效', async () => {
@@ -189,7 +188,7 @@ describe('世界书条目筛选与排序', () => {
       mkEntry(3, { order: 20, comment: 'Bravo' }),
     ]));
 
-    await chooseFromSelect('Order 升序', 'Order 降序');
+    await chooseFromSelect('UID 升序', 'Order 降序');
     expect(visibleKeys()).toEqual(['1', '3', '2']);
 
     await chooseFromSelect('Order 降序', '标题排序');
@@ -352,6 +351,7 @@ describe('世界书批量选择', () => {
       mkEntry(2, { order: 20 }),
       mkEntry(3, { order: 10 }),
     ]));
+    await chooseFromSelect('UID 升序', 'Order 升序');
     await enterBatchMode();
     expect(visibleKeys()).toEqual(['3', '2', '1']);
 

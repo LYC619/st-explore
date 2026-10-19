@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 /**
  * 小说视图（2.0 阶段6，定稿 5.1「小说视图」三层管道，阅读增强非独立功能）。
  * 覆盖层：按章节和楼层边界分页的小说排版正文。
@@ -521,9 +522,8 @@ const NovelView = ({
   };
 
   // 「不要了」：结果一生成就自动暂存了，只清屏那条记录还在库里，得连库里一起删
-  const handlePolishDiscard = async () => {
-    setPolishDiscardAsk(false);
-    if (polishSavedId) await deleteSummary(polishSavedId);
+  const handlePolishDiscard = async (options: RemoveOptions) => {
+    if (polishSavedId) await deleteSummary(polishSavedId, options);
     setPolishResult('');
     setPolishSavedId(null);
     setPolishPermanent(false);
@@ -1277,9 +1277,10 @@ const NovelView = ({
         onOpenChange={setPolishDiscardAsk}
         title="丢弃这份润色结果？"
         description={polishPermanent
-          ? '这份已永久保存，丢弃会把它从库里删掉，不可撤销。'
-          : '结果已自动暂存，丢弃会把它从库里删掉，不可撤销。'}
-        onConfirm={() => void handlePolishDiscard()}
+          ? '这份已永久保存，丢弃会将它从列表移除。'
+          : '结果已自动暂存，丢弃会将它从列表移除。'}
+        fileTarget={polishSavedId ? { store: 'summaries', id: polishSavedId } : undefined}
+        onConfirm={handlePolishDiscard}
         confirmLabel="丢弃"
       />
     </div>

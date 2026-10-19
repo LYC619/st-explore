@@ -1,5 +1,5 @@
 import { act } from 'react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import type { WorldBookItem } from '@/types/worldbook';
 import { button, click, db, deferred, dialog, dirty, expectContent, fixture, go, mount, navigationTests, query, save } from './asset-navigation-test-support';
 
@@ -65,18 +65,22 @@ it('does not let an old recent-list refresh replace the new save base', async ()
 });
 
 it('keeps recent-list cancellation separate from URL rollback and accepts the chosen list item', async () => {
-  await mount('worldbook');
-  await dirty('worldbook');
-  await click(Array.from(document.querySelectorAll('button')).find((element) => element.textContent?.includes('最近打开')));
-  const loadB = () => Array.from(document.querySelectorAll('[role="dialog"] button')).find((element) => element.textContent?.includes('Asset B'));
-  await click(loadB());
-  await click(button('取消', dialog()!));
-  expect(query().get('assetId')).toBe('A');
-  expect(document.querySelector('[data-action]')).toHaveAttribute('data-action', 'POP');
-  await click(loadB());
-  await click(button('确认加载', dialog()!));
-  expect(query().get('assetId')).toBe('B');
-  await expectContent('worldbook', 'B');
-  await save('worldbook');
-  expect(db.worldbook.save.mock.calls.at(-1)![0].id).toBe('B');
+  // This checks the dirty confirmation before autosave, independent of CPU load.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  try {
+    await mount('worldbook');
+    await dirty('worldbook');
+    await click(Array.from(document.querySelectorAll('button')).find((element) => element.textContent?.includes('最近打开')));
+    const loadB = () => Array.from(document.querySelectorAll('[role="dialog"] button')).find((element) => element.textContent?.includes('Asset B'));
+    await click(loadB());
+    await click(button('取消', dialog()!));
+    expect(query().get('assetId')).toBe('A');
+    expect(document.querySelector('[data-action]')).toHaveAttribute('data-action', 'POP');
+    await click(loadB());
+    await click(button('确认加载', dialog()!));
+    expect(query().get('assetId')).toBe('B');
+    await expectContent('worldbook', 'B');
+    await save('worldbook');
+    expect(db.worldbook.save.mock.calls.at(-1)![0].id).toBe('B');
+  } finally { vi.useRealTimers(); }
 });

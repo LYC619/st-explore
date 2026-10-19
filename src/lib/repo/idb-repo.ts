@@ -31,6 +31,9 @@ export interface PutOptions {
   derivedUnchanged?: boolean;
 }
 
+/** Explicit user deletion; omitted options retain legacy internal cleanup behavior. */
+export interface RemoveOptions { deleteFiles: boolean }
+
 export interface Repo<T extends BaseRecord> {
   /** 全量列表，按 updatedAt 降序（与旧各 getAllX 行为一致） */
   list(): Promise<T[]>;
@@ -45,7 +48,7 @@ export interface Repo<T extends BaseRecord> {
   listLight(): Promise<T[]>;
   get(id: string): Promise<T | undefined>;
   put(item: T, opts?: PutOptions): Promise<void>;
-  remove(id: string): Promise<void>;
+  remove(id: string, options?: RemoveOptions): Promise<void>;
 }
 
 function request<R>(req: IDBRequest<R>): Promise<R> {

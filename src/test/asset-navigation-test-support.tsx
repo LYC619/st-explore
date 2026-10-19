@@ -174,6 +174,12 @@ export function savedContent(kind: EditorKind, item: Item) {
 export function navigationTests(kind: EditorKind) {
   setupNavigation();
   describe(`${kind} identity navigation`, () => {
+    beforeEach(() => {
+      // These tests exercise immediate navigation before the 600ms debounce.
+      // Autosave timing/draining is covered separately; CPU load must not advance this clock.
+      if (kind === 'worldbook') vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+    afterEach(() => { if (kind === 'worldbook') vi.useRealTimers(); });
     it('loads B without remounting and saves only B', async () => {
       await mount(kind);
       await expectContent(kind, 'A');
@@ -361,7 +367,12 @@ export function navigationTests(kind: EditorKind) {
       await dirty(kind);
       await act(async () => write.resolve());
       await go('?assetId=B');
-      expect(dialog()).not.toBeNull();
+      if (kind === 'worldbook') {
+        // Autosave drains edits made during an in-flight write before navigation.
+        expect(db[kind].save).toHaveBeenCalledTimes(2);
+        expect(savedContent(kind, db[kind].save.mock.calls.at(-1)![0])).toBe('unsaved A');
+        await expectContent(kind, 'B');
+      } else expect(dialog()).not.toBeNull();
     });
 
     it('a rejected save preserves the draft and its dirty baseline', async () => {
@@ -451,7 +462,7 @@ export function navigationTests(kind: EditorKind) {
       const removal = deferred<void>();
       db[kind].remove.mockReturnValueOnce(removal.promise);
       await click(button('确认删除', dialog()!));
-      expect(db[kind].remove).toHaveBeenCalledWith('A');
+      expect(db[kind].remove).toHaveBeenCalledWith('A', { deleteFiles: false });
       await go('?assetId=B');
       await act(async () => removal.resolve());
       await save(kind);

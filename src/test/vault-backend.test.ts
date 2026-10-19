@@ -139,7 +139,7 @@ describe('vault 角色映射', () => {
     const failingFs = {
       ...base,
       async writeText(path: string, content: string) {
-        if (fail && path === '资产/世界书/新标题.json') throw new Error('新位置写入失败');
+        if (fail && (path === '资产/世界书/新标题.json' || path.startsWith('.ste/moves/') && path.endsWith('/after'))) throw new Error('新位置写入失败');
         return base.writeText(path, content);
       },
     };

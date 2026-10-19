@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 import {
   ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List as ListIcon,
-  Plus, Search, SlidersHorizontal, Tags, X, PanelsTopLeft,
+  Plus, Search, SlidersHorizontal, Tags, PanelsTopLeft,
 } from 'lucide-react';
 import { HelpCard } from '@/components/HelpCard';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import type { LibrarySortKey } from '@/lib/library-query';
 import { cn } from '@/lib/utils';
 import {
   CARD_W_MAX, CARD_W_MIN, FONT_MAX, FONT_MIN, SORT_LABELS,
-  type ActiveFilterChip, type ViewMode,
+  type ViewMode,
 } from '@/lib/library-view';
 
 interface LibraryToolbarProps {
@@ -24,8 +24,6 @@ interface LibraryToolbarProps {
   onOpenTagManager: () => void;
   batchMode: boolean;
   onToggleBatchMode: () => void;
-  activeFilterChips: ActiveFilterChip[];
-  onClearAllFilters: () => void;
   sortKey: LibrarySortKey;
   onSortKeyChange: (key: LibrarySortKey) => void;
   sortAsc: boolean;
@@ -47,19 +45,16 @@ interface LibraryToolbarProps {
   reviewFilters?: ReactNode;
 }
 
-/** 顶栏一行：标题 / 搜索 / 激活筛选 / 排序+方向 / 分组 / 外观 / 导入 */
+/** 顶栏一行：标题 / 搜索 / 排序+方向 / 分组 / 外观 / 导入 */
 export function LibraryToolbar({
   characterCount, searchQuery, onSearchChange, onOpenTagManager,
-  batchMode, onToggleBatchMode, activeFilterChips, onClearAllFilters,
+  batchMode, onToggleBatchMode,
   sortKey, onSortKeyChange, sortAsc, onSortAscToggle,
   viewMode, onViewModeChange, groupBy, onGroupByChange,
   groupTagCategory, groupTagCategories, onGroupTagCategoryChange,
   cardWidth, onCardWidthChange, fontScale, onFontScaleChange,
   fileInputRef, onPickFiles, storyPackageTools, reviewFilters,
 }: LibraryToolbarProps) {
-  const showClearAll =
-    activeFilterChips.length > 1 || (activeFilterChips.length > 0 && searchQuery.trim().length > 0);
-
   return (
     <div className="shrink-0 flex items-center gap-2.5 px-6 pt-4 pb-2 flex-wrap">
       <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">角色库</h1>
@@ -88,25 +83,6 @@ export function LibraryToolbar({
         >
           {batchMode ? '退出批量' : '批量管理'}
         </Button>
-      )}
-      {activeFilterChips.map((chip) => (
-        <button
-          key={chip.key}
-          onClick={chip.clear}
-          className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] bg-[var(--brand-active-bg)] text-brand"
-          title="点击移除该筛选"
-        >
-          {chip.label}
-          <X className="w-3 h-3" />
-        </button>
-      ))}
-      {showClearAll && (
-        <button
-          onClick={onClearAllFilters}
-          className="text-[11px] text-[color:var(--text-muted)] hover:text-[color:var(--text-body)] underline underline-offset-2"
-        >
-          清除所有筛选
-        </button>
       )}
       <span className="flex-1" />
       <Button

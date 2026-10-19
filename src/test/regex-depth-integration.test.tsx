@@ -47,7 +47,7 @@ it.each(['TXT', 'Markdown', 'JSONL'])('exports %s using full conversation depths
   const settings = { ...getDefaultExportSettings(), regexRules: [rule], prefixMode: 'none' as const, exportRange: 'custom' as const, customStart: 1, customEnd: 3 };
   await act(async () => root.render(<ExportButton session={session} settings={settings} onSettingsChange={vi.fn()} />));
   await click('导出'); await click(format);
-  expect(blobs).toHaveLength(1);
+  await vi.waitFor(() => expect(blobs).toHaveLength(1));
   const text = await readBlob(blobs[0]);
   if (format === 'JSONL') expect(text.split('\n').slice(1).map(line => JSON.parse(line).mes)).toEqual(['foo1', 'foo2', 'bar3']);
   else expect(text).toContain('foo1\n\nfoo2\n\nbar3');

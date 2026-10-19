@@ -398,6 +398,8 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
 
       {session && (
         <AIFillDialog
+          key={`${tree.id}/${tree.bookId}/${tree.branchId ?? ''}`}
+          storyId={tree.bookId} branchId={tree.branchId ?? null} treeId={tree.id}
           open={aiFillOpen}
           onOpenChange={setAiFillOpen}
           session={session}

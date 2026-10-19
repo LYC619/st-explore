@@ -4,6 +4,7 @@ import { joinPath } from '@/lib/vault/fs';
 import { isCharacterRelativeSafePath, isSafeFileSegment } from '@/lib/vault/character-relative-path';
 import { safeName } from '@/lib/vault/naming';
 import { buildPortraitSnapshot } from '@/lib/portrait-snapshot';
+import { finalizeRetainedFiles } from '@/lib/vault/file-maintenance';
 
 export interface PortraitMutationJournal {
   version: 1;
@@ -15,6 +16,8 @@ export interface PortraitMutationJournal {
   createdFiles: string[];
   cleanupFiles: string[];
   createdAt: number;
+  /** Deletions defer all source file handling until the profile is durably saved. */
+  deletion?: { deleteFiles: boolean };
 }
 
 export interface JournalRecoveryReport {
@@ -89,6 +92,8 @@ function journalIsValid(value: unknown, characterId: string): value is PortraitM
     && journal.createdFiles.every(mediaPathIsSafe)
     && Array.isArray(journal.cleanupFiles)
     && journal.cleanupFiles.every(mediaPathIsSafe)
+    && (journal.deletion === undefined || typeof journal.deletion === 'object' && journal.deletion !== null
+      && typeof journal.deletion.deleteFiles === 'boolean' && journal.createdFiles.length === 0)
     && typeof journal.createdAt === 'number' && Number.isFinite(journal.createdAt))) return false;
   const beforeFiles = referencedMedia(journal.beforeRows!);
   const afterFiles = referencedMedia(journal.afterRows!);
@@ -246,7 +251,21 @@ async function recoverOneJournal(
   } catch (error) {
     warnings.push(`立绘快照更新失败：${error instanceof Error ? error.message : String(error)}`);
   }
-  warnings.push(...await cleanJournalFiles(fs, characterDir, [...journal.createdFiles, ...journal.cleanupFiles], referencedMedia(currentRows)));
+  if (journal.deletion) {
+    try {
+      await finalizeRetainedFiles(fs, {
+        operationId, store: 'characters', id: characterId,
+        paths: journal.cleanupFiles.map(path => joinPath(characterDir, path)),
+        deleteFiles: journal.deletion.deleteFiles,
+      });
+      const removedRows = journal.beforeRows.filter(row => !currentRows.some(current => current.id === row.id));
+      for (const row of removedRows) await fs.removeEmptyDir(joinPath(characterDir, '立绘', safeName(row.title, '未命名行')));
+    } catch (error) {
+      warnings.push(`处理删除后的立绘文件失败：${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    warnings.push(...await cleanJournalFiles(fs, characterDir, [...journal.createdFiles, ...journal.cleanupFiles], referencedMedia(currentRows)));
+  }
   if (warnings.length === 0) {
     try { await removePathIfPresent(fs, characterDir, joinPath(JOURNAL_DIR, `${journal.operationId}.json`)); }
     catch (error) { warnings.push(`移除 portrait journal 失败：${error instanceof Error ? error.message : String(error)}`); }

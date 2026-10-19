@@ -93,6 +93,15 @@ export function parseTreeOps(output: string): TreeOp[] {
   );
 }
 
+export function parseTreeOpsResult(output: string): { status: 'ok' | 'refused' | 'invalid-json' | 'empty'; ops: TreeOp[] } {
+  if (/^(抱歉|对不起|我无法|我不能|sorry|i (cannot|can't|can’t))/i.test(output.trim())) return { status: 'refused', ops: [] };
+  const first = output.indexOf('{'), last = output.lastIndexOf('}');
+  try { JSON.parse(output.slice(first, last + 1)); } catch { return { status: 'invalid-json', ops: [] }; }
+  const ops = parseTreeOps(output).filter(op => op.op === 'insert' ? typeof op.title === 'string' && !!op.title.trim()
+    : (op.op === 'update' || op.op === 'archive') && typeof op.path === 'string' && !!op.path.trim());
+  return { status: ops.length ? 'ok' : 'empty', ops };
+}
+
 const toTags = (kw: string | string[] | undefined): string[] => {
   if (!kw) return [];
   const arr = Array.isArray(kw) ? kw : kw.split(',');

@@ -4,9 +4,9 @@
  * 「设为当前」把立绘嵌卡数据换成卡面，旧卡面自动归档进「卡面」行（portrait-store）。
  * 网页版（IDB）与客户端（行文件夹）同构；用户手放的文件以「散图」只读展示，永不删改。
  * 图片按需读：视图只带路径，缩略图滚进可视区才取字节（PortraitThumb）。
- * 删图一律走系统回收站（客户端），批量管理可多选删除/移动到别的分行（0826 反馈 3）。
+ * 删除默认保留源文件到 STE 保留区，也可明确选择删除库内图片。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   Images, Plus, ChevronDown, ChevronUp, Download, ChevronLeft, ChevronRight,
   Pencil, Trash2, Replace, CheckSquare, FolderInput, Check, ImageDown, X,
@@ -31,6 +31,7 @@ import {
 } from '@/lib/portrait-store';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 import { PortraitCloudImport } from './PortraitCloudImport';
+import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 
 interface PortraitSectionProps {
   character: ArchiveCharacter;
@@ -126,11 +127,24 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [deleteFiles, setDeleteFiles] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteRunning = useRef(false);
+  const vaultEpoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch);
+  const vault = getActiveVault();
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState<string>('');
   const fileRef = useRef<HTMLInputElement>(null);
   const importRowId = useRef<string | null>(null);
   const replaceItemId = useRef<string | null>(null);
+
+  useEffect(() => {
+    setDeleteFiles(false);
+    setDeleteError(null);
+  }, [pendingDelete]);
+
+  useEffect(() => { setPendingDelete(null); }, [character.id, vaultEpoch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -251,7 +265,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
     fileRef.current?.click();
   };
 
-  // ---- 删除（单张 / 整行 / 批量走同一个确认框，两个按钮=删不删本地图片） ----
+  // ---- 删除（单张 / 整行 / 批量走同一个确认框） ----
 
   const deleteTargetIds = useMemo(() => {
     if (!pendingDelete) return [];
@@ -260,28 +274,38 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
       : pendingDelete.itemIds;
   }, [pendingDelete]);
 
-  const runDelete = async (deleteFiles: boolean) => {
+  const runDelete = async () => {
     const target = pendingDelete;
-    setPendingDelete(null);
-    if (!target) return;
+    if (!target || deleteRunning.current) return;
+    deleteRunning.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    const removeFiles = !!vault && deleteFiles;
+    const description = !vault ? undefined : removeFiles
+      ? vault.fs.trashFile ? '移除的受管图片按选择移入系统回收站。' : '移除的受管图片按选择从文件库删除。'
+      : '图片已转入 STE 保留区，可在设置的文件检查中清理，不会重新显示为散图。';
     try {
       if (target.kind === 'row') {
-        await patchAndReload((current) => removePortraitRow(current, target.row.rowId, deleteFiles));
+        await patchAndReload((current, context) => removePortraitRow(current, target.row.rowId, removeFiles, context.vault));
         toast({
           title: `已删除分行「${target.row.title}」`,
-          description: deleteFiles ? '图片已移入系统回收站，可从那里恢复。' : '图片文件留在原文件夹里，之后会按「散图」展示。',
+          description,
         });
       } else {
-        await patchAndReload((current) => removePortraitItems(current, target.itemIds, deleteFiles));
+        await patchAndReload((current, context) => removePortraitItems(current, target.itemIds, removeFiles, context.vault));
         setSelected(new Set());
         toast({
           title: `已删除 ${target.itemIds.length} 张立绘`,
-          description: deleteFiles ? '图片已移入系统回收站，可从那里恢复。' : '图片文件留在原文件夹里，之后会按「散图」展示。',
+          description,
         });
       }
       setLightbox(null);
+      setPendingDelete(null);
     } catch (error) {
-      toast({ title: '删除失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+      setDeleteError(error instanceof Error ? error.message : '删除失败，请重试');
+    } finally {
+      deleteRunning.current = false;
+      setDeleting(false);
     }
   };
 
@@ -356,7 +380,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
           按行组织：一行可以是一个角色，也可以是剧情的一个阶段。行内横向滚动，也可展开成网格。
         </span>
         <div className="ml-auto flex flex-wrap gap-1.5">
-          <PortraitCloudImport key={character.id} character={character} onPatch={patchAndReload} />
+          <PortraitCloudImport key={character.id} character={character} />
           <Button
             variant={selectMode ? 'default' : 'outline'}
             size="sm"
@@ -613,8 +637,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
         </DialogContent>
       </Dialog>
 
-      {/* 删除确认：两个动作按钮分别对应删不删磁盘上的图片 */}
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => { if (!open && !deleteRunning.current) setPendingDelete(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -626,14 +649,25 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
               {pendingDelete?.kind === 'row' && pendingDelete.row.items.length > deleteTargetIds.length
                 ? '这一行里用户手放的散图不会被删，文件夹会保留。'
                 : ''}
-              图片文件可以一起删掉（进系统回收站，能恢复），也可以留在文件夹里——留下的之后按「散图」只读展示。
+              {vault ? '默认将移除的受管图片转入 STE 保留区，可在设置的文件检查中清理；保留的图片不会重新显示为散图。仍被引用的图片和用户手放的文件会保留。' : '将从记录中移除所选立绘。'}
               角色卡 PNG 本身不受影响。
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {vault && (
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={deleteFiles} disabled={deleting} onChange={event => setDeleteFiles(event.target.checked)} />
+                同时删除 STE 库内文件
+              </label>
+              {deleteFiles && <p className="text-xs text-muted-foreground">{vault.fs.trashFile
+                ? '确认删除后，移除的受管图片将进入系统回收站。'
+                : '当前环境不支持系统回收站，文件将直接删除。'}</p>}
+            </div>
+          )}
+          {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <Button variant="outline" onClick={() => void runDelete(false)}>只删记录，保留图片</Button>
-            <Button variant="destructive" onClick={() => void runDelete(true)}>连图片一起删</Button>
+            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleting} onClick={() => void runDelete()}>{deleting ? '删除中…' : '确认删除'}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

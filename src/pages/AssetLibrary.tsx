@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 /**
  * 附属库：世界书 / 预设 / 正则结构化资产，以及 SillyTavern 其他资产的只读归档浏览器。
  * - 左侧栏 = 资产类别：世界书 / 预设 / 正则 / 其他资产（其他资产选中时在下面挂它的归档子分类）
@@ -202,19 +203,20 @@ const AssetLibrary = () => {
     [worldbooks, presets, regexes],
   );
 
-  const handleDelete = async () => {
+  const handleDelete = async (options: RemoveOptions) => {
     if (!toDelete) return;
     const target = toDelete;
     const deleted = await executeDeleteAction(async () => {
-      if (tab === 'worldbook') await deleteWorldBook(target.id);
-      else if (tab === 'preset') await deletePreset(target.id);
-      else await deleteRegexCollection(target.id);
+      if (tab === 'worldbook') await deleteWorldBook(target.id, options);
+      else if (tab === 'preset') await deletePreset(target.id, options);
+      else await deleteRegexCollection(target.id, options);
       await load();
     }, {
       onSuccess: () => toast({ title: `已删除「${target.title}」` }),
       onFailure: () => toast({ title: '删除失败', variant: 'destructive' }),
     });
     if (deleted) setToDelete(null);
+    return deleted;
   };
 
   const handleWorldBookImport = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -530,11 +532,12 @@ const AssetLibrary = () => {
       <DeleteConfirmDialog
         open={!!toDelete}
         title={`删除「${toDelete?.title ?? ''}」？`}
-        description={`此操作不可恢复。${(toDelete && (refNames[toDelete.id]?.length ?? 0) > 0)
+        description={`条目将从列表移除。${(toDelete && (refNames[toDelete.id]?.length ?? 0) > 0)
           ? `该资产被 ${refNames[toDelete.id].length} 张角色卡引用，删除后角色页会显示“引用已失效”并可一键移除。`
           : '该资产当前没有角色引用。'}`}
         onOpenChange={(open) => !open && setToDelete(null)}
-        onConfirm={() => void handleDelete()}
+        fileTarget={toDelete ? { store: tab === 'worldbook' ? 'worldbooks' : tab === 'preset' ? 'presets' : 'regexes', id: toDelete.id } : undefined}
+        onConfirm={handleDelete}
       />
     </AppLayout>
   );

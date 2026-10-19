@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 /**
  * 正则独立工具页（2.0 阶段5，定稿第六章）。
  * 左栏 = 现有 RegexSidebar（规则管理/快速添加/批量导入/ST 互导，编辑的是全局当前规则集）；
@@ -209,12 +210,12 @@ const RegexTool = () => {
     requestAsset(item.id);
   };
 
-  const handleDeleteCollection = async () => {
+  const handleDeleteCollection = async (options: RemoveOptions) => {
     if (!deleteTarget) return;
     const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
-      await deleteRegexCollection(target.id);
+      await deleteRegexCollection(target.id, options);
       if (!isCurrent()) return;
       if (activeCollectionId === target.id) setActiveCollectionId(null);
       await refreshCollections(isCurrent);
@@ -223,6 +224,7 @@ const RegexTool = () => {
       onFailure: () => { if (isCurrent()) toast({ title: '删除规则集失败', variant: 'destructive' }); },
     });
     if (deleted && isCurrent()) setDeleteTarget(null);
+    return deleted;
   };
 
   // ---- 可视化预览 ----
@@ -470,9 +472,10 @@ const RegexTool = () => {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除规则集「${deleteTarget?.title ?? ''}」？`}
-        description="此操作不可恢复。若角色仍引用该规则集，角色页会显示引用失效。"
+        description="条目将从列表移除。若角色仍引用该规则集，角色页会显示引用失效。"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        onConfirm={() => void handleDeleteCollection()}
+        fileTarget={deleteTarget ? { store: 'regexes', id: deleteTarget.id } : undefined}
+            onConfirm={handleDeleteCollection}
       />
     </AppLayout>
   );

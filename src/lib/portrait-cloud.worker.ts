@@ -1,5 +1,5 @@
-import { buildPortraitLinks, type PortraitLinkRules } from './portrait-cloud';
-self.onmessage = ({ data }: MessageEvent<PortraitLinkRules>) => {
-  try { self.postMessage({ links: buildPortraitLinks(data) }); }
+import { processPortraitImport, type PortraitImportRequest } from './portrait-import-parser';
+self.onmessage = ({ data }: MessageEvent<PortraitImportRequest>) => {
+  try { const result = processPortraitImport(data); self.postMessage({ result, links: result.items }); }
   catch (error) { self.postMessage({ error: error instanceof Error ? error.message : String(error) }); }
 };

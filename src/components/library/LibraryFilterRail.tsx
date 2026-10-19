@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { HelpHint } from '@/components/HelpHint';
 import { cn } from '@/lib/utils';
-import { CATEGORY_HELP, type BuiltinTagCategory, type TagCategory } from '@/lib/tag-taxonomy';
+import { CATEGORY_HELP, normalizeRatingTag, type BuiltinTagCategory, type TagCategory } from '@/lib/tag-taxonomy';
 import type { LibraryFilterSections } from '@/lib/library-tag-preferences';
 
 export interface LibraryTypeOption {
@@ -74,6 +74,7 @@ function FilterItem({
     <button
       type="button"
       title={label}
+      aria-pressed={active}
       onClick={onClick}
       data-library-uncategorized-item={uncategorized || undefined}
       className={cn(
@@ -189,6 +190,7 @@ export function LibraryFilterRail({
                 type="button"
                 key={option.value}
                 title={option.label}
+                aria-pressed={active}
                 onClick={() => onTypeChange(active ? 'all' : option.value)}
                 className={cn(
                   'flex h-8 min-w-0 items-center gap-1.5 rounded-md border px-2 text-left text-xs font-medium transition-colors',
@@ -254,7 +256,7 @@ export function LibraryFilterRail({
                         key={option.raw}
                         label={option.label}
                         count={option.count}
-                        active={activeTags[section.category]?.includes(option.raw) ?? false}
+                        active={activeTags[section.category]?.some(raw => normalizeRatingTag(raw) === option.raw) ?? false}
                         onClick={() => onTagToggle(section.category, option.raw)}
                       />
                     ))}

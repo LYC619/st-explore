@@ -81,7 +81,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); });
 test.beforeEach(async ({ page }) => {
   requests = []; stoppedStreams = 0;
-  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
+  await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.fulfill({ contentType: 'text/css', body: '' }));
 });
 
 async function seed(page: Page) {
@@ -128,8 +128,8 @@ test('original Tavern opens a STE story, streams a reply and persists it for reo
     await tavern.locator('#send_textarea').fill('门外有人吗？');
     await tavern.locator('#send_but').click();
     await expect(tavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
-    await page.getByRole('button', { name: '返回故事' }).click();
-    await expect(page).toHaveURL(new RegExp('/story/'));
+    await page.getByRole('button', { name: '返回聊天处理' }).click();
+    await expect(page).toHaveURL(new RegExp('/chat\\?'));
     const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
     expect(saved.session.messages.map((message: any) => message.content)).toEqual([
       '请进，外面在下雨。', '门外有人吗？', '门外传来轻轻的敲门声。',
@@ -138,7 +138,7 @@ test('original Tavern opens a STE story, streams a reply and persists it for reo
     expect(requests).toHaveLength(1);
     expect(requests[0].model).toBe('fixture-model');
     expect(requests[0].messages.some((message: any) => message.content.includes('门外有人吗？'))).toBe(true);
-    await page.getByRole('button', { name: '开始游玩' }).click();
+    await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
     await expect(tavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
     expect(logs).toEqual([]);
     const screenshotPath = info.outputPath('classic-play.png');
@@ -186,7 +186,7 @@ test('a character without archived chats starts a new story using the original g
   await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
   await tavern.locator('#send_textarea').fill('你好，我来借本书。'); await tavern.locator('#send_but').click();
   await expect(tavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
-  await page.getByRole('button', { name: '返回故事' }).click();
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
   const stories = await page.evaluate(async () => (await import('/src/lib/archive-db.ts')).getAllArchiveStories());
   expect(stories).toHaveLength(1); expect(stories[0].characterId).toBe(characterId);
   expect(stories[0].session.messages.map(message => message.content)).toEqual(['请进，外面在下雨。', '你好，我来借本书。', '门外传来轻轻的敲门声。']);
@@ -239,8 +239,8 @@ test('Agent mode automatically reads green lore, freezes actual provider context
   const firstSupplement = first.messages.findIndex(message => message.content?.includes('本轮背景资料'));
   expect(firstSupplement).toBeGreaterThan(0);
   expect(second.messages.slice(0, firstSupplement + 1)).toEqual(first.messages.slice(0, firstSupplement + 1));
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
   const memory = await readMemory();
   expect(memory).toContain('sourceRefs:');
   expect(memory).toContain('revision: 2');
@@ -390,8 +390,8 @@ test('built-in helper scripts and HTML use scoped variables and clean up on chat
   await info.attach('helper-lifecycle', { path: lifecyclePath, contentType: 'application/json' });
   expect(after.listeners).toBe(before.listeners); expect(after.listenerCounts).toEqual(before.listenerCounts);
   expect(after.pending).toBe(0); expect(after.htmlFrames).toBeLessThanOrEqual(1);
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
+  await expect(page).toHaveURL(/\/play$/);
   expect(page.frames()).toHaveLength(1);
 });
 
@@ -416,8 +416,8 @@ test('complete story package downloads from Tavern and restores through the STE 
   expect(pack).toMatchObject({ format: 'ste-play', version: 1, story: { id: storyId } });
   expect(pack.story.branches).toHaveLength(1);
   expect(pack.files.find(file => file.path === 'memory/main/style.md').text).toContain('保持沉稳');
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
   await page.evaluate(async pack => {
     const { getCurrentRepo } = await import('/src/lib/repo/index.ts');
     const { createRuntimeStore } = await import('/src/lib/roleplay/runtime-store.ts');
@@ -587,13 +587,13 @@ for (const stream of [true, false]) test(`native overswipe generates and reopens
   await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
   await expect.poll(() => requests.length).toBe(1);
   await expect(tavern.locator('#send_but')).toBeVisible();
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.branches ?? []).toHaveLength(0);
   expect(saved.session.messages).toHaveLength(3);
   expect(saved.session.messages[2]).toMatchObject({ id: 'reply', rawData: { swipe_id: 1, swipes: ['原来的回答', '门外传来轻轻的敲门声。'] } });
-  await page.getByRole('button', { name: '开始游玩' }).click();
+  await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
   await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
   await message.locator('.swipe_left').click();
   await expect(message.locator('.mes_text')).toHaveText('原来的回答');
@@ -605,8 +605,8 @@ for (const stream of [true, false]) test(`native overswipe generates and reopens
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => requests.length).toBe(2);
   await expect(tavern.locator('#send_but')).toBeVisible();
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
   const next = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(next.session.messages[2].rawData.swipes).toHaveLength(3);
   expect(next.branches ?? []).toHaveLength(0);
@@ -631,8 +631,8 @@ test('existing swipes and original message editing keep STE IDs and candidate da
   await message.locator('.mes_edit').click();
   await message.locator('.edit_textarea').fill('风把雨送进了门厅。');
   await message.locator('.mes_edit_done').click();
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(new RegExp('/story/'));
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(new RegExp('/chat\\?'));
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages[0]).toMatchObject({ id: 'greeting', content: '风把雨送进了门厅。',
     rawData: { swipe_id: 1, swipes: ['请进，外面在下雨。', '风把雨送进了门厅。'] } });
@@ -651,13 +651,13 @@ test('stop cancels the actual provider stream and the accepted partial text can 
   expect(stoppedStreams).toBe(0);
   await tavern.locator('#mes_stop').click();
   await expect.poll(() => stoppedStreams).toBe(1);
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(new RegExp('/story/'));
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(new RegExp('/chat\\?'));
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages.at(-1).content).toBe('这是一段尚未完成的回复');
 });
 
-test('browser Back flushes the current editor before leaving the Tavern', async ({ page }) => {
+test('browser Back retains the current editor and explicit close flushes it', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const storyId = await seed(page);
@@ -671,6 +671,11 @@ test('browser Back flushes the current editor before leaving the Tavern', async 
   await message.locator('.edit_textarea').fill('雨还没停，进来吧。');
   await page.evaluate(() => history.back());
   await expect(page).toHaveURL(new RegExp('/story/'));
+  await expect.poll(async () => page.evaluate(async id => (await (await import('/src/lib/archive-db.ts')).getArchiveStory(id)).session.messages[0].content, storyId)).toBe('雨还没停，进来吧。');
+  await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
+  await expect(message.locator('.mes_text')).toHaveText('雨还没停，进来吧。');
+  await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
+  await expect(page.locator('iframe[title="SillyTavern 角色扮演"]')).toHaveCount(0);
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages[0].content).toBe('雨还没停，进来吧。');
   expect(errors.filter(error => error.includes('blocker state'))).toEqual([]);
@@ -691,15 +696,15 @@ test('a failed story write keeps the live chat open and retry preserves the edit
   await message.hover();
   await message.locator('.mes_edit').click();
   await message.locator('.edit_textarea').fill('这条修改需要重试保存。');
-  await page.getByRole('button', { name: '返回故事' }).click();
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
   await expect(page.getByRole('alert')).toContainText('尚未保存');
   await expect(page.getByRole('alert')).toContainText('模拟磁盘写入失败');
   await expect(page).toHaveURL(new RegExp('/play/'));
   await page.evaluate(() => (window as any).__restoreStoryWrite());
   await page.getByRole('button', { name: '重试保存', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(new RegExp('/story/'));
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(new RegExp('/chat\\?'));
   const saved = await page.evaluate(async id => (await import('/src/lib/archive-db.ts')).getArchiveStory(id), storyId);
   expect(saved.session.messages[0].content).toBe('这条修改需要重试保存。');
 });
@@ -719,7 +724,7 @@ test('failed saving still lets the player export the editor and input, then expl
   await message.hover(); await message.locator('.mes_edit').click();
   await message.locator('.edit_textarea').fill('必须能带走的未保存编辑。');
   await tavern.locator('#send_textarea').fill('还没有发出的下一句话。');
-  await page.getByRole('button', { name: /返回故事|返回聊天/ }).click();
+  await page.getByRole('button', { name: /返回聊天处理|返回聊天列表/ }).click();
   await expect(page.getByRole('button', { name: '导出当前内容', exact: true })).toBeVisible({ timeout: 5000 });
   const downloadTask = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出当前内容', exact: true }).click();
@@ -758,7 +763,7 @@ test('the chat hub opens conversations directly and guides a new chat to its rea
   await expect(page).toHaveURL(new RegExp('/play/' + storyId));
   const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
   await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
-  await page.getByRole('button', { name: '返回聊天', exact: true }).click();
+  await page.getByRole('button', { name: '返回聊天列表', exact: true }).click();
   await expect(page).toHaveURL(/\/play$/);
   await page.evaluate(() => localStorage.removeItem('ste-play-guide-seen'));
   await page.getByRole('button', { name: '新建聊天', exact: true }).click();
@@ -778,7 +783,7 @@ test('the chat hub opens conversations directly and guides a new chat to its rea
   await page.getByRole('button', { name: '使用帮助', exact: true }).click();
   await guide.getByRole('button', { name: '打开模型设置', exact: true }).click();
   await expect(tavern.locator('#ste_main_profile')).toBeVisible();
-  await page.getByRole('button', { name: '返回聊天', exact: true }).click();
+  await page.getByRole('button', { name: '返回聊天列表', exact: true }).click();
   await expect(page).toHaveURL(/\/play$/);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('navigation', { name: '主导航', exact: true }).getByRole('button', { name: '聊天', exact: true })).toBeVisible();
@@ -810,8 +815,7 @@ test('the original branch command creates an internal STE branch and continues o
   const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
   await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
   await expect(tavern.locator('#ste_play_mode')).toBeAttached();
-  await tavern.locator('#extensions-settings-button .drawer-toggle').click();
-  await tavern.locator('#ste_runtime_settings .inline-drawer-toggle').click();
+  await page.getByRole('button', { name: '玩法设置', exact: true }).click();
   await tavern.locator('#ste_play_mode').selectOption('agent');
   await tavern.locator('#ste_world_versions').click();
   await tavern.getByRole('button', { name: '接受此版本', exact: true }).click();
@@ -821,7 +825,7 @@ test('the original branch command creates an internal STE branch and continues o
   await tavern.locator('#send_textarea').fill('/branch-create 0');
   await tavern.locator('#send_but').click();
   await expect.poll(() => page.evaluate(async id => (await (await import('/src/lib/archive-db.ts')).getArchiveStory(id))?.branches?.length ?? 0, storyId)).toBe(1);
-  await expect(page).toHaveURL(/\/play\/.+\?branch=/);
+  await expect(page).toHaveURL(/\/play\/.+\?branch=[^&]+/);
   const selectedBranch = new URL(page.url()).searchParams.get('branch');
   await page.reload();
   await expect(tavern.locator('#ste_play_mode')).toHaveValue('agent');
@@ -836,8 +840,8 @@ test('the original branch command creates an internal STE branch and continues o
   await tavern.locator('#send_but').click();
   await expect(tavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
   expect(JSON.stringify(requests.find(request => request.model === 'fixture-model').messages)).toContain('V2_ONLY');
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(new RegExp('/story/'));
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(new RegExp('/chat\\?'));
   const saved = await page.evaluate(async id => {
     const db = await import('/src/lib/archive-db.ts');
     return { story: await db.getArchiveStory(id), total: (await db.getAllArchiveStories()).length };
@@ -932,12 +936,12 @@ test('real BaiBai 1.2.7 installs, summarizes through ST, survives reopening and 
   expect(JSON.stringify(snapshot)).toContain('查明敲门者身份');
   expect(requests.filter(request => request.model === 'fixture-baibai-tool').length).toBeGreaterThan(0);
   expect(requests.filter(request => request.tools?.length)).toHaveLength(0);
-  await page.getByRole('button', { name: '返回故事' }).click();
-  await expect(page).toHaveURL(/\/story\//);
+  await page.getByRole('button', { name: '返回聊天处理' }).click();
+  await expect(page).toHaveURL(/\/chat\?/);
   const portable = await page.evaluate(async id => (await (await import('/src/lib/roleplay/story-package.ts')).createStoryPackageAdapter().exportStory(id)).package, storyId);
   expect(portable.story.session.messages[0].rawData.extra.bbs_leaf.text).toContain('铜钥匙');
   expect(portable.story.session.messages.filter(message => message.rawData?.extra?.bbs_leaf).length).toBeGreaterThanOrEqual(3);
-  await page.getByRole('button', { name: '开始游玩' }).click();
+  await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
   // The original extension loader finishes after the base chat has rendered.
   await expect(tavern.locator('#bbs-app-host')).toBeAttached({ timeout: 40_000 });
   await expect.poll(() => currentFrame()?.evaluate(() => JSON.stringify((window as any).STBaiBaiBook?.getSnapshot()))).toContain('铜钥匙');
@@ -952,8 +956,7 @@ test('real BaiBai 1.2.7 installs, summarizes through ST, survives reopening and 
     (window as any).__STE_BAIBAI_HIDE__(ctx.chat[last]);
     await ctx.saveChat();
   });
-  await tavern.locator('#extensions-settings-button .drawer-toggle').click();
-  await tavern.locator('#ste_runtime_settings .inline-drawer-toggle').click();
+  await page.getByRole('button', { name: '玩法设置', exact: true }).click();
   await tavern.locator('#ste_play_mode').selectOption('agent');
   await expect(tavern.locator('#ste_memory_owner')).toHaveValue('native-agent');
   await expect.poll(() => currentFrame().evaluate(() => (window as any).SillyTavern.getContext().chat.map((message: any) => message.is_system === true))).toEqual([false, false, false, false, false, false, false, true, true]);

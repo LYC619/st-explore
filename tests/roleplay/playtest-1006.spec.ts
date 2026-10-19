@@ -86,7 +86,7 @@ test('library return keeps sorting and tags; cloud portrait preview downloads a 
   await page.getByRole('button', { name: '预览链接', exact: true }).click();
   await expect(page.getByText('全选 · 2 个链接')).toBeVisible();
   await page.getByRole('button', { name: '下载所选', exact: true }).click();
-  await expect(page.getByText('已保存 2 张', { exact: true })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '从图床导入立绘' })).toContainText('2/2 张已保存');
   const count = await page.evaluate(async id => {
     const c = await (await import('/src/lib/archive-db.ts')).getCharacter(id);
     return c.portraitRows?.reduce((n: number, row: any) => n + row.items.length, 0);

@@ -56,6 +56,15 @@ beforeEach(() => {
 });
 
 describe('saveAssetWithCow', () => {
+  it('serializes first-copy saves for the same character so concurrent callers reuse one copy', async () => {
+    const all = [mkAsset({ id: 'shared', title: '共享' })]; let sequence = 0;
+    const run = () => saveAssetWithCow<FakeAsset>({ kind: 'worldbook', baseId: 'shared', reload: async () => all,
+      characterId: 'char_h', characterName: '赫敏', title: '共享', content: { rules: ['新'] }, newId: () => `copy-${++sequence}`,
+      save: async item => { await Promise.resolve(); const index = all.findIndex(existing => existing.id === item.id); if (index < 0) all.push(item); else all[index] = item; } });
+    const results = await Promise.all([run(), run()]);
+    expect(results.map(result => result.targetId)).toEqual(['copy-1', 'copy-1']);
+    expect(all).toHaveLength(2);
+  });
   it('首次改共享资产：原资产不被写，另存派生副本并把角色引用切过去', async () => {
     const shared = mkAsset({ id: 'a_shared', title: '共享' });
 

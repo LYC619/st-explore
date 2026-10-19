@@ -1,0 +1,31 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, expect, it, vi } from 'vitest';
+import { MoveRecordDialog } from '@/components/organize/MoveRecordDialog';
+import { createVault } from '@/lib/vault/vault-backend';
+import { createMemFs } from '@/lib/vault/fs';
+import { setActiveVault } from '@/lib/vault/active';
+import { buildStoryFromSession } from '@/lib/archive-db';
+import type { SummaryItem } from '@/types/summary';
+
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root | undefined;
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; setActiveVault(null); });
+it('从目标选择器移动日记，保存正确归属并保留来源', async () => {
+  const vault = createVault(createMemFs()); setActiveVault(vault);
+  const source = buildStoryFromSession({ id: 'a', character: { name: '角色' }, user: { name: '我' }, title: '原故事', messages: [], createdAt: 1 });
+  const target = buildStoryFromSession({ id: 'b', character: { name: '角色' }, user: { name: '我' }, title: '另一故事', messages: [], createdAt: 1 });
+  await vault.repo('archiveStories').put(source); await vault.repo('archiveStories').put(target);
+  const record: SummaryItem = { id: 'sum', kind: 'diary', title: '日记', content: '保留文字', bookId: source.id, bookTitle: source.title, floorStart: 2, floorEnd: 3, createdAt: 1, updatedAt: 1 };
+  await vault.repo('summaries').put(record);
+  const moved = vi.fn(), close = vi.fn(); const host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  await act(async () => root!.render(<MoveRecordDialog open record={record} onOpenChange={close} onMoved={moved} />));
+  const select = document.querySelector<HTMLSelectElement>('select[aria-label="目标故事"]')!;
+  expect(select).not.toBeNull();
+  await act(async () => { select.value = target.id; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  const button = [...document.querySelectorAll('button')].find(b => b.textContent === '移动')!;
+  await act(async () => button.click());
+  expect(moved).toHaveBeenCalledWith(expect.objectContaining({ bookId: target.id, content: '保留文字', rangeDetached: true }));
+  expect(close).toHaveBeenCalledWith(false);
+  expect(await vault.repo('summaries').get('sum')).toMatchObject({ bookId: target.id, provenance: { bookId: source.id } });
+});

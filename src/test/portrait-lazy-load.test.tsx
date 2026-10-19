@@ -113,6 +113,54 @@ async function renderSection(character: ArchiveCharacter) {
 
 const thumbs = () => Array.from(container.querySelectorAll<HTMLElement>('[data-portrait-thumb]'));
 
+describe('portrait deletion confirmation', () => {
+  const alert = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
+  const button = (label: string) => Array.from(alert()!.querySelectorAll('button')).find(entry => entry.textContent?.trim() === label)!;
+  const checkbox = () => alert()?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  async function openDelete() {
+    await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="删除立绘"]')!.click(); });
+  }
+
+  it('defaults source deletion off and keeps failures visible for retry', async () => {
+    const { character } = await setupCharacter();
+    const onPatch = vi.fn(async () => { throw new Error('保存失败，请重试'); });
+    await act(async () => root.render(<PortraitSection character={character} onOpenImport={() => {}} onPatch={onPatch} />));
+    await openDelete();
+    expect(checkbox()).not.toBeNull();
+    expect(checkbox()!.checked).toBe(false);
+    expect(alert()!.textContent).toContain('同时删除 STE 库内文件');
+    await act(async () => { button('确认删除').click(); });
+    expect(alert()).not.toBeNull();
+    expect(alert()!.querySelector('[role="alert"]')?.textContent).toContain('保存失败，请重试');
+    expect(button('确认删除').disabled).toBe(false);
+  });
+
+  it('holds the dialog open and prevents repeated submissions while saving', async () => {
+    const { character } = await setupCharacter();
+    let release!: (value: ArchiveCharacter) => void;
+    const onPatch = vi.fn(() => new Promise<ArchiveCharacter>(resolve => { release = resolve; }));
+    await act(async () => root.render(<PortraitSection character={character} onOpenImport={() => {}} onPatch={onPatch} />));
+    await openDelete();
+    await act(async () => { button('确认删除').click(); });
+    expect(button('删除中…').disabled).toBe(true);
+    expect(button('取消').disabled).toBe(true);
+    expect(checkbox()!.disabled).toBe(true);
+    expect(onPatch).toHaveBeenCalledOnce();
+    await act(async () => { release(character); });
+    expect(alert()).toBeNull();
+  });
+
+  it('does not present a filesystem option for inline storage', async () => {
+    const { character } = await setupCharacter();
+    setActiveVault(null);
+    character.portraitRows![0].items.forEach(item => { item.dataBase64 = 'AQID'; item.fileName = undefined; });
+    await renderSection(character);
+    await openDelete();
+    expect(checkbox()).toBeNull();
+    expect(alert()!.textContent).not.toContain('回收站');
+  });
+});
+
 /** 把某张缩略图滚进可视区 */
 async function scrollTo(name: string) {
   const el = thumbs().find((t) => t.dataset.portraitThumb === name);

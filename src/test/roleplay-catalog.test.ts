@@ -90,6 +90,21 @@ function replacementFixture() {
 }
 
 describe('roleplay character/chat catalog', () => {
+  it('reads one requested character without rescanning unrelated characters or stories', async () => {
+    const f = fixture();
+    const catalog = await createRoleplayCatalog(f.options);
+    const before = { characters: f.characters.listReads(), stories: f.stories.listReads(),
+      characterGets: f.characters.getReads(), storyGets: f.stories.getReads() };
+    f.characters.items.get('character-a')!.card.data!.description = '刚修改的角色正文';
+    const selected = await catalog.character(avatarKey('character-a'));
+    expect(selected).toMatchObject({ avatar: avatarKey('character-a'), description: '刚修改的角色正文',
+      custom_card_field: ['keep'], data: { extensions: { plugin: { keep: true } } } });
+    expect(f.characters.listReads() - before.characters).toBe(0);
+    expect(f.stories.listReads() - before.stories).toBe(0);
+    expect(f.characters.getReads() - before.characterGets).toBe(1);
+    expect(f.stories.getReads() - before.storyGets).toBe(2);
+  });
+
   it('uses stable, collision-free keys and enumerates all stored mainlines and internal branches', async () => {
     const f = fixture();
     const catalog = await createRoleplayCatalog({ ...f.options, branchId: null });

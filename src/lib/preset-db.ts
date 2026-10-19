@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 import type { PresetItem } from '@/types/preset';
 import { createRepo, pruneAutoSaved } from '@/lib/repo';
 
@@ -15,8 +16,8 @@ export async function savePreset(item: PresetItem): Promise<void> {
   return repo.put(item);
 }
 
-export async function deletePreset(id: string): Promise<void> {
-  return repo.remove(id);
+export async function deletePreset(id: string, options?: RemoveOptions): Promise<void> {
+  return repo.remove(id, options);
 }
 
 /**

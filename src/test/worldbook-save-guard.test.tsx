@@ -140,6 +140,7 @@ describe('世界书保存落库', () => {
   it('无角色上下文时原地更新同一条资产', async () => {
     const existing = mkItem({ id: 'wb_1', title: '共享世界书' });
     getAllWorldBooks.mockResolvedValue([existing]);
+    getWorldBook.mockResolvedValue(existing);
     await renderPage({ worldbook: mkBook(), filename: '共享世界书', currentItemId: 'wb_1' });
 
     await makeDirty();

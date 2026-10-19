@@ -1,3 +1,5 @@
+import type { RemoveOptions } from '@/lib/repo';
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 /**
  * 整理与记录（2.0 阶段3，定稿 5.2）：三栏 = 左资源索引 / 中预览编辑 / 右来源与操作。
  * 左栏统一列出本故事的分卷总结/角色日记/自定义记录(diy，显示模板名)/故事树，
@@ -15,10 +17,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { ArchiveStory } from '@/types/archive';
@@ -211,10 +209,10 @@ export function OrganizePanel({ story, characterName, coverDataUrl, currentBranc
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = async (options: RemoveOptions) => {
     if (!deleteTarget) return;
-    if (deleteTarget.type === 'record') await deleteSummary(deleteTarget.id);
-    else await deleteStoryTree(deleteTarget.id);
+    if (deleteTarget.type === 'record') await deleteSummary(deleteTarget.id, options);
+    else await deleteStoryTree(deleteTarget.id, options);
     setDeleteTarget(null);
     setSel(null); // 触发重新定位默认条目
     await refresh();
@@ -419,7 +417,7 @@ export function OrganizePanel({ story, characterName, coverDataUrl, currentBranc
           <TreeWorkbench
             key={selectedTree.id}
             tree={selectedTree}
-            session={workspaceLine.session}
+            session={getBranchLine(story, selectedTree.branchId ?? null)?.session ?? null}
             onChanged={refresh}
           />
         )}
@@ -474,20 +472,10 @@ export function OrganizePanel({ story, characterName, coverDataUrl, currentBranc
 
       <ShareImageDialog open={shareOpen} onOpenChange={setShareOpen} input={shareInput} />
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{deleteTarget?.type === 'tree' ? '删除整棵故事树？' : '删除这条记录？'}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {deleteTarget?.type === 'tree' ? '此操作不可撤销，该树的所有节点将被永久删除。' : '此操作不可撤销。'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}
+        title={deleteTarget?.type === 'tree' ? '删除整棵故事树？' : '删除这条记录？'} description="该记录将从列表移除。"
+        fileTarget={deleteTarget ? { store: deleteTarget.type === 'tree' ? 'stories' : 'summaries', id: deleteTarget.id } : undefined}
+        onConfirm={handleDelete} />
     </div>
   );
 }

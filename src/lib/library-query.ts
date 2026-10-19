@@ -1,5 +1,5 @@
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
-import type { TagCategory } from '@/lib/tag-taxonomy';
+import { characterFilterTags, normalizeRatingTag, type TagCategory } from '@/lib/tag-taxonomy';
 
 export type LibrarySortKey = 'recent' | 'added' | 'name' | 'rating' | 'lastPlayed';
 export type LibraryTypeFilter = 'all' | CharacterType | 'none';
@@ -35,7 +35,10 @@ export function filterCharacters(
   }
   for (const selected of Object.values(filters.tags)) {
     if (!selected || selected.length === 0) continue;
-    result = result.filter((character) => selected.some((tag) => character.tags.includes(tag)));
+    result = result.filter((character) => {
+      const tags = characterFilterTags(character);
+      return selected.some(tag => tags.includes(normalizeRatingTag(tag)));
+    });
   }
   return result;
 }
@@ -76,7 +79,8 @@ export function toggleTagFilter(
   raw: string,
 ): Partial<Record<LibraryFilterCategory, string[]>> {
   const next = { ...filters };
-  const current = next[category] ?? [];
+  const current = [...new Set((next[category] ?? []).map(normalizeRatingTag))];
+  raw = normalizeRatingTag(raw);
   if (category === '类型') {
     next[category] = current[0] === raw ? [] : [raw];
     return next;

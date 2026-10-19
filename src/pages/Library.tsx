@@ -1,8 +1,9 @@
+import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 /**
  * 角色库（10.2 重构，0801 实测反馈）：
  * - 左侧筛选栏 = 标签系统：顶部「标签管理」→ 类型单选组（互斥，10.0 type 字段）→ 分类法 v2 各组（问号说明；
  *   内置打底常显 + 库内自建；每类至多选一，类别间交集）；旧五档进度组已废弃移除
- * - 顶栏一行：搜索 / 激活筛选 chip+一键清除 / 排序（+最后游玩 +方向钮）/ 批量管理 / 外观（视图·卡片大小·字体大小）/ 导入
+ * - 顶栏一行：搜索 / 排序（+最后游玩 +方向钮）/ 批量管理 / 外观（视图·卡片大小·字体大小）/ 导入；筛选在侧栏再次点击取消
  * - 卡面重排：左上=评分数字（未评分）+时间（≤7天相对/hover 完整），右上=故事数角标（对比度修正）+菜单；
  *   下方只留 名称（tooltip）+清洗简介；NSFW 卡面按全局设置模糊（hover 揭示）
  * - 批量模式：点选/Ctrl 点选/Shift 范围选/全选当前筛选结果；常驻条=打标签/导出（逐卡原件）/删除
@@ -26,7 +27,7 @@ import {
 } from '@/components/library/LibraryImportDialog';
 import { LibraryListHeader } from '@/components/library/LibraryListHeader';
 import { LibraryToolbar } from '@/components/library/LibraryToolbar';
-import { CARD_W_COMPACT, cardFontSizes, type ActiveFilterChip, type ViewMode } from '@/lib/library-view';
+import { CARD_W_COMPACT, cardFontSizes, type ViewMode } from '@/lib/library-view';
 import type { LibraryReviewHandle } from '@/components/library/review/LibraryReviewView';
 import { LibraryPager, LibraryBatchBar } from '@/components/library/LibraryPager';
 import { CharacterTile } from '@/components/library/CharacterTile';
@@ -80,6 +81,7 @@ import {
 import { type TagCategory } from '@/lib/tag-taxonomy';
 import {
   buildLibraryFilterSections,
+  scopeLibraryTagOptions,
   buildManagedTagOptions,
   getTagCategories,
   normalizeLibraryTagPreferences,
@@ -142,6 +144,7 @@ const Library = () => {
     failures: string[];
   } | null>(null);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [tagManagerCategory, setTagManagerCategory] = useState<'人物' | '类型'>('人物');
   const [batchTagOpen, setBatchTagOpen] = useState(false);
   /** 待确认删除（单删=长度1，批量=多条）；null=无弹窗 */
   const [pendingDelete, setPendingDelete] = useState<ArchiveCharacter[] | null>(null);
@@ -293,19 +296,10 @@ const Library = () => {
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const handleConfirmDelete = async (options: import('@/lib/repo').RemoveOptions) => {
     if (!pendingDelete?.length) return;
     try {
-      // 名下故事解除绑定（变为临时/未绑定），不连带删除
-      const ids = new Set(pendingDelete.map((c) => c.id));
-      // 只要 id + characterId 找出待解绑的故事；真正的改写走 updateArchiveStory（队列内重读最新记录）
-      const stories = await listStoryIndex();
-      await Promise.all(
-        stories
-          .filter((s) => s.characterId && ids.has(s.characterId))
-          .map((s) => updateArchiveStory(s.id, () => ({ characterId: undefined, updatedAt: Date.now() }))),
-      );
-      for (const c of pendingDelete) await deleteCharacter(c.id);
+      for (const c of pendingDelete) await deleteCharacter(c.id, options);
       await load();
       selection.setSelected(new Set());
       toast({ title: `已删除 ${pendingDelete.length} 个角色（名下故事已转为未绑定，未被删除）` });
@@ -315,8 +309,8 @@ const Library = () => {
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
-    } finally {
-      setPendingDelete(null);
+      await load();
+      return false;
     }
   };
 
@@ -397,8 +391,12 @@ const Library = () => {
 
   const handleSingleExport = async (character: ArchiveCharacter) => {
     if (!isTauri()) {
-      downloadCharacterFile(character);
-      toast({ title: `已请求下载「${displayCharacterName(character)}」` });
+      try {
+        const result = await downloadCharacterFile(character);
+        if (result !== 'cancelled') toast({ title: result === 'shared' ? '已分享角色卡' : `已请求下载「${displayCharacterName(character)}」` });
+      } catch (error) {
+        toast({ title: '导出失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+      }
       return;
     }
     try {
@@ -423,7 +421,7 @@ const Library = () => {
   };
 
   const managedTagOptions = useMemo(
-    () => buildManagedTagOptions(characters.flatMap((character) => character.tags), tagPreferences),
+    () => buildManagedTagOptions(characters.flatMap((character) => character.tags), tagPreferences, characters),
     [characters, tagPreferences],
   );
   const groupTagCategories = useMemo(() => getTagCategories(tagPreferences), [tagPreferences]);
@@ -433,9 +431,13 @@ const Library = () => {
       setGroupTagCategory(groupTagCategories[0] ?? '人物');
     }
   }, [groupTagCategories, groupTagCategory, setGroupTagCategory]);
+  const scopedTagOptions = useMemo(
+    () => scopeLibraryTagOptions(managedTagOptions, characters, { search: searchQuery, type: typeFilter }),
+    [managedTagOptions, characters, searchQuery, typeFilter],
+  );
   const filterSections = useMemo(
-    () => buildLibraryFilterSections(managedTagOptions, uncategorizedExpanded, tagPreferences, hideUnusedTags),
-    [managedTagOptions, uncategorizedExpanded, tagPreferences, hideUnusedTags],
+    () => buildLibraryFilterSections(scopedTagOptions, uncategorizedExpanded, tagPreferences, hideUnusedTags, Object.values(tagFilters).flatMap(tags => tags ?? [])),
+    [scopedTagOptions, uncategorizedExpanded, tagPreferences, hideUnusedTags, tagFilters],
   );
 
   useEffect(() => {
@@ -533,17 +535,6 @@ const Library = () => {
     setTagFilters((f) => toggleLibraryTagFilter(f, cat, raw) as Partial<Record<TagCategory, string[]>>);
   };
 
-  const activeFilterChips: ActiveFilterChip[] = [
-    ...(typeFilter !== 'all'
-      ? [{ key: 'type', label: `类型:${typeFilter === 'none' ? '未分类' : typeFilter}`, clear: () => setTypeFilter('all') }]
-      : []),
-    ...Object.entries(tagFilters).flatMap(([cat, raws]) => (raws ?? []).map((raw) => ({
-      key: raw,
-      label: raw,
-      clear: () => toggleTagFilter(cat as TagCategory, raw),
-    }))),
-  ];
-
   const { name: nameSize, intro: introSize, rowName: rowNameSize } = cardFontSizes(prefs.fontScale);
 
   /** 卡面与列表行共用的一份接线：点击 = 批量选择或进角色页 */
@@ -588,12 +579,10 @@ const Library = () => {
           characterCount={characters.length}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onOpenTagManager={() => setTagManagerOpen(true)}
+          onOpenTagManager={() => { setTagManagerCategory('人物'); setTagManagerOpen(true); }}
           batchMode={selection.batchMode}
           onToggleBatchMode={() =>
             (selection.batchMode ? selection.exitBatchMode() : selection.enterBatchMode())}
-          activeFilterChips={activeFilterChips}
-          onClearAllFilters={() => { setTagFilters({}); setTypeFilter('all'); setSearchQuery(''); }}
           sortKey={sortKey}
           onSortKeyChange={setSortKey}
           sortAsc={sortAsc}
@@ -776,6 +765,7 @@ const Library = () => {
           filteredCount={filtered.length}
           onSelectAllToggle={selection.toggleSelectAll}
           onTag={() => setBatchTagOpen(true)}
+          onType={() => { setTagManagerCategory('类型'); setTagManagerOpen(true); }}
           onExport={() => void handleBatchExport()}
           exporting={batchExporting}
           onDelete={() => setPendingDelete(characters.filter((c) => selection.selected.has(c.id)))}
@@ -793,13 +783,14 @@ const Library = () => {
         onConfirm={handleConfirmImport}
       />
       <TagManagerDialog
+        initialCategory={tagManagerCategory}
         open={tagManagerOpen}
         onOpenChange={setTagManagerOpen}
         characters={characters}
         selectedCharacters={characters.filter((character) => selection.selected.has(character.id))}
         preferences={tagPreferences}
         onPreferencesChange={handleTagPreferencesChange}
-        onChanged={() => void load()}
+        onChanged={load}
       />
       <BatchTagDialog
         open={batchTagOpen}
@@ -809,27 +800,11 @@ const Library = () => {
         onDone={load}
       />
 
-      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {pendingDelete?.length === 1
-                ? `删除「${displayCharacterName(pendingDelete[0])}」？`
-                : `删除所选 ${pendingDelete?.length ?? 0} 个角色？`}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              只删除 STE 里的角色档案（类型、标签、评分等整理信息），不影响 ST 原目录里的文件。名下故事不会被删除，会转为「未绑定」状态。
-              {pendingDelete && pendingDelete.length > 1 && (
-                <span className="block mt-2">目标：{pendingDelete.map(displayCharacterName).join('、')}</span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmDelete}>删除</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DeleteConfirmDialog open={!!pendingDelete} onOpenChange={open => !open && setPendingDelete(null)}
+        title={pendingDelete?.length === 1 ? `删除「${displayCharacterName(pendingDelete[0])}」？` : `删除所选 ${pendingDelete?.length ?? 0} 个角色？`}
+        description="名下故事不会被删除，会转为未绑定状态。"
+        fileTargets={pendingDelete?.map(c => ({ store: 'characters', id: c.id }))}
+        onConfirm={handleConfirmDelete} confirmLabel="删除" />
 
       <AlertDialog open={!!pendingWebExport} onOpenChange={(open) => !open && setPendingWebExport(null)}>
         <AlertDialogContent>

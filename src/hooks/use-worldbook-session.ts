@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorldBook } from '@/types/worldbook';
+import { scopedKey } from '@/lib/vault/vault-scope';
+
+export function worldbookRecoveryKey(id: string, characterId?: string | null) {
+  return `${scopedKey('worldbook-recovery')}/${encodeURIComponent(characterId ?? '')}/${encodeURIComponent(id)}`;
+}
+
+export function loadWorldbookRecovery(key: string): WbSession | null {
+  try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) as WbSession : null; } catch { return null; }
+}
 
 /** 跨页面切换时暂存当前编辑中的世界书，避免切到聊天处理再回来丢失 */
 const WB_SESSION_KEY = 'wb-active-session';

@@ -16,7 +16,10 @@ import {
 import { HelpCard } from '@/components/HelpCard';
 import { useToast } from '@/hooks/use-toast';
 import { applyRegexRules, convertMessagesToTxt, convertMessagesToMarkdown, getMessageDepths } from '@/lib/regex-processor';
-import type { ChatSession, ExportSettings, ChapterMarker, STRawMessage, STMetadata } from '@/types/chat';
+import { buildChatExportSession } from '@/lib/chat-export-policy';
+import { serializeChatJsonl } from '@/lib/adapters/st/chat-jsonl';
+import { saveTextFile } from '@/lib/roleplay/export-package-file';
+import type { ChatSession, ExportSettings, ChapterMarker, STRawMessage } from '@/types/chat';
 
 interface ExportButtonProps {
   session: ChatSession;
@@ -84,7 +87,7 @@ function downloadBlob(name: string, content: string, mime: string): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function ExportButton({ session, settings, markers = [], onSettingsChange, onExported }: ExportButtonProps & { 'data-tour'?: string }) {
@@ -154,29 +157,6 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
 
   const getExportMessages = () => selectedMessages;
 
-  const buildMetadata = (): STMetadata => {
-    const metadata: STMetadata = session.rawMetadata
-      ? { ...session.rawMetadata }
-      : {
-          user_name: session.user.name,
-          character_name: session.character.name,
-          create_date: new Date().toISOString().replace(/[:-]/g, '').replace('T', '@').slice(0, 17) + 's',
-        };
-
-    if (cleanPluginCache && metadata.chat_metadata) {
-      const cm = metadata.chat_metadata;
-      const cleaned: Record<string, unknown> = {};
-      for (const key of METADATA_KEEP_KEYS) {
-        if (key in cm) {
-          cleaned[key] = cm[key];
-        }
-      }
-      metadata.chat_metadata = cleaned;
-    }
-
-    return metadata;
-  };
-
   // 标题去掉导入时残留的「 - <时间戳> imported」后缀；角色/用户名为占位 unused 时省略该行。
   const getCleanTitle = () =>
     (session.title || '对话记录')
@@ -227,70 +207,18 @@ export function ExportButton({ session, settings, markers = [], onSettingsChange
     setOpen(false);
   };
 
-  const exportAsJsonl = () => {
+  const exportAsJsonl = async () => {
     try {
-      const lines: string[] = [];
-      const metadata = buildMetadata();
-      lines.push(JSON.stringify(metadata));
-
-      const msgs = getExportMessages();
-      for (const message of msgs) {
-        const isUser = message.role === 'user' || message.is_user === true;
-        const cleanedContent = applyRegexRules(message.content, settings.regexRules, isUser, messageDepths.get(message.id));
-        if (!cleanedContent.trim()) continue;
-
-        let exportMessage: STRawMessage;
-        if (message.rawData) {
-          exportMessage = { ...message.rawData, mes: cleanedContent };
-        } else {
-          exportMessage = {
-            name: message.name || (isUser ? session.user.name : session.character.name),
-            is_user: isUser,
-            is_system: false,
-            send_date: message.timestamp
-              ? new Date(message.timestamp).toLocaleString('en-US', {
-                  month: 'long', day: 'numeric', year: 'numeric',
-                  hour: 'numeric', minute: '2-digit', hour12: true,
-                })
-              : new Date().toLocaleString('en-US', {
-                  month: 'long', day: 'numeric', year: 'numeric',
-                  hour: 'numeric', minute: '2-digit', hour12: true,
-                }),
-            mes: cleanedContent,
-            extra: {},
-          };
-        }
-
-        // 隐藏楼层 round-trip：按应用内当前 hidden 状态写回 is_system（ST 用它持久化 Hide）
-        exportMessage.is_system = message.hidden === true;
-
-        // 精简导出：只留 swipe_id 指向的那条回复，丢掉其余候选（体积大头）。
-        // 关掉则原样带走 swipes，但当前选中那条要同步成正则清理后的正文——
-        // 否则导回 ST 一刷新就被旧 swipe 文本顶回去。
-        if (slimExport) {
-          exportMessage.swipes = [];
-          exportMessage.swipe_id = 0;
-          exportMessage.swipe_info = [];
-        } else if (Array.isArray(exportMessage.swipes)) {
-          const id = typeof exportMessage.swipe_id === 'number' ? exportMessage.swipe_id : 0;
-          const swipes = [...exportMessage.swipes];
-          if (id >= 0 && id < swipes.length) swipes[id] = cleanedContent;
-          exportMessage.swipes = swipes;
-        }
-
-        lines.push(JSON.stringify(exportMessage));
-      }
-
-      const content = lines.join('\n');
+      const snapshot = buildChatExportSession(session, { ...settings, cleanPluginCache, slimExport,
+        exportRange, recentCount, customStart, customEnd });
       const jsonlName = `${sanitizeFilename(session.title)}_cleaned.jsonl`;
-      downloadBlob(jsonlName, content, 'application/jsonl;charset=utf-8');
-
-      toast({ title: '导出成功', description: `已保存为 ${jsonlName}` });
-      onExported?.('jsonl');
-      setOpen(false);
+      const result = await saveTextFile({ fileName: jsonlName, text: serializeChatJsonl(snapshot),
+        label: slimExport ? 'SillyTavern JSONL（精简）' : 'SillyTavern JSONL', extension: 'jsonl' });
+      if (result === 'cancelled') return;
+      toast({ title: result === 'downloaded' ? '已发起下载' : result === 'shared' ? '已分享' : '导出成功', description: jsonlName });
+      onExported?.('jsonl'); setOpen(false);
     } catch (error) {
-      console.error('JSONL export error:', error);
-      toast({ title: '导出失败', description: '生成 JSONL 文件时出错', variant: 'destructive' });
+      toast({ title: '导出失败', description: String(error), variant: 'destructive' });
     }
   };
 

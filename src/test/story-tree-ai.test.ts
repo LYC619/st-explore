@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildTreeFillMessages, parseTreeOps, applyTreeOps, floorsToText, describeOps,
-  splitContentSections, appendToSection, DEFAULT_TREE_FILL_PROMPT, type TreeOp,
+  splitContentSections, appendToSection, DEFAULT_TREE_FILL_PROMPT, parseTreeOpsResult, type TreeOp,
 } from '@/lib/story-tree-ai';
 import { childrenOf, findById } from '@/lib/story-tree-model';
 import type { StoryNode } from '@/types/story-tree';
 import type { ChatSession } from '@/types/chat';
 
 const emptyNodes: StoryNode[] = [];
+it('distinguishes refused, malformed and empty tree output without losing the raw response', () => {
+  expect(parseTreeOpsResult('抱歉，我无法提供该内容').status).toBe('refused');
+  expect(parseTreeOpsResult('{oops').status).toBe('invalid-json');
+  expect(parseTreeOpsResult('{"ops":[]}').status).toBe('empty');
+  expect(parseTreeOpsResult('{"ops":[{"op":"nonsense"}]}').status).toBe('empty');
+});
 
 function node(id: string, parentId: string | null, title: string, order = 0, content = ''): StoryNode {
   return { id, parentId, title, hint: '', content, tags: [], pinned: false, archived: false, order };

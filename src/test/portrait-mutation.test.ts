@@ -6,7 +6,8 @@ import { createVault } from '@/lib/vault/vault-backend';
 import { setActiveVault } from '@/lib/vault/active';
 import { deleteCharacter, getCharacter, saveCharacter, updateCharacter } from '@/lib/archive-db';
 import { endPortraitOperation, recoverCharacterJournals, type PortraitMutationJournal } from '@/lib/portrait-journal';
-import { loadPortraitViews, loadPortraitImage, movePortraitItemsMutation, replacePortraitItemMutation } from '@/lib/portrait-store';
+import { loadPortraitViews, loadPortraitImage, movePortraitItemsMutation, removePortraitItems, removePortraitRow, replacePortraitItemMutation } from '@/lib/portrait-store';
+import { scanVaultFiles } from '@/lib/vault/file-maintenance';
 
 const oldBytes = btoa('old bytes');
 const newBytes = btoa('new bytes');
@@ -68,6 +69,122 @@ async function fixture() {
 }
 
 afterEach(() => setActiveVault(null));
+
+describe('portrait deletion persistence', () => {
+  it.each([false, true])('does not remove image bytes before a successful save (deleteFiles=%s)', async deleteFiles => {
+    const { c, base, control, journals } = await fixture();
+    control.fault = 'profile-before';
+    await expect(updateCharacter(c.id, async current => {
+      const mutation = await removePortraitItems(current, ['p1'], deleteFiles);
+      expect(await base.readBinary(sourcePath)).toBe(oldBytes);
+      expect(mutation).toHaveProperty('commitAfterPersist');
+      return mutation;
+    })).rejects.toThrow('profile failure');
+    expect(await base.readBinary(sourcePath)).toBe(oldBytes);
+    expect(JSON.parse(await base.readText(profilePath)).portraitRows).toEqual(c.portraitRows);
+    expect(await base.readText(snapshotPath)).toBe('old snapshot');
+    expect(journals()).toHaveLength(0);
+  });
+
+  it('retains unchecked source files for maintenance without rediscovering them as stray images', async () => {
+    const { c, base } = await fixture();
+    const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], false));
+    expect((await base.stat(sourcePath)).exists).toBe(false);
+    expect((await loadPortraitViews(saved!)).flatMap(row => row.items).map(item => item.name)).not.toContain('old.png');
+    const vault = createVault(base);
+    const scan = await scanVaultFiles(vault);
+    expect(scan.complete).toBe(true);
+    const retained = scan.entries.filter(entry => entry.category === 'retained');
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).toMatchObject({ selectable: true });
+    expect(retained[0].path).toMatch(/^\.ste\/retained\/[^/]+\/files\//);
+    expect(await base.readBinary(retained[0].path)).toBe(oldBytes);
+  });
+
+  it.each([false, true])('keeps a shared filename referenced by another item (deleteFiles=%s)', async deleteFiles => {
+    const { c, base } = await fixture();
+    c.portraitRows![0].items[1].fileName = 'OLD.PNG';
+    await saveCharacter(c);
+    const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], deleteFiles));
+    expect(saved!.portraitRows![0].items.map(item => item.id)).toEqual(['p2']);
+    expect(await base.readBinary(sourcePath)).toBe(oldBytes);
+  });
+
+  it('deletes a row only after saving and leaves unrelated files and the character card intact', async () => {
+    const { c, base, fs } = await fixture();
+    c.portraitCurrentId = 'p1';
+    await saveCharacter(c);
+    const hand = '角色/Fixture/立绘/Day/hand.png';
+    const card = '角色/Fixture/卡片.png';
+    await base.writeBinary(hand, btoa('user file'));
+    await base.writeBinary(card, btoa('card'));
+    const trash = vi.fn(async path => {
+      expect(JSON.parse(await base.readText(profilePath)).portraitRows.map((row: { id: string }) => row.id)).not.toContain('day');
+      await base.removeFile(path);
+    });
+    fs.trashFile = trash;
+    const saved = await updateCharacter(c.id, current => removePortraitRow(current, 'day', true));
+    expect(saved!.portraitRows!.map(row => row.id)).toEqual(['night']);
+    expect(saved!.portraitCurrentId).toBeUndefined();
+    expect(trash).toHaveBeenCalledTimes(2);
+    expect(await base.readBinary(hand)).toBe(btoa('user file'));
+    expect(await base.readBinary(card)).toBe(btoa('card'));
+    expect((await base.stat('角色/Fixture/立绘/Day')).exists).toBe(true);
+  });
+
+  it('supports checked deletion without a native trash implementation', async () => {
+    const { c, base, journals } = await fixture();
+    const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], true));
+    expect(saved!.portraitRows![0].items.map(item => item.id)).toEqual(['p2']);
+    expect((await base.stat(sourcePath)).exists).toBe(false);
+    expect(journals()).toHaveLength(0);
+  });
+
+  it('finalizes deletion when the profile was saved before a lost response', async () => {
+    const { c, base, control, journals } = await fixture();
+    control.fault = 'profile-after';
+    const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], false));
+    expect(saved!.portraitRows![0].items.map(item => item.id)).toEqual(['p2']);
+    expect((await base.stat(sourcePath)).exists).toBe(false);
+    expect(journals()).toHaveLength(0);
+  });
+
+  it('preserves a portrait file referenced from another saved record', async () => {
+    const { c, base } = await fixture();
+    await base.writeText('资产/世界书/Shared.json', JSON.stringify({ __ste: { id: 'shared' }, image: sourcePath }));
+    await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], true));
+    expect(await base.readBinary(sourcePath)).toBe(oldBytes);
+  });
+
+  it.each(['before', 'after'] as const)('recovers an abandoned deletion with %s metadata', async checkpoint => {
+    const { c, base, fs, journals } = await fixture();
+    const mutation = await removePortraitItems(c, ['p1'], false);
+    const journal = JSON.parse(await base.readText(journals()[0])) as PortraitMutationJournal;
+    if (checkpoint === 'after') await base.writeText(profilePath, JSON.stringify({ ...c, ...mutation.patch }));
+    endPortraitOperation(fs, c.id, journal.operationId);
+    setActiveVault(createVault({ ...fs }));
+    const saved = await getCharacter(c.id);
+    expect(saved!.portraitRows).toEqual(checkpoint === 'before' ? c.portraitRows : mutation.patch.portraitRows);
+    expect((await base.stat(sourcePath)).exists).toBe(checkpoint === 'before');
+    expect(journals()).toHaveLength(0);
+  });
+
+  it('retries failed trash cleanup on reopening without reviving a removed portrait', async () => {
+    const { c, base, fs, journals } = await fixture();
+    fs.trashFile = async () => { throw new Error('trash unavailable'); };
+    const onWarning = vi.fn();
+    const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], true), { onWarning });
+    expect(saved!.portraitRows![0].items.map(item => item.id)).toEqual(['p2']);
+    expect(onWarning).toHaveBeenCalled();
+    expect(journals()).toHaveLength(1);
+    expect((await base.stat(sourcePath)).exists).toBe(false);
+    fs.trashFile = path => base.removeFile(path);
+    setActiveVault(createVault({ ...fs }));
+    expect((await getCharacter(c.id))!.portraitRows).toEqual(saved!.portraitRows);
+    expect(journals()).toHaveLength(0);
+    expect(Object.keys(base.dump()).filter(path => path.startsWith('.ste/retained/') && path.endsWith('old.png'))).toHaveLength(0);
+  });
+});
 
 describe('portrait prepared mutation persistence', () => {
   it('retains the source through prepare and saves only the patch envelope', async () => {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +23,7 @@ export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorPro
   const hasSections = sections.some((s) => s.label != null);
   // 有分卷小节时默认走分卷阅读视图；点「编辑」切回纯文本编辑
   const [byVolume, setByVolume] = useState(hasSections);
+  useEffect(() => setByVolume(hasSections), [node.id, hasSections]);
 
   return (
     <div className="space-y-3">
@@ -73,9 +74,10 @@ export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorPro
             <div className="flex items-center gap-1">
               <Button
                 variant={byVolume ? 'default' : 'ghost'} size="sm" className="px-2 gap-1 text-xs"
+                aria-pressed={byVolume} title="按已有小节分段阅读，不会自动划卷"
                 onClick={() => setByVolume(true)}
               >
-                <Layers className="w-3 h-3" />分卷
+                <Layers className="w-3 h-3" />分段阅读
               </Button>
               <Button
                 variant={!byVolume ? 'default' : 'ghost'} size="sm" className="px-2 gap-1 text-xs"

@@ -19,6 +19,40 @@ const session = (): ChatSession => ({
 });
 
 describe('live ST chat boundary', () => {
+  it('uses an explicit active persona for new placeholder messages while preserving historical names', () => {
+    const previous = session(); const payload = encodeLiveChat(previous);
+    payload[1].name = '历史旅人';
+    payload.push({ name: 'unused', is_user: true, mes: '新消息', extra: { ste_runtime: { messageId: 'new', role: 'user' } } });
+    const next = decodeLiveChat(payload, previous, '当前 Persona');
+    expect(next.messages[0].name).toBe('历史旅人'); expect(next.messages.at(-1)?.name).toBe('当前 Persona');
+    expect(next.messages.at(-1)?.rawData?.name).toBe('当前 Persona'); expect(next.user.name).toBe('当前 Persona');
+    expect(encodeLiveChat(next)[0].user_name).toBe('当前 Persona');
+    expect(decodeLiveChat(payload, previous, 'unused').messages.at(-1)?.name).toBe('unused');
+  });
+  it.each(['门开了', '', '新的回复片段'])('materializes only the copied pending swipe for %j', content => {
+    const previous = session();
+    const payload = encodeLiveChat(previous);
+    const raw = payload[2] as STRawMessage;
+    const originalCandidates = structuredClone(raw.swipe_info);
+    raw.swipe_id = raw.swipes!.length;
+    raw.mes = content;
+    const before = structuredClone(payload);
+    const saved = decodeLiveChat(payload, previous);
+    expect(payload).toEqual(before);
+    expect(saved.messages[1].rawData).toMatchObject({ swipe_id: 2, swipes: ['另一条', '门开了', content] });
+    expect(saved.messages[1].rawData!.swipe_info!.slice(0, 2)).toEqual(originalCandidates);
+    expect(saved.messages[1].rawData!.extra!.ste_runtime.candidateId)
+      .not.toBe(originalCandidates![1].extra.ste_runtime.candidateId);
+    expect(encodeLiveChat(saved)[2].swipes).toEqual(['另一条', '门开了', content]);
+  });
+
+  it.each([-1, 3, 0.5])('still rejects invalid swipe index %s', index => {
+    const previous = session();
+    const payload = encodeLiveChat(previous);
+    payload[2].swipe_id = index;
+    expect(() => decodeLiveChat(payload, previous)).toThrow('消息候选下标无效');
+  });
+
   it('round trips stable identities, plugin data, empty/system/hidden records without mutating its input', () => {
     const original = session();
     const before = JSON.stringify(original);

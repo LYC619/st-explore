@@ -79,6 +79,7 @@ export interface StoryTree {
   updatedAt: number;
   /** true=自动暂存历史(最近若干份)；false/undefined=手动保存，永久留存 */
   autoSaved?: boolean;
+  provenance?: { bookId: string | null; bookTitle: string; branchId?: string; branchTitle?: string };
 }
 
 /** 供 UI 渲染的嵌套节点（由扁平 nodes 派生，见 story-tree-model.toForest） */

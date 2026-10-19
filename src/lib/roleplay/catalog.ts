@@ -48,11 +48,14 @@ export interface RoleplayCatalogOptions {
   storyId: string;
   branchId?: string | null;
   isCurrent?: () => boolean;
+  /** Project small host metadata while a full card is already being read. */
+  onCharacterRead?: (character: ArchiveCharacter) => void;
 }
 
 export interface RoleplayCatalog {
   readonly initial: ChatLocator;
   characters(): Promise<CatalogCharacterDto[]>;
+  character(avatar: string): Promise<CatalogCharacterDto | undefined>;
   chats(avatar: string): Promise<CatalogChatDto[]>;
   locate(avatar: string, fileName: string): Promise<ChatLocator | undefined>;
   existingLine(avatar: string, fileName: string): Promise<CatalogLine | undefined>;
@@ -141,6 +144,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   catalogQueues.set(stories, mutations);
   const seenAliases = new Map<string, string | null>();
   const knownLocators = new Map<string, ChatLocator>();
+  const knownPeople = new Map<string, { id?: string }>();
   let initialKey: string | undefined = undefined;
 
   function assertCurrent() {
@@ -168,6 +172,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     assertCurrent();
     const people = new Map(allCharacters.map(character => {
       const avatar = avatarKey(character.id);
+      options.onCharacterRead?.(character);
       return [avatar, { ...character, avatar }] as [string, Person];
     }));
     const entries: Entry[] = [];
@@ -216,6 +221,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
       }
     }
     for (const entry of entries) knownLocators.set(entry.locator.key, { ...entry.locator });
+    for (const [avatar, person] of people) knownPeople.set(avatar, { id: person.id });
     for (const [avatar, names] of aliases) {
       for (const [name, owners] of names) rememberAlias(avatar, name, owners.size === 1 ? [...owners][0] : null);
     }
@@ -279,25 +285,50 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   const initial = Object.freeze({ ...initialEntry.locator });
   const initialUser = structuredClone(initialEntry.line.session.user);
 
+  function characterDto(person: Person, chats: Pick<Entry, 'locator' | 'updatedAt'>[]): CatalogCharacterDto {
+    const normalized = normalizeCharacterCard(person.card);
+    const original = structuredClone(person.card);
+    const data = original.data ?? original;
+    return {
+      ...original,
+      name: normalized.name, description: normalized.description, personality: normalized.personality,
+      scenario: normalized.scenario, first_mes: normalized.firstMessage, mes_example: normalized.messageExample,
+      creatorcomment: normalized.creatorNotes, tags: normalized.tags,
+      avatar: person.avatar, chat: chats[0]?.locator.fileName ?? `${normalized.name} - 新聊天`,
+      create_date: person.createdAt, date_last_chat: Math.max(0, ...chats.map(entry => entry.updatedAt)),
+      data: { ...data, name: normalized.name, extensions: data.extensions ?? {} },
+    };
+  }
+
   return {
     initial,
     async characters() {
       const state = await snapshot();
-      return [...state.people.values()].map(person => {
-        const normalized = normalizeCharacterCard(person.card);
-        const original = structuredClone(person.card);
-        const data = structuredClone(original.data ?? original);
-        const chats = state.entries.filter(entry => entry.locator.avatar === person.avatar);
-        return {
-          ...original,
-          name: normalized.name, description: normalized.description, personality: normalized.personality,
-          scenario: normalized.scenario, first_mes: normalized.firstMessage, mes_example: normalized.messageExample,
-          creatorcomment: normalized.creatorNotes, tags: normalized.tags,
-          avatar: person.avatar, chat: chats[0]?.locator.fileName ?? `${normalized.name} - 新聊天`,
-          create_date: person.createdAt, date_last_chat: Math.max(0, ...chats.map(entry => entry.updatedAt)),
-          data: { ...data, name: normalized.name, extensions: data.extensions ?? {} },
-        };
-      });
+      return [...state.people.values()].map(person => characterDto(person, state.entries.filter(entry => entry.locator.avatar === person.avatar)));
+    },
+    async character(avatar) {
+      assertCurrent();
+      if (!knownPeople.has(avatar)) {
+        const state = await snapshot();
+        const person = state.people.get(avatar);
+        return person ? characterDto(person, state.entries.filter(entry => entry.locator.avatar === avatar)) : undefined;
+      }
+      const known = knownPeople.get(avatar)!;
+      const locators = [...knownLocators.values()].filter(locator => locator.avatar === avatar);
+      const [character, related] = await Promise.all([
+        known.id ? characters.get(known.id) : undefined,
+        Promise.all([...new Set(locators.map(locator => locator.storyId))].map(id => stories.get(id))),
+      ]);
+      assertCurrent();
+      const currentStories = sortStoriesForDisplay(related.filter(story => story && storyAvatar(story) === avatar) as ArchiveStory[]);
+      const chats = currentStories.flatMap(story => locators.filter(locator => locator.storyId === story.id && getBranchLine(story, locator.branchId))
+        .map(locator => ({ locator, updatedAt: story.branches?.find(branch => branch.id === locator.branchId)?.updatedAt ?? story.updatedAt })));
+      chats.sort((a, b) => Number(b.locator.key === initialKey) - Number(a.locator.key === initialKey));
+      if (character) options.onCharacterRead?.(character);
+      const story = currentStories[0];
+      const person = character ? { ...character, avatar } : story ? { avatar, card: { name: story.session.character.name },
+        createdAt: story.createdAt, updatedAt: story.updatedAt } : undefined;
+      return person ? characterDto(person, chats) : undefined;
     },
     async chats(avatar) {
       const state = await snapshot();

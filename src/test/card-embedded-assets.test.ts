@@ -34,6 +34,7 @@ describe('importEmbeddedAssets', () => {
     const character = buildCharacterFromCard(fullCard);
     const refs = await importEmbeddedAssets(character);
     expect(refs.map((r) => r.kind).sort()).toEqual(['regex', 'worldbook']);
+    expect(refs.find(ref => ref.kind === 'regex')?.relations).toEqual(['embedded']);
 
     const wbs = await getAllWorldBooks();
     expect(wbs).toHaveLength(1);

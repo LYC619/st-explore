@@ -482,6 +482,7 @@ const StoryWorkspace = () => {
               <div className={cn('flex-1', isCompact ? 'min-w-0' : 'min-w-[20rem]')}>
                 {/* key 按脉络切：换分支重挂工作台，UI 态（搜索/编辑模式/滚动）随之复位 */}
                 <ChatWorkbench
+                  recordContext={{ storyId: story.id, branchId, flush: () => saverRef.current.flush() }}
                   key={branchId ?? 'trunk'}
                   ref={workbenchRef}
                   session={line.session}

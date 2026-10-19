@@ -4,12 +4,16 @@
  */
 import type { ArchiveCharacter, ArchiveStory, CharacterStatus, CharacterType, StoryStatus, StoryBranch } from '@/types/archive';
 import { isPreparedCharacterMutation, type CharacterMutationContext, type CharacterUpdater } from '@/lib/character-mutation';
-import { getActiveVault } from '@/lib/vault/active';
+import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { openDB } from '@/lib/idb';
 import type { ChatSession, ChatMessage, ChapterMarker } from '@/types/chat';
 import type { RoleplayPreferences } from '@/types/roleplay';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
-import { createRepo, getCurrentRepo, type Repo } from '@/lib/repo';
+import { createRepo, getCurrentRepo, type Repo, type RemoveOptions } from '@/lib/repo';
+import type { SummaryItem } from '@/types/summary';
+import type { StoryTree } from '@/types/story-tree';
+import { acquireStoryMaintenance } from '@/lib/story-activity';
 import { extractModels, estimatePlayTime, computeStoryProps } from '@/lib/story-meta';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { bytesToBase64 } from '@/lib/utils';
@@ -124,9 +128,47 @@ export async function markCharacterViewed(id: string, viewedAt = Date.now()): Pr
   return updateCharacter(id, () => ({ lastViewedAt: viewedAt }));
 }
 
-export async function deleteCharacter(id: string): Promise<void> {
+export async function deleteCharacter(id: string, options?: RemoveOptions): Promise<void> {
   const repo = getCurrentRepo<ArchiveCharacter>('characters');
-  return characterWrites.enqueue(id, () => repo.remove(id));
+  const stories = getCurrentRepo<ArchiveStory>('archiveStories');
+  const epoch = getVaultEpoch();
+  return characterWrites.enqueue(id, async () => {
+    const check = () => { if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止'); };
+    check();
+    if (!options) return repo.remove(id);
+    const moved: ArchiveStory[] = [];
+    const releases: Array<() => void> = [];
+    try {
+      for (const story of await stories.list()) {
+        if (story.characterId !== id) continue;
+        releases.push(acquireStoryMaintenance(story.id));
+        await storyWrites.enqueue(story.id, async () => {
+          check();
+          const current = await stories.get(story.id);
+          if (!current || current.characterId !== id) return;
+          await stories.put({ ...current, characterId: undefined, updatedAt: Date.now() }, { derivedUnchanged: true });
+          moved.push(current);
+        });
+      }
+      check();
+      await repo.remove(id, options);
+    } catch (error) {
+      // If removal committed but trash cleanup failed, the stories must stay detached.
+      if (await repo.get(id)) {
+        const failures: string[] = [];
+        for (const previous of moved.reverse()) {
+          try {
+            await storyWrites.enqueue(previous.id, async () => {
+              const current = await stories.get(previous.id);
+              if (current && !current.characterId) await stories.put({ ...current, characterId: id }, { derivedUnchanged: true });
+            });
+          } catch { failures.push(previous.title); }
+        }
+        if (failures.length) throw new Error(`删除失败；这些故事仍保留为未绑定：${failures.join('、')}。${String(error)}`);
+      }
+      throw error;
+    } finally { releases.forEach(release => release()); }
+  });
 }
 
 export async function getAllArchiveStories(): Promise<ArchiveStory[]> {
@@ -173,9 +215,73 @@ export async function updateArchiveStory(
   });
 }
 
-export async function deleteArchiveStory(id: string): Promise<void> {
+export async function deleteArchiveStory(id: string, options?: RemoveOptions): Promise<void> {
+  const vault = getActiveVault();
   const repo = getCurrentRepo<ArchiveStory>('archiveStories');
-  return storyWrites.enqueue(id, () => repo.remove(id));
+  const summaries = getCurrentRepo<SummaryItem>('summaries');
+  const trees = getCurrentRepo<StoryTree>('stories');
+  const epoch = getVaultEpoch();
+  return storyWrites.enqueue(id, async () => {
+    const check = () => { if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止'); };
+    check();
+    if (!options) return repo.remove(id);
+    const release = acquireStoryMaintenance(id);
+    const rollback: Array<() => Promise<void>> = [];
+    try {
+      if (!vault) {
+        // Browser storage has no retained disk files. Detach records and remove runtime
+        // storage in one transaction so a failed deletion cannot strand partial data.
+        const db = await openDB(); check();
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(['archiveStories', 'summaries', 'stories', 'roleplayFiles'], 'readwrite');
+          let failure: unknown;
+          const unsubscribe = subscribeActiveVault(() => {
+            if (getVaultEpoch() !== epoch) {
+              failure = new Error('文件库已切换，删除已停止');
+              try { tx.abort(); } catch { /* already settled */ }
+            }
+          });
+          tx.oncomplete = () => { unsubscribe(); resolve(); };
+          tx.onabort = () => { unsubscribe(); reject(failure ?? tx.error ?? new Error('删除事务失败')); };
+          tx.onerror = () => { failure ??= tx.error; };
+          tx.objectStore('archiveStories').delete(id);
+          for (const name of ['summaries', 'stories', 'roleplayFiles'] as const) {
+            const request = tx.objectStore(name).openCursor();
+            request.onsuccess = () => {
+              const cursor = request.result;
+              if (!cursor) return;
+              if (name === 'roleplayFiles') {
+                if (cursor.value.storyId === id) cursor.delete();
+              } else if (cursor.value.bookId === id) {
+                cursor.update({ ...cursor.value, bookId: null, autoSaved: false, updatedAt: Date.now() });
+              }
+              cursor.continue();
+            };
+          }
+        });
+        return;
+      }
+      for (const store of [summaries, trees] as Repo<SummaryItem | StoryTree>[]) {
+        for (const record of await store.list()) {
+          if (record.bookId !== id) continue;
+          check();
+          await store.put({ ...record, bookId: null, autoSaved: false, updatedAt: Date.now() });
+          rollback.push(() => store.put(record));
+        }
+      }
+      check();
+      await repo.remove(id, options);
+    } catch (error) {
+      if (await repo.get(id)) {
+        const failures: unknown[] = [];
+        for (const restore of rollback.reverse()) {
+          try { await restore(); } catch (failure) { failures.push(failure); }
+        }
+        if (failures.length) throw new Error(`删除失败，部分记录已保留为未绑定，需检查归属。${String(error)}`);
+      }
+      throw error;
+    } finally { release(); }
+  });
 }
 
 const ARCHIVE_SCHEMA_META_ID = 'archive-schema';

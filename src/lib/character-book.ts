@@ -91,3 +91,17 @@ export function characterBookToWorldBook(book: unknown): WorldBook | null {
 
   return null;
 }
+
+/** ST card shape, using the same normalized entries as the standalone exporter. */
+export function worldBookToCharacterBook(worldbook: WorldBook, name: string): Record<string, unknown> {
+  return {
+    ...structuredClone(worldbook.originalData ?? {}), name,
+    entries: Object.values(worldbook.entries).map(entry => {
+      const { key, keysecondary, enabled, order, extensions, ...rest } = structuredClone(entry);
+      return { ...rest, id: entry.uid, keys: key, secondary_keys: keysecondary, enabled,
+        insertion_order: order, position: entry.position === 0 ? 'before_char' : 'after_char',
+        extensions: { ...(extensions && typeof extensions === 'object' ? extensions : {}),
+          ...rest, position: entry.position, depth: entry.depth, order } };
+    }),
+  };
+}

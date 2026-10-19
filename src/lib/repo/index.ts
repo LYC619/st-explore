@@ -8,7 +8,7 @@ import type { StoreName } from '@/lib/idb';
 import { getActiveVault } from '@/lib/vault/active';
 import { createIdbRepo, type BaseRecord, type Repo } from './idb-repo';
 
-export type { BaseRecord, Repo } from './idb-repo';
+export type { BaseRecord, Repo, RemoveOptions } from './idb-repo';
 export { pruneAutoSaved } from './idb-repo';
 
 /**
@@ -34,6 +34,6 @@ export function createRepo<T extends BaseRecord>(store: StoreName): Repo<T> {
     listLight: () => getCurrentRepo<T>(store).listLight(),
     get: (id) => getCurrentRepo<T>(store).get(id),
     put: (item, opts) => getCurrentRepo<T>(store).put(item, opts),
-    remove: (id) => getCurrentRepo<T>(store).remove(id),
+    remove: (id, options) => getCurrentRepo<T>(store).remove(id, options),
   };
 }

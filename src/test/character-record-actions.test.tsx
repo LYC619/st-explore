@@ -1,0 +1,41 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, expect, it } from 'vitest';
+import { StoryRecordsView } from '@/components/character/StoryRecordsView';
+import { createVault } from '@/lib/vault/vault-backend';
+import { createMemFs } from '@/lib/vault/fs';
+import { setActiveVault } from '@/lib/vault/active';
+import { buildStoryFromSession } from '@/lib/archive-db';
+import type { ArchiveStory } from '@/types/archive';
+import type { SummaryItem } from '@/types/summary';
+import type { StoryTree } from '@/types/story-tree';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root | undefined;
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; setActiveVault(null); });
+
+it.each(['volume', 'diary', 'tree'] as const)('moves %s from the character detail into another story branch and reloads', async kind => {
+  const fs = createMemFs(), vault = createVault(fs); setActiveVault(vault);
+  const story = (id: string): ArchiveStory => ({ ...buildStoryFromSession({ id, title: id, character: { name: 'c' }, user: { name: 'u' }, messages: [], createdAt: 1 }, 'c'), id });
+  const source = story('source'), target = story('target'), foreign = { ...story('foreign'), characterId: 'other' };
+  target.branches = [{ id: 'target-branch', name: '目标分支', session: target.session, markers: [], createdAt: 1, updatedAt: 1 }];
+  for (const item of [source, target, foreign]) await vault.repo('archiveStories').put(item);
+  const record = { id: 'record', bookId: source.id, bookTitle: source.title, title: '可移动成果', createdAt: 1, updatedAt: 1 };
+  if (kind === 'tree') await vault.repo<StoryTree>('stories').put({ ...record, nodes: [] });
+  else await vault.repo<SummaryItem>('summaries').put({ ...record, kind, content: '可阅读的全文', floorStart: 0, floorEnd: 0 });
+  const host = document.createElement('div'); document.body.append(host); root = createRoot(host);
+  await act(async () => root!.render(<StoryRecordsView stories={[source, target, foreign]} kind={kind} onGoGenerate={() => {}} />));
+  const button = [...host.querySelectorAll('button')].find(button => button.textContent === '移动到其他故事');
+  expect(button).toBeTruthy(); await act(async () => button!.click());
+  const select = document.querySelector<HTMLSelectElement>('[aria-label="目标故事"]')!;
+  expect([...select.options].map(option => option.value)).not.toContain('foreign');
+  await act(async () => { select.value = target.id; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  const branch = document.querySelector<HTMLSelectElement>('[aria-label="目标脉络"]')!;
+  await act(async () => { branch.value = 'target-branch'; branch.dispatchEvent(new Event('change', { bubbles: true })); });
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '移动')!.click());
+  expect(host.textContent).not.toContain('可移动成果');
+  const saved = await vault.repo(kind === 'tree' ? 'stories' : 'summaries').get('record');
+  expect(saved).toMatchObject({ bookId: target.id, branchId: 'target-branch' });
+  setActiveVault(createVault(fs));
+  expect(await (await import('@/lib/repo')).getCurrentRepo(kind === 'tree' ? 'stories' : 'summaries').get('record')).toMatchObject({ bookId: target.id });
+});

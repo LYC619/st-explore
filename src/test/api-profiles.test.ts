@@ -2,6 +2,7 @@ import { beforeEach, describe, it, expect } from 'vitest';
 import {
   loadApiProfiles, getActiveProfile, loadAPIConfig, saveAPIConfig, clearAPIConfig,
   persistProfiles, DEFAULT_API_URL, DEFAULT_MODEL, type ApiProfile,
+  storeProfileModelsIfCurrent,
 } from '@/components/ai-tools/api-profiles';
 
 const PROFILES_KEY = 'st-beautifier-api-profiles';
@@ -12,6 +13,17 @@ beforeEach(() => {
 });
 
 describe('api-profiles 持久化层', () => {
+  it('never writes a late model list into the new active connection or a changed address', () => {
+    const original = { id: 'a', name: 'A', apiUrl: 'https://a.example/v1/chat/completions', apiKey: 'fixture-key', model: 'a' };
+    const other = { ...original, id: 'b', name: 'B', apiUrl: 'https://b.example/v1/chat/completions', model: 'b' };
+    persistProfiles([original, other], 'b');
+    expect(storeProfileModelsIfCurrent(original, ['a1'])).toBe(true);
+    expect(getActiveProfile()).toMatchObject({ id: 'b', model: 'b' });
+    expect(loadApiProfiles().profiles[0].modelList).toEqual(['a1']);
+    persistProfiles([{ ...original, apiUrl: 'https://new.example/v1/chat/completions' }, other], 'b');
+    expect(storeProfileModelsIfCurrent(original, ['stale'])).toBe(false);
+    expect(loadApiProfiles().profiles[0].modelList).toBeUndefined();
+  });
   it('从旧单配置 4 个 key 一次性迁移成「默认」提供商并清掉旧 key', () => {
     localStorage.setItem('st-beautifier-openai-key', 'sk-legacy');
     localStorage.setItem('st-beautifier-api-url', 'https://relay.example/v1/chat/completions');

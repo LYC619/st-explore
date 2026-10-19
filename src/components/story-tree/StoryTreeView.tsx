@@ -7,6 +7,7 @@ import { NODE_TYPE_DOT, NODE_TYPE_LABELS } from '@/types/story-tree';
 export type DropZone = 'before' | 'after' | 'inside';
 
 interface StoryTreeViewProps {
+  readOnly?: boolean;
   forest: StoryNodeTree[];
   selectedId: string | null;
   collapsed: Set<string>;
@@ -30,7 +31,7 @@ function computeZone(e: React.DragEvent<HTMLDivElement>): DropZone {
 /** 递归的可交互树视图：展开折叠 + 选中 + 增子 + 原生 HTML5 三落点拖拽移动 */
 export function StoryTreeView({
   forest, selectedId, collapsed, showArchived, hitIds,
-  onSelect, onToggleCollapse, onAddChild, onMove,
+  onSelect, onToggleCollapse, onAddChild, onMove, readOnly = false,
 }: StoryTreeViewProps) {
   const [dragOver, setDragOver] = useState<{ id: string; zone: DropZone } | null>(null);
   const [overRoot, setOverRoot] = useState(false);
@@ -46,7 +47,7 @@ export function StoryTreeView({
     return (
       <div key={node.id}>
         <div
-          draggable
+          draggable={!readOnly}
           onDragStart={(e) => {
             e.dataTransfer.setData('text/plain', node.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -80,7 +81,7 @@ export function StoryTreeView({
           )}
           style={{ paddingLeft: `${depth * 16 + 4}px` }}
         >
-          <GripVertical className="w-3 h-3 text-muted-foreground/40 shrink-0 cursor-grab" />
+          {!readOnly && <GripVertical className="w-3 h-3 text-muted-foreground/40 shrink-0 cursor-grab" />}
           {hasChildren ? (
             <button
               onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id); }}
@@ -101,13 +102,13 @@ export function StoryTreeView({
           {node.pinned && <Pin className="w-3 h-3 text-primary shrink-0" />}
           {node.archived && <Archive className="w-3 h-3 text-muted-foreground shrink-0" />}
           {node.hint && <span className="text-xs text-muted-foreground truncate max-w-[30%] hidden sm:inline" title={node.hint}>{node.hint}</span>}
-          <button
+          {!readOnly && <button
             onClick={(e) => { e.stopPropagation(); onAddChild(node.id); }}
             className="hover-reveal tap-target shrink-0 text-muted-foreground hover:text-foreground"
             title="添加子节点"
           >
             <Plus className="w-3.5 h-3.5" />
-          </button>
+          </button>}
         </div>
         {hasChildren && !isCollapsed && (
           <div>{node.children.map((c) => renderNode(c, depth + 1))}</div>
@@ -120,7 +121,7 @@ export function StoryTreeView({
     <div className="space-y-0.5" onDragOver={(e) => e.preventDefault()}>
       {forest.map((n) => renderNode(n, 0))}
       {/* 根级落点：拖到这里 = 移到顶层末尾 */}
-      <div
+      {!readOnly && <div
         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setOverRoot(true); }}
         onDragLeave={() => setOverRoot(false)}
         onDrop={(e) => {
@@ -136,7 +137,7 @@ export function StoryTreeView({
         )}
       >
         拖到此处移到顶层
-      </div>
+      </div>}
     </div>
   );
 }

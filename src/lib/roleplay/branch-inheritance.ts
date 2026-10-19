@@ -42,6 +42,8 @@ export interface BranchInheritanceOptions {
   stories: Repo<ArchiveStory>;
   worldbooks: Repo<WorldBookItem>;
   isCurrent?: () => boolean;
+  /** Caller already holds the story queue and supplies its latest persisted snapshot. */
+  lockedStory?: ArchiveStory;
 }
 
 /** Capture identities while the fork is created; ST's main_chat filename remains only a label. */
@@ -105,7 +107,7 @@ export async function ensureBranchRuntime(options: BranchInheritanceOptions): Pr
   check();
   if (branchId === null) return unused();
   let result!: BranchInheritanceResult;
-  const saved = await updateArchiveStory(storyId, async story => {
+  const inherit = async (story: ArchiveStory) => {
     check();
     const visiting = new Set<string>();
     async function ensure(targetId: string): Promise<BranchInheritanceResult> {
@@ -187,7 +189,11 @@ export async function ensureBranchRuntime(options: BranchInheritanceOptions): Pr
     }
     result = await ensure(branchId);
     return undefined;
-  }, stories);
+  };
+  if (options.lockedStory && options.lockedStory.id !== storyId) throw new Error('继承快照与故事不匹配');
+  const saved = options.lockedStory
+    ? (await inherit(options.lockedStory), options.lockedStory)
+    : await updateArchiveStory(storyId, inherit, stories);
   if (!saved) throw new Error('分支继承所属故事不存在');
   check();
   return result;

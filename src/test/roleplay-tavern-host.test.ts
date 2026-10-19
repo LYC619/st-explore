@@ -16,7 +16,11 @@ import { sourceRefs } from '@/lib/roleplay/fingerprint';
 import type { ArchiveStory } from '@/types/archive';
 import * as liveChat from '@/lib/roleplay/live-chat';
 import { chatKey } from '@/lib/roleplay/catalog';
+import { assertStoryIdle } from '@/lib/story-activity';
 import { Blob as NodeBlob } from 'node:buffer';
+import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
+import { stScriptToRule } from '@/lib/st-regex-interop';
+import regexOverlaySource from '@/tavern/regex-assets.js?raw';
 
 afterEach(() => { setActiveVault(null); localStorage.clear(); vi.unstubAllGlobals(); });
 
@@ -39,6 +43,121 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('refreshes the provider model catalog on each explicit connection request and preserves the last list on failure', async () => {
+    const f = await fixture();
+    const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'M1' }] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'M1' }, { id: 'M2' }] })))
+      .mockRejectedValueOnce(new Error('断网'));
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      for (const expected of [['M1'], ['M1', 'M2']]) {
+        const response = await (await f.host.request('/api/backends/chat-completions/status', {})).json();
+        expect(response.data.map((item: { id: string }) => item.id)).toEqual(expect.arrayContaining(expected));
+      }
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      const failed = await (await f.host.request('/api/backends/chat-completions/status', {})).json();
+      expect(failed.data.map((item: { id: string }) => item.id)).toContain('M2'); expect(failed.ste_warning).toContain('断网');
+    } finally { f.host.close(); }
+  });
+  it('shares the startup character read and decorates bootstrap/single-card DTOs without rereading the library', async () => {
+    const f = await fixture(); f.host.close();
+    const characters = getCurrentRepo<import('@/types/archive').ArchiveCharacter>('characters');
+    const stories = getCurrentRepo<ArchiveStory>('archiveStories');
+    for (let index = 0; index < 8; index++) await saveCharacter(buildCharacterFromCard({ name: `无关角色${index}` }));
+    const characterLists = vi.spyOn(characters, 'list');
+    const characterGets = vi.spyOn(characters, 'get');
+    const storyLists = vi.spyOn(stories, 'list');
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try {
+      expect(characterLists).toHaveBeenCalledTimes(1);
+      expect(storyLists).toHaveBeenCalledTimes(1);
+      characterGets.mockClear();
+      const bootstrap = await (await host.request('/api/bootstrap')).json();
+      expect(bootstrap.characters).toHaveLength(9);
+      expect(characterGets).not.toHaveBeenCalled();
+      characterLists.mockClear(); storyLists.mockClear();
+      const card = bootstrap.characters.find((character: { name: string }) => character.name === '林');
+      const one = await (await host.request('/api/characters/get', { avatar_url: card.avatar })).json();
+      expect(one).toMatchObject({ avatar: card.avatar, _ste_revision: card._ste_revision,
+        data: { extensions: { foreign: { preserve: true } } } });
+      expect(characterGets).toHaveBeenCalledTimes(1);
+      expect(characterLists).not.toHaveBeenCalled();
+      expect(storyLists).not.toHaveBeenCalled();
+    } finally { host.close(); vi.restoreAllMocks(); }
+  });
+
+  it('saves and checkpoints a pending native swipe without mutating the live array or losing candidates', async () => {
+    const f = await fixture();
+    const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+    const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+    chat[1].swipes = ['请进']; chat[1].swipe_id = 1; chat[1].mes = '未完成的回复';
+    const pending = structuredClone(chat);
+    let complete!: (response: Response) => void;
+    let requestSignal: AbortSignal | undefined;
+    const fetcher = vi.fn((_url, options) => { requestSignal = options.signal; return new Promise<Response>(resolve => { complete = resolve; }); });
+    vi.stubGlobal('fetch', fetcher);
+    const generation = f.host.request('/api/backends/chat-completions/generate', {
+      messages: [{ role: 'user', content: '继续' }], stream: false, ste_context: { chat, type: 'swipe' },
+    });
+    try {
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+      expect((await f.host.request('/ste/draft/capture', { chat, input: '' })).ok).toBe(true);
+      const recovered = await (await f.host.request('/ste/draft/restore')).json();
+      expect(recovered.chat[1]).toMatchObject({ swipe_id: 1, swipes: ['请进', '未完成的回复'] });
+      expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+      expect(chat).toEqual(pending);
+      expect(requestSignal?.aborted).toBe(false);
+      expect((await getArchiveStory(f.story.id))!.session.messages[0].rawData?.swipes).toEqual(['请进', '未完成的回复']);
+      chat[1].swipes.push('完整回复'); chat[1].mes = '完整回复';
+      expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+      expect((await getArchiveStory(f.story.id))!.session.messages[0].rawData?.swipes).toEqual(['请进', '完整回复']);
+      // A stopped overswipe can revert to its original array and selected candidate.
+      chat[1].swipes = ['请进']; chat[1].swipe_id = 0; chat[1].mes = '请进';
+      expect((await f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat })).ok).toBe(true);
+      expect((await getArchiveStory(f.story.id))!.session.messages[0].rawData?.swipes).toEqual(['请进']);
+    } finally {
+      complete?.(new Response(JSON.stringify({ choices: [{ message: { content: '完整回复' } }] })));
+      await (await generation).json(); f.host.close();
+    }
+  });
+
+  it.each([true, false])('suppresses only imported embedded counterparts including legacy refs (source id=%s)', async hasId => {
+    const f = await fixture(); f.host.close();
+    const script = { ...(hasId ? { id: 'source-rule' } : {}), scriptName: '规则', findRegex: '/门/g', replaceString: '窗', placement: [2] };
+    await updateCharacter(f.character.id, current => ({ card: { ...current.card,
+      data: { ...current.card.data, extensions: { regex_scripts: [script] } } } }));
+    const character = (await getCharacter(f.character.id))!;
+    const imported = await importEmbeddedAssets(character);
+    await updateCharacter(character.id, () => ({ assets: imported.map(({ relations: _relations, ...ref }) => ref) }));
+    const regexes = getCurrentRepo<import('@/types/regex').RegexCollectionItem>('regexes');
+    // Linked asset edits must keep suppressing the card's stale original copy,
+    // including a source script for which the parser generated an ID.
+    const importedRegex = (await regexes.get(imported.find(ref => ref.kind === 'regex')!.assetId))!;
+    await regexes.put({ ...importedRegex, rules: importedRegex.rules.map(rule => ({ ...rule, replaceString: '修改后的窗' })) });
+    await regexes.put({ id: 'independent', title: '有意重复', createdAt: 1, updatedAt: 1,
+      rules: [stScriptToRule({ ...script, id: 'independent-rule' })] });
+    await updateArchiveStory(f.story.id, current => ({ assets: [...current.assets ?? [], { kind: 'regex', assetId: 'independent' }] }));
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try {
+      const snapshot = await (await host.request('/ste/regex-assets')).json();
+      expect(snapshot.suppressedEmbeddedScripts).toEqual([script]);
+      const renderedSource = { ...script, id: hasId ? 'source-rule' : 'upstream-assigned-id' };
+      const independent = { ...script, id: 'ordinary-independent' };
+      const filter = new Function(regexOverlaySource.replace(/^export /gm, '') + '; return filterEmbeddedRegexScripts;')();
+      const ordinary = filter([renderedSource, independent], snapshot);
+      expect(ordinary).toEqual([independent]);
+      expect(snapshot.embeddedScripts).toHaveLength(1);
+      expect(snapshot.globalScripts).toHaveLength(1);
+      const card = (await (await host.request('/api/bootstrap')).json()).characters[0];
+      expect((await host.request('/api/characters/merge-attributes', { avatar: card.avatar,
+        data: { extensions: { regex_scripts: [renderedSource, independent] } } })).ok).toBe(true);
+      const saved = (await getCharacter(character.id))!.card.data!.extensions!.regex_scripts;
+      expect(saved).toHaveLength(2);
+      expect(saved).toContainEqual(independent);
+      expect(saved).not.toContainEqual(renderedSource);
+    } finally { host.close(); }
+  });
+
   it('generates a native overswipe without decoding its pending slot or creating a branch', async () => {
     const f = await fixture();
     const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
@@ -251,8 +370,10 @@ describe('real Tavern host contracts', () => {
     const locator = { kind: 'character', characterId: card.avatar.replace(/\.png$/, ''), fileName: card.chat };
     expect((await f.host.request('/ste/invoke', { command: 'chat_history_generation_started', args: { locator } })).ok).toBe(true);
     expect(f.host.isGenerating()).toBe(true);
+    expect(() => assertStoryIdle(f.story.id)).toThrow(/生成/);
     expect((await f.host.request('/ste/invoke', { command: 'chat_history_generation_finished', args: { locator } })).ok).toBe(true);
     expect(f.host.isGenerating()).toBe(false);
+    expect(() => assertStoryIdle(f.story.id)).not.toThrow();
     const stats = { [card.avatar]: { user_msg_count: 2, total_gen_time: 25 } };
     expect((await f.host.request('/api/stats/update', stats)).ok).toBe(true);
     expect(await (await f.host.request('/api/stats/get')).json()).toEqual(stats);
@@ -429,6 +550,9 @@ describe('real Tavern host contracts', () => {
     const saved = (await getCharacter(f.character.id))!;
     const pngCard = extractCharacterFromPngBuffer(base64ToBytes(saved.pngBase64!).buffer as ArrayBuffer);
     expect(pngCard?.data?.description).toBe('已编辑的角色描述');
+    expect(f.host.thumbnail('avatar', card.avatar)).toBe(`data:image/png;base64,${saved.pngBase64}`);
+    f.host.close();
+    expect(f.host.thumbnail('avatar', card.avatar)).toBe('/img/ai4.png');
   });
   it('rejects stale card editors while allowing narrow extension merges without clobbering other fields', async () => {
     const f = await fixture();

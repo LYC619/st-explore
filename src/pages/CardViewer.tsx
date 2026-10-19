@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { IdCard, Upload, Save, History, Download, FileJson, Image } from 'lucide-react';
@@ -264,11 +265,11 @@ export default function CardViewer() {
     toast({ title: '已保存', description: '可在「已存角色卡」中查看；永久留存、纳入完整备份' });
   }, [buildEditedCard, currentItemId, fileName, savedItems, refreshSaved, toast]);
 
-  const handleDeleteItem = useCallback(async () => {
+  const handleDeleteItem = useCallback(async (options: RemoveOptions) => {
     if (!deleteTarget) return;
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
-      await deleteCard(target.id);
+      await deleteCard(target.id, options);
       if (target.id === currentItemId) setCurrentItemId(null);
       await refreshSaved();
     }, {
@@ -276,6 +277,7 @@ export default function CardViewer() {
       onFailure: () => toast({ title: '删除角色卡失败', variant: 'destructive' }),
     });
     if (deleted) setDeleteTarget(null);
+    return deleted;
   }, [currentItemId, deleteTarget, refreshSaved, toast]);
 
   const hasPng = pngBytesRef.current !== null;
@@ -342,9 +344,10 @@ export default function CardViewer() {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除角色卡「${deleteTarget?.title ?? ''}」？`}
-        description="此操作不可恢复。只会删除角色卡工具中的已存副本，不会删除角色库档案。"
+        description="条目将从列表移除。只会删除角色卡工具中的已存副本，不会删除角色库档案。"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        onConfirm={() => void handleDeleteItem()}
+        fileTarget={deleteTarget ? { store: 'cards', id: deleteTarget.id } : undefined}
+            onConfirm={handleDeleteItem}
       />
       {showTour && (
         <GuidedTour

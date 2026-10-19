@@ -35,6 +35,20 @@ const session: ChatSession = {
 };
 
 describe('bindSessionToCharacter（阶段5：绑定=未绑定故事补 characterId）', () => {
+  it('绑定正在编辑的分支保留主线，后台新回复不能被旧绑定快照覆盖', async () => {
+    const main = { ...session, title: '主线', messages: [session.messages[0]] };
+    await seed('archiveStories', { id: 'branch-story', title: '主线', session: main, markers: [],
+      branches: [{ id: 'b', name: '分支', session, markers: [], favorites: [], createdAt: 1, updatedAt: 1 }],
+      meta: { modelsUsed: [], playTimeMs: null }, createdAt: 1, updatedAt: 1 });
+    const edited = { ...session, title: '分支改名', messages: [...session.messages, { id: 'new', role: 'assistant' as const, content: '新内容' }] };
+    const result = await bindSessionToCharacter({ characterId: 'character', storyId: 'branch-story', branchId: 'b',
+      expectedSession: session, session: edited, markers: [], favorites: [] });
+    expect(result.story.session).toEqual(main); expect(result.story.title).toBe('主线');
+    expect(result.story.branches?.[0].session).toEqual(edited);
+    await expect(bindSessionToCharacter({ characterId: 'other', storyId: 'branch-story', branchId: 'b',
+      expectedSession: session, session, markers: [], favorites: [] })).rejects.toThrow('新的聊天内容');
+    expect((await getArchiveStory('branch-story'))?.branches?.[0].session).toEqual(edited);
+  });
   it('已有未绑定故事：原地升级（同 id），当前编辑态落库，成果计数不重指', async () => {
     const now = Date.now();
     await seed('archiveStories', {

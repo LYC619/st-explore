@@ -18,6 +18,8 @@ import {
 import { Sparkles, Square, Loader2, BookOpen, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
+import { MoveRecordDialog } from './MoveRecordDialog';
+import type { RemoveOptions } from '@/lib/repo';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -115,6 +117,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
 
     const [floorStart, setFloorStart] = useState(() => Math.min(record?.floorStart ?? 0, maxIdx));
     const [floorEnd, setFloorEnd] = useState(() => Math.min(record?.floorEnd ?? maxIdx, maxIdx));
+    const [rangeAttached, setRangeAttached] = useState(!record?.rangeDetached);
+    const rangeDetached = !!record?.rangeDetached && !rangeAttached;
+    const [moveOpen, setMoveOpen] = useState(false);
     const [diaryOwner, setDiaryOwner] = useState(record?.genParams?.diaryOwner ?? '');
 
     const [templates, setTemplates] = useState<AnySummaryTemplate[]>([]);
@@ -308,10 +313,12 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       title,
       volumeNumber: kind === 'volume' ? volume : undefined,
       branchId: branchId ?? undefined,
-      floorStart,
-      floorEnd,
+      floorStart: rangeDetached && record ? record.floorStart : floorStart,
+      floorEnd: rangeDetached && record ? record.floorEnd : floorEnd,
+      rangeDetached,
+      provenance: record?.id === id ? record.provenance : undefined,
       content,
-      genParams: {
+      genParams: rangeDetached ? record?.genParams : {
         model: loadAPIConfig().model,
         presetId: attach.presetId ?? undefined,
         worldbookId: attach.worldbookId ?? undefined,
@@ -341,6 +348,10 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     };
 
     const handleGenerate = async () => {
+      if (rangeDetached) {
+        toast({ title: '请先关联目标故事的楼层范围' });
+        return;
+      }
       const config = loadAPIConfig();
       if (!config.apiKey) {
         toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
@@ -413,10 +424,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     // 「不要了」：生成结果一落地就自动暂存了，光清空结果区那条记录还在库里躺着占位，
     // 得连库里一起删。已永久保存的也走这条路（弹窗文案更重一些）。
     const [discardAsk, setDiscardAsk] = useState(false);
-    const handleDiscard = async () => {
-      setDiscardAsk(false);
+    const handleDiscard = async (options: RemoveOptions) => {
       const id = currentSummaryId;
-      if (id) await deleteSummary(id);
+      if (id) await deleteSummary(id, options);
       setResultTitle('');
       setResultContent('');
       setCurrentSummaryId(null);
@@ -443,6 +453,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         scrollResultIntoView();
       },
       regenerate() {
+        if (rangeDetached) { toast({ title: '请先关联目标故事的楼层范围' }); return; }
         const gp = record?.genParams;
         if (gp) {
           setAttach({
@@ -463,14 +474,14 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         toast({ title: '已回填设置', description: '楼层/挂载/模板已按原条目填好，点「生成」即可重做' });
       },
       hasUnsavedDraft() {
-        return hasUnsavedSummaryDraft({
+        return (!!record?.rangeDetached && rangeAttached) || hasUnsavedSummaryDraft({
           record,
           title: resultTitle,
           content: resultContent,
           streaming,
         });
       },
-    }), [record, kind, resultTitle, resultContent, streaming, scrollResultIntoView, toast]);
+    }), [record, kind, resultTitle, resultContent, streaming, scrollResultIntoView, toast, rangeDetached, rangeAttached]);
 
     const charName = session.character?.name;
     const branchName = branchId ? story.branches?.find((b) => b.id === branchId)?.name : null;
@@ -478,6 +489,11 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     return (
       <div className="flex h-full min-h-0 flex-col gap-3">
         {showApiStatus && <ApiStatusLine />}
+        {record && currentSummaryId === record.id && <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span className="text-muted-foreground">{record.provenance ? `原始来源：${record.provenance.bookTitle} · ${record.provenance.branchTitle ?? '主线'} · #${record.provenance.floorStart}–${record.provenance.floorEnd}` : ''}</span>
+          <Button variant="outline" size="sm" disabled={(!!record.rangeDetached && rangeAttached) || hasUnsavedSummaryDraft({ record, title: resultTitle, content: resultContent, streaming })}
+            title="有未保存修改时，请先保存再移动" onClick={() => setMoveOpen(true)}>移动到其他故事</Button>
+        </div>}
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 overflow-hidden">
           {/* 布局铁律：flex-wrap + 行内 flex-basis，禁视口断点（同原总结页） */}
           {/* 左：生成配置 */}
@@ -512,6 +528,10 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               suggestedStart={kind === 'volume' ? suggestedStart : undefined}
               anchors={anchors}
             />
+            {rangeDetached && <div className="rounded-md border p-3 text-xs space-y-2">
+              <p>此记录来自其他故事。原楼层仅用于说明来源；请选择当前故事的楼层，再确认关联。</p>
+              <Button size="sm" variant="outline" disabled={!session.messages.length} onClick={() => { setRangeAttached(true); setSavedPermanent(false); }}>关联所选楼层</Button>
+            </div>}
 
             <AttachPanel value={attach} onChange={setAttach} tokenEstimate={tokenEstimate} />
 
@@ -569,7 +589,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
                     </div>
                   )}
                   {!streaming ? (
-                    <Button className="flex-1 gap-2" onClick={handleGenerate} disabled={floorCount === 0}>
+                    <Button className="flex-1 gap-2" onClick={handleGenerate} disabled={floorCount === 0 || rangeDetached}>
                       <Sparkles className="w-4 h-4" />
                       {kind === 'volume' ? `生成第 ${effectiveVolume} 卷（${floorCount} 楼）` : `生成（${floorCount} 楼）`}
                     </Button>
@@ -586,14 +606,14 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               </CardContent>
             </Card>
 
-            <BatchProcessor
+            {!rangeDetached && <BatchProcessor
               session={session}
               floorStart={floorStart}
               floorEnd={floorEnd}
               systemPrompt={batchSystemPrompt}
               buildFullMessages={buildSegmentMessages}
               onMergeToEditor={handleBatchMerge}
-            />
+            />}
           </div>
 
           {/* 右：结果（编辑 / MD 排版预览） */}
@@ -647,9 +667,12 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
           description={savedPermanent
             ? '这条已永久保存，丢弃会把它从库里删掉，不可撤销。'
             : '生成结果已自动暂存，丢弃会把它从库里删掉，不可撤销。'}
-          onConfirm={() => void handleDiscard()}
+          fileTarget={currentSummaryId ? { store: 'summaries', id: currentSummaryId } : undefined}
+          onConfirm={handleDiscard}
           confirmLabel="丢弃"
         />
+        <MoveRecordDialog open={moveOpen} record={record ?? null} onOpenChange={setMoveOpen}
+          onMoved={moved => { setCurrentSummaryId(null); setResultContent(''); setResultTitle(''); onDiscarded?.(moved.id); toast({ title: '记录已移动', description: moved.bookTitle }); }} />
       </div>
     );
   }

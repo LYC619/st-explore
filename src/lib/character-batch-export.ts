@@ -2,6 +2,7 @@ import type { ArchiveCharacter } from '@/types/archive';
 import type { VaultFs } from '@/lib/vault/fs';
 import { exportCardJson } from '@/lib/card-export';
 import { ensureUnique, safeName } from '@/lib/vault/naming';
+import { buildCharacterExportSnapshot, CharacterWorldbookChoiceRequired } from '@/lib/character-export-snapshot';
 
 export type CharacterExportFile =
   | { extension: 'png'; binaryBase64: string }
@@ -44,9 +45,11 @@ export async function exportCharactersToDirectory(
   for (const character of characters) {
     const stem = ensureUnique(safeName(character.name), takenStems);
     takenStems.add(stem);
-    const file = buildCharacterExportFile(character);
-    const fileName = `${stem}.${file.extension}`;
+    let fileName = `${stem}.${character.pngBase64 ? 'png' : 'json'}`;
     try {
+      const snapshot = await buildCharacterExportSnapshot(character.id);
+      const file = buildCharacterExportFile(snapshot);
+      fileName = `${stem}.${file.extension}`;
       if (file.extension === 'png') await fs.writeBinary(fileName, file.binaryBase64);
       else await fs.writeText(fileName, file.text);
       result.exported.push({ id: character.id, fileName });
@@ -54,7 +57,9 @@ export async function exportCharactersToDirectory(
       result.failed.push({
         id: character.id,
         fileName,
-        error: error instanceof Error ? error.message : String(error),
+        error: error instanceof CharacterWorldbookChoiceRequired
+          ? '绑定了多个可导出世界书，请到角色详情选择世界书后单独导出'
+          : error instanceof Error ? error.message : String(error),
       });
     }
   }

@@ -19,6 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import type { RegexRule } from '@/types/chat';
+import { RegexDepthEditor } from './RegexDepthEditor';
 
 interface RegexQuickAddProps {
   onAddRule: (rule: RegexRule) => void;
@@ -49,6 +50,7 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
   const [trimKeepMarker, setTrimKeepMarker] = useState(false);
 
   const [ruleName, setRuleName] = useState('');
+  const [depth, setDepth] = useState<Pick<RegexRule, 'minDepth' | 'maxDepth'>>({ minDepth: null, maxDepth: null });
 
   const resetAll = () => {
     setStartTag('');
@@ -58,6 +60,7 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
     setTrimMarker('');
     setTrimKeepMarker(false);
     setRuleName('');
+    setDepth({ minDepth: null, maxDepth: null });
   };
 
   const generateWrapRule = () => {
@@ -73,6 +76,7 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
       replaceString: '',
       placement: ['all'],
       disabled: false,
+      ...depth,
     });
     toast({ title: '规则已添加' });
     setOpen(false);
@@ -91,6 +95,7 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
       replaceString: replaceText,
       placement: ['all'],
       disabled: false,
+      ...depth,
     });
     toast({ title: '规则已添加' });
     setOpen(false);
@@ -118,6 +123,7 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
       replaceString: replacement,
       placement: ['all'],
       disabled: false,
+      ...depth,
     });
     toast({ title: '规则已添加' });
     setOpen(false);
@@ -276,6 +282,9 @@ export function RegexQuickAdd({ onAddRule }: RegexQuickAddProps) {
             placeholder="自定义规则"
           />
         </div>
+
+        <RegexDepthEditor rule={{ id: 'quick', name: '', findRegex: '', replaceString: '', placement: ['all'], disabled: false, ...depth }}
+          onChange={patch => setDepth(current => ({ ...current, ...patch }))} />
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>

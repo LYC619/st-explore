@@ -1,11 +1,12 @@
 // APIConfigCard 的状态与操作逻辑（表单草稿 + 增删改切换 + 取模型 + 测试连通）。
 // 拆自原 APIConfigCard.tsx（阶段8.1 codex P2.1）：视图只管渲染，交互全走这个 hook。
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { fetchModels, callOpenAIMessages } from './useOpenAI';
 import {
   type APIConfig, type ApiProfile, DEFAULT_API_URL, DEFAULT_MODEL,
   generateProfileId, persistProfiles, loadApiProfiles,
+  storeProfileModelsIfCurrent,
 } from './api-profiles';
 
 export interface TestResult { ok: boolean; text: string }
@@ -22,6 +23,8 @@ export function useApiProfiles() {
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [modelList, setModelList] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
+  const formRef = useRef({ activeId, apiUrl, apiKey }); formRef.current = { activeId, apiUrl, apiKey };
+  const catalogRequest = useRef(0);
 
   const [fetchingModels, setFetchingModels] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -132,24 +135,22 @@ export function useApiProfiles() {
       return false;
     }
     setFetchingModels(true);
+    const request = ++catalogRequest.current;
+    const profileId = activeId;
     try {
       const models = await fetchModels(url, key);
+      const form = formRef.current;
+      if (request !== catalogRequest.current || form.activeId !== profileId || form.apiUrl.trim() !== url || form.apiKey.trim() !== key) return false;
       setModelList(models);
       // 模型列表随获取即写入该提供商（属元数据，不必等「保存」）
-      const { profiles: ps, activeId: aid } = loadApiProfiles();
-      const idx = ps.findIndex((p) => p.id === aid);
-      if (idx >= 0) {
-        ps[idx] = { ...ps[idx], modelList: models };
-        persistProfiles(ps, aid);
-        setProfiles(ps);
-      }
+      if (storeProfileModelsIfCurrent({ id: profileId, apiUrl: url, apiKey: key }, models)) setProfiles(loadApiProfiles().profiles);
       toast({ title: `已获取 ${models.length} 个模型` });
       return true;
     } catch (e) {
       toast({ title: '获取模型列表失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
       return false;
     } finally {
-      setFetchingModels(false);
+      if (request === catalogRequest.current) setFetchingModels(false);
     }
   };
 

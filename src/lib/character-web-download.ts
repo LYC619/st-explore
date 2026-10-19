@@ -27,7 +27,7 @@ export interface WebDownloadResult {
 
 export interface WebDownloadOptions {
   /** 注入下载实现（测试用）；默认走真实的 a[download] 点击 */
-  download?: (character: ArchiveCharacter) => void;
+  download?: (character: ArchiveCharacter) => void | Promise<unknown>;
   /** 两次下载之间的间隔，避免被判成滥用；测试传 0 */
   gapMs?: number;
 }
@@ -37,7 +37,7 @@ export async function downloadCharactersInBatch(
   targets: ArchiveCharacter[],
   options: WebDownloadOptions = {},
 ): Promise<WebDownloadResult> {
-  const download = options.download ?? downloadCharacterFile;
+  const download = options.download ?? ((character: ArchiveCharacter) => downloadCharacterFile(character));
   const gapMs = options.gapMs ?? 150;
   const result: WebDownloadResult = { downloaded: [], failed: [] };
 
@@ -45,7 +45,7 @@ export async function downloadCharactersInBatch(
     const character = targets[i];
     const name = displayCharacterName(character);
     try {
-      download(character);
+      await download(character);
       result.downloaded.push(name);
     } catch (error) {
       result.failed.push({ name, error: error instanceof Error ? error.message : String(error) });

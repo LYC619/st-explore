@@ -9,9 +9,13 @@
  * （「原世界书未改动」/「原预设未改动」/ 正则的原地保存干脆不提示），统一它们是另一件事，
  * 所以返回 { action, targetId, title } 让调用方自己决定说什么、改哪个 state。
  */
-import type { AssetKind } from '@/types/archive';
+import type { AssetKind, ArchiveCharacter } from '@/types/archive';
 import { planCowSave, buildDerivedMeta, type CowAssetLike, type CowPlan } from '@/lib/asset-cow';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
+import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { getVaultEpoch } from '@/lib/vault/active';
+
+const cowWrites = new KeyedSerialQueue();
 
 /**
  * 编辑器当前内容：一条记录里除 id / title / 时间 / derived 之外的全部字段。
@@ -44,9 +48,15 @@ export interface CowSaveParams<T extends CowAssetLike> {
   /** 编辑器里的当前标题（只在原地更新时生效） */
   title: string;
   content: CowSaveContent<T>;
+  /** Build a batch edit from the reloaded destination, inside the same COW queue. */
+  prepareContent?: (target: T) => CowSaveContent<T> | Promise<CowSaveContent<T>>;
   newId: () => string;
   save: (item: T) => Promise<void>;
   now?: number;
+  /** Optional editor revision/ownership guards, checked again immediately before writing. */
+  validate?: (target: T, base: T) => void;
+  assertCurrent?: () => void;
+  validateReference?: (current: ArchiveCharacter, targetId: string) => void;
 }
 
 /**
@@ -58,13 +68,24 @@ export interface CowSaveParams<T extends CowAssetLike> {
 export async function saveAssetWithCow<T extends CowAssetLike>(
   params: CowSaveParams<T>,
 ): Promise<CowSaveResult> {
-  const { kind, baseId, reload, characterId, characterName, content, save } = params;
+  const epoch = getVaultEpoch();
+  return cowWrites.enqueue(`${epoch}/${params.kind}/${params.characterId}`, () => {
+    if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，资产保存已停止');
+    return persistAssetWithCow(params);
+  });
+}
+
+async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams<T>): Promise<CowSaveResult> {
+  const { kind, baseId, reload, characterId, characterName, save } = params;
+
+  params.assertCurrent?.();
 
   // 落库前重读。挂载期的那份快照可能已经被别处改过（另一个标签页、一次导入、
   // 批量操作），拿它展开写回等于把别人的改动抹掉；该角色新建的派生副本也只有
   // 重读才看得见，否则会重复新建。读不出来就中止，绝不用陈旧快照顶替——
   // 与 Index.tsx 切故事时「以刚 persist 的库内数据为准」是同一条规矩。
   const all = await reload();
+  params.assertCurrent?.();
   const base = all.find((a) => a.id === baseId);
   if (!base) {
     throw new Error('这条资产已经不在库里了（可能已被删除），保存已中止');
@@ -72,6 +93,9 @@ export async function saveAssetWithCow<T extends CowAssetLike>(
 
   const now = params.now ?? Date.now();
   const plan = planCowSave(base, characterId, characterName, all);
+  const destination = plan.action === 'redirect' ? all.find(asset => asset.id === plan.targetId)! : base;
+  const content = params.prepareContent ? await params.prepareContent(destination) : params.content;
+  params.assertCurrent?.();
 
   let targetId: string;
   let title: string;
@@ -116,11 +140,16 @@ export async function saveAssetWithCow<T extends CowAssetLike>(
     } as unknown as T;
   }
 
+  params.validate?.(all.find(asset => asset.id === targetId) ?? base, base);
+  params.assertCurrent?.();
   await save(item);
+  params.assertCurrent?.();
   // 引用切换走角色写入队列，避免用旧角色快照覆盖其他字段。
   // 资产已经落库后若角色被删除或写入失败，不能把这次操作报告为成功。
   try {
-    const updatedCharacter = await updateCharacterAssetReference(characterId, kind, base.id, targetId, now);
+    const updatedCharacter = params.validateReference
+      ? await updateCharacterAssetReference(characterId, kind, base.id, targetId, now, current => params.validateReference!(current, targetId))
+      : await updateCharacterAssetReference(characterId, kind, base.id, targetId, now);
     if (!updatedCharacter) throw new Error('角色可能已被删除');
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);

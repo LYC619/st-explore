@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ArchiveCharacter } from '@/types/archive';
 import {
   DEFAULT_LIBRARY_TAG_PREFERENCES,
   addCustomTagDefinition,
@@ -13,20 +14,40 @@ import {
 } from '@/lib/library-tag-preferences';
 
 describe('library tag preferences', () => {
+  it('counts evaluation filters from actual ratings and keeps old low-tier tags readable', () => {
+    const characters = [
+      { tags: [] }, { tags: ['评价/低创'] },
+      { rating: 0, tags: ['评价/未评分'] }, { rating: 8, tags: ['评价/低创'] },
+    ] as ArchiveCharacter[];
+    const options = buildManagedTagOptions(characters.flatMap(c => c.tags), { ...DEFAULT_LIBRARY_TAG_PREFERENCES, hidden: [] }, characters);
+    expect(options.find(o => o.raw === '评价/未评分')?.count).toBe(2);
+    expect(options.find(o => o.raw === '评价/精品')?.count).toBe(1);
+    expect(options.find(o => o.raw === '评价/6分以下')?.count).toBe(1);
+    expect(options.find(o => o.raw === '评价/6分以下')?.builtIn).toBe(true);
+    expect(options.some(o => o.label === '低创')).toBe(false);
+    expect(options.some(o => o.raw === '评价/低创')).toBe(false);
+  });
   it('首次使用默认隐藏卡面与评价，已保存的显式空隐藏列表不会被重置', () => {
     expect(DEFAULT_LIBRARY_TAG_PREFERENCES.hidden).toEqual([
       '卡面/SFW',
       '卡面/NSFW',
-      '评价/低创',
+      '评价/未评分',
       '评价/及格',
       '评价/精品',
       '评价/神作',
+      '评价/6分以下',
     ]);
 
     expect(normalizeLibraryTagPreferences(undefined).hidden).toEqual(
       DEFAULT_LIBRARY_TAG_PREFERENCES.hidden,
     );
     expect(normalizeLibraryTagPreferences({ version: 1, customTags: [], order: [], hidden: [] }).hidden).toEqual([]);
+  });
+
+  it('can reveal a renamed legacy evaluation filter previously hidden under its old key', () => {
+    const preferences = { ...DEFAULT_LIBRARY_TAG_PREFERENCES, hidden: ['评价/低创'] };
+    const shown = setTagVisibility(preferences, '评价/6分以下', true);
+    expect(buildManagedTagOptions(['评价/低创'], shown).find(item => item.raw === '评价/6分以下')?.visible).toBe(true);
   });
 
   it('清理损坏、空白和重复配置，同时保留未使用的自定义定义', () => {

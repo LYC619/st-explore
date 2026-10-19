@@ -12,6 +12,12 @@ function character(extra: Partial<ArchiveCharacter> = {}): ArchiveCharacter {
 }
 
 describe('character tag domain', () => {
+  it('keeps legacy low ratings numeric and removes stale virtual unscored tags on rating changes', () => {
+    expect(applyCharacterTagPatch(character({ rating: 3, tags: ['评价/低创'] }), { tags: ['评价/低创', '人物/少女'] }))
+      .toMatchObject({ tags: ['人物/少女', '评价/6分以下'] });
+    expect(applyCharacterTagPatch(character({ tags: ['评价/未评分'] }), { rating: 0 }))
+      .toMatchObject({ rating: 0, tags: ['评价/6分以下'] });
+  });
   it('keeps the NSFW field and tag synchronized in both directions', () => {
     expect(applyCharacterTagPatch(character(), { tags: ['卡面/NSFW'] })).toMatchObject({
       tags: ['卡面/NSFW'], nsfw: true,

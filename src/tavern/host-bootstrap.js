@@ -136,15 +136,20 @@ window.fetch = async (input, options = {}) => {
     if (!path) return originalFetch(input, options);
     const rawBody = options.body ?? (typeof input === 'object' && input.clone ? await input.clone().text() : undefined);
     const body = parseBody(rawBody);
+    if (path === '/api/chats/save' && stModule) body.ste_persona_name = stModule.name1;
     if (path === '/api/backends/chat-completions/generate' && stModule) {
         const type = typeof body.type === 'string' ? body.type : 'quiet';
         if (worldPreparationError && !['quiet', 'impersonate'].includes(type)) throw worldPreparationError;
         const { oai_settings } = await import('./scripts/openai.js');
         window.__STE_STAMP_CHAT__(stModule.chat);
-        body.ste_context = { type, ...(window.__STE_HELPER_GENERATING__ ? { source: 'helper' } : {}), worldHandled, worldEntries, maxContext: oai_settings.openai_max_context,
+        body.ste_context = { type, userName: stModule.name1, ...(window.__STE_HELPER_GENERATING__ ? { source: 'helper' } : {}), worldHandled, worldEntries, maxContext: oai_settings.openai_max_context,
             chat: [{ chat_metadata: structuredClone(stModule.chat_metadata) }, ...structuredClone(stModule.chat)] };
     }
     const response = await host.request(path, body, options.signal ?? input?.signal);
+    if (path === '/api/backends/chat-completions/status' && response.ok) {
+        const status = await response.clone().json();
+        if (status.ste_warning) toastr.warning(status.ste_warning);
+    }
     if (path.split('?')[0] === '/api/characters/edit' && response.ok) {
         const saved = await response.clone().json();
         const revision = document.querySelector('#form_create input[name="_ste_revision"]');
@@ -314,7 +319,7 @@ async function installConnectionControls() {
     const { oai_settings } = await import('./scripts/openai.js');
     const panel = document.createElement('div');
     panel.className = 'flex-container flexFlowColumn';
-    panel.innerHTML = '<label>STE 主模型<select id="ste_main_profile"></select></label><label>工具模型<select id="ste_tool_profile"></select></label><button type="button" class="menu_button" id="ste_manage_profiles">管理连接</button><small>连接与 STE 设置页共用。预设仍在原预设面板选择。</small><hr>';
+    panel.innerHTML = '<label>STE 主模型<select id="ste_main_profile"></select></label><label>工具模型<select id="ste_tool_profile"></select></label><button type="button" class="menu_button" id="ste_refresh_models">刷新模型列表</button><button type="button" class="menu_button" id="ste_manage_profiles">管理连接</button><small>连接与 STE 设置页共用。预设仍在原预设面板选择；自定义模型可在管理连接中填写。</small><hr>';
     document.querySelector('#openai_api')?.prepend(panel);
     const request = async data => {
         const response = await host.request('/ste/configuration', data);
@@ -339,8 +344,9 @@ async function installConnectionControls() {
         $('#api_key_custom').prop('disabled', true);
     };
     render(await request());
+    panel.querySelector('#ste_refresh_models').addEventListener('click', () => { $('#api_button_openai').trigger('click'); });
     panel.querySelector('#ste_main_profile').addEventListener('change', async event => {
-        try { render(await request({ mainProfileId: event.target.value })); }
+        try { render(await request({ mainProfileId: event.target.value })); $('#api_button_openai').trigger('click'); }
         catch (error) { toastr.error(error.message); render(await request()); }
     });
     panel.querySelector('#ste_tool_profile').addEventListener('change', async event => {

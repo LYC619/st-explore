@@ -54,8 +54,8 @@ describe('NSFW 开关同步', () => {
 });
 
 describe('评分档位联动', () => {
-  it('档位边界：<6 低创、6~7.5 及格、7.5~9 精品、9~10 神作', () => {
-    expect(ratingTier(5.5)).toBe('低创');
+  it('档位边界：<6 仍是实际低分、6~7.5 及格、7.5~9 精品、9~10 神作', () => {
+    expect(ratingTier(5.5)).toBe('6分以下');
     expect(ratingTier(6)).toBe('及格');
     expect(ratingTier(7.5)).toBe('精品');
     expect(ratingTier(9)).toBe('神作');
@@ -63,7 +63,7 @@ describe('评分档位联动', () => {
   });
 
   it('预填值为档区间中值取 0.5 步进', () => {
-    expect(RATING_TIER_PREFILL['低创']).toBe(3);
+    expect(RATING_TIER_PREFILL['6分以下']).toBe(3);
     expect(RATING_TIER_PREFILL['及格']).toBe(7);
     expect(RATING_TIER_PREFILL['精品']).toBe(8.5);
     expect(RATING_TIER_PREFILL['神作']).toBe(9.5);

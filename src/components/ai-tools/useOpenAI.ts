@@ -159,10 +159,11 @@ export async function callOpenAI(
 }
 
 /** Fetch available models from the API */
-export async function fetchModels(baseUrl: string, apiKey: string): Promise<string[]> {
+export async function fetchModels(baseUrl: string, apiKey: string, signal?: AbortSignal): Promise<string[]> {
   const url = baseUrl.replace(/\/v1\/chat\/completions\/?$/, '/v1/models');
 
   const response = await fetch(url, {
+    signal,
     headers: {
       'Authorization': `Bearer ${apiKey}`,
     },
@@ -174,7 +175,7 @@ export async function fetchModels(baseUrl: string, apiKey: string): Promise<stri
 
   const data = await response.json();
   if (data.data && Array.isArray(data.data)) {
-    return data.data.map((m: { id: string }) => m.id).sort();
+    return [...new Set<string>(data.data.flatMap((m: { id?: unknown }) => typeof m.id === 'string' && m.id.trim() ? [m.id] : []))].sort();
   }
   throw new Error('无法解析模型列表');
 }

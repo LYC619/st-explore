@@ -58,6 +58,23 @@ const baseChar = (over: Partial<ArchiveCharacter> = {}): ArchiveCharacter => ({
 const pngFile = (name: string) =>
   new File([Uint8Array.from(atob(minimalPngBase64()), (c) => c.charCodeAt(0))], name, { type: 'image/png' });
 
+it('pins cloud-import writes and its snapshot to the captured vault after switching', async () => {
+  const first = await createVault(createMemFs());
+  const second = await createVault(createMemFs());
+  setActiveVault(first);
+  await saveCharacter(baseChar());
+  setActiveVault(second);
+  await saveCharacter(baseChar());
+  const firstDir = await first.pathOf('characters', 'c1');
+  const secondDir = await second.pathOf('characters', 'c1');
+  const result = await addPortraitFiles(baseChar(), null, [pngFile('cloud.png')], first);
+  expect(result.ok).toBe(1);
+  expect((await first.fs.stat(`${firstDir}/立绘/未分行/cloud.png`)).exists).toBe(true);
+  expect((await first.fs.stat(`${firstDir}/立绘/立绘.json`)).exists).toBe(true);
+  expect((await second.fs.stat(`${secondDir}/立绘/未分行/cloud.png`)).exists).toBe(false);
+  expect((await second.fs.stat(`${secondDir}/立绘/立绘.json`)).exists).toBe(false);
+});
+
 // ---------- 纯逻辑 ----------
 
 describe('rowTitleConflict / ensureRowTitle', () => {
@@ -211,7 +228,7 @@ describe('网页版 addPortraitFiles / setPortraitAsCard', () => {
     expect(renamed.portraitRows![0].items[0].name).toBe('新名.png');
     const { patch: replaced } = await replacePortraitItemMutation({ ...c, ...renamed } as ArchiveCharacter, 'p1', pngFile('b.png'));
     expect(replaced.portraitRows![0].items[0]).toMatchObject({ name: 'b.png', mime: 'image/png' });
-    const removed = await removePortraitItem({ ...c, ...replaced } as ArchiveCharacter, 'p1');
+    const { patch: removed } = await removePortraitItem({ ...c, ...replaced } as ArchiveCharacter, 'p1');
     expect(removed.portraitCurrentId).toBeUndefined();
     expect(removed.portraitRows![0].items).toHaveLength(0);
   });
@@ -317,23 +334,27 @@ describe('批量管理', () => {
     expect(dump['角色/奏枝/立绘/日常/a.png']).toBeUndefined();
   });
 
-  it('批量删除可选择保留磁盘文件；保留下来的按散图回到视图', async () => {
+  it('批量删除保留源图片到保留区，不会作为散图回到视图', async () => {
     const { fs, cur, dayId } = await setupTwoRows();
     const ids = cur.portraitRows!.find((r) => r.id === dayId)!.items.map((i) => i.id);
-    const patch = await removePortraitItems(cur, ids, false);
-    expect(patch.portraitRows!.find((r) => r.id === dayId)!.items).toHaveLength(0);
-    expect(fs.dump()['角色/奏枝/立绘/日常/a.png']).toBe('<binary>');
-    const views = await loadPortraitViews({ ...cur, ...patch } as ArchiveCharacter);
-    expect(views.find((v) => v.rowId === dayId)!.items.map((i) => i.source)).toEqual(['stray', 'stray']);
+    await saveCharacter(cur);
+    const saved = await updateCharacter(cur.id, current => removePortraitItems(current, ids, false));
+    expect(saved!.portraitRows!.find((r) => r.id === dayId)!.items).toHaveLength(0);
+    expect(fs.dump()['角色/奏枝/立绘/日常/a.png']).toBeUndefined();
+    const retained = Object.keys(fs.dump()).filter(path => path.startsWith('.ste/retained/') && path.endsWith('.png'));
+    expect(retained).toHaveLength(2);
+    const views = await loadPortraitViews(saved!);
+    expect(views.find((v) => v.rowId === dayId)!.items).toEqual([]);
   });
 
   it('删除整行连图片一起删时清空文件夹，并撤掉当前卡面指向', async () => {
     const { fs, cur, dayId } = await setupTwoRows();
     const current = cur.portraitRows!.find((r) => r.id === dayId)!.items[0];
     const withCurrent = { ...cur, portraitCurrentId: current.id } as ArchiveCharacter;
-    const patch = await removePortraitRow(withCurrent, dayId, true);
-    expect(patch.portraitRows!.some((r) => r.id === dayId)).toBe(false);
-    expect(patch.portraitCurrentId).toBeUndefined();
+    await saveCharacter(withCurrent);
+    const saved = await updateCharacter(cur.id, current => removePortraitRow(current, dayId, true));
+    expect(saved!.portraitRows!.some((r) => r.id === dayId)).toBe(false);
+    expect(saved!.portraitCurrentId).toBeUndefined();
     const dump = fs.dump();
     expect(dump['角色/奏枝/立绘/日常/a.png']).toBeUndefined();
     expect(dump['角色/奏枝/立绘/日常/b.png']).toBeUndefined();

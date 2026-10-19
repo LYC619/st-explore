@@ -4,29 +4,25 @@
  */
 import type { ArchiveCharacter } from '@/types/archive';
 import { exportCardJson } from '@/lib/card-export';
-import { saveTextFile } from '@/lib/roleplay/export-package-file';
+import { saveBinaryFile, saveTextFile } from '@/lib/roleplay/export-package-file';
+import { buildCharacterExportSnapshot } from '@/lib/character-export-snapshot';
+
+export function characterExportName(c: Pick<ArchiveCharacter, 'name'>) {
+  return c.name.replace(/[\\/:*?"<>|]/g, '_').replace(/[. ]+$/, '') || '角色卡';
+}
 
 /** Explicit JSON export also works for cards originally imported as PNG. */
-export function downloadCharacterJson(c: ArchiveCharacter) {
-  const name = c.name.replace(/[\\/:*?"<>|]/g, '_').replace(/[. ]+$/, '') || '角色卡';
+export async function downloadCharacterJson(character: ArchiveCharacter, worldbookId?: string) {
+  const c = await buildCharacterExportSnapshot(character.id, worldbookId);
+  const name = characterExportName(c);
   return saveTextFile({ fileName: `${name}.json`, text: exportCardJson(c.card), label: '角色卡 JSON', extension: 'json' });
 }
 
-export function downloadCharacterFile(c: ArchiveCharacter) {
-  let blob: Blob;
-  let filename: string;
+export async function downloadCharacterFile(character: ArchiveCharacter, worldbookId?: string) {
+  const c = await buildCharacterExportSnapshot(character.id, worldbookId);
   if (c.pngBase64) {
-    const bytes = Uint8Array.from(atob(c.pngBase64), (ch) => ch.charCodeAt(0));
-    blob = new Blob([bytes], { type: 'image/png' });
-    filename = `${c.name}.png`;
-  } else {
-    blob = new Blob([exportCardJson(c.card)], { type: 'application/json' });
-    filename = `${c.name}.json`;
+    return saveBinaryFile({ fileName: `${characterExportName(c)}.png`, base64: c.pngBase64,
+      label: '角色卡 PNG', extension: 'png', mime: 'image/png' });
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  return saveTextFile({ fileName: `${characterExportName(c)}.json`, text: exportCardJson(c.card), label: '角色卡 JSON', extension: 'json' });
 }

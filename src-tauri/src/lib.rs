@@ -872,6 +872,10 @@ async fn pick_chat_file(app: tauri::AppHandle) -> Result<Option<PickedChatFile>,
 // The path comes only from the native save dialog, never from a frontend argument.
 // Writing this one file does not grant later access to its surrounding directory.
 fn write_selected_text_export(selected: Option<PathBuf>, content: &str) -> Result<bool, String> {
+    write_selected_export(selected, content.as_bytes())
+}
+
+fn write_selected_export(selected: Option<PathBuf>, content: &[u8]) -> Result<bool, String> {
     let Some(path) = selected else {
         return Ok(false);
     };
@@ -881,8 +885,24 @@ fn write_selected_text_export(selected: Option<PathBuf>, content: &str) -> Resul
     if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err("请选择普通文件，不能覆盖符号链接".to_string());
     }
-    write_bytes_atomic(&path, content.as_bytes())?;
+    write_bytes_atomic(&path, content)?;
     Ok(true)
+}
+
+fn text_export_label(extension: &str) -> Result<&'static str, String> {
+    match extension {
+        "json" => Ok("JSON 文件"),
+        "jsonl" => Ok("SillyTavern 聊天文件"),
+        "ste-play" => Ok("STE 完整故事包"),
+        _ => Err("不支持的导出文件格式".to_string()),
+    }
+}
+
+fn binary_export_label(extension: &str) -> Result<&'static str, String> {
+    match extension {
+        "png" => Ok("PNG 角色卡"),
+        _ => Err("不支持的导出文件格式".to_string()),
+    }
 }
 
 #[tauri::command]
@@ -892,11 +912,7 @@ async fn save_text_export(
     extension: String,
     content: String,
 ) -> Result<bool, String> {
-    let label = match extension.as_str() {
-        "jsonl" => "聊天恢复文件",
-        "ste-play" => "STE 完整故事包",
-        _ => return Err("不支持的导出文件格式".to_string()),
-    };
+    let label = text_export_label(&extension)?;
     let selected = dialog_for(&app)
         .set_title(format!("导出{label}"))
         .set_file_name(file_name)
@@ -908,6 +924,26 @@ async fn save_text_export(
         })
         .transpose()?;
     write_selected_text_export(selected, &content)
+}
+
+#[tauri::command]
+async fn save_binary_export(
+    app: tauri::AppHandle,
+    file_name: String,
+    extension: String,
+    base64: String,
+) -> Result<bool, String> {
+    let label = binary_export_label(&extension)?;
+    let bytes = base64::engine::general_purpose::STANDARD.decode(&base64)
+        .map_err(|error| format!("导出内容编码无效: {error}"))?;
+    let selected = dialog_for(&app)
+        .set_title(format!("导出{label}"))
+        .set_file_name(file_name)
+        .add_filter(label, &[extension.as_str()])
+        .blocking_save_file()
+        .map(|file| file.into_path().map_err(|error| format!("导出位置不是本机文件: {error}")))
+        .transpose()?;
+    write_selected_export(selected, &bytes)
 }
 
 #[tauri::command]
@@ -1019,6 +1055,7 @@ pub fn run() {
             vault_read_abs_text,
             pick_chat_file,
             save_text_export,
+            save_binary_export,
             vault_write_abs_text,
             vault_write_abs_binary,
             vault_pick_authorized_directory,
@@ -1414,6 +1451,32 @@ mod tests {
 
         assert!(read_picked_file_impl(&root.join("不存在.jsonl"), MAX_PICKED_FILE_BYTES).is_err());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn export_formats_are_explicitly_allowlisted() {
+        for extension in ["json", "jsonl", "ste-play"] {
+            assert!(text_export_label(extension).is_ok());
+        }
+        for extension in ["exe", "../json", "PNG", ""] {
+            assert!(text_export_label(extension).is_err());
+        }
+        assert!(binary_export_label("png").is_ok());
+        assert!(binary_export_label("json").is_err());
+    }
+
+    #[test]
+    fn selected_binary_export_preserves_bytes_and_cancel_does_not_write() {
+        let root = temp_root("selected-binary-export");
+        let target = root.join("卡.png");
+        let bytes = [137, 80, 78, 71, 0, 255];
+        assert!(write_selected_export(Some(target.clone()), &bytes).unwrap());
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert!(!write_selected_export(None, b"cancelled").unwrap());
+        assert_eq!(fs::read(&target).unwrap(), bytes);
+        assert!(write_selected_export(Some(PathBuf::from("relative.png")), &bytes).is_err());
+        assert!(write_selected_export(Some(root.clone()), &bytes).is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

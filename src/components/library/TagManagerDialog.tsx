@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
 import { CHARACTER_TYPES, updateCharacter } from '@/lib/archive-db';
 import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character-tag-domain';
+import { getVaultEpoch } from '@/lib/vault/active';
 import {
   CATEGORY_HELP,
   validateUserTagInput,
@@ -44,6 +45,7 @@ import {
 } from '@/lib/library-tag-preferences';
 
 interface TagManagerDialogProps {
+  initialCategory?: TagCategory | '类型';
   open: boolean;
   onOpenChange: (open: boolean) => void;
   characters: ArchiveCharacter[];
@@ -79,6 +81,7 @@ export function TagManagerDialog({
   preferences,
   onPreferencesChange,
   onChanged,
+  initialCategory = '人物',
 }: TagManagerDialogProps) {
   const { toast } = useToast();
   const [activeCategory, setActiveCategory] = useState<TagCategory | '类型'>('人物');
@@ -97,9 +100,12 @@ export function TagManagerDialog({
   const [assignmentRaw, setAssignmentRaw] = useState<string | null>(null);
   const [assignmentType, setAssignmentType] = useState<CharacterType | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ManagedTagOption | null>(null);
+  useEffect(() => {
+    if (open) { setActiveCategory(initialCategory); setAssignmentType(null); setAssignmentRaw(null); }
+  }, [open, initialCategory]);
 
   const options = useMemo(
-    () => buildManagedTagOptions(characters.flatMap((character) => character.tags), preferences),
+    () => buildManagedTagOptions(characters.flatMap((character) => character.tags), preferences, characters),
     [characters, preferences],
   );
   const activeOptions = useMemo(
@@ -312,26 +318,29 @@ export function TagManagerDialog({
   };
 
   const assignSelectedType = async () => {
-    if (!assignmentType || selectedCharacters.length === 0) return;
-    const targets = selectedCharacters.filter((character) => (
-      character.type !== assignmentType || character.tags.some((raw) => raw.startsWith('类型/'))
-    ));
-    if (targets.length === 0) {
-      toast({ title: `所选角色卡都已是类型「${assignmentType}」` });
-      return;
-    }
+    if (busy || !assignmentType || selectedCharacters.length === 0) return;
+    const targets = [...selectedCharacters];
+    const epoch = getVaultEpoch();
+    let succeeded = 0;
+    const failed: string[] = [];
     setBusy(true);
     try {
       for (const character of targets) {
-        await updateCharacter(character.id, (current) => ({
-          ...applyCharacterTypePatch(current, assignmentType),
-          updatedAt: Date.now(),
-        }));
+        try {
+          if (getVaultEpoch() !== epoch) throw new Error('资料库已切换');
+          const saved = await updateCharacter(character.id, (current) => {
+            if (getVaultEpoch() !== epoch) throw new Error('资料库已切换');
+            return { ...applyCharacterTypePatch(current, assignmentType), updatedAt: Date.now() };
+          });
+          if (!saved) throw new Error('角色已删除');
+          succeeded++;
+        } catch (error) { failed.push(`${character.name}：${error instanceof Error ? error.message : String(error)}`); }
       }
-      await onChanged();
-      toast({ title: `已为 ${targets.length} 张卡设置类型「${assignmentType}」` });
-    } catch {
-      toast({ title: '批量设置类型失败', variant: 'destructive' });
+      if (getVaultEpoch() === epoch) await onChanged();
+      toast({ title: `已为 ${succeeded} 张卡设置类型「${assignmentType}」${failed.length ? `，${failed.length} 张失败` : ''}`,
+        description: failed.length ? failed.join('；') : undefined, variant: failed.length ? 'destructive' : 'default' });
+    } catch (error) {
+      toast({ title: '刷新类型结果失败', description: String(error), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -596,7 +605,7 @@ export function TagManagerDialog({
                   disabled={busy || (!assignmentOption && !assignmentType) || selectedCharacters.length === 0}
                   onClick={() => void (assignmentType ? assignSelectedType() : assignSelectedTag())}
                 >
-                  添加到已选 {selectedCharacters.length} 张卡
+                  {assignmentType ? `为所选 ${selectedCharacters.length} 张卡设置类型` : `添加到已选 ${selectedCharacters.length} 张卡`}
                 </Button>
               </div>
             </section>

@@ -36,6 +36,7 @@ import { serializeFrontmatter, parseFrontmatter } from './frontmatter';
 import { recoverCharacterJournals } from '@/lib/portrait-journal';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { sha256 } from 'js-sha256';
+import { executeFileRemoval, recoverFileMaintenance, moveRecordFile } from './file-maintenance';
 
 type PackageDependencyStore = 'characters' | 'worldbooks' | 'presets' | 'regexes';
 
@@ -267,6 +268,7 @@ export function createVault(fs: VaultFs): VaultBackend {
   }
 
   async function buildIndex(): Promise<void> {
+    await recoverFileMaintenance(fs);
     // 1. 角色：角色/*/档案.json
     const chars = of('characters');
     await mapLimit((await fs.list(DIR_CHAR)).filter((e) => e.isDir), IO_LIMIT, async (e) => {
@@ -469,9 +471,8 @@ export function createVault(fs: VaultFs): VaultBackend {
     const name = await uniqueStem(parent, stem, [ext], sameParent ? [baseName(cur)] : []);
     const target = joinPath(parent, name + ext);
     if (cur && cur !== target) {
-      await fs.writeText(target, content);
-      if ((await fs.stat(cur)).exists) await fs.removeFile(cur);
-      if (!sameParent) await fs.removeEmptyDir(parentDir(cur));
+      await moveRecordFile(fs, cur, target, content);
+      if (!sameParent) await fs.removeEmptyDir(parentDir(cur)).catch(() => false);
     } else {
       await fs.writeText(target, content);
     }
@@ -731,6 +732,7 @@ export function createVault(fs: VaultFs): VaultBackend {
         return (await readRecordCached(store, id, path)) ?? undefined;
       },
       async put(item, opts) {
+        await recoverFileMaintenance(fs);
         await ensureIndex();
         if (store === 'characters') {
           const path = of(store).get(item.id);
@@ -744,14 +746,23 @@ export function createVault(fs: VaultFs): VaultBackend {
           invalidate(store, item.id);
         }
       },
-      async remove(id) {
+      async remove(id, options) {
         await ensureIndex();
         if (store === 'characters') {
           const path = of(store).get(id);
           if (path) await recoverCharacter(id, path, true);
         }
         invalidate(store, id);
-        try { await removeRecord(store, id); }
+        try {
+          if (options) {
+            await executeFileRemoval(backend, store, id, options);
+            of(store).delete(id);
+          } else await removeRecord(store, id);
+        }
+        catch (error) {
+          if (error && typeof error === 'object' && 'committed' in error && error.committed) of(store).delete(id);
+          throw error;
+        }
         finally { invalidate(store, id); }
       },
     };
@@ -784,7 +795,7 @@ export function createVault(fs: VaultFs): VaultBackend {
   }
 
   const repos = new Map<VaultStore, Repo<BaseRecord>>();
-  return {
+  const backend: VaultBackend = {
     repo<T extends BaseRecord>(store: StoreName): Repo<T> {
       if (!(VAULT_STORES as readonly string[]).includes(store)) {
         throw new Error(`文件库不支持 store：${store}`);
@@ -872,7 +883,22 @@ export function createVault(fs: VaultFs): VaultBackend {
         const characterDirectory = story.characterId ? of('characters').get(story.characterId) : undefined;
         if (story.characterId && !characterDirectory) throw new Error('故事角色尚未入库');
         const parent = characterDirectory ? joinPath(characterDirectory, DIR_STORIES) : DIR_TEMP;
-        check(); return publishPreparedRecord('archiveStories', story, stagedDirectory, parent, safeName(story.title, '未命名故事'), '', isCurrent);
+        const children: { store: 'summaries' | 'stories'; id: string; name: string }[] = [];
+        for (const entry of await fs.list(stagedDirectory)) {
+          if (entry.isDir) continue;
+          let store: 'summaries' | 'stories' | undefined;
+          if (entry.name.endsWith('.md') && Object.values(SUMMARY_KIND_LABELS).some(label => entry.name.startsWith(label + '·'))) store = 'summaries';
+          else if (entry.name.startsWith(TREE_PREFIX) && entry.name.endsWith('.json')) store = 'stories';
+          if (!store) continue;
+          const content = await fs.readText(joinPath(stagedDirectory, entry.name));
+          const record = store === 'summaries' ? parseFrontmatter(content).fields : JSON.parse(content);
+          if (typeof record.id !== 'string' || of(store).has(record.id) || children.some(child => child.store === store && child.id === record.id)) throw new Error('故事下属记录身份无效或已存在');
+          children.push({ store, id: record.id, name: entry.name });
+        }
+        check();
+        const published = await publishPreparedRecord('archiveStories', story, stagedDirectory, parent, safeName(story.title, '未命名故事'), '', isCurrent);
+        for (const child of children) { of(child.store).set(child.id, joinPath(published, child.name)); invalidate(child.store, child.id); }
+        return published;
       });
     },
     async assertCharacterWritable(id: string): Promise<void> {
@@ -888,4 +914,5 @@ export function createVault(fs: VaultFs): VaultBackend {
       return path;
     },
   };
+  return backend;
 }

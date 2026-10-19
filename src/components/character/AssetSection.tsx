@@ -54,6 +54,7 @@ import { getAllRegexCollections } from '@/lib/regex-db';
 import { addAssetRef, removeAssetRef } from '@/lib/asset-cow';
 import { formatListTime, formatFullTime } from '@/lib/time-display';
 import { buildQuotePreview } from '@/lib/asset-preview';
+import { getActiveVault } from '@/lib/vault/active';
 import {
   attachmentsSupported,
   externalOpenSupported,
@@ -133,6 +134,8 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
   const [preview, setPreview] = useState<AssetView | null>(null);
   const [quoteToDelete, setQuoteToDelete] = useState<QuoteAsset | null>(null);
   const [fileToDelete, setFileToDelete] = useState<AttachmentView | null>(null);
+  const [deleteAttachmentFile, setDeleteAttachmentFile] = useState(false);
+  useEffect(() => { setDeleteAttachmentFile(false); }, [fileToDelete?.id]);
   const [deletingFile, setDeletingFile] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
 
@@ -280,7 +283,7 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
       await removeAttachment(file.characterId, file.id, deleteFile, (_id, updater) => onPatch(updater));
       setFileToDelete(null);
       if (preview?.kind === 'file' && preview.file?.id === file.id) setPreview(null);
-      toast({ title: `已移除关联文件「${file.title}」`, description: deleteFile ? '文件已放进系统回收站' : '已移除失效记录，未删除文件' });
+      toast({ title: `已移除关联文件「${file.title}」`, description: deleteFile ? (getActiveVault()?.fs.trashFile ? '文件已放进系统回收站' : '文件已删除') : '已移除记录，文件未删除' });
     } catch (error) {
       toast({
         title: '移除关联文件失败',
@@ -587,16 +590,21 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
           <AlertDialogHeader>
             <AlertDialogTitle>移除关联文件「{fileToDelete?.title}」？</AlertDialogTitle>
             <AlertDialogDescription>
-              {fileToDelete?.missing ? '文件已缺失，仅移除这张卡上的附件记录。' : '记录会从这张卡上撤掉，文件本体放进系统回收站（还能捞回来）。'}
+              {fileToDelete?.missing ? '文件已缺失，仅移除这张卡上的附件记录。' : '记录会从这张卡上移除。不勾选时，附件文件保留在原位置，可在设置的文件检查中查看。'}
               <br />
               <span className="font-mono text-[11px] break-all">{fileToDelete?.resolvedPath ?? fileToDelete?.path}</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {!fileToDelete?.missing && <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={deleteAttachmentFile} disabled={deletingFile} onChange={event => setDeleteAttachmentFile(event.target.checked)} />
+            同时删除 STE 库内文件
+          </label>}
+          {deleteAttachmentFile && <p className="text-xs text-muted-foreground">{getActiveVault()?.fs.trashFile ? '文件将移入系统回收站。' : '当前平台不支持系统回收站，文件将永久删除。'}</p>}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deletingFile}>取消</AlertDialogCancel>
             <AlertDialogAction disabled={deletingFile} onClick={(event) => {
               event.preventDefault();
-              if (fileToDelete) void handleDeleteFile(fileToDelete, !fileToDelete.missing);
+              if (fileToDelete) void handleDeleteFile(fileToDelete, !fileToDelete.missing && deleteAttachmentFile);
             }}>
               {fileToDelete?.missing ? '仅移除失效记录' : '移除'}
             </AlertDialogAction>

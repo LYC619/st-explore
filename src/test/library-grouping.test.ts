@@ -54,7 +54,19 @@ describe('library grouped card wall', () => {
       character('fine', { rating: 8 }),
     ], 'rating');
 
-    expect(groups.map((group) => group.label)).toEqual(['神作', '精品', '及格', '低创', '未评分']);
+    expect(groups.map((group) => group.label)).toEqual(['神作', '精品', '及格', '6分以下', '未评分']);
+  });
+
+  it('groups evaluation tags from current scores without exposing legacy low-tier labels', () => {
+    const groups = buildLibraryGroups([
+      character('legacy', { tags: ['评价/低创'] }),
+      character('low', { rating: 3, tags: ['评价/低创'] }),
+      character('high', { rating: 9, tags: ['评价/低创'] }),
+    ], 'tag', { tagCategory: '评价' });
+    expect(groups.find(group => group.label === '未评分')?.items.map(item => item.id)).toEqual(['legacy']);
+    expect(groups.find(group => group.label === '6分以下')?.items.map(item => item.id)).toEqual(['low']);
+    expect(groups.find(group => group.label === '神作')?.items.map(item => item.id)).toEqual(['high']);
+    expect(groups.some(group => group.label === '低创')).toBe(false);
   });
 
   it('groups recent updates by calendar date instead of collapsing one import week', () => {

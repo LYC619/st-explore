@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { UNSAFE_DataRouterContext, useSearchParams } from 'react-router-dom';
 
 export interface AssetIdentity {
   assetId: string | null;
@@ -35,7 +35,12 @@ interface Options<T> {
 /** Only accepted targets own the draft. Query changes invalidate both reads and save UI. */
 export function useAssetIdentityNavigation<T>(options: Options<T>) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const dataRouter = useContext(UNSAFE_DataRouterContext)?.router;
+  const deferredQuery = useRef<(() => void) | null>(null);
+  useEffect(() => () => { deferredQuery.current?.(); }, []);
   const { assetId, characterId } = readAssetIdentity(searchParams);
+  const requestedIdentity = useRef({ assetId, characterId });
+  requestedIdentity.current = { assetId, characterId };
   const requestSeq = useRef(0);
   const acceptedIdentity = useRef<AssetIdentity | null>(null);
   const pendingRef = useRef<PendingTarget<T> | null>(null);
@@ -51,7 +56,9 @@ export function useAssetIdentityNavigation<T>(options: Options<T>) {
   const invalidate = useCallback(() => { ++requestSeq.current; }, []);
 
   const writeIdentity = useCallback((identity: AssetIdentity) => {
-    latest.current.setSearchParams((previous) => {
+    deferredQuery.current?.();
+    deferredQuery.current = null;
+    const write = () => latest.current.setSearchParams((previous) => {
       const next = new URLSearchParams(previous);
       for (const key of ['assetId', 'characterId'] as const) {
         const value = identity[key];
@@ -60,7 +67,21 @@ export function useAssetIdentityNavigation<T>(options: Options<T>) {
       }
       return next;
     }, { replace: true });
-  }, []);
+    // A save can create a COW identity while Back is waiting for that save.
+    // Replacing the query then would replace the pending navigation itself.
+    const blocked = () => dataRouter && [...dataRouter.state.blockers.values()].some(value => value.state !== 'unblocked');
+    if (dataRouter && blocked()) {
+      const locationKey = dataRouter.state.location.key;
+      deferredQuery.current = dataRouter.subscribe(() => {
+        if (blocked()) return;
+        deferredQuery.current?.();
+        deferredQuery.current = null;
+        // If navigation succeeded, the next page owns the address. If saving
+        // failed, publish the successfully saved identity in the same editor.
+        if (dataRouter.state.location.key === locationKey) queueMicrotask(write);
+      });
+    } else write();
+  }, [dataRouter]);
 
   const restoreAcceptedIdentityQuery = useCallback(() => {
     if (acceptedIdentity.current) writeIdentity(acceptedIdentity.current);
@@ -91,6 +112,8 @@ export function useAssetIdentityNavigation<T>(options: Options<T>) {
     // A save may start while B is pending. Accepting B also invalidates that save's UI.
     return () => sequence === requestSeq.current && owner === acceptedIdentity.current;
   }, []);
+
+  const ownsLocation = useCallback(() => !!acceptedIdentity.current && sameAssetIdentity(requestedIdentity.current, acceptedIdentity.current), []);
 
   const requestAsset = useCallback((id: string) => {
     writeIdentity({ assetId: id, characterId: acceptedIdentity.current?.characterId ?? null });
@@ -129,5 +152,5 @@ export function useAssetIdentityNavigation<T>(options: Options<T>) {
     return invalidate;
   }, [assetId, characterId, acceptTarget, clearPending, restoreAcceptedIdentityQuery, invalidate]);
 
-  return { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset, acceptLocalAsset };
+  return { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset, acceptLocalAsset, ownsLocation };
 }

@@ -110,13 +110,13 @@ export async function importEmbeddedAssets(
           || (item.embedded?.characterId === character.id && item.embedded.contentHash === contentHash)
         ));
         if (existing) {
-          refs.push({ kind: 'regex', assetId: existing.id });
+          refs.push({ kind: 'regex', assetId: existing.id, relations: ['embedded'] });
           options.onDuplicate?.('regex', existing.id);
         } else {
           const item = candidate;
           item.embedded = { characterId: character.id, contentHash, importedAt: item.createdAt };
           await regexes.put(item);
-          refs.push({ kind: 'regex', assetId: item.id });
+          refs.push({ kind: 'regex', assetId: item.id, relations: ['embedded'] });
         }
       }
     }

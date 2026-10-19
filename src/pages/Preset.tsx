@@ -1,3 +1,4 @@
+import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { SlidersHorizontal, Download, Save, History, FileJson } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
@@ -367,12 +368,12 @@ export default function Preset() {
     requestAsset(item.id);
   }, [requestAsset]);
 
-  const handleDeleteItem = useCallback(async () => {
+  const handleDeleteItem = useCallback(async (options: RemoveOptions) => {
     if (!deleteTarget) return;
     const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
-      await deletePreset(target.id);
+      await deletePreset(target.id, options);
       if (!isCurrent()) return;
       if (target.id === currentItemId) setCurrentItemId(null);
       await refreshSaved(isCurrent);
@@ -381,6 +382,7 @@ export default function Preset() {
       onFailure: () => { if (isCurrent()) toast({ title: '删除预设失败', variant: 'destructive' }); },
     });
     if (deleted && isCurrent()) setDeleteTarget(null);
+    return deleted;
   }, [currentItemId, deleteTarget, refreshSaved, toast, captureCurrent]);
 
   const actions = preset && (
@@ -535,9 +537,10 @@ export default function Preset() {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除预设「${deleteTarget?.title ?? ''}」？`}
-        description="此操作不可恢复。若角色仍引用该预设，角色页会显示引用失效。"
+        description="条目将从列表移除。若角色仍引用该预设，角色页会显示引用失效。"
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        onConfirm={() => void handleDeleteItem()}
+        fileTarget={deleteTarget ? { store: 'presets', id: deleteTarget.id } : undefined}
+            onConfirm={handleDeleteItem}
       />
       {showTour && (
         <GuidedTour

@@ -77,7 +77,7 @@ export function ContextRail({
   const treeBranchName = tree?.branchId
     ? story.branches?.find((b) => b.id === tree.branchId)?.name ?? '（分支已删除）'
     : '主线';
-  const branchExists = !item?.branchId || story.branches?.some((b) => b.id === item?.branchId);
+  const branchExists = !item?.rangeDetached && (!item?.branchId || story.branches?.some((b) => b.id === item?.branchId));
 
   const worldbookDetail = gp?.worldbookId
     ? `${worldbookNames.get(gp.worldbookId) ?? gp.worldbookTitle ?? '世界书'}${
@@ -97,6 +97,8 @@ export function ContextRail({
           {isRecord && item && (
             <>
               <InfoRow label="分支" value={branchName} />
+              {item.provenance && <InfoRow label="原始来源" value={`${item.provenance.bookTitle} · ${item.provenance.branchTitle ?? '主线'} · #${item.provenance.floorStart}–${item.provenance.floorEnd}`} />}
+              {item.rangeDetached && <p className="text-xs text-muted-foreground">尚未关联目标故事楼层。</p>}
               <div className="text-xs">
                 <span className="text-muted-foreground">楼层：</span>
                 <span>#{item.floorStart}–{item.floorEnd}</span>
@@ -161,7 +163,7 @@ export function ContextRail({
         <CardContent className="p-3 space-y-1.5">
           <p className="text-sm font-medium mb-1">操作</p>
           {isRecord && onRegenerate && (
-            <Button variant="outline" size="sm" className="gap-1 w-full" onClick={onRegenerate}>
+            <Button variant="outline" size="sm" className="gap-1 w-full" disabled={item?.rangeDetached} onClick={onRegenerate}>
               <RotateCcw className="w-3.5 h-3.5" />重新生成（回填设置）
             </Button>
           )}

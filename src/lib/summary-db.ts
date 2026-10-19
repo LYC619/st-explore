@@ -1,20 +1,43 @@
 import type { SummaryItem, SummaryTemplate } from '@/types/summary';
-import { createRepo, pruneAutoSaved } from '@/lib/repo';
+import { createRepo, getCurrentRepo, pruneAutoSaved, type RemoveOptions } from '@/lib/repo';
+import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { withArchiveStoryLock } from '@/lib/archive-db';
+import { getVaultEpoch } from '@/lib/vault/active';
 
 // ---------- summaries ----------
 
 const summaryRepo = createRepo<SummaryItem>('summaries');
+const writes = new KeyedSerialQueue();
+export function withSummaryLock<T>(id: string, action: () => Promise<T>): Promise<T> {
+  return writes.enqueue(id, action);
+}
 
 export async function getAllSummaries(): Promise<SummaryItem[]> {
   return summaryRepo.list();
 }
 
 export async function saveSummary(item: SummaryItem): Promise<void> {
-  return summaryRepo.put(item);
+  const repo = getCurrentRepo<SummaryItem>('summaries'), epoch = getVaultEpoch();
+  const snapshot = structuredClone(item);
+  const write = () => withSummaryLock(item.id, async () => {
+    if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，记录保存已停止');
+    const current = await repo.get(item.id);
+    if (current && current.bookId !== snapshot.bookId) throw new Error('记录已移动，请重新打开后编辑');
+    await repo.put(snapshot);
+  });
+  return item.bookId ? withArchiveStoryLock(item.bookId, write) : write();
 }
 
-export async function deleteSummary(id: string): Promise<void> {
-  return summaryRepo.remove(id);
+export async function deleteSummary(id: string, options?: RemoveOptions): Promise<void> {
+  const repo = getCurrentRepo<SummaryItem>('summaries'), epoch = getVaultEpoch();
+  const original = await repo.get(id);
+  const remove = () => withSummaryLock(id, async () => {
+    if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，记录删除已停止');
+    const current = await repo.get(id);
+    if (current && current.bookId !== original?.bookId) throw new Error('记录已移动，请重新选择删除目标');
+    await repo.remove(id, options);
+  });
+  return original?.bookId ? withArchiveStoryLock(original.bookId, remove) : remove();
 }
 
 /**
@@ -42,6 +65,6 @@ export async function saveSummaryTemplate(item: SummaryTemplate): Promise<void> 
   return templateRepo.put(item);
 }
 
-export async function deleteSummaryTemplate(id: string): Promise<void> {
-  return templateRepo.remove(id);
+export async function deleteSummaryTemplate(id: string, options?: RemoveOptions): Promise<void> {
+  return templateRepo.remove(id, options);
 }

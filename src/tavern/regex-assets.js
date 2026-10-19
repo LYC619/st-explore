@@ -1,8 +1,20 @@
 /** Linked STE collections are presented in the genuine upstream regex editor and engine. */
+export function filterEmbeddedRegexScripts(scripts, snapshot) {
+    const stable = value => value && typeof value === 'object'
+        ? Array.isArray(value) ? value.map(stable) : Object.fromEntries(Object.keys(value).sort().map(key => [key, stable(value[key])])) : value;
+    const signature = ({ id: _id, ...script }) => JSON.stringify(stable(script));
+    const pending = [...snapshot.suppressedEmbeddedScripts ?? []];
+    return scripts.filter(script => {
+        const index = pending.findIndex(source => source.id ? source.id === script.id : signature(source) === signature(script));
+        if (index >= 0) { pending.splice(index, 1); return false; }
+        return !snapshot.suppressedEmbeddedIds.includes(script.id);
+    });
+}
+
 export function installRegexAssets(host) {
     let snapshot = { globalScripts: [], embeddedScripts: [], revisions: {}, suppressedEmbeddedIds: [] };
     window.__STE_REGEX_LANE__ = (lane, ordinary) => {
-        const scripts = lane === 'embeddedScripts' ? ordinary.filter(script => !snapshot.suppressedEmbeddedIds.includes(script.id)) : ordinary;
+        const scripts = lane === 'embeddedScripts' ? filterEmbeddedRegexScripts(ordinary, snapshot) : ordinary;
         return [...scripts, ...snapshot[lane]];
     };
     window.__STE_SAVE_REGEX_LANE__ = async (scripts, type) => {

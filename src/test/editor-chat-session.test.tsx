@@ -202,6 +202,16 @@ describe('切换故事时的数据来源', () => {
 });
 
 describe('当前故事的解析优先级', () => {
+  it('从聊天返回时按 branch 载入分支，并且仅打开页面不会重写快照', async () => {
+    const story = mkStory('s1', 2);
+    story.branches = [{ id: 'b1', name: '分支', session: { ...story.session, messages: mkMessages(5) },
+      markers: [], favorites: [], createdAt: 1000, updatedAt: 2000 }];
+    getArchiveStory.mockResolvedValue(story);
+    await renderChat('/chat?storyId=s1&branch=b1');
+    expect(messageCountLabel()).toBe('5');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 850)); });
+    expect(updateArchiveStory).not.toHaveBeenCalled();
+  });
   it('显式 storyId 优先于记忆里的当前故事', async () => {
     setEditorStoryId('remembered');
     getArchiveStory.mockImplementation(async (id: string) =>

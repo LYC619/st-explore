@@ -9,12 +9,12 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { isCapacitor } from '@/lib/runtime';
 import { handleBackPress, isTopLevelPath } from '@/lib/back-button';
 
-export function useAndroidBackButton(): void {
+export function useAndroidBackButton(enabled = true): void {
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (!isCapacitor()) return;
+    if (!enabled || !isCapacitor()) return;
 
     let dispose: (() => void) | undefined;
     let cancelled = false;
@@ -41,5 +41,5 @@ export function useAndroidBackButton(): void {
 
     return () => { cancelled = true; dispose?.(); };
     // location.pathname 进依赖：兜底分支要看当前在哪一页
-  }, [navigate, location.pathname]);
+  }, [enabled, navigate, location.pathname]);
 }

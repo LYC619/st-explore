@@ -59,6 +59,7 @@ interface ChatPreviewProps {
   onUnhideMessage?: (messageId: string, messageIndex: number) => void;
   /** 把某楼设为隐藏（等价 ST /hide）；与 onUnhideMessage 对称，OOC 楼不给这个入口 */
   onHideMessage?: (messageId: string, messageIndex: number) => void;
+  onCaptureMessage?: (messageId: string, content: string) => void;
   /** 是否在名字行显示该楼的生成模型（默认显示） */
   showModel?: boolean;
   /** 楼层跳转时避开滚动容器顶部的 sticky 工具栏。 */
@@ -189,6 +190,7 @@ function getThemeClasses(theme: ThemeStyle) {
 }
 
 interface MessageRowProps {
+  onCaptureMessage?: (messageId: string, content: string) => void;
   message: ProcessedMessage;
   marker?: ChapterMarker;
   index: number;
@@ -221,8 +223,9 @@ interface MessageRowProps {
  */
 const MessageRow = memo(function MessageRow({
   message, marker, index, theme, classes, showTimestamp, showAvatar, showModel,
-  editMode, previewRule, searchQuery, isActiveMatch, userName, charName, onMessageClick, onEditMessage, onSwipeSelect, onUnhideMessage, onHideMessage,
+  editMode, previewRule, searchQuery, isActiveMatch, userName, charName, onMessageClick, onEditMessage, onSwipeSelect, onUnhideMessage, onHideMessage, onCaptureMessage,
 }: MessageRowProps) {
+  const captureText = useRef('');
   const isUser = message.role === 'user';
   const isNewSpeaker = message.isNewSpeaker;
   const hasMarker = !!marker;
@@ -256,7 +259,7 @@ const MessageRow = memo(function MessageRow({
       <div
         className={`${classes.message} ${isUser ? classes.userBubble : classes.charBubble} animate-fade-in group relative w-full ${
           editMode ? 'cursor-pointer hover:bg-primary/5 rounded-lg transition-colors pt-9 px-2' : ''
-        } ${isActiveMatch ? 'rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''} ${message.hidden ? 'opacity-70' : ''}`}
+        } ${isActiveMatch ? 'rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''}`}
         onClick={() => editMode && onMessageClick?.(message.id, index)}
       >
         {/* 隐藏楼/OOC 标类型（定稿 5.1：全部保留并标类型）。OOC=ST 的 /comment 注释楼，
@@ -352,6 +355,10 @@ const MessageRow = memo(function MessageRow({
             </Tooltip>
           </div>
         )}
+        {onCaptureMessage && <button type="button" className="tap-target mb-2 rounded border border-border px-2 text-xs text-muted-foreground hover:text-foreground"
+          aria-label={`收录第 ${index} 楼为总结或日记`}
+          onMouseDown={event => { const selection = window.getSelection(); captureText.current = selection?.anchorNode && event.currentTarget.parentElement?.contains(selection.anchorNode) ? selection.toString().trim() : ''; event.preventDefault(); }}
+          onClick={event => { event.stopPropagation(); onCaptureMessage(message.id, captureText.current || message.content); captureText.current = ''; }}>收录为总结/日记</button>}
         {theme === 'social' ? (
           <>
             {showAvatar && (
@@ -446,7 +453,7 @@ const MessageRow = memo(function MessageRow({
 });
 
 export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
-  ({ session, theme, showTimestamp, showAvatar, fontSize, regexRules, markers = [], onMessageClick, onEditMessage, editMode = false, fontFamily, previewRule = null, onVisibleFloorChange, onFloorMapChange, searchQuery = '', onSearchResult, showHidden = true, showOOC = true, onSwipeSelect, onUnhideMessage, onHideMessage, showModel = true, scrollPaddingStart = 0 }, ref) => {
+  ({ session, theme, showTimestamp, showAvatar, fontSize, regexRules, markers = [], onMessageClick, onEditMessage, editMode = false, fontFamily, previewRule = null, onVisibleFloorChange, onFloorMapChange, searchQuery = '', onSearchResult, showHidden = true, showOOC = true, onSwipeSelect, onUnhideMessage, onHideMessage, onCaptureMessage, showModel = true, scrollPaddingStart = 0 }, ref) => {
     const markerMap = useMemo(() => {
       const map = new Map<string, ChapterMarker>();
       markers.forEach(m => map.set(m.messageId, m));
@@ -772,6 +779,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     onSwipeSelect={onSwipeSelect}
                     onUnhideMessage={onUnhideMessage}
                     onHideMessage={onHideMessage}
+                    onCaptureMessage={onCaptureMessage}
                   />
                 </div>
               );

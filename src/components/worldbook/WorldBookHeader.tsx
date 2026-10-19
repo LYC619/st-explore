@@ -28,6 +28,11 @@ interface WorldBookHeaderProps {
   onLoadStaged: (item: WorldBookItem) => void;
   onDeleteStaged: (item: WorldBookItem) => void;
   onSave: () => void;
+  saveStatus?: 'saved' | 'pending' | 'saving' | 'error';
+  saveError?: string;
+  onBeforeExport?: () => Promise<WorldBook | void>;
+  sourceTitle?: string;
+  onRestoreSource?: () => void;
   /** 页面自己挂的模态框（确认切换 / 确认删除）插在工具栏里，保持原有 DOM 位置 */
   children?: React.ReactNode;
 }
@@ -47,7 +52,7 @@ export function WorldBookHeader({
   activeTab, onTabChange,
   onImport, onAppend, onOpenAiDialog,
   savedItems, stagedDialogOpen, onStagedDialogOpenChange, onRefreshStaged, onLoadStaged, onDeleteStaged,
-  onSave, children,
+  onSave, saveStatus, saveError, onBeforeExport, sourceTitle, onRestoreSource, children,
 }: WorldBookHeaderProps) {
   return (
     <header className="border-b bg-card/80 backdrop-blur sticky top-0 z-30">
@@ -70,6 +75,11 @@ export function WorldBookHeader({
         <TabSwitcher value={activeTab} onChange={onTabChange} />
 
         <div className="flex-1" />
+        {sourceTitle && <Button variant="outline" size="sm" onClick={onRestoreSource}
+          title={`来源：${sourceTitle}。将来源内容恢复到当前世界书并自动保存，来源书继续保留。`}>恢复来源内容</Button>}
+        {worldbook && saveStatus && <span role="status" title={saveError} className="text-xs shrink-0">
+          {saveStatus === 'saving' ? '保存中…' : saveStatus === 'error' ? '保存失败，请重试' : saveStatus === 'pending' ? '待保存' : '已保存'}
+        </span>}
 
         <div data-tour="wb-import">
           <WorldBookImporter onImport={onImport} onAppend={onAppend} hasExisting={!!worldbook} />
@@ -109,7 +119,7 @@ export function WorldBookHeader({
             <Button variant="outline" size="sm" onClick={onSave} className="hidden sm:inline-flex">
               <Save className="w-4 h-4 mr-1" /> 保存
             </Button>
-            <WorldBookExporter worldbook={worldbook} filename={filename} />
+            <WorldBookExporter worldbook={worldbook} filename={filename} onBeforeExport={onBeforeExport} draft={saveStatus === 'error'} />
           </>
         )}
       </div>
