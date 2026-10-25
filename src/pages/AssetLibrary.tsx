@@ -1,7 +1,7 @@
 import type { RemoveOptions } from '@/lib/repo';
 /**
- * 附属库：世界书 / 预设 / 正则结构化资产，以及 SillyTavern 其他资产的只读归档浏览器。
- * - 左侧栏 = 资产类别：世界书 / 预设 / 正则 / 其他资产（其他资产选中时在下面挂它的归档子分类）
+ * 附属库：世界书 / 正则结构化资产，以及 SillyTavern 其他资产的只读归档浏览器。
+ * - 左侧栏 = 资产类别：世界书 / 正则 / 其他资产（其他资产选中时在下面挂它的归档子分类）
  * - 内容区首行 = 筛选 chip：状态（已被引用/未被引用）+ 来源（来自ST/工具入库/派生副本/自动保留）
  * - 卡片区三列 .asset-card：图标+标题+徽标 / 统计行 / 绑定关系
  *
@@ -13,10 +13,9 @@ import type { RemoveOptions } from '@/lib/repo';
  * 不设"快照"类别（2026-07-29 拍板：设计稿误解，待对接 ST 用户目录后再扩类别）。
  */
 import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Globe,
-  SlidersHorizontal,
   Regex as RegexIcon,
   MoreVertical,
   Trash2,
@@ -43,25 +42,20 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { classifyAssetSource, type AssetSource } from '@/lib/asset-source';
 import type { WorldBookItem } from '@/types/worldbook';
-import type { AssetIndexEntry } from '@/lib/asset-index-entry';
-import { listAssetIndex } from '@/lib/asset-index';
-import { PresetCatalog } from '@/components/preset/PresetCatalog';
-import { subscribeRecordChanges } from '@/lib/repo/changes';
 import type { RegexCollectionItem } from '@/types/regex';
 import { getAllWorldBooks, deleteWorldBook, saveWorldBook } from '@/lib/worldbook-db';
 import { readWorldBookUpload, worldBookItemFromUpload } from '@/lib/worldbook-file-import';
-import { deletePreset } from '@/lib/preset-db';
 import { getAllRegexCollections, deleteRegexCollection } from '@/lib/regex-db';
 import { listCharacterIndex } from '@/lib/archive-index';
 import { buildAssetLibraryRows, type AssetLibraryRow } from '@/lib/asset-library-rows';
 import { executeDeleteAction } from '@/lib/destructive-action';
 import { LOADING_LABEL } from '@/lib/ui-copy';
+import { presetLibraryRedirect } from '@/lib/navigation-model';
 
-type AssetTab = 'worldbook' | 'preset' | 'regex';
+type AssetTab = 'worldbook' | 'regex';
 
 const TAB_META: Record<AssetTab, { label: string; icon: typeof Globe; toolPath: string; toolLabel: string; unit: string }> = {
   worldbook: { label: '世界书', icon: Globe, toolPath: '/worldbook', toolLabel: '世界书工具', unit: '条目' },
-  preset: { label: '预设', icon: SlidersHorizontal, toolPath: '/preset', toolLabel: '预设工具', unit: '提示词块' },
   regex: { label: '正则', icon: RegexIcon, toolPath: '/regex', toolLabel: '正则工具', unit: '规则' },
 };
 
@@ -149,14 +143,13 @@ const AssetLibrary = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const tab = (['worldbook', 'preset', 'regex'].includes(searchParams.get('tab') ?? '')
+  const tab = (['worldbook', 'regex'].includes(searchParams.get('tab') ?? '')
     ? searchParams.get('tab')
     : null) as AssetTab | null;
   /** 无 tab 时页面停在其他资产；`?section=` 决定看哪一类归档 */
   const section = readBrowserSection(searchParams.get('section'));
 
   const [worldbooks, setWorldbooks] = useState<WorldBookItem[]>([]);
-  const [presets, setPresets] = useState<AssetIndexEntry[]>([]);
   const [regexes, setRegexes] = useState<RegexCollectionItem[]>([]);
   /** assetId → 引用它的角色名列表（绑定关系展示 + 删除提示） */
   const [refNames, setRefNames] = useState<Record<string, string[]>>({});
@@ -171,15 +164,13 @@ const AssetLibrary = () => {
     setLoadError(null);
     setLoading(true);
     try {
-      const [wbs, ps, rs, chars] = await Promise.all([
+      const [wbs, rs, chars] = await Promise.all([
         getAllWorldBooks(),
-        listAssetIndex('presets'),
         getAllRegexCollections(),
         // 引用名称是附加信息；索引失败不应抹掉已经成功读取的资产列表。
         listCharacterIndex().catch(() => []),
       ]);
       setWorldbooks(wbs);
-      setPresets(ps);
       setRegexes(rs);
       const names: Record<string, string[]> = {};
       for (const c of chars) {
@@ -188,7 +179,6 @@ const AssetLibrary = () => {
       setRefNames(names);
     } catch (error: unknown) {
       setWorldbooks([]);
-      setPresets([]);
       setRegexes([]);
       setRefNames({});
       setLoadError(error instanceof Error ? error.message : '无法读取资产库');
@@ -197,16 +187,13 @@ const AssetLibrary = () => {
     }
   }, []);
 
-  // 无条件读取：侧栏三类的数量常驻显示，停在其他资产时也得是真数，
+  // 无条件读取：侧栏两类的数量常驻显示，停在其他资产时也得是真数，
   // 不然一进页面看到「世界书 0」会以为库空了。
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => subscribeRecordChanges(change => {
-    if (change.store === 'presets') void listAssetIndex('presets').then(setPresets).catch(() => {});
-  }), []);
 
   const rows: Record<AssetTab, AssetLibraryRow[]> = useMemo(
-    () => buildAssetLibraryRows({ worldbooks, presets, regexes }),
-    [worldbooks, presets, regexes],
+    () => buildAssetLibraryRows({ worldbooks, presets: [], regexes }),
+    [worldbooks, regexes],
   );
 
   const handleDelete = async (options: RemoveOptions) => {
@@ -214,7 +201,6 @@ const AssetLibrary = () => {
     const target = toDelete;
     const deleted = await executeDeleteAction(async () => {
       if (tab === 'worldbook') await deleteWorldBook(target.id, options);
-      else if (tab === 'preset') await deletePreset(target.id, options);
       else await deleteRegexCollection(target.id, options);
       await load();
     }, {
@@ -259,7 +245,7 @@ const AssetLibrary = () => {
     { replace: true },
   );
   const tabList = useMemo(() => (tab ? rows[tab] : []), [rows, tab]);
-  const counts = { worldbook: worldbooks.length, preset: presets.length, regex: regexes.length };
+  const counts = { worldbook: worldbooks.length, regex: regexes.length };
   /**
    * 读失败/还在读时不显示数量：这时 counts 全是 0，摆出来就是在说「库里没有」。
    * 侧栏没有报错位置，但点进任一类别就会看到完整报错和重试。
@@ -293,11 +279,11 @@ const AssetLibrary = () => {
           <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">附属库</h1>
           {showCounts && (
             <span className="text-[11px] text-[color:var(--text-muted)]">
-              世界书 {counts.worldbook} · 预设 {counts.preset} · 正则 {counts.regex}
+              世界书 {counts.worldbook} · 正则 {counts.regex}
             </span>
           )}
           <HelpCard>
-            世界书、预设、正则规则集的收藏馆。这里入库的资产可以在角色页「关联资产」里被引用；对共享资产的修改会生成派生副本，不影响别的角色。点卡片进入对应工具编辑。「其他资产」是从 SillyTavern 归档过来的扩展、快速回复、人设和媒体，只读。
+            世界书、正则规则集的收藏馆。这里入库的资产可以在角色页「关联资产」里被引用；对共享资产的修改会生成派生副本，不影响别的角色。点卡片进入对应工具编辑。「其他资产」是从 SillyTavern 归档过来的扩展、快速回复、人设和媒体，只读。预设通过主导航的「预设库」管理。
           </HelpCard>
           <span className="flex-1" />
           {tab === null ? (
@@ -326,7 +312,7 @@ const AssetLibrary = () => {
                   </Button>
                 </>
               )}
-              <Button size="sm" className="self-center" onClick={() => navigate(tab === 'preset' ? '/tools?focus=preset' : meta.toolPath)}>
+              <Button size="sm" className="self-center" onClick={() => navigate(meta.toolPath)}>
                 <Plus className="w-4 h-4 mr-1.5" />
                 打开{meta.toolLabel}
               </Button>
@@ -379,8 +365,6 @@ const AssetLibrary = () => {
             <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto scrollbar-thin px-6 py-3">
               <OtherAssetsBrowser />
             </div>
-          ) : tab === 'preset' ? (
-            <div className="flex-1 min-w-0 min-h-0"><PresetCatalog /></div>
           ) : (
           <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin px-6 py-3">
             {/* 筛选首行：状态 + 来源。原来在左栏，现在和类别导航分开。 */}
@@ -544,11 +528,15 @@ const AssetLibrary = () => {
           ? `该资产被 ${refNames[toDelete.id].length} 张角色卡引用，删除后角色页会显示“引用已失效”并可一键移除。`
           : '该资产当前没有角色引用。'}`}
         onOpenChange={(open) => !open && setToDelete(null)}
-        fileTarget={toDelete ? { store: tab === 'worldbook' ? 'worldbooks' : tab === 'preset' ? 'presets' : 'regexes', id: toDelete.id } : undefined}
+        fileTarget={toDelete ? { store: tab === 'worldbook' ? 'worldbooks' : 'regexes', id: toDelete.id } : undefined}
         onConfirm={handleDelete}
       />
     </AppLayout>
   );
 };
 
-export default AssetLibrary;
+export default function AssetLibraryRoute() {
+  const [params] = useSearchParams();
+  if (params.get('tab') === 'preset') return <Navigate to={presetLibraryRedirect(params.toString())} replace />;
+  return <AssetLibrary />;
+}

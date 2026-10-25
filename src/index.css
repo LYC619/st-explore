@@ -99,6 +99,35 @@
 @layer base {
   * {
     @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+
+  /* Include ordinary overflow containers, textareas and native selects, not only
+     the few surfaces that opted into .scrollbar-thin. */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: var(--scrollbar-track);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+
+  ::-webkit-scrollbar-button {
+    display: none;
   }
 
   body {
@@ -245,11 +274,12 @@
 
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: hsl(var(--text-muted-hsl) / 0.3) transparent;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
 
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
   }
 
   .scrollbar-thin::-webkit-scrollbar-track {
@@ -257,7 +287,7 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: hsl(var(--text-muted-hsl) / 0.3);
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
   }
 
@@ -270,11 +300,11 @@
   }
 
   .library-scrollbar-auto-hide[data-scrolling='true'] {
-    scrollbar-color: hsl(var(--text-muted-hsl) / 0.3) transparent;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
   }
 
   .library-scrollbar-auto-hide[data-scrolling='true']::-webkit-scrollbar-thumb {
-    background: hsl(var(--text-muted-hsl) / 0.3);
+    background: var(--scrollbar-thumb);
   }
 
   .animate-fade-in {

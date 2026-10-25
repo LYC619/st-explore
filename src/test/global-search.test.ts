@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSearchEntries, searchEntries, groupByKind, flattenSearchGroups } from '@/lib/global-search';
+import { inferPresetIdentity } from '@/lib/preset-presentation';
 
 const entries = buildSearchEntries({
   characters: [
@@ -21,6 +22,28 @@ describe('global-search', () => {
     expect(entries.find((e) => e.id === 's1')?.sub).toBe('奏枝');
     expect(entries.find((e) => e.id === 's2')?.sub).toBe('未绑定');
     expect(entries.find((e) => e.id === 'w1')?.path).toBe('/worldbook?assetId=w1');
+    expect(entries.find((e) => e.id === 'p1')?.path).toBe('/presets?presetId=p1');
+  });
+
+  it('预设搜索打开库内详情，特殊 id 不截断深链', () => {
+    const result = buildSearchEntries({ characters: [], stories: [], worldbooks: [], regexes: [], presets: [{ id: 'p& one', title: '目标' }] });
+    const url = new URL(result[0].path, 'http://localhost');
+    expect(url.pathname).toBe('/presets');
+    expect(url.searchParams.get('presetId')).toBe('p& one');
+  });
+
+  it('预设搜索复用确认资料和推断摘要，含作者、模型、系列、版本和用途', () => {
+    const metadataEntries = buildSearchEntries({ characters: [], stories: [], worldbooks: [], regexes: [], presets: [
+      { id: 'confirmed', title: '社区下载', catalog: { author: '墨舟', series: '星港', version: 'v3.2', models: ['Claude'], purposes: ['写卡'], tags: ['慢热'], variant: '长篇', noteExcerpt: '附带扩展说明', representativeCards: ['星河'] },
+        presetIdentity: inferPresetIdentity('社区下载', { chat_completion_source: 'google', google_model: 'gemini-3-pro' }) },
+      { id: 'inferred', title: '幻_境 v2.0', presetIdentity: inferPresetIdentity('幻_境 v2.0') },
+    ] });
+    for (const query of ['墨舟', '星港', 'v3.2', 'claude', '写卡', '慢热', '长篇', '扩展说明', '星河']) {
+      expect(searchEntries(metadataEntries, query).map(item => item.id), query).toEqual(['confirmed']);
+    }
+    expect(searchEntries(metadataEntries, '幻 境').map(item => item.id)).toEqual(['inferred']);
+    expect(searchEntries(metadataEntries, 'Gemini')).toEqual([]);
+    expect(metadataEntries[0].sub).toBe('墨舟 · v3.2 · Claude');
   });
 
   it('大小写不敏感子串匹配，前缀命中排前', () => {

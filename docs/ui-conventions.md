@@ -67,13 +67,17 @@
 ### 附属库的两级
 
 - 一级区域叫 **附属库**（`navigation-model.ts` 的 `assets`）
-- 二级是 **世界书 / 预设 / 正则 / 其他资产**
+- 二级是 **世界书 / 正则 / 其他资产**
+- **预设库**是角色库下面的独立一级区域（`/presets`），收藏、作者系列、版本和资源管理均在这里完成
 - 「其他资产」特指从 SillyTavern 归档过来的扩展等只读文件，不是「附属库」的同义词
 
 ## 三、入口落点
 
-**世界书和预设的入口一律进选择页**（`/tools?focus=worldbook`、`/tools?focus=preset`），
-不直接进空编辑器。`/worldbook`、`/preset` 是选完之后的编辑器路由，不作为入口。
+**世界书和预设编辑入口先选择已有资产**（`/tools?focus=worldbook`、`/presets?mode=select`）。
+主导航和首页的预设库入口进入 `/presets`；快捷搜索命中预设时进入 `/presets?presetId=...` 查看详情。
+旧 `/assets?tab=preset` 和 `/tools?focus=preset` 自动转到新库，保留选中预设。
+`/worldbook`、`/preset` 是选完之后的编辑器路由；已有角色上下文的“处理预设”继续进入 `/preset` 并保留角色参数。
+导航按完整路径段匹配，`/presets` 不得被 `/preset` 编辑器前缀命中，不显示编辑区窄工具栏。
 
 理由见 `RegexTool.tsx` 里那条注释：用户从入口点进来看到一个空编辑器，会以为自己点错了。
 

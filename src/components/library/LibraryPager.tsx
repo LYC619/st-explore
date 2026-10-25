@@ -120,7 +120,7 @@ export function LibraryBatchBar({
         删除
       </Button>
       <Button variant="ghost" size="sm" className="px-2 text-xs text-muted-foreground" onClick={onExit}>
-        取消
+        完成
       </Button>
     </div>
   );

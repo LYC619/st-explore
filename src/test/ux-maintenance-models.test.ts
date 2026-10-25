@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { THEMES, themeSwatchBackground } from '@/lib/theme';
-import { NAV_AREAS, findNavArea, matchesNavDestination } from '@/lib/navigation-model';
+import { NAV_AREAS, findNavArea, matchesNavDestination, presetLibraryRedirect } from '@/lib/navigation-model';
 import {
   EDITOR_TOOL_COPY,
   horizontalWheelDelta,
@@ -21,15 +21,15 @@ describe('维护阶段 UX 规则模型', () => {
     }
   });
 
-  it('导航按五个一级区域组织（含独立聊天入口），并包含要求的子界面', () => {
-    expect(NAV_AREAS.map((area) => area.key)).toEqual(['home', 'chats', 'characters', 'editor', 'assets']);
+  it('导航按六个一级区域组织（含独立预设库），并包含要求的子界面', () => {
+    expect(NAV_AREAS.map((area) => area.key)).toEqual(['home', 'chats', 'characters', 'presets', 'editor', 'assets']);
     const labels = NAV_AREAS.flatMap((area) => area.children.map((item) => item.label));
     expect(labels).toEqual(expect.arrayContaining(['聊天处理', '总结', '故事树', '角色卡', '预设', '正则', '其他资产']));
     expect(findNavArea('/assets', '?tab=worldbook')?.key).toBe('assets');
     expect(findNavArea('/library', '')?.key).toBe('characters');
   });
 
-  it('世界书和预设在选择页与具体编辑器页都保持正确高亮', () => {
+  it('世界书选择页归编辑区，预设选择页归独立预设库', () => {
     const editor = NAV_AREAS.find((area) => area.key === 'editor');
     const worldbook = editor?.children.find((item) => item.key === 'worldbook');
     const preset = editor?.children.find((item) => item.key === 'preset');
@@ -39,9 +39,21 @@ describe('维护阶段 UX 规则模型', () => {
     expect(matchesNavDestination(worldbook!, '/tools', '?focus=worldbook')).toBe(true);
     expect(matchesNavDestination(worldbook!, '/worldbook', '?assetId=demo')).toBe(true);
     expect(matchesNavDestination(worldbook!, '/tools', '?focus=preset')).toBe(false);
-    expect(matchesNavDestination(preset!, '/tools', '?focus=preset')).toBe(true);
+    expect(matchesNavDestination(preset!, '/tools', '?focus=preset')).toBe(false);
     expect(matchesNavDestination(preset!, '/preset', '?assetId=demo')).toBe(true);
     expect(matchesNavDestination(preset!, '/tools', '?focus=worldbook')).toBe(false);
+    expect(matchesNavDestination(preset!, '/presets', '?mode=select')).toBe(false);
+    expect(matchesNavDestination(editor!, '/presets', '')).toBe(false);
+    expect(findNavArea('/presets', '?presetId=demo')?.key).toBe('presets');
+    expect(findNavArea('/presets', '?mode=select')?.key).toBe('presets');
+    expect(findNavArea('/preset', '?assetId=demo&characterId=c')?.key).toBe('editor');
+    expect(NAV_AREAS.find(area => area.key === 'assets')!.children.map(child => child.key)).not.toContain('preset');
+  });
+
+  it('预设旧深链保留选中项和上下文，移除旧容器参数', () => {
+    expect(presetLibraryRedirect('?tab=preset&presetId=p%26one&from=bookmark')).toBe('/presets?presetId=p%26one&from=bookmark');
+    expect(presetLibraryRedirect('?focus=preset&assetId=p%26one&characterId=c', true)).toBe('/presets?characterId=c&presetId=p%26one&mode=select');
+    expect(presetLibraryRedirect('?tab=preset')).toBe('/presets');
   });
 
   it('离开首页才触发自动折叠，非首页之间切换不强制覆盖用户选择', () => {

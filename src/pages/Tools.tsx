@@ -1,4 +1,4 @@
-/** 聊天处理外的编辑区入口选择页：总结/故事树选故事，世界书/预设选资产；全局编辑区导航由 AppLayout 唯一提供。 */
+/** 聊天处理外的编辑区入口选择页：总结/故事树选故事，世界书选资产；旧预设入口转到独立预设库。 */
 import { useState, useEffect, useCallback } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarRange, MessageSquare, Search, DownloadCloud } from 'lucide-react';
@@ -25,7 +25,7 @@ import {
 } from '@/lib/home-layout';
 import { buildEditorStoryPath, getEditorStoryId, setEditorStoryId } from '@/lib/editor-story-context';
 import { LOADING_LABEL } from '@/lib/ui-copy';
-import { PresetCatalog } from '@/components/preset/PresetCatalog';
+import { presetLibraryRedirect } from '@/lib/navigation-model';
 
 interface ToolEntry {
   type: ToolFileType;
@@ -61,15 +61,9 @@ const FOCUS_COPY: Record<string, { title: string; description: string; points: s
     points: ['编辑条目内容与触发关键词', '导入的世界书自动暂存，可随时切换', '支持 ST 世界书 JSON'],
     importLabel: '导入世界书',
   },
-  preset: {
-    title: '预设',
-    description: EDITOR_TOOL_COPY.preset,
-    points: ['调整提示词块与插入顺序', '编辑生成参数与正则规则', '支持 ST 预设 JSON'],
-    importLabel: '导入预设',
-  },
 };
 
-/** 资产选择卡的统一展示模型（世界书/预设共用一套卡片渲染） */
+/** 世界书资产选择卡的展示模型。 */
 interface AssetPickerItem {
   id: string;
   title: string;
@@ -85,13 +79,12 @@ function formatStoryDate(value?: number): string {
   return new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
-const Tools = () => {
+const ToolsContent = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const focus = searchParams.get('focus');
   const focusView = storyWorkspaceViewForEditorFocus(focus);
-  // 世界书/预设走资产选择（0816 二轮反馈：不用再去附属库里找）
-  const assetFocus = focus === 'worldbook' || focus === 'preset' ? focus : null;
+  const assetFocus = focus === 'worldbook' ? focus : null;
   const focusCopy = focus ? FOCUS_COPY[focus] ?? null : null;
   const [dragOver, setDragOver] = useState(false);
   // 待确认的文件 + 程序猜测（null = 没猜出来，让用户自己选）
@@ -120,9 +113,6 @@ const Tools = () => {
           sourceModifiedAt: item.sourceModifiedAt,
           autoSaved: item.autoSaved,
         })));
-        return;
-      }
-      if (assetFocus === 'preset') {
         return;
       }
       // 摘要包含消息时间范围与楼数，选择入口无需保留整库正文。
@@ -185,8 +175,7 @@ const Tools = () => {
   // 资产用附属库同款 ?assetId= 深链打开编辑器
   const openAsset = useCallback((assetId: string) => {
     if (!assetFocus) return;
-    const toolPath = assetFocus === 'worldbook' ? '/worldbook' : '/preset';
-    navigate(`${toolPath}?assetId=${encodeURIComponent(assetId)}`);
+    navigate(`/worldbook?assetId=${encodeURIComponent(assetId)}`);
   }, [assetFocus, navigate]);
 
   const storyPickerItems = buildEditorStoryPickerItems(stories, characters, query);
@@ -201,7 +190,6 @@ const Tools = () => {
 
   // 编辑区一级入口沿用 7 月 26 日前的直接工作台模式；本页仅承载正式入口的选择器。
   if (!focusView && !assetFocus) return <Navigate to="/chat" replace />;
-  if (assetFocus === 'preset') return <AppLayout><PresetCatalog mode="select" /></AppLayout>;
 
   return (
     <AppLayout>
@@ -453,4 +441,8 @@ const Tools = () => {
   );
 };
 
-export default Tools;
+export default function Tools() {
+  const [params] = useSearchParams();
+  if (params.get('focus') === 'preset') return <Navigate to={presetLibraryRedirect(params.toString(), true)} replace />;
+  return <ToolsContent />;
+}

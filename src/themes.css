@@ -25,6 +25,11 @@
 
 /* ---------- 全局品牌色（跨主题不变） ---------- */
 :root {
+  /* Native controls and all scroll containers follow the active surface palette. */
+  color-scheme: dark;
+  --scrollbar-thumb: hsl(var(--text-muted-hsl, var(--muted-foreground)) / 0.36);
+  --scrollbar-thumb-hover: hsl(var(--text-muted-hsl, var(--muted-foreground)) / 0.6);
+  --scrollbar-track: transparent;
   --brand-hsl: 25.6 70.8% 58.4%;
   --brand: hsl(var(--brand-hsl));
   --brand-hi: #F0A15C;
@@ -351,6 +356,7 @@
    ④ 主题 · 米色典雅（原文档皮肤，浅色）
    ============================================================ */
 [data-theme="cream"] {
+  color-scheme: light;
   --canvas-hsl: 40 42.9% 93.1%;
   --chrome-hsl: 42 38.5% 89.8%;
   --elevated-hsl: 42 55.6% 96.5%;

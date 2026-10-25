@@ -53,6 +53,7 @@ async function renderTools(entry: string) {
         <Routes>
           <Route path="/tools" element={<Tools />} />
           <Route path="/chat" element={<div data-testid="chat-page">chat</div>} />
+          <Route path="/presets" element={<div data-testid="preset-library">预设库</div>} />
           <Route path="/story/:id" element={<div data-testid="story-page">story</div>} />
         </Routes>
       </MemoryRouter>,
@@ -89,8 +90,8 @@ describe('编辑区一级入口', () => {
     expect(locationText()).toBe('/chat');
   });
 
-  it('带 focus 的整理入口停在选择页，不被重定向走', async () => {
-    for (const focus of ['summary', 'story-tree', 'worldbook', 'preset']) {
+  it('故事与世界书 focus 停在对应选择页', async () => {
+    for (const focus of ['summary', 'story-tree', 'worldbook']) {
       await act(async () => { root.unmount(); });
       root = createRoot(container);
       await renderTools(`/tools?focus=${focus}`);
@@ -98,6 +99,12 @@ describe('编辑区一级入口', () => {
       expect(container.querySelector('[data-testid="chat-page"]')).toBeNull();
       expect(locationText()).toBe(`/tools?focus=${focus}`);
     }
+  });
+
+  it('旧预设 focus 转到预设库的选择页', async () => {
+    await renderTools('/tools?focus=preset');
+    expect(container.querySelector('[data-testid="preset-library"]')).not.toBeNull();
+    expect(locationText()).toBe('/presets?mode=select');
   });
 
   it('无法识别的 focus 同样回到聊天工作台，不留白页', async () => {

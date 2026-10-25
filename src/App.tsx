@@ -26,6 +26,7 @@ const PAGE_LOADERS = {
   assets: () => import("./pages/AssetLibrary"),
   cardViewer: () => import("./pages/CardViewer"),
   preset: () => import("./pages/Preset"),
+  presets: () => import("./pages/PresetLibrary"),
   regex: () => import("./pages/RegexTool"),
   beautify: () => import("./pages/Beautify"),
   notFound: () => import("./pages/NotFound"),
@@ -43,6 +44,7 @@ const WorldBook = lazy(PAGE_LOADERS.worldbook);
 const AssetLibrary = lazy(PAGE_LOADERS.assets);
 const CardViewer = lazy(PAGE_LOADERS.cardViewer);
 const Preset = lazy(PAGE_LOADERS.preset);
+const PresetLibrary = lazy(PAGE_LOADERS.presets);
 const RegexTool = lazy(PAGE_LOADERS.regex);
 const Beautify = lazy(PAGE_LOADERS.beautify);
 const NotFound = lazy(PAGE_LOADERS.notFound);
@@ -62,6 +64,7 @@ const App = () => {
       <Route path="/worldbook" element={<WorldBook />} />
       <Route path="/card-viewer" element={<CardViewer />} />
       <Route path="/preset" element={<Preset />} />
+      <Route path="/presets" element={<PresetLibrary />} />
       <Route path="/regex" element={<RegexTool />} />
       <Route path="/beautify" element={<Beautify />} />
       <Route path="/settings" element={<SettingsPage />} />

@@ -10,7 +10,7 @@
  * - actions/leftActions 契约保留：页面专属操作条仍在主区顶部一行
  *
  * 移动端适配（P0）：≥1024px 一切照旧，下面两档才有分支。
- * - <768px：侧栏与编辑区窄栏整条不渲染，改为底部标签栏（五个一级入口）+ 左侧滑出抽屉
+ * - <768px：侧栏与编辑区窄栏整条不渲染，改为底部标签栏（六个一级入口）+ 左侧滑出抽屉
  *   （承载二级导航）；状态栏让位给标签栏；页面入场按 tab 索引差决定滑入方向。
  * - 768–1024px：保留桌面侧栏但强制折叠态（64px 窄栏），页面级竖导航改走抽屉。
  */
@@ -278,7 +278,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
   const isActive = useCallback((item: NavDestination) => (
     matchesNavDestination(item, location.pathname, location.search)
   ), [location.pathname, location.search]);
-  const activeAreaKey = NAV_AREAS.find((area) => isActive(area))?.key;
+  const activeAreaKey = drawerArea?.key;
 
   const toggleArea = useCallback((key: NavAreaKey) => {
     if (key === 'editor') {
@@ -313,7 +313,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
       {isMobile && immersive ? null : client ? (
         <ClientTitleBar titleBarContent={activeChrome.titleBarContent} />
       ) : (
-        <header className="relative z-[60] h-9 shrink-0 bg-chrome border-b border-[color:var(--border-subtle)] flex items-center justify-center px-3.5">
+        <header className="relative z-40 h-9 shrink-0 bg-chrome border-b border-[color:var(--border-subtle)] flex items-center justify-center px-3.5">
           {activeChrome.titleBarContent && (
             <div className="pointer-events-none absolute left-4 hidden max-w-[320px] items-center overflow-hidden xl:flex">
               {activeChrome.titleBarContent}
@@ -326,7 +326,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
       {/* 窄屏抽屉入口：单独一条，不挤进窗口栏——客户端窗口栏左侧是拖拽区和品牌，
           网页版正中是全局搜索，两边都没有能放按钮又不打乱布局的位置。 */}
       {(drawerUsable || contextSlot) && !(isMobile && immersive) && (
-        <div className="relative z-[55] flex shrink-0 items-center gap-2 border-b border-[color:var(--border-subtle)] bg-chrome px-2 py-1.5">
+        <div className="relative z-40 flex shrink-0 items-center gap-2 border-b border-[color:var(--border-subtle)] bg-chrome px-2 py-1.5">
           {drawerUsable && (
             <button
               type="button"
@@ -433,7 +433,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
                           <SideSubItem
                             key={`${area.key}-${child.key}`}
                             item={child}
-                            active={isActive(child) || matchesEditorStoryNav(child.key, location.pathname, location.search)}
+                            active={activeAreaKey === area.key && (isActive(child) || matchesEditorStoryNav(child.key, location.pathname, location.search))}
                             onClick={() => navigate(editorDestinationPath(child.key, getEditorStoryId(), child.path))}
                           />
                         ))}

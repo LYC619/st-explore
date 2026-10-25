@@ -13,7 +13,7 @@ export function PresetDiscardDialog({ open, cancel, discard }: { open: boolean; 
 
 function RouteBoundary({ dirty }: { dirty: boolean }) {
   // Same editor identity transitions already have their own pending-target guard.
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || currentLocation.pathname !== '/preset'));
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => dirty && (currentLocation.pathname !== nextLocation.pathname || !['/preset', '/presets'].includes(currentLocation.pathname)));
   return <PresetDiscardDialog open={blocker.state === 'blocked'} cancel={() => blocker.state === 'blocked' && blocker.reset()} discard={() => blocker.state === 'blocked' && blocker.proceed()} />;
 }
 

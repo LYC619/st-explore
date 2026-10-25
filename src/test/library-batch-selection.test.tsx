@@ -233,7 +233,7 @@ describe('角色库批量选择', () => {
     await clickCard('b');
     expect(selectedIds()).toEqual(['b']);
 
-    await click(buttonByText('退出批量'));
+    await click(buttonByText('完成'));
 
     expect(selectedIds()).toEqual([]);
   });

@@ -31,7 +31,7 @@ import { getAllCharacters, getAllArchiveStories } from '@/lib/archive-db';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { resetAllTours } from '@/lib/tour-steps';
 
-export const APP_VERSION = 'v0.9.2';
+export const APP_VERSION = 'v0.9.3';
 
 interface StorageDetail {
   label: string;

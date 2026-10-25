@@ -1,8 +1,9 @@
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 import type { RegexCollectionItem } from '@/types/regex';
-import { summarizePresetCatalog, type PresetCatalogSummary } from './preset-catalog';
+import { inspectPresetScripts, summarizePresetCatalog, type PresetCatalogSummary } from './preset-catalog';
 import { classifyAssetSource, type AssetSource } from './asset-source';
+import { inferPresetIdentity, type PresetIdentity } from './preset-presentation';
 
 export type IndexedAssetStore = 'worldbooks' | 'presets' | 'regexes';
 export type IndexedAsset = WorldBookItem | PresetItem | RegexCollectionItem;
@@ -18,6 +19,9 @@ export interface AssetIndexEntry {
   sourceModifiedAt?: number;
   catalog?: PresetCatalogSummary;
   packageFileCount?: number;
+  regexCount?: number;
+  scriptCount?: number;
+  presetIdentity?: PresetIdentity;
   source?: AssetSource;
 }
 
@@ -31,7 +35,10 @@ export function toAssetIndex(item: IndexedAsset | AssetIndexEntry): AssetIndexEn
     sourceModifiedAt: 'sourceModifiedAt' in item ? item.sourceModifiedAt : undefined,
     ...('preset' in item ? { source: classifyAssetSource({ derived: !!item.derived, autoSaved: item.autoSaved, fromST: !!item.sourcePath }) }
       : 'source' in item ? { source: item.source } : {}),
-    ...('preset' in item ? { catalog: summarizePresetCatalog(item.catalog), packageFileCount: item.packageFiles?.length ?? 0 }
+    ...('preset' in item ? { catalog: summarizePresetCatalog(item.catalog), packageFileCount: item.packageFiles?.length ?? 0, regexCount: item.preset.regexRules?.length ?? 0, scriptCount: inspectPresetScripts(item.preset.originalData).length }
       : 'catalog' in item ? { catalog: item.catalog, packageFileCount: 'packageFileCount' in item ? item.packageFileCount : undefined } : {}),
+    ...(!('preset' in item) && 'regexCount' in item ? { regexCount: item.regexCount, scriptCount: item.scriptCount } : {}),
+    ...('preset' in item ? { presetIdentity: inferPresetIdentity(item.title, item.preset.originalData) }
+      : 'presetIdentity' in item ? { presetIdentity: item.presetIdentity } : {}),
   };
 }

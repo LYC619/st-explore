@@ -113,6 +113,20 @@ async function renderSection(character: ArchiveCharacter) {
 
 const thumbs = () => Array.from(container.querySelectorAll<HTMLElement>('[data-portrait-thumb]'));
 
+it('ends portrait batch management when the character changes', async () => {
+  const { character } = await setupCharacter();
+  await renderSection(character);
+  const batch = () => [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === '批量管理');
+  await act(async () => batch()!.click());
+  expect(container.textContent).toContain('已选 0 张');
+  await act(async () => thumbs()[0].click());
+  expect(container.textContent).toContain('已选 1 张');
+  await renderSection({ ...character, id: 'c2', name: '另一角色', portraitRows: [] });
+  expect(batch()).toBeTruthy();
+  expect(container.textContent).not.toContain('已选 1 张');
+  expect([...container.querySelectorAll('button')].some(button => button.textContent?.trim() === '完成')).toBe(false);
+});
+
 describe('portrait deletion confirmation', () => {
   const alert = () => document.querySelector<HTMLElement>('[role="alertdialog"]');
   const button = (label: string) => Array.from(alert()!.querySelectorAll('button')).find(entry => entry.textContent?.trim() === label)!;

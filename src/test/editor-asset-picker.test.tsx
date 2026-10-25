@@ -1,5 +1,5 @@
 /**
- * 编辑区资产选择器（/tools?focus=worldbook|preset）的行为（阶段 B3）。
+ * 编辑区世界书选择器与旧预设入口转向新库的行为。
  *
  * 原先全是 grep Tools.tsx 的 CSS 类名串。列表内容、时间标注、点击落点都是渲染后
  * 能直接断言的行为；滚动分区改为断言渲染节点的结构与声明，不再比对源码文本
@@ -68,6 +68,7 @@ async function renderTools(entry: string) {
           <Route path="/tools" element={<Tools />} />
           <Route path="/worldbook" element={<div data-testid="worldbook-page">worldbook</div>} />
           <Route path="/preset" element={<div data-testid="preset-page">preset</div>} />
+          <Route path="/presets" element={<div data-testid="preset-library">preset library</div>} />
           <Route path="/chat" element={<div data-testid="chat-page">chat</div>} />
         </Routes>
       </MemoryRouter>,
@@ -115,28 +116,12 @@ describe('编辑区资产选择器列表', () => {
     expect(container.querySelector('[data-testid="worldbook-page"]')).not.toBeNull();
   });
 
-  it('预设 focus 换成读预设库，落点是预设编辑器', async () => {
-    getAllPresets.mockResolvedValue([{
-      id: 'ps_1',
-      title: '甲预设',
-      preset: { prompts: [{}, {}, {}], regexRules: [], originalData: {} },
-      createdAt: IMPORTED_AT,
-      updatedAt: UPDATED_AT,
-    }]);
-    await renderTools('/tools?focus=preset');
-
+  it('旧预设 focus 直接转向独立库选择模式，不再加载旧选择器', async () => {
+    await renderTools('/tools?focus=preset&assetId=ps%261&characterId=c');
+    expect(locationText()).toBe('/presets?characterId=c&presetId=ps%261&mode=select');
+    expect(container.querySelector('[data-testid="preset-library"]')).not.toBeNull();
     expect(getAllWorldBooks).not.toHaveBeenCalled();
-    const presetButton = Array.from(container.querySelectorAll<HTMLButtonElement>('table button'))
-      .find(el => el.textContent?.includes('甲预设'));
-    expect(presetButton).toBeTruthy();
-    expect(presetButton!.textContent).toContain('未标版本');
-
-    await act(async () => { presetButton!.click(); });
-    expect(container.querySelector('[data-preset-details]')?.textContent).toContain('3 个提示词');
-    const edit = Array.from(container.querySelectorAll('button')).find(el => el.textContent === '编辑原版');
-    expect(edit).toBeTruthy();
-    await act(async () => { edit!.click(); });
-    expect(locationText()).toBe('/preset?assetId=ps_1&from=catalog');
+    expect(getAllPresets).not.toHaveBeenCalled();
   });
 
   it('资产 id 带特殊字符时深链做转义，不会把参数截断', async () => {

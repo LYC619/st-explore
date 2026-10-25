@@ -7,7 +7,7 @@ import { NAV_AREAS, findNavArea } from '@/lib/navigation-model';
 
 /**
  * 当前路由落在第几个一级区域；不属于任何区域（如 /settings）返回 -1。
- * 判定复用 findNavArea，所以含子项：编辑区的 /worldbook、附属库的 ?tab=preset
+ * 判定复用 findNavArea，所以含子项：编辑区的 /worldbook、预设库的 /presets
  * 都会点亮各自的父 tab，也不会和侧栏的高亮判据分叉。
  */
 export function activeAreaIndex(pathname: string, search: string): number {

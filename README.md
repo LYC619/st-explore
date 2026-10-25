@@ -6,7 +6,7 @@
 
 > SillyTavern 角色卡与聊天记录的**归档 · 编辑**工具。
 
-[![version](https://img.shields.io/badge/version-v0.9.2-orange)](https://github.com/LYC619/st-explore/releases)
+[![version](https://img.shields.io/badge/version-v0.9.3-orange)](https://github.com/LYC619/st-explore/releases)
 [![platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows-blue)](https://github.com/LYC619/st-explore)
 [![stack](https://img.shields.io/badge/stack-React%2018%20%2B%20Tauri%202-4FC08D)](https://github.com/LYC619/st-explore)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
@@ -267,7 +267,9 @@ ST-Explore （拾忆）定位为 SillyTavern 用户的**离线归档与二次编
 
 ##### 预设编辑页
 
-方便用户自己对预设进行 DIY。
+左侧“预设库”位于角色库下方。以系列卡片浏览版本，搜索作者或模型，查看作者说明、提示词、正则与脚本；高级资料点“整理资料”再填写。导入 JSON 和随附说明时先识别名称、版本及模型线索，再确认入库。桌面可打开取用文件夹，也可导出 ZIP。
+
+点击“复制后 DIY”进入预设编辑页，副本保留原系列和附件，原版保持独立。编辑后可返回预设库，恢复当前版本和筛选。文件名与当前配置提供的模型线索不代表已经确认适配。
 
 ![预设编辑器](docs/readme/readme-45.png)
 

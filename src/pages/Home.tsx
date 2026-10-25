@@ -94,7 +94,7 @@ const EDIT_TOOLS = [
   { label: '总结', description: EDITOR_TOOL_COPY.summaryAndTree, icon: BookOpenText, path: '/tools?focus=summary' },
   { label: '世界书', description: EDITOR_TOOL_COPY.worldbook, icon: BookOpen, path: '/tools?focus=worldbook' },
   { label: '角色卡', description: EDITOR_TOOL_COPY.card, icon: IdCard, path: '/card-viewer' },
-  { label: '预设', description: EDITOR_TOOL_COPY.preset, icon: SlidersHorizontal, path: '/tools?focus=preset' },
+  { label: '预设', description: EDITOR_TOOL_COPY.preset, icon: SlidersHorizontal, path: '/presets?mode=select' },
 ];
 
 const Home = () => {
@@ -240,7 +240,7 @@ const Home = () => {
       label: '预设',
       description: '复用提示词、顺序和生成参数',
       count: assetCounts.presets,
-      onClick: () => navigate('/assets?tab=preset'),
+      onClick: () => navigate('/presets'),
     },
     {
       label: '正则',

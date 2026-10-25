@@ -54,6 +54,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const [moveRecord, setMoveRecord] = useState<SummaryItem | StoryTree | null>(null);
   const [revision, setRevision] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [batchMode, setBatchMode] = useState(false);
   const [worldbookOpen, setWorldbookOpen] = useState(false);
   const hasAI = !!loadAPIConfig().apiKey;
 
@@ -68,7 +69,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
     setExpandedId(null);
     setMoveRecord(null);
   }, [storyId]);
-  useEffect(() => { setSelected(new Set()); setWorldbookOpen(false); setManualOpen(false); }, [storyId, kind, branchFilter]);
+  useEffect(() => { setBatchMode(false); setSelected(new Set()); setWorldbookOpen(false); setManualOpen(false); }, [storyId, kind, branchFilter]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +114,21 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const items = kind === 'tree' ? visibleTrees : visibleSummaries;
   const selectedBranchId = branchFilter !== 'all' && branchFilter !== 'main' ? branchFilter : null;
   const branchSelectionReady = branchFilter !== 'all';
+  const canBatch = kind !== 'tree' && !!story?.characterId && visibleSummaries.length > 0;
+  const toggleSelected = (id: string) => setSelected(previous => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const exitBatchMode = () => { setBatchMode(false); setSelected(new Set()); };
+  useEffect(() => {
+    const visibleIds = new Set(visibleSummaries.map(item => item.id));
+    setSelected(previous => {
+      const next = new Set([...previous].filter(id => visibleIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+    if (!canBatch) setBatchMode(false);
+  }, [visibleSummaries, canBatch]);
 
   if (stories.length === 0) {
     return (
@@ -153,7 +169,8 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
           </Select>
         )}
         <div className="flex-1" />
-        {kind !== 'tree' && story?.characterId && <Button variant="outline" size="sm" disabled={!selected.size} onClick={() => setWorldbookOpen(true)}>加入世界书（{selected.size}）</Button>}
+        {canBatch && <Button variant={batchMode ? 'secondary' : 'outline'} size="sm" aria-pressed={batchMode}
+          onClick={() => batchMode ? exitBatchMode() : setBatchMode(true)}>{batchMode ? '完成' : '批量管理'}</Button>}
         {kind !== 'tree' && (
           <Button
             variant="outline"
@@ -182,6 +199,16 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
         )}
       </div>
 
+      {batchMode && canBatch && <div aria-label="记录批量管理" className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-elevated px-3 py-2 text-xs">
+        <label className="flex min-h-8 cursor-pointer items-center gap-2">
+          <Checkbox aria-label="全选当前记录" checked={selected.size === visibleSummaries.length ? true : selected.size > 0 ? 'indeterminate' : false}
+            onCheckedChange={checked => setSelected(checked === true ? new Set(visibleSummaries.map(item => item.id)) : new Set())} />
+          全选当前记录
+        </label>
+        <span className="text-muted-foreground">已选 {selected.size} 条</span>
+        {selected.size > 0 && <Button variant="outline" size="sm" className="ml-auto" onClick={() => setWorldbookOpen(true)}>加入世界书（{selected.size}）</Button>}
+      </div>}
+
       {recordsError ? <p role="alert" className="text-sm text-destructive">读取记录失败：{recordsError}</p>
         : loadingRecords ? <p role="status" className="text-sm text-muted-foreground">正在读取记录…</p>
         : items.length === 0 ? (
@@ -201,13 +228,13 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
           {visibleTrees.map((t) => (
             <Card key={t.id}>
               <CardContent className="py-3 px-4">
-                <p className="text-sm font-medium flex items-center gap-2">
+                <div className="text-sm font-medium flex items-center gap-2">
                   <span className="truncate" title={t.title}>{t.title}</span>
                   <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(t.branchId)}</Badge>
                   <span className="text-xs text-muted-foreground font-normal shrink-0">
                     {t.nodes.length} 个节点 · 更新于{formatListTime(t.updatedAt)}
                   </span>
-                </p>
+                </div>
                 <div className="mt-2">
                   <StoryTreePreview key={t.id} tree={t} />
                 </div>
@@ -222,12 +249,11 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
             const manual = !item.genParams;
             const expanded = expandedId === item.id;
             return (
-              <Card key={item.id} className="cursor-pointer" onClick={() => setExpandedId(expanded ? null : item.id)}>
+              <Card key={item.id} className={cn('cursor-pointer', batchMode && selected.has(item.id) && 'border-primary/60 bg-primary/5')}
+                onClick={() => batchMode ? toggleSelected(item.id) : setExpandedId(expanded ? null : item.id)}>
                 <CardContent className="py-3 px-4">
                   <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
-                    <span onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={checked => setSelected(previous => {
-                      const next = new Set(previous); if (checked === true) next.add(item.id); else next.delete(item.id); return next;
-                    })} /></span>
+                    {batchMode && <span onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={() => toggleSelected(item.id)} /></span>}
                     <span className="truncate" title={item.title}>{item.title}</span>
                     {(item.diaryOwner || item.genParams?.diaryOwner) && <Badge variant="secondary">{item.diaryOwner || item.genParams?.diaryOwner}</Badge>}
                     {summaryVolumeLabel(item) && (
@@ -245,13 +271,13 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                   <div className={cn('break-words text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')}>
                     <MarkdownLite text={item.content} />
                   </div>
-                  {!expanded && item.content.length > 160 && (
+                  {!batchMode && !expanded && item.content.length > 160 && (
                     <p className="text-xs text-primary/80 mt-1">点击展开全文</p>
                   )}
-                  <div className="mt-2 flex gap-2" onClick={event => event.stopPropagation()}>
+                  {!batchMode && <div className="mt-2 flex gap-2" onClick={event => event.stopPropagation()}>
                     <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
                     <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(item.content).then(() => toast({ title: '已复制正文' })).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}>复制正文</Button>
-                  </div>
+                  </div>}
                 </CardContent>
               </Card>
             );
@@ -264,7 +290,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
       {manualOpen && story && kind !== 'tree' && <CaptureRecordDialog storyId={story.id} branchId={selectedBranchId} initialKind={kind}
         onClose={() => setManualOpen(false)} onSaved={() => { setRevision(value => value + 1); toast({ title: `已保存${KIND_LABELS[kind]}` }); }} />}
       {worldbookOpen && story?.characterId && <RecordsToWorldbookDialog characterId={story.characterId} records={visibleSummaries.filter(item => selected.has(item.id))}
-        onClose={() => setWorldbookOpen(false)} onSaved={() => { setSelected(new Set()); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }} />}
+        onClose={() => setWorldbookOpen(false)} onSaved={() => { exitBatchMode(); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }} />}
     </div>
   );
 }

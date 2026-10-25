@@ -1,6 +1,7 @@
 import { sha256 } from 'js-sha256';
 import type { PresetCatalog, PresetItem, PresetStatus, NormalizedPreset } from '@/types/preset';
-import { detectSourceModel, exportPreset } from './preset-parser';
+import { exportPreset } from './preset-parser';
+import { getPresetPresentation, inferPresetIdentity, type PresetIdentity } from './preset-presentation';
 import { stableJson } from './roleplay/fingerprint';
 
 export const PRESET_STATUS_LABELS: Record<PresetStatus, string> = {
@@ -57,9 +58,7 @@ export function inspectPresetScripts(value: unknown): { name: string; path: stri
 }
 
 export function suggestPresetModels(title: string, preset: NormalizedPreset): string[] {
-  const configured = detectSourceModel(preset.originalData).model;
-  const text = `${title} ${configured}`;
-  return PRESET_MODELS.filter(model => new RegExp(`\\b${model}\\b`, 'i').test(text));
+  return inferPresetIdentity(title, preset.originalData).models;
 }
 
 export interface PresetCatalogSummary extends Omit<PresetCatalog, 'notes' | 'releaseNotes' | 'modelNotes'> {
@@ -78,7 +77,12 @@ export function summarizePresetCatalog(catalog?: PresetCatalog): PresetCatalogSu
     representativeCards: fields.representativeCards?.slice(0, 20).map(value => value.slice(0, 120)),
     noteExcerpt: fields.notes?.replace(/\s+/g, ' ').slice(0, 180) };
 }
-export function presetOptionLabel(item: Pick<PresetItem, 'title' | 'catalog'>): string {
-  const c = item.catalog;
-  return [c?.favorite ? '★' : '', item.title, c?.author, c?.series !== item.title ? c?.series : '', c?.version, c?.variant, c?.models?.join(' / '), c?.status === 'retired' ? '已停用' : ''].filter(Boolean).join(' · ');
+export function presetOptionLabel(item: Pick<PresetItem, 'title' | 'catalog'> & { preset?: PresetItem['preset']; presetIdentity?: PresetIdentity }): string {
+  const p = getPresetPresentation(item), c = item.catalog;
+  const parts = [p.displayName];
+  for (const value of [p.version, c?.variant, p.author, ...p.models]) {
+    if (value && !parts.some(part => part.toLocaleLowerCase().includes(value.toLocaleLowerCase()))) parts.push(value);
+  }
+  if (c?.status === 'retired') parts.push('已停用');
+  return `${c?.favorite ? '★ ' : ''}${parts.join(' · ')}`;
 }

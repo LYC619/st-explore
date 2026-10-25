@@ -547,7 +547,8 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     const titleBar = read('src/components/ClientTitleBar.tsx');
     const layout = read('src/components/AppLayout.tsx');
     expect(titleBar).toContain('relative z-[60] h-11');
-    expect(layout).toContain('relative z-[60] h-9');
+    // Web search/navigation belongs below modal dialogs; only native window controls stay above.
+    expect(layout).toContain('relative z-40 h-9');
   });
 
   it('Tauri 客户端将全局搜索并入可拖动的自定义窗口栏', () => {

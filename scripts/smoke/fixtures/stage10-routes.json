@@ -4,6 +4,8 @@
   "routes": [
     "/",
     "/library",
+    "/presets",
+    "/presets?mode=select",
     "/tools",
     "/chat",
     "/assets",

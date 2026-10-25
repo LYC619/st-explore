@@ -144,7 +144,13 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
     setDeleteError(null);
   }, [pendingDelete]);
 
-  useEffect(() => { setPendingDelete(null); }, [character.id, vaultEpoch]);
+  useEffect(() => {
+    setPendingDelete(null);
+    setSelectMode(false);
+    setSelected(new Set());
+    setMoveOpen(false);
+    setMoveTarget('');
+  }, [character.id, vaultEpoch]);
 
   useEffect(() => {
     let cancelled = false;
@@ -384,10 +390,11 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
           <Button
             variant={selectMode ? 'default' : 'outline'}
             size="sm"
+            aria-pressed={selectMode}
             onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           >
             <CheckSquare className="w-3.5 h-3.5 mr-1" />
-            {selectMode ? '退出批量' : '批量管理'}
+            {selectMode ? '完成' : '批量管理'}
           </Button>
           <Button variant="outline" size="sm" onClick={() => void handleAddRow()}>
             <Plus className="w-3.5 h-3.5 mr-1" />

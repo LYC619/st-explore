@@ -8,15 +8,13 @@ import {
   BookOpen, IdCard, MessageSquare, Network, Regex, ScrollText, SlidersHorizontal, Palette, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { NAV_AREAS } from '@/lib/navigation-model';
+import { findNavArea, matchesRoutePrefix } from '@/lib/navigation-model';
 import {
   EDITOR_STORY_CHANGE_EVENT,
   editorStoryPathForNavKey,
   getEditorStoryId,
   matchesEditorStoryNav,
 } from '@/lib/editor-story-context';
-
-const EDITOR_PREFIXES = NAV_AREAS.find((area) => area.key === 'editor')?.prefixes ?? [];
 
 interface RailItem {
   key: string;
@@ -38,7 +36,7 @@ const RAIL_ITEMS: RailItem[] = [
   { key: 'story-tree', label: '故事树', icon: Network, fallbackPath: '/tools?focus=story-tree', storyNav: true, focus: 'story-tree' },
   { key: 'worldbook', label: '世界书', icon: BookOpen, fallbackPath: '/tools?focus=worldbook', prefix: '/worldbook', focus: 'worldbook' },
   { key: 'card', label: '角色卡', icon: IdCard, fallbackPath: '/card-viewer', prefix: '/card-viewer' },
-  { key: 'preset', label: '预设', icon: SlidersHorizontal, fallbackPath: '/tools?focus=preset', prefix: '/preset', focus: 'preset' },
+  { key: 'preset', label: '预设', icon: SlidersHorizontal, fallbackPath: '/presets?mode=select', prefix: '/preset' },
   { key: 'regex', label: '正则', icon: Regex, fallbackPath: '/regex', prefix: '/regex' },
   { key: 'beautify', label: '美化', icon: Palette, fallbackPath: '/beautify', prefix: '/beautify' },
 ];
@@ -54,7 +52,7 @@ export function EditorRail() {
     return () => window.removeEventListener(EDITOR_STORY_CHANGE_EVENT, sync);
   }, []);
 
-  if (!EDITOR_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
+  if (findNavArea(pathname, search)?.key !== 'editor') return null;
 
   const focusParam = pathname.startsWith('/tools') ? new URLSearchParams(search).get('focus') : null;
 
@@ -68,7 +66,7 @@ export function EditorRail() {
         {RAIL_ITEMS.map((item) => {
           const Icon = item.icon;
           const active = (item.storyNav ? matchesEditorStoryNav(item.key, pathname, search) : false)
-            || (item.prefix ? pathname.startsWith(item.prefix) : false)
+            || (item.prefix ? matchesRoutePrefix(pathname, item.prefix) : false)
             || (item.focus ? focusParam === item.focus : false);
           return (
             <button

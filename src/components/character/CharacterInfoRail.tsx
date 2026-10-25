@@ -1,5 +1,5 @@
 /**
- * 角色页左信息栏（10.3a，对照 character-detail.html：272px 固定不滚动）。
+ * 角色页左信息栏：展开为 304px，收起为 36px；展开内容可滚动但不显示滚动轨道。
  * 立绘 3:4（点击 lightbox 放大）→ 信息行（名称/类型下拉/评分/最后游玩/字数/游玩时长 tooltip）
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
@@ -93,14 +93,17 @@ export function CharacterInfoRail({
   return (
     <aside
       data-character-info-rail={stacked ? 'stacked' : 'rail'}
+      data-info-collapsed={collapsed}
+      aria-label="角色卡图与信息"
+      tabIndex={!stacked && !collapsed ? 0 : undefined}
       className={cn(
-        collapsed ? (stacked ? 'border-b px-4 py-2' : 'w-12 shrink-0 border-r py-3 flex flex-col items-center') : stacked
+        collapsed ? (stacked ? 'border-b px-4 py-2' : 'w-9 shrink-0 border-r py-3 flex flex-col items-center overflow-hidden') : stacked
           ? 'border-b border-[color:var(--hairline-inner)] px-4 py-4'
-          : 'w-[304px] shrink-0 border-r border-[color:var(--hairline-inner)] px-6 py-6 overflow-y-auto scrollbar-thin',
+          : 'w-[304px] shrink-0 border-r border-[color:var(--hairline-inner)] px-6 py-6 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
       )}
     >
       <Button variant="ghost" size="sm" onClick={toggleCollapsed}
-        className={cn(!collapsed && 'mb-3', stacked && 'w-full justify-between')}
+        className={cn(!collapsed && 'mb-3', stacked && 'w-full justify-between', collapsed && !stacked && 'w-8 shrink-0 p-0')}
         aria-expanded={!collapsed} aria-label={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}
         title={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}>
         {stacked && <span>角色卡图与信息</span>}

@@ -77,9 +77,9 @@ it('waits for reader save and keeps the current content on failure', async () =>
 });
 it('keeps failed note inputs and retries with the entity captured when the editor opened', async () => {
   api.updateCharacter.mockRejectedValueOnce(new Error('写入失败')).mockImplementation(async (id, update) => ({ ...characters.find(c => c.id === id), ...await update(characters.find(c => c.id === id)) }));
-  await render(); await click('备注'); await click('新建备注'); await input('备注内容', '新的心得'); await click('保存备注');
+  await render(); await click('备注'); await click('新建备注'); await input('备注正文', '新的心得'); await click('保存');
   expect(document.querySelector('textarea')).toHaveValue('新的心得'); expect(document.body).toHaveTextContent('写入失败');
-  await click('保存备注'); expect(api.updateCharacter.mock.calls.map(c => c[0])).toEqual(['a', 'a']); expect(changed).toHaveBeenCalledWith(expect.objectContaining({ id: 'a', notes: [expect.objectContaining({ body: '新的心得' })] }));
+  await click('保存'); expect(api.updateCharacter.mock.calls.map(c => c[0])).toEqual(['a', 'a']); expect(changed).toHaveBeenCalledWith(expect.objectContaining({ id: 'a', notes: [expect.objectContaining({ body: '新的心得' })] }));
   expect(changed.mock.calls[0][0].updatedAt).toBeGreaterThan(1);
 });
 it('saves rating and labels through the shared domain, including the rating tier', async () => {
@@ -91,11 +91,35 @@ it('saves rating and labels through the shared domain, including the rating tier
 it('does not submit an edit twice or change its entity when selection moves during a save', async () => {
   let finish!: (value: ArchiveCharacter) => void;
   api.updateCharacter.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
-  await render(); await click('备注'); await click('新建备注'); await input('备注内容', 'A 的心得'); await click('保存备注');
+  await render(); await click('备注'); await click('新建备注'); await input('备注正文', 'A 的心得'); await click('保存');
   await click('保存中…'); expect(api.updateCharacter).toHaveBeenCalledTimes(1);
   await click('选择角色b'); await act(async () => finish({ ...characters[0], notes: [{ id: 'n', body: 'A 的心得', at: 2 }] }));
   expect(api.updateCharacter.mock.calls[0][0]).toBe('a'); expect(changed.mock.calls[0][0].id).toBe('a');
   expect(document.querySelector('h2')).toHaveTextContent('角色b');
+});
+it('uses the shared note/heading navigation in review and remembers each character independently', async () => {
+  const cards = characters.map(character => ({ ...character, notes: [
+    { id: 'older', at: 1, body: `# ${character.id} 较早备注\n\n## 跳转位置\n\n这里是原文` },
+    { id: 'newer', at: 2, body: `# ${character.id} 最新备注` },
+  ] }));
+  const scroll = vi.fn(); Element.prototype.scrollIntoView = scroll;
+  await render(cards); await click('备注');
+  expect(host.querySelector('aside[aria-label="备注导航"]')).not.toBeNull();
+  const selectNote = async (title: string) => {
+    const note = [...host.querySelectorAll<HTMLButtonElement>('nav[aria-label="切换备注"] button')].find(button => button.textContent?.includes(title));
+    expect(note).toBeTruthy(); await act(async () => note!.click());
+  };
+  await selectNote('a 较早备注'); await click('跳转位置');
+  expect(document.activeElement).toHaveTextContent('跳转位置');
+  expect(scroll).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+  await click('选择角色b'); expect(host.querySelector('[data-notes-browser] h1')).toHaveTextContent('b 最新备注');
+  expect(host.querySelector('[aria-current="location"]')).toBeNull();
+  await click('选择角色a'); expect(host.querySelector('[data-notes-browser] h1')).toHaveTextContent('a 较早备注');
+  await render(cards, 'reopen-review');
+  expect(host.querySelector('[data-notes-browser] h1')).toHaveTextContent('a 较早备注');
+  await click('编辑备注');
+  expect(document.querySelector('textarea[aria-label="备注正文"]')).toHaveValue(cards[0].notes[0].body);
+  await click('预览'); expect(document.querySelector('[role="dialog"] .chat-markdown h2')).toHaveTextContent('跳转位置');
 });
 it('keeps a failed story status selection for retry', async () => {
   api.updateStory.mockRejectedValueOnce(new Error('状态写入失败')).mockResolvedValue({ id: 's-a', status: '已完结' });

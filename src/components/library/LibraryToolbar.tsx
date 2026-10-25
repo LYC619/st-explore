@@ -79,9 +79,10 @@ export function LibraryToolbar({
         <Button
           variant={batchMode ? 'default' : 'outline'}
           size="sm"
+          aria-pressed={batchMode}
           onClick={onToggleBatchMode}
         >
-          {batchMode ? '退出批量' : '批量管理'}
+          {batchMode ? '完成' : '批量管理'}
         </Button>
       )}
       <span className="flex-1" />

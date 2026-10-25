@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { listAssetIndex } from '@/lib/asset-index';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
 import { presetOptionLabel } from '@/lib/preset-catalog';
+import { getPresetPresentation } from '@/lib/preset-presentation';
 import { subscribeRecordChanges } from '@/lib/repo/changes';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { Input } from '@/components/ui/input';
@@ -28,8 +29,8 @@ export function PresetSelect({ value, onChange }: { value: string | null; onChan
     const offVault = subscribeActiveVault(() => { setItems([]); setQuery(''); setModel(''); setLoading(true); void load(); });
     return () => { active = false; offChange(); offVault(); };
   }, [retry]);
-  const models = useMemo(() => [...new Set(items.flatMap(item => item.catalog?.models ?? []))].sort(), [items]);
-  const visible = items.filter(item => item.id === value || ((showRetired || item.catalog?.status !== 'retired') && (!model || item.catalog?.models?.includes(model)) && [presetOptionLabel(item), ...(item.catalog?.tags ?? [])].join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
+  const models = useMemo(() => [...new Set(items.flatMap(item => getPresetPresentation(item).models))].sort(), [items]);
+  const visible = items.filter(item => item.id === value || ((showRetired || item.catalog?.status !== 'retired') && (!model || getPresetPresentation(item).models.includes(model)) && [presetOptionLabel(item), item.title, item.catalog?.series, ...(item.catalog?.tags ?? [])].join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
   return <div className="space-y-2">
     <div className="flex gap-2"><Input aria-label="查找挂载预设" placeholder="搜索作者、版本或模型" value={query} onChange={e => setQuery(e.target.value)} />
       <select aria-label="按适配模型筛选预设" className={`${catalogSelectClass} max-w-36`} value={model} onChange={e => setModel(e.target.value)}><option value="">全部模型</option>{models.map(model => <option key={model}>{model}</option>)}</select></div>

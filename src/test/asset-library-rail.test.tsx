@@ -11,7 +11,7 @@
  */
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorldBookItem } from '@/types/worldbook';
 
@@ -67,7 +67,10 @@ async function renderPage(entry = '/assets?tab=worldbook') {
   await act(async () => {
     root.render(
       <MemoryRouter initialEntries={[entry]}>
-        <AssetLibrary />
+        <Routes>
+          <Route path="/assets" element={<AssetLibrary />} />
+          <Route path="/presets" element={<div data-testid="preset-library">预设库</div>} />
+        </Routes>
         <Location />
       </MemoryRouter>,
     );
@@ -107,12 +110,20 @@ afterEach(() => {
 });
 
 describe('附属库单侧栏', () => {
-  it('资产类别视图只有一套侧栏，四个类别都在里面', async () => {
+  it('旧预设深链先转向新库并保留选中项，不加载无关附属资产', async () => {
+    await renderPage('/assets?tab=preset&presetId=p%26one');
+    expect(locationText()).toBe('/presets?presetId=p%26one');
+    expect(container.querySelector('[data-testid="preset-library"]')).not.toBeNull();
+    expect(getAllWorldBooks).not.toHaveBeenCalled();
+  });
+
+  it('资产类别视图只有一套侧栏，预设独立后保留三个类别', async () => {
     await renderPage();
 
-    for (const label of ['世界书', '预设', '正则', '其他资产']) {
+    for (const label of ['世界书', '正则', '其他资产']) {
       expect(rail().textContent).toContain(label);
     }
+    expect(rail().textContent).not.toContain('预设');
   });
 
   it('其他资产视图仍然只有一套侧栏，归档子分类挂在它下面', async () => {
@@ -122,14 +133,14 @@ describe('附属库单侧栏', () => {
     expect(text).toContain('其他资产');
     expect(text).toContain('概览');
     expect(text).toContain('快速回复');
-    // 三类结构化资产不会因为进了其他资产就从侧栏消失
+    // 结构化资产不会因为进了其他资产就从侧栏消失
     expect(text).toContain('世界书');
   });
 
   it('侧栏切类别时清掉上一个视图的 query，两个参数不叠加', async () => {
     await renderPage('/assets?section=extensions');
-    await clickIn(rail(), '预设');
-    expect(locationText()).toBe('/assets?tab=preset');
+    await clickIn(rail(), '正则');
+    expect(locationText()).toBe('/assets?tab=regex');
 
     await clickIn(rail(), '其他资产');
     expect(locationText()).toBe('/assets');

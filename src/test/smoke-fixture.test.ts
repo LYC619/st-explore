@@ -14,6 +14,8 @@ describe('stage 10 smoke fixture', () => {
     expect(fixture.routes).toEqual(expect.arrayContaining([
       '/',
       '/library',
+      '/presets',
+      '/presets?mode=select',
       '/tools',
       '/chat',
       '/assets',

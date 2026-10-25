@@ -1,8 +1,10 @@
 /**
  * 全局搜索（10.1-A2 最小可用）：标题栏 ⌘K 搜索框的数据层。
- * 只做名称/标题的子串匹配（不做全文检索）：角色名 / 故事名 / 世界书·预设·正则标题。
+ * 名称和列表资料的子串匹配（不检索正文）：角色名 / 故事名 / 资产标题及预设管理资料。
  * 排序：前缀命中 > 包含命中；每类截断，避免下拉过长。
  */
+import type { AssetIndexEntry } from './asset-index-entry';
+import { getPresetPresentation } from './preset-presentation';
 
 export type SearchKind = 'character' | 'story' | 'worldbook' | 'preset' | 'regex';
 
@@ -12,7 +14,7 @@ export interface SearchEntry {
   title: string;
   /** 次要说明（角色名/未绑定等），展示用 */
   sub?: string;
-  /** 搜索用的原始标题；title 可以是展示名。 */
+  /** 可搜索的标题和轻量列表资料；不包含资产正文。 */
   searchText?: string;
   /** 点击跳转路径 */
   path: string;
@@ -30,7 +32,7 @@ interface BuildInput {
   characters: { id: string; name: string; displayName?: string }[];
   stories: { id: string; title: string; characterId?: string }[];
   worldbooks: { id: string; title: string }[];
-  presets: { id: string; title: string }[];
+  presets: Pick<AssetIndexEntry, 'id' | 'title' | 'catalog' | 'presetIdentity'>[];
   regexes: { id: string; title: string }[];
 }
 
@@ -57,9 +59,17 @@ export function buildSearchEntries(input: BuildInput): SearchEntry[] {
     ...input.worldbooks.map<SearchEntry>((w) => ({
       kind: 'worldbook', id: w.id, title: w.title, path: `/worldbook?assetId=${w.id}`,
     })),
-    ...input.presets.map<SearchEntry>((p) => ({
-      kind: 'preset', id: p.id, title: p.title, path: `/preset?assetId=${p.id}`,
-    })),
+    ...input.presets.map<SearchEntry>((p) => {
+      const identity = getPresetPresentation(p), catalog = p.catalog;
+      return {
+        kind: 'preset', id: p.id, title: p.title, path: `/presets?presetId=${encodeURIComponent(p.id)}`,
+        sub: [identity.author, identity.version, identity.models.join(' / ')].filter(Boolean).join(' · ') || undefined,
+        searchText: [p.title, identity.displayName, identity.author, identity.series, identity.version,
+          ...identity.models, ...identity.purposes, catalog?.variant, catalog?.noteExcerpt,
+          ...(catalog?.tags ?? []), ...(catalog?.representativeCards ?? []),
+        ].filter(Boolean).join('\n'),
+      };
+    }),
     ...input.regexes.map<SearchEntry>((r) => ({
       kind: 'regex', id: r.id, title: r.title, path: `/regex?assetId=${r.id}`,
     })),

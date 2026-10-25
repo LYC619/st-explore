@@ -495,7 +495,7 @@ export default function Preset() {
       </AlertDialog>
       <fieldset disabled={creatingDiy} className="contents">
       <div className="container mx-auto px-4 py-6">
-        <Button variant="ghost" className="mb-3" onClick={() => navigate(`${searchParams.get('from') === 'library' ? '/assets?tab=preset' : '/tools?focus=preset'}${currentItemId ? `&presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />返回预设库 / 管理资料与附件</Button>
+        <Button variant="ghost" className="mb-3" onClick={() => navigate(`/presets${currentItemId ? `?presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />返回预设库</Button>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card">
             <SlidersHorizontal className="w-5 h-5 text-primary-foreground" />

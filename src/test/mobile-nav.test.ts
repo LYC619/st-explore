@@ -30,23 +30,28 @@ describe('视口档位', () => {
 });
 
 describe('一级区域索引', () => {
-  it('五个一级入口各归各位，聊天与聊天处理各自独立', () => {
+  it('六个一级入口各归各位，预设库位于角色库下面', () => {
     expect(activeAreaIndex('/', '')).toBe(0);
     expect(activeAreaIndex('/play', '')).toBe(1);
     expect(activeAreaIndex('/library', '')).toBe(2);
-    expect(activeAreaIndex('/chat', '')).toBe(3);
-    expect(activeAreaIndex('/assets', '?tab=worldbook')).toBe(4);
+    expect(activeAreaIndex('/presets', '')).toBe(3);
+    expect(activeAreaIndex('/chat', '')).toBe(4);
+    expect(activeAreaIndex('/assets', '?tab=worldbook')).toBe(5);
   });
 
   it('子界面点亮父 tab', () => {
     // 编辑区：独立路由的和挂 ?focus= 的都要落在编辑区
-    expect(activeAreaIndex('/worldbook', '')).toBe(3);
-    expect(activeAreaIndex('/card-viewer', '')).toBe(3);
-    expect(activeAreaIndex('/tools', '?focus=summary')).toBe(3);
+    expect(activeAreaIndex('/worldbook', '')).toBe(4);
+    expect(activeAreaIndex('/card-viewer', '')).toBe(4);
+    expect(activeAreaIndex('/tools', '?focus=summary')).toBe(4);
+    expect(activeAreaIndex('/preset', '?assetId=demo&characterId=role')).toBe(4);
     // 角色详情页归角色库
     expect(activeAreaIndex('/character/abc', '')).toBe(2);
-    // 附属库换 tab 不改一级归属
-    expect(activeAreaIndex('/assets', '?tab=preset')).toBe(4);
+    // 预设旧深链和选择模式均归新的一级预设库。
+    expect(activeAreaIndex('/assets', '?tab=preset')).toBe(3);
+    expect(activeAreaIndex('/tools', '?focus=preset')).toBe(3);
+    expect(activeAreaIndex('/presets', '?mode=select')).toBe(3);
+    expect(activeAreaIndex('/assets', '?tab=regex')).toBe(5);
     expect(activeAreaIndex('/play/example', '?from=chats')).toBe(1);
   });
 

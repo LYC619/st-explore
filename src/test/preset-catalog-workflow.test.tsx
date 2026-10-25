@@ -1,9 +1,9 @@
-// Queued for the consolidated test batch. Management, editor and repositories remain real.
+// Management, import, editor and repositories remain real; only the application shell is replaced.
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, expect, it, vi } from 'vitest';
-import AssetLibrary from '@/pages/AssetLibrary';
+import PresetLibrary from '@/pages/PresetLibrary';
 import Preset from '@/pages/Preset';
 import Tools from '@/pages/Tools';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -36,13 +36,15 @@ async function input(node: HTMLInputElement | HTMLTextAreaElement, text: string)
   await act(async () => { Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(node, text); node.dispatchEvent(new Event('input', { bubbles: true })); });
 }
 function field(text: string): HTMLInputElement | HTMLTextAreaElement {
+  const named = document.querySelector<HTMLInputElement | HTMLTextAreaElement>(`input[aria-label="${text}"],textarea[aria-label="${text}"]`);
+  if (named) return named;
   const label = [...document.querySelectorAll('label')].find(label => label.textContent?.trim() === text);
   const control = label?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input,textarea');
   if (!control) throw new Error(`Missing field: ${text}`);
   return control;
 }
 
-it('imports author files from the asset library, saves metadata, opens a DIY editor and restores the catalog', async () => {
+it('imports author files from the preset library, reads details, saves metadata, edits a DIY copy and restores the catalog', async () => {
   localStorage.clear(); sessionStorage.clear(); setTourCompleted('preset');
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
   Element.prototype.scrollIntoView = () => {};
@@ -51,12 +53,13 @@ it('imports author files from the asset library, saves metadata, opens a DIY edi
   Element.prototype.releasePointerCapture = () => {};
   setActiveVault(createVault(createMemFs()));
   const host = document.createElement('div'); document.body.append(host); root = createRoot(host);
-  router = createMemoryRouter([{ path: '/assets', element: <AssetLibrary /> }, { path: '/preset', element: <Preset /> }, { path: '/tools', element: <Tools /> }], { initialEntries: ['/assets?tab=preset'] });
+  router = createMemoryRouter([{ path: '/presets', element: <PresetLibrary /> }, { path: '/preset', element: <Preset /> }, { path: '/tools', element: <Tools /> }], { initialEntries: ['/presets'] });
   await act(async () => root!.render(<TooltipProvider><RouterProvider router={router!} /></TooltipProvider>));
-  await settle(() => expect(button('导入作者预设')).toBeEnabled());
-  await click(button('导入作者预设'));
+  await settle(() => expect(button('导入预设')).toBeEnabled());
+  expect(document.querySelector('[role="checkbox"]')).toBeNull();
+  await click(button('导入预设'));
   const raw = { prompts: [{ identifier: 'p', name: '提示块', content: '作者正文' }], prompt_order: [], impersonation_prompt: '工具提示' };
-  const files = [['A-v1.json', JSON.stringify(raw)], ['说明.md', '作者安装说明'], ['脚本.js', 'throw new Error("never execute")']].map(([name, text]) => {
+  const files = [['星海-v1-Claude.json', JSON.stringify(raw)], ['说明.md', '作者安装说明'], ['脚本.js', 'throw new Error("never execute")']].map(([name, text]) => {
     const file = new File([text], name); Object.defineProperty(file, 'text', { value: async () => text }); return file;
   });
   await act(async () => {
@@ -65,14 +68,26 @@ it('imports author files from the asset library, saves metadata, opens a DIY edi
     control.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await settle(() => expect(button('导入 1 份预设')).toBeEnabled());
-  await input(field('作者'), '作者 A'); await input(field('系列'), '系列 A'); await input(field('版本号'), 'v1'); await input(field('适配模型'), 'Claude');
+  expect(field('版本号').value).toBe('v1');
+  expect(field('适配模型').value).toBe('Claude');
+  expect(field('作者发布说明').value).toContain('作者安装说明');
+  await input(field('作者'), '作者 A'); await input(field('系列'), '系列 A');
   await click(button('导入 1 份预设'));
   await settle(() => expect(document.querySelector('[data-preset-details]')).not.toBeNull());
   const [original] = await getAllPresets();
+  expect(new URLSearchParams(router!.state.location.search).get('presetId')).toBe(original.id);
+  expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', original.id);
   expect(original.catalog).toMatchObject({ author: '作者 A', series: '系列 A', version: 'v1', models: ['Claude'] });
   expect(original.packageFiles).toHaveLength(2); expect(original.catalog?.releaseNotes).toContain('作者安装说明');
+  const details = document.querySelector('[data-preset-details]')!;
+  expect(details.querySelector('input,textarea,select')).toBeNull();
+  expect(details.textContent).toContain('作者安装说明');
+  expect(details.textContent).not.toContain('编辑原版');
+  await click(button('整理资料'));
   await input(field('我的使用笔记'), '适合日常'); await click(button('保存资料'));
   await settle(() => expect(button('复制后 DIY')).toBeEnabled());
+  expect((await getPreset(original.id))?.catalog?.notes).toBe('适合日常');
+  expect(document.querySelector('[data-preset-details] input,[data-preset-details] textarea')).toBeNull();
   await input(document.querySelector<HTMLInputElement>('input[aria-label="搜索预设"]')!, '作者 A');
   await click(button('复制后 DIY'));
   await settle(() => expect(router!.state.location.pathname).toBe('/preset'));
@@ -86,6 +101,20 @@ it('imports author files from the asset library, saves metadata, opens a DIY edi
   expect((await getPreset(diyId))?.preset.originalData.impersonation_prompt).toBe('DIY工具提示');
   expect((await getPreset(original.id))?.preset.originalData.impersonation_prompt).toBe('工具提示');
   expect((await getPreset(diyId))?.packageFiles).toHaveLength(2);
-  await click(button('返回预设库 / 管理资料与附件'));
+  expect((await getPreset(original.id))?.catalog?.notes).toBe('适合日常');
+  expect((await getPreset(diyId))?.catalog).toMatchObject({ originId: original.id, series: '系列 A', version: 'v1', notes: '' });
+  await click(button('返回预设库'));
+  await settle(() => expect(router!.state.location.pathname).toBe('/presets'));
   await settle(() => expect(document.querySelector<HTMLInputElement>('input[aria-label="搜索预设"]')?.value).toBe('作者 A'));
+  await settle(() => expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', diyId));
+  await click(button('我的 DIY'));
+  await click(document.querySelector<HTMLButtonElement>('button[aria-label="更多预设操作"]')!);
+  await click(button('编辑原版'));
+  await settle(() => expect(new URLSearchParams(router!.state.location.search).get('assetId')).toBe(diyId));
+  await settle(() => expect(button('保存')).toBeEnabled());
+  await click(button('返回预设库'));
+  await settle(() => expect(button('我的 DIY')).toHaveAttribute('aria-pressed', 'true'));
+  await settle(() => expect(document.querySelectorAll('[data-preset-collection] button[aria-label^="查看预设 "]')).toHaveLength(1));
+  expect(document.querySelector('[data-preset-collection] button[aria-label^="查看预设 "]')).toHaveAttribute('aria-label', `查看预设 ${(await getPreset(diyId))!.title}`);
+  expect(document.querySelector<HTMLInputElement>('input[aria-label="搜索预设"]')?.value).toBe('作者 A');
 });

@@ -56,7 +56,7 @@ it.each(['volume', 'diary'] as const)('renders %s Markdown before and after expa
 it('renders review notes as Markdown and keeps their source in the editor', async () => {
   await render(<ReviewEdits character={character} notesVisible onCharacterChange={vi.fn()} />);
   expectMarkdown(host);
-  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '编辑备注')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="编辑备注"]')!.click());
   expect(document.querySelector('textarea')).toHaveValue(markdown);
 });
 

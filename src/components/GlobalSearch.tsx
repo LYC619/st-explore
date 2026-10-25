@@ -1,5 +1,5 @@
 /**
- * 标题栏全局搜索（10.1-A2 最小可用）：角色名/故事名/资产标题子串匹配 → 下拉分组结果跳转。
+ * 标题栏全局搜索：角色名/故事名/资产标题与预设管理资料匹配 → 下拉分组结果跳转。
  * - Ctrl+F 覆盖 WebView2 页内查找并聚焦；↑↓ 选择、Enter 跳转、Esc 关闭
  * - 首次聚焦才拉数据（角色/故事走 archive-index 轻量列表，不读卡面与正文；焦点期内不重复拉）
  */
@@ -157,7 +157,7 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
                     >
                       <span className="truncate" title={item.title}>{item.title}</span>
                       {item.sub && (
-                        <span className="text-[11px] text-[color:var(--text-faint)] truncate shrink-0" title={item.sub}>{item.sub}</span>
+                        <span className="max-w-[55%] text-[11px] text-[color:var(--text-faint)] truncate shrink-0" title={item.sub}>{item.sub}</span>
                       )}
                     </button>
                   );

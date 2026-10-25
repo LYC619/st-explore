@@ -166,7 +166,7 @@ export function BatchOperations({
 
         <div className="flex-1" />
         <Button variant="ghost" size="sm" className="text-xs" onClick={onExitBatch}>
-          <X className="w-3.5 h-3.5 mr-1" /> 退出批量
+          <X className="w-3.5 h-3.5 mr-1" /> 完成
         </Button>
       </div>
 

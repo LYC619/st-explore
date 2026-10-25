@@ -11,6 +11,7 @@ import { parsePreset, exportPreset } from '@/lib/preset-parser';
 import { createPresetDiy, getPreset, saveEditedPreset, savePresetDetails, updatePresetCatalog } from '@/lib/preset-db';
 import { buildImportedPreset, buildPresetExportFiles, classifyPresetAttachment, exportPresetPackage, readPresetPackage } from '@/lib/preset-package';
 import { inspectPresetScripts } from '@/lib/preset-catalog';
+import { getPresetPresentation } from '@/lib/preset-presentation';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import type { PresetItem } from '@/types/preset';
 import type { ArchiveCharacter } from '@/types/archive';
@@ -81,6 +82,32 @@ it('copies DIY resources without changing the original or carrying a personal ev
   expect(copy.catalog).toMatchObject({ author: '作者 A', version: 'v1', originId: original.id, favorite: false, notes: '', status: 'testing' });
   expect(copy.packageFiles).toEqual(original.packageFiles);
   expect(await getPreset(original.id)).toEqual(original);
+});
+
+it('preserves the inferred legacy series when creating a DIY copy without backfilling the original', async () => {
+  const original = item(); original.title = '【小猫之神】3.10'; delete original.catalog;
+  await getCurrentRepo<PresetItem>('presets').put(original);
+  const copy = await createPresetDiy(original.id);
+  expect(copy.catalog).toMatchObject({ series: '小猫之神', originId: original.id, variant: 'DIY' });
+  const summary = await listAssetIndex('presets');
+  for (const id of [original.id, copy.id]) {
+    expect(getPresetPresentation(summary.find(entry => entry.id === id)!)).toMatchObject({ series: '小猫之神', version: '3.10' });
+  }
+  expect(copy.preset).toEqual(original.preset);
+  expect(copy.packageFiles).toEqual(original.packageFiles);
+  expect(await getPreset(original.id)).toEqual(original);
+  for (const variant of ['DIY', '轻量 · DIY']) {
+    await updatePresetCatalog(copy.id, { variant });
+    const parentCopy = (await getPreset(copy.id))!;
+    const secondCopy = await createPresetDiy(copy.id);
+    expect(secondCopy.id).not.toBe(copy.id);
+    expect(secondCopy.title).toBe('【小猫之神】3.10 · DIY');
+    expect(secondCopy.catalog).toMatchObject({ series: '小猫之神', originId: copy.id, variant });
+    expect(secondCopy.preset).toEqual(parentCopy.preset);
+    expect(secondCopy.packageFiles).toEqual(parentCopy.packageFiles);
+    expect(await getPreset(copy.id)).toEqual(parentCopy);
+    expect(await getPreset(original.id)).toEqual(original);
+  }
 });
 
 it('preserves author resources on a character COW copy while leaving the shared record intact', async () => {

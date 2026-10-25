@@ -14,7 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 
-export type NavAreaKey = 'home' | 'chats' | 'characters' | 'editor' | 'assets';
+export type NavAreaKey = 'home' | 'chats' | 'characters' | 'presets' | 'editor' | 'assets';
 
 export interface NavDestination {
   key: string;
@@ -68,6 +68,15 @@ export const NAV_AREAS: NavArea[] = [
     children: [],
   },
   {
+    key: 'presets',
+    label: '预设库',
+    description: '收藏作者预设、管理版本和配套资源',
+    icon: SlidersHorizontal,
+    path: '/presets',
+    activeMatches: [{ prefix: '/presets' }, { prefix: '/assets', query: { tab: 'preset' } }, { prefix: '/tools', query: { focus: 'preset' } }],
+    children: [],
+  },
+  {
     key: 'editor',
     label: '编辑区',
     description: '处理聊天与整理故事资料',
@@ -86,8 +95,8 @@ export const NAV_AREAS: NavArea[] = [
       { key: 'card', label: '角色卡', description: '查看和处理卡片字段', icon: IdCard, path: '/card-viewer', prefixes: ['/card-viewer'] },
       {
         key: 'preset', label: '预设', description: '编辑提示词与生成配置', icon: SlidersHorizontal,
-        path: '/tools?focus=preset', prefixes: ['/preset'],
-        activeMatches: [{ prefix: '/tools', query: { focus: 'preset' } }, { prefix: '/preset' }],
+        path: '/presets?mode=select', prefixes: ['/preset'],
+        activeMatches: [{ prefix: '/preset' }],
       },
       { key: 'regex', label: '正则', description: '编辑规则集并预览生效结果', icon: Regex, path: '/regex', prefixes: ['/regex'] },
       { key: 'beautify', label: '美化', description: '状态栏、悬浮窗与 MVU 变量', icon: Palette, path: '/beautify', prefixes: ['/beautify'] },
@@ -102,7 +111,6 @@ export const NAV_AREAS: NavArea[] = [
     prefixes: ['/assets'],
     children: [
       { key: 'worldbook', label: '世界书', description: '共享世界书资产', icon: BookOpen, path: '/assets?tab=worldbook', prefixes: ['/assets'], query: { tab: 'worldbook' } },
-      { key: 'preset', label: '预设', description: '共享预设资产', icon: SlidersHorizontal, path: '/assets?tab=preset', prefixes: ['/assets'], query: { tab: 'preset' } },
       { key: 'regex', label: '正则', description: '共享规则集资产', icon: Regex, path: '/assets?tab=regex', prefixes: ['/assets'], query: { tab: 'regex' } },
       { key: 'other', label: '其他资产', description: '资产说明与扩展归档', icon: Layers, path: '/assets', prefixes: ['/assets'], query: { tab: null } },
     ],
@@ -115,15 +123,31 @@ function queryMatches(query: Record<string, string | null> | undefined, search: 
   return Object.entries(query).every(([key, expected]) => params.get(key) === expected);
 }
 
+/** Match a route segment, so /presets never inherits /preset editor navigation. */
+export function matchesRoutePrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || (prefix !== '/' && pathname.startsWith(`${prefix}/`));
+}
+
+/** Preserve bookmarked selection/context while retiring the old library containers. */
+export function presetLibraryRedirect(search: string, select = false): string {
+  const params = new URLSearchParams(search);
+  params.delete('tab');
+  params.delete('focus');
+  if (!params.has('presetId') && params.has('assetId')) params.set('presetId', params.get('assetId')!);
+  params.delete('assetId');
+  if (select) params.set('mode', 'select');
+  return `/presets${params.size ? `?${params}` : ''}`;
+}
+
 export function matchesNavDestination(item: NavDestination, pathname: string, search: string): boolean {
   if (item.activeMatches) {
     return item.activeMatches.some(({ prefix, query }) => (
-      (prefix === '/' ? pathname === '/' : pathname.startsWith(prefix))
+      matchesRoutePrefix(pathname, prefix)
         && queryMatches(query, search)
     ));
   }
   const prefixes = item.prefixes ?? [item.path.split('?')[0]];
-  const pathMatches = prefixes.some((prefix) => prefix === '/' ? pathname === '/' : pathname.startsWith(prefix));
+  const pathMatches = prefixes.some((prefix) => matchesRoutePrefix(pathname, prefix));
   return pathMatches && queryMatches(item.query, search);
 }
 

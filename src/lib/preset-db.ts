@@ -5,6 +5,7 @@ import { KeyedSerialQueue } from './keyed-serial-queue';
 import { getVaultEpoch } from './vault/active';
 import { normalizePresetCatalog, presetContentFingerprint } from './preset-catalog';
 import { stableJson } from './roleplay/fingerprint';
+import { getPresetPresentation } from './preset-presentation';
 
 const repo = createRepo<PresetItem>('presets');
 const queue = new KeyedSerialQueue();
@@ -50,10 +51,11 @@ export async function createPresetDiy(id: string, draft?: { title: string; prese
   const base = await target.get(id);
   if (!base) throw new Error('来源预设不存在');
   const now = Date.now();
+  const identity = getPresetPresentation(base);
   const item: PresetItem = {
-    id: generatePresetId(), title: `${draft?.title ?? base.title} · DIY`, preset: structuredClone(draft?.preset ?? base.preset),
+    id: generatePresetId(), title: `${(draft?.title ?? base.title).replace(/(?:\s*·\s*DIY)+\s*$/i, '')} · DIY`, preset: structuredClone(draft?.preset ?? base.preset),
     createdAt: now, updatedAt: now, autoSaved: false, packageFiles: structuredClone(base.packageFiles),
-    catalog: { ...base.catalog, series: base.catalog?.series || base.title, originId: base.id, variant: [base.catalog?.variant, 'DIY'].filter(Boolean).join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now },
+    catalog: { ...base.catalog, series: identity.series || identity.displayName, originId: base.id, variant: [...(base.catalog?.variant?.split('·').map(value => value.trim()).filter(value => value && value.toUpperCase() !== 'DIY') ?? []), 'DIY'].join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now },
   };
   if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
   await target.put(item);

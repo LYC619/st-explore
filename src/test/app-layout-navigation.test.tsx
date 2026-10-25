@@ -233,7 +233,7 @@ describe('AppLayout route transitions', () => {
   });
 });
 
-describe('正则工具页的编辑区落点', () => {
+describe('工具页与独立预设库的导航落点', () => {
   async function renderAt(path: string) {
     await act(async () => {
       root.render(
@@ -251,6 +251,43 @@ describe('正则工具页的编辑区落点', () => {
     expect(rail).not.toBeNull();
     const active = Array.from(rail!.querySelectorAll<HTMLButtonElement>('button[aria-current="page"]'));
     expect(active.map((button) => button.textContent?.trim())).toEqual(['正则']);
+  });
+
+  it.each(['/presets', '/presets?mode=select', '/presets?presetId=demo'])('独立预设库 %s 只点亮预设库，不带编辑工具栏或旧附属子项', async path => {
+    navOpen.editor = true;
+    navOpen.assets = true;
+    await renderAt(path);
+    const activeParents = [...container.querySelectorAll('[data-nav-parent-row] button[aria-current="page"]')];
+    expect(activeParents.map(button => button.textContent?.trim())).toEqual(['预设库']);
+    expect(sideSubItem(container, 'editor', 'preset')?.getAttribute('aria-current')).toBeNull();
+    expect(sideSubItems('附属库').map(button => button.textContent?.trim())).toEqual(['世界书', '正则', '其他资产']);
+    expect(container.querySelector('[data-editor-rail]')).toBeNull();
+  });
+
+  it('预设编辑器仍归编辑区，窄栏预设入口转向独立库的选择模式', async () => {
+    navOpen.editor = true;
+    await renderAt('/preset?assetId=p&characterId=c');
+    expect(sideSubItem(container, 'editor', 'preset')?.getAttribute('aria-current')).toBe('page');
+    expect(railButton('预设').getAttribute('aria-current')).toBe('page');
+    await act(async () => railButton('预设').click());
+    expect(container.querySelector('[data-testid="layout-location"]')?.textContent).toBe('/presets?mode=select');
+    expect(container.querySelector('[data-editor-rail]')).toBeNull();
+  });
+
+  it('移动端主导航可直接进入预设库并只高亮该入口', async () => {
+    const width = window.innerWidth;
+    try {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 });
+      await renderAt('/library');
+      const bar = container.querySelector('[data-mobile-tab-bar]')!;
+      const entries = [...bar.querySelectorAll<HTMLButtonElement>('button')];
+      expect(entries.map(button => button.textContent?.trim())).toEqual(['首页', '聊天', '角色库', '预设库', '编辑区', '附属库']);
+      await act(async () => entries.find(button => button.textContent?.trim() === '预设库')!.click());
+      expect(container.querySelector('[data-testid="layout-location"]')?.textContent).toBe('/presets');
+      expect([...bar.querySelectorAll('button[aria-current="page"]')].map(button => button.textContent?.trim())).toEqual(['预设库']);
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+    }
   });
 
   it('侧栏编辑区的「正则」高亮时，附属库的同名「正则」不跟着亮', async () => {
