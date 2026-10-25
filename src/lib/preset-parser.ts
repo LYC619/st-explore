@@ -117,6 +117,7 @@ export function exportPreset(
     prompts,
     prompt_order: promptOrder,
   };
+  delete output.__ste;
   if (extensions) output.extensions = extensions;
   else delete output.extensions;
 

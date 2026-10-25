@@ -61,7 +61,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
-  getAllCharacters.mockClear().mockResolvedValue([]);
+  listCharacterIndex.mockClear().mockResolvedValue([]);
   listStoryIndex.mockClear().mockResolvedValue([]);
 });
 
@@ -82,7 +82,7 @@ async function renderHome() {
 
 describe('首页整页读失败要说出来', () => {
   it('读失败时给出报错与重试，而不是安静地显示空态', async () => {
-    getAllCharacters.mockRejectedValue(new Error('库打不开'));
+    listCharacterIndex.mockRejectedValue(new Error('库打不开'));
     await renderHome();
 
     const banner = container.querySelector('[data-home-load-error]');
@@ -93,17 +93,17 @@ describe('首页整页读失败要说出来', () => {
   });
 
   it('点重试会重新读一次；这次成功就把报错收起来', async () => {
-    getAllCharacters.mockRejectedValueOnce(new Error('库打不开'));
+    listCharacterIndex.mockRejectedValueOnce(new Error('库打不开'));
     await renderHome();
     expect(container.querySelector('[data-home-load-error]')).not.toBeNull();
 
-    getAllCharacters.mockResolvedValue([]);
+    listCharacterIndex.mockResolvedValue([]);
     const retry = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.trim() === '重试');
     if (!retry) throw new Error('没有渲染出重试按钮');
     await act(async () => { retry.click(); });
 
     expect(container.querySelector('[data-home-load-error]')).toBeNull();
-    expect(getAllCharacters).toHaveBeenCalledTimes(2);
+    expect(listCharacterIndex).toHaveBeenCalledTimes(2);
   });
 
   it('读成功时不显示报错', async () => {
@@ -116,7 +116,7 @@ describe('工具页：读完之前不说「还没有可以处理的故事」', (
   /** 让故事读取悬着，好在「加载中」这一帧上做断言 */
   function deferStories() {
     let release!: (v: unknown[]) => void;
-    getAllArchiveStories.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    listStoryIndex.mockReturnValue(new Promise((resolve) => { release = resolve; }));
     return release;
   }
 
@@ -151,7 +151,7 @@ describe('工具页：读完之前不说「还没有可以处理的故事」', (
   });
 
   it('故事库读取失败时显示错误并支持重试，而不是伪装成空库', async () => {
-    getAllArchiveStories.mockRejectedValueOnce(new Error('故事库打不开'));
+    listStoryIndex.mockRejectedValueOnce(new Error('故事库打不开'));
     await renderTools();
 
     const error = container.querySelector('[data-tools-load-error]');
@@ -159,7 +159,7 @@ describe('工具页：读完之前不说「还没有可以处理的故事」', (
     expect(error?.textContent).toContain('故事库打不开');
     expect(container.textContent).not.toContain('还没有可以处理的故事');
 
-    getAllArchiveStories.mockResolvedValue([]);
+    listStoryIndex.mockResolvedValue([]);
     const retry = Array.from(error?.querySelectorAll('button') ?? []).find((b) => b.textContent?.trim() === '重试');
     if (!retry) throw new Error('没有渲染出重试按钮');
     await act(async () => { retry.click(); });

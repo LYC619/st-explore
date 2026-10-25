@@ -8,7 +8,7 @@ import { cleanupVaultFiles, scanVaultFiles, type FileCleanupResult, type FileMai
 import { formatBytes } from '@/lib/storage-utils';
 
 const labels: Record<MaintenanceCategory, string> = {
-  retained: '删除时保留的文件', unreferenced: '确认失去引用的受管理文件', unknown: '无法确认归属的文件（仅查看）', 'empty-directory': '空目录',
+  retained: '库内回收站与长期保留文件', unreferenced: '确认失去引用的受管理文件', unknown: '无法确认归属的文件（仅查看）', 'empty-directory': '空目录',
 };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -50,6 +50,14 @@ export function FileMaintenancePanel() {
     <div className="flex items-start justify-between gap-3">
       <div><h3 className="text-sm font-medium">文件检查与清理</h3><p className="mt-1 text-xs text-muted-foreground">检查当前 STE 文件库中的保留文件、未引用的受管理文件和未知内容。</p></div>
       <Button size="sm" variant="outline" disabled={busy} onClick={() => void inspect()}>{busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Search className="mr-1.5 h-4 w-4" />}检查文件</Button>
+    </div>
+    <p className="text-xs text-muted-foreground">勾选删除的文件在库内回收站逐个保留满 30 天，打开库后及运行期间每小时检查到期项，再移入系统回收站；应用关闭时顺延到下次打开。无法回收时继续保留。未勾选删除的文件长期保留。</p>
+    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+      <span>库内回收／保留区：.ste/retained</span>
+      {vault.fs.openPath && <Button size="sm" variant="outline" onClick={() => void (async () => {
+        if ((await vault.fs.stat('.ste/retained')).exists) await vault.fs.openPath!('.ste/retained');
+        else setError('当前库尚无回收或保留文件。');
+      })().catch(error => setError(message(error)))}><FolderOpen className="mr-1 h-3.5 w-3.5" />打开文件夹</Button>}
     </div>
     {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
     {current && <>

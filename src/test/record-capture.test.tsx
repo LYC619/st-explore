@@ -22,5 +22,6 @@ it('captures a stable saved source once, separates coverage from its floor, and 
   const noRange = await captureRecord({ ...input, recordId: 'capture-two', range: undefined });
   expect(noRange.rangeDetached).toBe(true);
   const pasted = await captureRecord({ ...input, recordId: 'capture-three', messageId: undefined, range: undefined });
-  expect(pasted.rangeDetached).toBe(true);
+  expect(pasted.rangeDetached).toBe(false);
+  expect(pasted).toMatchObject({ floorStart: 0, floorEnd: 11 });
 });

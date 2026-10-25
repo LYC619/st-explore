@@ -1,6 +1,7 @@
 import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { SlidersHorizontal, Download, Save, History, FileJson } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { SlidersHorizontal, Download, Save, History, FileJson, Copy, ArrowLeft } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { HelpCard } from '@/components/HelpCard';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
@@ -18,7 +19,7 @@ import type { NormalizedPreset, OrderEntry, PresetItem } from '@/types/preset';
 import { DEFAULT_CHARACTER_ID, generatePresetId } from '@/types/preset';
 import { parsePreset, getActiveOrder } from '@/lib/preset-parser';
 import {
-  getAllPresets, getPreset, savePreset, deletePreset, pruneAutoSavedPresets,
+  getAllPresets, getPreset, savePreset, deletePreset, pruneAutoSavedPresets, saveEditedPreset, createPresetDiy,
 } from '@/lib/preset-db';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import { buildPresetSaveItem } from '@/lib/asset-save-record';
@@ -35,19 +36,29 @@ import { PRESET_TOUR_STEPS, isTourCompleted, setTourCompleted } from '@/lib/tour
 import type { RegexRule } from '@/types/chat';
 import { executeDeleteAction } from '@/lib/destructive-action';
 import { useAssetIdentityNavigation } from '@/hooks/use-asset-identity-navigation';
+import { presetContentFingerprint, presetOptionLabel } from '@/lib/preset-catalog';
+import { PresetDraftBoundary } from '@/components/preset/PresetDraftBoundary';
+import { getVaultEpoch } from '@/lib/vault/active';
+import { scopedKey } from '@/lib/vault/vault-scope';
 
 const PRESET_SESSION_KEY = 'preset-active-session';
 interface PresetSessionPtr { itemId: string | null; }
 
 function loadSessionPtr(): PresetSessionPtr | null {
   try {
-    const raw = sessionStorage.getItem(PRESET_SESSION_KEY);
+    const raw = sessionStorage.getItem(scopedKey(PRESET_SESSION_KEY));
     return raw ? (JSON.parse(raw) as PresetSessionPtr) : null;
   } catch { return null; }
 }
 
 export default function Preset() {
   const { toast } = useToast();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [saving, setSaving] = useState(false);
+  const [creatingDiy, setCreatingDiy] = useState(false);
+  const saveInFlight = useRef(false);
+  const loadedEpoch = useRef(getVaultEpoch());
   // 角色上下文（角色页关联资产区「处理」进来）：保存走写时复制（定稿第七章）
   const [cowCharacterId, setCowCharacterId] = useState<string | undefined>();
   const [cowCharacterName, setCowCharacterName] = useState('');
@@ -71,6 +82,7 @@ export default function Preset() {
   const isDirty = JSON.stringify({ title: fileName, preset }) !== JSON.stringify({ title: originalFileName, preset: originalPreset });
 
   const applyPreset = useCallback((item: PresetItem | null) => {
+    loadedEpoch.current = getVaultEpoch();
     setPreset(item?.preset ?? null);
     setOriginalPreset(item?.preset ?? null);
     setFileName(item?.title ?? 'preset');
@@ -83,9 +95,10 @@ export default function Preset() {
   }, []);
 
   const initialTarget = useRef<Promise<{ item: PresetItem | null; imported: boolean }> | null>(null);
-  const { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset } = useAssetIdentityNavigation({
+  const { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset, acceptLocalAsset, ownsLocation } = useAssetIdentityNavigation({
     isDirty,
     load: async (identity, { initial, isCurrent }) => {
+      const epoch = getVaultEpoch();
       if (initial && !identity.assetId && !initialTarget.current) {
         const handoff = takePendingToolFile('preset');
         const sessionId = loadSessionPtr()?.itemId;
@@ -100,6 +113,7 @@ export default function Preset() {
         getAllPresets().catch(() => []),
         initial && !identity.assetId ? initialTarget.current : null,
       ]);
+      if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请从预设库重新打开');
       if (isCurrent()) setSavedItems(item && !items.some((saved) => saved.id === item.id) ? [item, ...items] : items);
       if (identity.assetId && !item) throw new Error('找不到这个预设，它可能已经被删除');
       return { item: item ?? restored?.item ?? null, characterName: character?.name ?? '', imported: restored?.imported ?? false };
@@ -114,17 +128,20 @@ export default function Preset() {
   });
 
   const refreshSaved = useCallback(async (isCurrent = captureCurrent()) => {
+    const epoch = getVaultEpoch();
     try {
       const items = await getAllPresets();
-      if (isCurrent()) setSavedItems(items);
+      if (isCurrent() && epoch === getVaultEpoch() && epoch === loadedEpoch.current) setSavedItems(items);
     } catch { /* ignore */ }
   }, [captureCurrent]);
 
   const saveImportedPreset = useCallback(async (item: PresetItem) => {
     const isCurrent = captureCurrent();
+    const epoch = loadedEpoch.current;
     try {
+      if (epoch !== getVaultEpoch()) return;
       await savePreset(item);
-      if (!isCurrent()) return;
+      if (!isCurrent() || epoch !== getVaultEpoch()) return;
       setCurrentItemId(item.id);
       await pruneAutoSavedPresets(5);
       await refreshSaved(isCurrent);
@@ -142,8 +159,8 @@ export default function Preset() {
   // 跨页指针持久化
   useEffect(() => {
     try {
-      if (currentItemId) sessionStorage.setItem(PRESET_SESSION_KEY, JSON.stringify({ itemId: currentItemId }));
-      else sessionStorage.removeItem(PRESET_SESSION_KEY);
+      if (currentItemId) sessionStorage.setItem(scopedKey(PRESET_SESSION_KEY), JSON.stringify({ itemId: currentItemId }));
+      else sessionStorage.removeItem(scopedKey(PRESET_SESSION_KEY));
     } catch { /* ignore */ }
   }, [currentItemId]);
 
@@ -262,13 +279,14 @@ export default function Preset() {
   // ---- 导入 ----
   const loadFile = useCallback(async (file: File) => {
     const isCurrent = captureCurrent();
+    const epoch = getVaultEpoch();
     if (!file.name.toLowerCase().endsWith('.json')) {
       toast({ title: '请选择 .json 预设文件', variant: 'destructive' });
       return;
     }
     try {
       const np = parsePreset(JSON.parse(await file.text()));
-      if (!isCurrent()) return;
+      if (!isCurrent() || epoch !== getVaultEpoch()) return;
       const name = file.name.replace(/\.json$/i, '');
       const item = { id: generatePresetId(), title: name, preset: np, createdAt: Date.now(), updatedAt: Date.now(), autoSaved: true };
       applyPreset(item);
@@ -295,11 +313,17 @@ export default function Preset() {
   // ---- 保存（永久留存，存入 presets store，在「已存预设」中管理） ----
   // 角色上下文（角色页「处理」进来）：写时复制——原资产不动，改动落到该角色的派生副本
   const handleSaveLocal = useCallback(async () => {
-    if (!preset) return;
+    if (!preset || saveInFlight.current) return;
+    saveInFlight.current = true; setSaving(true);
     const isCurrent = captureCurrent();
+    const epoch = getVaultEpoch();
+    const assertCurrent = () => { if (!isCurrent() || epoch !== getVaultEpoch() || epoch !== loadedEpoch.current) throw new Error('当前预设或资料库已切换，请重新打开后保存'); };
     const now = Date.now();
-    const base = currentItemId ? savedItems.find((s) => s.id === currentItemId) : undefined;
-
+    try {
+    assertCurrent();
+    const base = currentItemId ? await getPreset(currentItemId) : undefined;
+    assertCurrent();
+    if (currentItemId && !base && savedItems.some(item => item.id === currentItemId)) throw new Error('预设已被删除，请先导出草稿');
     if (cowCharacterId && base) {
       const result = await saveAssetWithCow({
         kind: 'preset',
@@ -312,17 +336,12 @@ export default function Preset() {
         newId: generatePresetId,
         save: savePreset,
         now,
-      }).catch((error: unknown) => {
-        if (!isCurrent()) return null;
-        // 重读失败 / 资产已被删除 / 落库失败：说清楚并中止，草稿仍在编辑器里
-        toast({
-          title: '保存失败',
-          description: error instanceof Error ? error.message : String(error),
-          variant: 'destructive',
-        });
-        return null;
+        assertCurrent,
+        validate: (_target, latestBase) => {
+          if (originalPreset && presetContentFingerprint(latestBase.preset) !== presetContentFingerprint(originalPreset)) throw new Error('来源预设已在其他位置修改，请先导出草稿，再重新打开');
+        },
       });
-      if (!result || !isCurrent()) return;
+      if (!isCurrent() || epoch !== getVaultEpoch()) return;
       // 原地更新时 result.title 就是 fileName，这行是空操作
       setFileName(result.title);
       if (result.action === 'update') {
@@ -332,27 +351,35 @@ export default function Preset() {
       } else {
         toast({ title: '已生成派生副本', description: `「${result.title}」，原预设与其他角色不受影响` });
       }
-      setCurrentItemId(result.targetId);
-      setOriginalPreset(preset);
-      setOriginalFileName(result.title);
-      await refreshSaved(isCurrent);
+      const applySaved = () => {
+        setCurrentItemId(result.targetId);
+        setOriginalPreset(preset);
+        setOriginalFileName(result.title);
+      };
+      // A save must not cancel another asset that is already loading.
+      if (ownsLocation()) acceptLocalAsset(result.targetId, applySaved);
+      else applySaved();
+      await refreshSaved();
       return;
     }
-
-    try {
       const id = currentItemId || generatePresetId();
-      await savePreset(buildPresetSaveItem({ base, id, title: fileName, preset, now }));
+      if (base) await saveEditedPreset(id, fileName, preset, originalPreset ?? undefined);
+      else await savePreset(buildPresetSaveItem({ base, id, title: fileName, preset, now }));
+      assertCurrent();
       // 角色上下文里保存全新预设：入库并直接挂到该角色名下
       if (cowCharacterId && !base) {
         const updatedCharacter = await updateCharacterAssetReference(cowCharacterId, 'preset', id, id, now);
         if (!updatedCharacter) throw new Error('资产已保存，但角色引用切换失败：角色可能已被删除');
       }
       if (!isCurrent()) return;
-      setCurrentItemId(id);
-      setOriginalPreset(preset);
-      setOriginalFileName(fileName);
-      await refreshSaved(isCurrent);
-      if (!isCurrent()) return;
+      const applySaved = () => {
+        setCurrentItemId(id);
+        setOriginalPreset(preset);
+        setOriginalFileName(fileName);
+      };
+      if (ownsLocation()) acceptLocalAsset(id, applySaved);
+      else applySaved();
+      await refreshSaved();
       toast({ title: '已保存', description: '可在右上角「已存预设」中查看；永久留存、纳入完整备份' });
     } catch (error: unknown) {
       if (!isCurrent()) return;
@@ -361,8 +388,32 @@ export default function Preset() {
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
-    }
-  }, [preset, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast, captureCurrent]);
+    } finally { saveInFlight.current = false; setSaving(false); }
+  }, [preset, originalPreset, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast, captureCurrent, acceptLocalAsset, ownsLocation]);
+
+  const handleDiy = async () => {
+    if (!currentItemId || !preset || saveInFlight.current) return;
+    saveInFlight.current = true; setSaving(true); setCreatingDiy(true);
+    const isCurrent = captureCurrent(), epoch = getVaultEpoch();
+    try {
+      if (epoch !== loadedEpoch.current) throw new Error('资料库已切换，请从预设库重新打开');
+      const item = await createPresetDiy(currentItemId, { title: fileName, preset });
+      if (!isCurrent() || epoch !== getVaultEpoch()) return;
+      // This is a personal copy; existing character references stay unchanged.
+      setOriginalPreset(preset); setOriginalFileName(fileName);
+      toast({ title: `已另存「${item.title}」`, description: '原版和角色引用保留；从预设库打开副本可继续编辑' });
+      await refreshSaved(isCurrent);
+      // React commits the clean baseline before navigation, avoiding a discard prompt for a saved draft.
+      setDiyTarget(item.id);
+    } catch (error) { if (isCurrent()) toast({ title: 'DIY 另存失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }); }
+    finally { saveInFlight.current = false; setSaving(false); setCreatingDiy(false); }
+  };
+  const [diyTarget, setDiyTarget] = useState<string | null>(null);
+  useEffect(() => {
+    if (!diyTarget || saving) return;
+    navigate(`/preset?assetId=${encodeURIComponent(diyTarget)}&from=${searchParams.get('from') === 'library' ? 'library' : 'catalog'}`);
+    setDiyTarget(null);
+  }, [diyTarget, saving, navigate, searchParams]);
 
   const handleLoadItem = useCallback((item: PresetItem) => {
     requestAsset(item.id);
@@ -373,6 +424,7 @@ export default function Preset() {
     const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
+      if (loadedEpoch.current !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开后删除');
       await deletePreset(target.id, options);
       if (!isCurrent()) return;
       if (target.id === currentItemId) setCurrentItemId(null);
@@ -389,7 +441,7 @@ export default function Preset() {
     <>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm">
+          <Button variant="outline" size="sm" disabled={saving}>
             <History className="w-4 h-4 mr-1.5" /> 已存预设
           </Button>
         </PopoverTrigger>
@@ -400,8 +452,8 @@ export default function Preset() {
               {savedItems.map((item) => (
                 <div key={item.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-accent/40 text-sm">
                   <FileJson className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <button className="flex-1 min-w-0 text-left truncate" title={item.title} onClick={() => handleLoadItem(item)}>
-                    {item.title}
+                  <button className="flex-1 min-w-0 text-left truncate" title={presetOptionLabel(item)} onClick={() => handleLoadItem(item)}>
+                    {presetOptionLabel(item)}
                     {item.autoSaved && <span className="text-[11px] text-muted-foreground ml-1">(历史)</span>}
                   </button>
                   <button className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>删除</button>
@@ -412,14 +464,15 @@ export default function Preset() {
           </ScrollArea>
         </PopoverContent>
       </Popover>
-      <Button variant="outline" size="sm" onClick={handleSaveLocal}>
+      <Button variant="outline" size="sm" disabled={saving} onClick={handleSaveLocal}>
         <Save className="w-4 h-4 mr-1.5" /> 保存
       </Button>
+      <Button variant="outline" size="sm" disabled={saving || !currentItemId} onClick={() => void handleDiy()}><Copy className="w-4 h-4 mr-1.5" />另存 DIY</Button>
       <label>
         <Button variant="outline" size="sm" asChild>
           <span><Download className="w-4 h-4 mr-1.5" /> 导入</span>
         </Button>
-        <input type="file" accept=".json,application/json" className="hidden"
+        <input type="file" accept=".json,application/json" className="hidden" disabled={saving}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; }} />
       </label>
     </>
@@ -427,6 +480,7 @@ export default function Preset() {
 
   return (
     <AppLayout actions={actions}>
+      <PresetDraftBoundary dirty={isDirty || saving} />
       <AlertDialog open={!!pendingTarget} onOpenChange={(open) => { if (!open) cancelPending(); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -439,7 +493,9 @@ export default function Preset() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <fieldset disabled={creatingDiy} className="contents">
       <div className="container mx-auto px-4 py-6">
+        <Button variant="ghost" className="mb-3" onClick={() => navigate(`${searchParams.get('from') === 'library' ? '/assets?tab=preset' : '/tools?focus=preset'}${currentItemId ? `&presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />返回预设库 / 管理资料与附件</Button>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card">
             <SlidersHorizontal className="w-5 h-5 text-primary-foreground" />
@@ -484,7 +540,7 @@ export default function Preset() {
                     {savedItems.slice(0, 8).map((item) => (
                       <button key={item.id} className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-accent/40 text-sm text-left" onClick={() => handleLoadItem(item)}>
                         <FileJson className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                        <span className="flex-1 min-w-0 truncate" title={item.title}>{item.title}</span>
+                        <span className="flex-1 min-w-0 truncate" title={presetOptionLabel(item)}>{presetOptionLabel(item)}</span>
                         {item.autoSaved && <span className="text-[11px] text-muted-foreground">(历史)</span>}
                       </button>
                     ))}
@@ -534,6 +590,7 @@ export default function Preset() {
           </Tabs>
         )}
       </div>
+      </fieldset>
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除预设「${deleteTarget?.title ?? ''}」？`}

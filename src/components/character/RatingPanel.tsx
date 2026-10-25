@@ -50,7 +50,7 @@ function DimensionRow({
   onReasonChange?: (v: string) => void;
 }) {
   return (
-    <div className="rounded-md border border-border p-2 space-y-1.5">
+    <div className="min-w-0 rounded-md border border-border p-3 space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-sm font-medium">{dim.name}</span>
         <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground font-normal">权重 {dim.weight}</Badge>
@@ -70,7 +70,9 @@ function DimensionRow({
           value={dim.reason ?? ''}
           onChange={(e) => onReasonChange(e.target.value)}
           placeholder="打分理由（可空）"
-          className="min-h-8 h-8 text-xs resize-y"
+          aria-label={`${dim.name}打分理由`}
+          rows={3}
+          className="min-h-24 text-sm leading-relaxed resize-y"
         />
       ) : dim.reason ? (
         <p className="text-xs text-muted-foreground whitespace-pre-wrap">{dim.reason}</p>
@@ -163,6 +165,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
   const [aiDims, setAiDims] = useState<RatingDimensionScore[] | null>(null);
   const [aiNote, setAiNote] = useState('');
   const [aiScope, setAiScope] = useState<string[]>([]);
+  const [aiSnapshot, setAiSnapshot] = useState<{ templateId: string; templateTitle: string; prompt: string; model: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const outputRef = useRef('');
   const aiTotal = useMemo(() => (aiDims ? computeWeightedTotal(aiDims) : 0), [aiDims]);
@@ -179,6 +182,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
       worldbooks: linkedWbs.filter((w) => pickedWbIds.includes(w.id)).map((w) => ({ id: w.id, title: w.title, wb: w.worldbook })),
       stories: stories.filter((s) => pickedStoryIds.includes(s.id)).map((s) => ({ id: s.id, title: s.title, session: s.session })),
     });
+    setAiSnapshot({ templateId: template.id, templateTitle: template.title, prompt: messages[0].content, model: config.model });
     setAiScope(readScope);
     setAiStreaming(true);
     setAiDims(null);
@@ -214,17 +218,17 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
   };
 
   const handleSaveAi = () => {
-    if (!aiDims) return;
+    if (!aiDims || !aiSnapshot) return;
     void saveRating({
       total: aiTotal,
       note: aiNote.trim() || undefined,
       method: 'ai',
-      templateId: template.id,
-      templateTitle: template.title,
+      templateId: aiSnapshot.templateId,
+      templateTitle: aiSnapshot.templateTitle,
       dimensions: aiDims.map((d) => ({ ...d, reason: d.reason?.trim() || undefined })),
-      promptSnapshot: template.prompt,
+      promptSnapshot: aiSnapshot.prompt,
       readScope: aiScope,
-      model: loadAPIConfig().model,
+      model: aiSnapshot.model,
       createdAt: Date.now(),
     });
   };
@@ -277,7 +281,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
           ))}
         </SelectContent>
       </Select>
-      <Button variant="outline" size="sm" className="gap-1" onClick={handleCopyTemplate} title="内置模板不可改；复制一份自定义副本后可改维度/权重/提示词">
+      <Button variant="outline" size="sm" className="gap-1" onClick={handleCopyTemplate} title="内置提示词可在设置中修改；复制后可独立改维度、权重和提示词">
         <Copy className="w-3.5 h-3.5" />复制
       </Button>
       {!template.builtin && (
@@ -298,7 +302,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>评分「{character.name}」</DialogTitle>
             <DialogDescription>
@@ -357,7 +361,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
             {/* ===== 模板 ===== */}
             <TabsContent value="template" className="space-y-3 pt-2">
               {templateSelector}
-              <div className="space-y-2">
+              <div className="grid gap-3 md:grid-cols-2">
                 {tplDims.map((d, i) => (
                   <DimensionRow
                     key={d.name}
@@ -371,7 +375,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
                 <Label className="text-xs text-muted-foreground">一句话总评（可空）</Label>
                 <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="例：设定扎实，开场白惊艳" />
               </div>
-              <div className="flex items-center justify-end gap-3">
+              <div className="sticky -bottom-6 flex flex-wrap items-center justify-end gap-3 border-t bg-background py-3">
                 <span className="text-sm">
                   参考总分 <span className="font-display text-lg font-semibold text-primary">{tplTotal}</span> / 10
                 </span>
@@ -432,19 +436,19 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
                     AI 建议如下（读取：{describeReadScope(aiScope, new Map([...linkedWbs.map((w) => [w.id, w.title] as [string, string]), ...stories.map((s) => [s.id, s.title] as [string, string])]))}）。
                     分数可手工调整，确认保存后才生效。
                   </p>
-                  {aiDims.map((d, i) => (
+                  <div className="grid gap-3 md:grid-cols-2">{aiDims.map((d, i) => (
                     <DimensionRow
                       key={d.name}
                       dim={d}
                       onScoreChange={(v) => setAiDims((prev) => prev!.map((x, j) => (j === i ? { ...x, score: v } : x)))}
                       onReasonChange={(v) => setAiDims((prev) => prev!.map((x, j) => (j === i ? { ...x, reason: v } : x)))}
                     />
-                  ))}
+                  ))}</div>
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">一句话总评（AI 给出，可改）</Label>
                     <Input value={aiNote} onChange={(e) => setAiNote(e.target.value)} />
                   </div>
-                  <div className="flex items-center justify-end gap-3">
+                  <div className="sticky -bottom-6 flex flex-wrap items-center justify-end gap-3 border-t bg-background py-3">
                     <span className="text-sm">
                       参考总分 <span className="font-display text-lg font-semibold text-primary">{aiTotal}</span> / 10
                     </span>
@@ -459,7 +463,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
 
       {/* ===== 自定义模板编辑 ===== */}
       <Dialog open={manageOpen} onOpenChange={setManageOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>编辑自定义评分模板</DialogTitle>
             <DialogDescription>维度、权重、提示词均可改；内置模板不受影响。</DialogDescription>

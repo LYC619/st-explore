@@ -510,7 +510,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
 
       {capture && recordContext && <CaptureRecordDialog storyId={recordContext.storyId} branchId={recordContext.branchId}
         messageId={capture.messageId} initialContent={capture.content} beforeSave={recordContext.flush}
-        onClose={() => setCapture(null)} onSaved={() => toast({ title: '已收录，可在角色详情中查看' })} />}
+        onClose={() => setCapture(null)} onSaved={() => toast({ title: '已收录到当前故事的总结/日记', description: '可在编辑区「总结」中查看；已绑定角色的故事也可从角色详情查看。' })} />}
       <div className={cn('py-6', isCompact ? 'px-3' : 'px-4')}>
         {/* Preview + Sidebars Row */}
         {/* 窄屏改成上下叠：正则侧栏是固定 320px，390px 视口里横着放会把正文挤成一条。

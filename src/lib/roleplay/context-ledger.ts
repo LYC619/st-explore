@@ -1,3 +1,4 @@
+import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
 import { encode } from 'gpt-tokenizer/encoding/o200k_base';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { getVaultEpoch } from '@/lib/vault/active';
@@ -86,7 +87,7 @@ export function createContextLedger({ store, branchId }: { store: RuntimeStore; 
           : latest?.envelopeDigest !== envelopeDigest && latest ? '连接或请求配置变化'
           : '历史、候选或请求布局变化';
         const cycleId = reusable ? latest!.cycleId : crypto.randomUUID();
-        const frozen = { role: 'system' as const, content: `本轮背景资料（生效回合 ${turnId}，历史资料只代表当时状态）：\n${supplement}` };
+        const frozen = { role: 'system' as const, content: formatBuiltinPrompt('roleplay.supplement', { turnId, content: supplement }) };
         const messages: Record<string, unknown>[] = [];
         base.forEach((message, index) => {
           messages.push(message);

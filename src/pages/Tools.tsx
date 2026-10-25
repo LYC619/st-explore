@@ -16,11 +16,8 @@ import {
 } from '@/components/ui/dialog';
 import { guessFileType, TOOL_TYPE_LABELS, type ToolFileType } from '@/lib/file-type-guess';
 import { setPendingToolFile } from '@/lib/tool-handoff';
-import { getAllArchiveStories } from '@/lib/archive-db';
-import { listCharacterIndex, type CharacterIndexEntry } from '@/lib/archive-index';
-import { getAllWorldBooks } from '@/lib/worldbook-db';
-import { getAllPresets } from '@/lib/preset-db';
-import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import { listCharacterIndex, listStoryIndex, type StoryIndexEntry, type CharacterIndexEntry } from '@/lib/archive-index';
+import { listAssetIndex } from '@/lib/asset-index';
 import {
   buildEditorStoryPickerItems,
   EDITOR_TOOL_COPY,
@@ -28,6 +25,7 @@ import {
 } from '@/lib/home-layout';
 import { buildEditorStoryPath, getEditorStoryId, setEditorStoryId } from '@/lib/editor-story-context';
 import { LOADING_LABEL } from '@/lib/ui-copy';
+import { PresetCatalog } from '@/components/preset/PresetCatalog';
 
 interface ToolEntry {
   type: ToolFileType;
@@ -99,7 +97,7 @@ const Tools = () => {
   // 待确认的文件 + 程序猜测（null = 没猜出来，让用户自己选）
   const [pending, setPending] = useState<{ file: File; guess: ToolFileType | null } | null>(null);
   const [chosenType, setChosenType] = useState<ToolFileType>('chat');
-  const [stories, setStories] = useState<ArchiveStory[]>([]);
+  const [stories, setStories] = useState<StoryIndexEntry[]>([]);
   const [characters, setCharacters] = useState<CharacterIndexEntry[]>([]);
   const [assetItems, setAssetItems] = useState<AssetPickerItem[]>([]);
   /** 首次读完之前不能显示「还没有可以处理的故事」——那是明确的误导 */
@@ -112,11 +110,11 @@ const Tools = () => {
     setLoadError(null);
     try {
       if (assetFocus === 'worldbook') {
-        const items = await getAllWorldBooks();
+        const items = await listAssetIndex('worldbooks');
         setAssetItems(items.map((item) => ({
           id: item.id,
           title: item.title,
-          meta: `${Object.keys(item.worldbook.entries).length} 个条目`,
+          meta: `${item.entryCount} 个条目`,
           importedAt: item.createdAt,
           updatedAt: item.updatedAt,
           sourceModifiedAt: item.sourceModifiedAt,
@@ -125,22 +123,11 @@ const Tools = () => {
         return;
       }
       if (assetFocus === 'preset') {
-        const items = await getAllPresets();
-        setAssetItems(items.map((item) => ({
-          id: item.id,
-          title: item.title,
-          meta: `${item.preset.prompts.length} 个提示词`,
-          importedAt: item.createdAt,
-          updatedAt: item.updatedAt,
-          sourceModifiedAt: item.sourceModifiedAt,
-          autoSaved: item.autoSaved,
-        })));
         return;
       }
-      // 故事这边仍要完整读：选择器要按消息时间戳算游玩起止（computeStoryTimeRange），
-      // 楼数与标题之外真的用到了正文。角色只用到 id→名字，走轻量列表。
+      // 摘要包含消息时间范围与楼数，选择入口无需保留整库正文。
       const [stories, cards] = await Promise.all([
-        getAllArchiveStories(),
+        listStoryIndex(),
         // 角色索引只是显示名补充；索引失败不能把可用的故事选择器变成空态。
         listCharacterIndex().catch(() => []),
       ]);
@@ -214,6 +201,7 @@ const Tools = () => {
 
   // 编辑区一级入口沿用 7 月 26 日前的直接工作台模式；本页仅承载正式入口的选择器。
   if (!focusView && !assetFocus) return <Navigate to="/chat" replace />;
+  if (assetFocus === 'preset') return <AppLayout><PresetCatalog mode="select" /></AppLayout>;
 
   return (
     <AppLayout>
@@ -295,7 +283,7 @@ const Tools = () => {
                 >
                   <span className="shrink-0 rounded bg-[var(--brand-active-bg)] px-1.5 py-0.5 text-[11px] text-brand">继续上次</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-[color:var(--text-body)]" title={lastStory.title}>{lastStory.title}</span>
-                  <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">{lastStory.session.messages.length} 楼</span>
+                  <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">{lastStory.floorCount} 楼</span>
                 </button>
               )}
               {listTotal > 0 && (

@@ -43,11 +43,14 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { classifyAssetSource, type AssetSource } from '@/lib/asset-source';
 import type { WorldBookItem } from '@/types/worldbook';
-import type { PresetItem } from '@/types/preset';
+import type { AssetIndexEntry } from '@/lib/asset-index-entry';
+import { listAssetIndex } from '@/lib/asset-index';
+import { PresetCatalog } from '@/components/preset/PresetCatalog';
+import { subscribeRecordChanges } from '@/lib/repo/changes';
 import type { RegexCollectionItem } from '@/types/regex';
 import { getAllWorldBooks, deleteWorldBook, saveWorldBook } from '@/lib/worldbook-db';
 import { readWorldBookUpload, worldBookItemFromUpload } from '@/lib/worldbook-file-import';
-import { getAllPresets, deletePreset } from '@/lib/preset-db';
+import { deletePreset } from '@/lib/preset-db';
 import { getAllRegexCollections, deleteRegexCollection } from '@/lib/regex-db';
 import { listCharacterIndex } from '@/lib/archive-index';
 import { buildAssetLibraryRows, type AssetLibraryRow } from '@/lib/asset-library-rows';
@@ -153,7 +156,7 @@ const AssetLibrary = () => {
   const section = readBrowserSection(searchParams.get('section'));
 
   const [worldbooks, setWorldbooks] = useState<WorldBookItem[]>([]);
-  const [presets, setPresets] = useState<PresetItem[]>([]);
+  const [presets, setPresets] = useState<AssetIndexEntry[]>([]);
   const [regexes, setRegexes] = useState<RegexCollectionItem[]>([]);
   /** assetId → 引用它的角色名列表（绑定关系展示 + 删除提示） */
   const [refNames, setRefNames] = useState<Record<string, string[]>>({});
@@ -170,7 +173,7 @@ const AssetLibrary = () => {
     try {
       const [wbs, ps, rs, chars] = await Promise.all([
         getAllWorldBooks(),
-        getAllPresets(),
+        listAssetIndex('presets'),
         getAllRegexCollections(),
         // 引用名称是附加信息；索引失败不应抹掉已经成功读取的资产列表。
         listCharacterIndex().catch(() => []),
@@ -197,6 +200,9 @@ const AssetLibrary = () => {
   // 无条件读取：侧栏三类的数量常驻显示，停在其他资产时也得是真数，
   // 不然一进页面看到「世界书 0」会以为库空了。
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => subscribeRecordChanges(change => {
+    if (change.store === 'presets') void listAssetIndex('presets').then(setPresets).catch(() => {});
+  }), []);
 
   const rows: Record<AssetTab, AssetLibraryRow[]> = useMemo(
     () => buildAssetLibraryRows({ worldbooks, presets, regexes }),
@@ -320,7 +326,7 @@ const AssetLibrary = () => {
                   </Button>
                 </>
               )}
-              <Button size="sm" className="self-center" onClick={() => navigate(meta.toolPath)}>
+              <Button size="sm" className="self-center" onClick={() => navigate(tab === 'preset' ? '/tools?focus=preset' : meta.toolPath)}>
                 <Plus className="w-4 h-4 mr-1.5" />
                 打开{meta.toolLabel}
               </Button>
@@ -373,6 +379,8 @@ const AssetLibrary = () => {
             <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto scrollbar-thin px-6 py-3">
               <OtherAssetsBrowser />
             </div>
+          ) : tab === 'preset' ? (
+            <div className="flex-1 min-w-0 min-h-0"><PresetCatalog /></div>
           ) : (
           <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin px-6 py-3">
             {/* 筛选首行：状态 + 来源。原来在左栏，现在和类别导航分开。 */}

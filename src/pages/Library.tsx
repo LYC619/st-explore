@@ -59,14 +59,13 @@ import { createTauriFs, isTauri, pickDirectory } from '@/lib/vault/tauri-fs';
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
 import {
   CHARACTER_TYPES,
-  getAllCharacters,
   saveCharacter,
   deleteCharacter,
   getLibraryTagPreferences,
   saveLibraryTagPreferences,
   updateArchiveStory,
 } from '@/lib/archive-db';
-import { listStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
+import { listCharacterIndex, toCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { readLibraryReturnState, writeLibraryReturnState } from '@/lib/library-return-state';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { scopedKey } from '@/lib/vault/vault-scope';
@@ -110,7 +109,7 @@ const Library = () => {
   /** 窄屏（<1024px）把筛选栏搬进左抽屉；桌面档保持原来的可拖宽侧栏 */
   const { isMobile, isCompact } = useViewport();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [characters, setCharacters] = useState<ArchiveCharacter[]>([]);
+  const [characters, setCharacters] = useState<CharacterIndexEntry[]>([]);
   const [storyIndex, setStoryIndex] = useState<StoryIndexEntry[]>([]);
   const [returnState] = useState(readLibraryReturnState);
   const [scopeEpoch] = useState(getVaultEpoch);
@@ -172,7 +171,7 @@ const Library = () => {
     setRefreshing(true);
     try {
       const [chars, stories, preferences] = await Promise.all([
-        getAllCharacters(),
+        listCharacterIndex(),
         listStoryIndex(),
         getLibraryTagPreferences(),
       ]);
@@ -626,7 +625,7 @@ const Library = () => {
                   ref={reviewRef}
                   characters={filtered}
                   storyIndex={storyIndex}
-                  onCharacterChange={(updated) => setCharacters((current) => current.map((c) => c.id === updated.id ? updated : c))}
+                  onCharacterChange={(updated) => setCharacters((current) => current.map((c) => c.id === updated.id ? toCharacterIndex(updated) : c))}
                   onStoriesChange={load}
                 />
               </Suspense>

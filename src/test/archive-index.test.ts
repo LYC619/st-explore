@@ -82,6 +82,17 @@ beforeEach(() => {
   setActiveVault(null);
 });
 
+it.each(['idb', 'vault'])('故事摘要保留乱序消息时间范围及分支目录（%s）', async backend => {
+  if (backend === 'vault') setActiveVault(createVault(createMemFs()));
+  const story = makeStory('time', '时间', 3);
+  story.session.messages[0].timestamp = 3000;
+  story.session.messages[1].timestamp = 1000;
+  await saveArchiveStory(story);
+  const [entry] = await listStoryIndex();
+  expect(entry).toMatchObject({ floorCount: 3, storyTimeRange: { startedAt: 1000, endedAt: 3000 } });
+  expect(entry).not.toHaveProperty('session');
+});
+
 afterEach(() => {
   setActiveVault(null);
 });

@@ -13,7 +13,7 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.on('pageerror', error => errors.push(error.message));
 const currentPage = () => page.locator('[data-novel-progress]').textContent().then(text => Number(text.match(/^\d+/)[0]) - 1);
 try {
-  await page.goto(`${base}/scripts/smoke/maintenance-reader.html`);
+  await page.goto(`${base}/src/test/browser/maintenance-reader.html`);
   await page.waitForFunction(() => !!window.maintenance);
   assert.deepEqual(await page.evaluate(() => window.maintenance.parse()), { count: 1, title: 'Synthetic Story' });
   await page.evaluate(() => window.maintenance.mount());

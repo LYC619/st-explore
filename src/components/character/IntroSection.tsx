@@ -292,7 +292,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
 
       {/* ===== 手动编辑 ===== */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl h-[85dvh] max-h-[900px] flex flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>编辑简介</DialogTitle>
             <DialogDescription>支持 Markdown；保存后成为当前简介（旧版存入历史），不写回 ST 卡文件。</DialogDescription>
@@ -300,7 +300,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
           <Textarea
             value={editDraft}
             onChange={(e) => setEditDraft(e.target.value)}
-            className="min-h-64 font-mono text-sm"
+            className="min-h-0 flex-1 resize-none font-mono text-sm leading-relaxed"
             placeholder="写一份给自己看的档案简介……"
           />
           <DialogFooter>

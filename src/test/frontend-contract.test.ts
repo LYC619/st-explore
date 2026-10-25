@@ -369,7 +369,8 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     expect(home).toContain('homeSnapshot.resources');
     expect(home).toContain('homeSnapshot.assetCounts');
     expect(home).toContain('homeSnapshot = nextSnapshot');
-    expect(home).toContain('useEffect(() => { void loadData(); }, [loadData])');
+    // Refresh/error behavior and vault-switch isolation are exercised by the
+    // loading visibility and library portrait performance DOM tests.
   });
 
   it('首页占满视口并保持左右双列，只有故事列表内部滚动', () => {

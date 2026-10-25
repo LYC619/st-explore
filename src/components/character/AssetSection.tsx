@@ -50,6 +50,7 @@ import type { CharacterPatch } from '@/lib/character-write';
 import type { WorldBookEntry } from '@/types/worldbook';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { getAllPresets } from '@/lib/preset-db';
+import { presetOptionLabel } from '@/lib/preset-catalog';
 import { getAllRegexCollections } from '@/lib/regex-db';
 import { addAssetRef, removeAssetRef } from '@/lib/asset-cow';
 import { formatListTime, formatFullTime } from '@/lib/time-display';
@@ -159,7 +160,7 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
         };
       }),
       ...presets.map((p): AssetView => ({
-        kind: 'preset', id: p.id, title: p.title, updatedAt: p.updatedAt, derived: p.derived,
+        kind: 'preset', id: p.id, title: presetOptionLabel(p), updatedAt: p.updatedAt, derived: p.derived,
         entries: p.preset.prompts.slice(0, PREVIEW_LIMIT).map((b) => ({
           title: b.name || b.identifier,
           body: b.marker ? '（系统插槽，运行时动态填充）' : b.content,

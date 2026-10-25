@@ -239,7 +239,7 @@ export function SummaryWorkspace({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>放弃未保存的总结草稿？</AlertDialogTitle>
-            <AlertDialogDescription>当前标题或正文尚未保存，继续后无法恢复这些修改。</AlertDialogDescription>
+            <AlertDialogDescription>当前记录尚有未保存的修改，继续后无法恢复这些修改。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>继续编辑</AlertDialogCancel>

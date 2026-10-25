@@ -666,6 +666,8 @@ const CharacterPage = () => {
             {/* 备注 tab（10.3c CRUD） */}
             <TabsContent value="notes" className="mt-3">
               <NotesSection
+                key={character.id}
+                characterId={character.id}
                 notes={character.notes ?? []}
                 onChange={async (notes) => {
                   await patchCharacter({ notes });

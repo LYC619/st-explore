@@ -27,12 +27,12 @@ function browserDownload(bytes: Uint8Array, fileName: string): void {
   URL.revokeObjectURL(url);
 }
 
-export async function savePackBytes(bytes: Uint8Array, fileName: string): Promise<SavePackOutcome> {
+export async function savePackBytes(bytes: Uint8Array, fileName: string, format = { label: '阅读包', extension: 'ste-reading' }): Promise<SavePackOutcome> {
   if (isTauri()) {
     const { save } = await import('@tauri-apps/plugin-dialog');
     const path = await save({
       defaultPath: fileName,
-      filters: [{ name: '阅读包', extensions: ['ste-reading'] }],
+      filters: [{ name: format.label, extensions: [format.extension] }],
     });
     if (!path) return 'cancelled';
     const { writeAbsBytes } = await import('@/lib/vault/tauri-fs');
@@ -50,7 +50,7 @@ export async function savePackBytes(bytes: Uint8Array, fileName: string): Promis
       data: bytesToBase64(bytes),
       directory: Directory.Cache,
     });
-    await Share.share({ title: fileName, url: uri, dialogTitle: '发送阅读包' });
+    await Share.share({ title: fileName, url: uri, dialogTitle: `发送${format.label}` });
     return 'shared';
   }
 

@@ -3,11 +3,11 @@ import type { ArchiveCharacter } from '@/types/archive';
 import type { PreparedCharacterMutation } from '@/lib/character-mutation';
 import { createMemFs, type VaultFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
-import { setActiveVault } from '@/lib/vault/active';
+import { getActiveVault, setActiveVault } from '@/lib/vault/active';
 import { deleteCharacter, getCharacter, saveCharacter, updateCharacter } from '@/lib/archive-db';
 import { endPortraitOperation, recoverCharacterJournals, type PortraitMutationJournal } from '@/lib/portrait-journal';
 import { loadPortraitViews, loadPortraitImage, movePortraitItemsMutation, removePortraitItems, removePortraitRow, replacePortraitItemMutation } from '@/lib/portrait-store';
-import { scanVaultFiles } from '@/lib/vault/file-maintenance';
+import { scanVaultFiles, recycleExpiredFiles, RECYCLE_RETENTION_MS } from '@/lib/vault/file-maintenance';
 
 const oldBytes = btoa('old bytes');
 const newBytes = btoa('new bytes');
@@ -126,6 +126,8 @@ describe('portrait deletion persistence', () => {
     const saved = await updateCharacter(c.id, current => removePortraitRow(current, 'day', true));
     expect(saved!.portraitRows!.map(row => row.id)).toEqual(['night']);
     expect(saved!.portraitCurrentId).toBeUndefined();
+    expect(trash).not.toHaveBeenCalled();
+    await recycleExpiredFiles(getActiveVault()!, Date.now() + RECYCLE_RETENTION_MS);
     expect(trash).toHaveBeenCalledTimes(2);
     expect(await base.readBinary(hand)).toBe(btoa('user file'));
     expect(await base.readBinary(card)).toBe(btoa('card'));
@@ -169,19 +171,22 @@ describe('portrait deletion persistence', () => {
     expect(journals()).toHaveLength(0);
   });
 
-  it('retries failed trash cleanup on reopening without reviving a removed portrait', async () => {
+  it('retries expired portrait recycling after reopening without reviving removed metadata', async () => {
     const { c, base, fs, journals } = await fixture();
     fs.trashFile = async () => { throw new Error('trash unavailable'); };
     const onWarning = vi.fn();
     const saved = await updateCharacter(c.id, current => removePortraitItems(current, ['p1'], true), { onWarning });
     expect(saved!.portraitRows![0].items.map(item => item.id)).toEqual(['p2']);
-    expect(onWarning).toHaveBeenCalled();
-    expect(journals()).toHaveLength(1);
+    expect(onWarning).not.toHaveBeenCalled();
+    expect(journals()).toHaveLength(0);
     expect((await base.stat(sourcePath)).exists).toBe(false);
+    const due = Date.now() + RECYCLE_RETENTION_MS;
+    expect((await recycleExpiredFiles(getActiveVault()!, due)).failed).toHaveLength(1);
     fs.trashFile = path => base.removeFile(path);
     setActiveVault(createVault({ ...fs }));
     expect((await getCharacter(c.id))!.portraitRows).toEqual(saved!.portraitRows);
     expect(journals()).toHaveLength(0);
+    expect((await recycleExpiredFiles(getActiveVault()!, due)).removed).toHaveLength(1);
     expect(Object.keys(base.dump()).filter(path => path.startsWith('.ste/retained/') && path.endsWith('old.png'))).toHaveLength(0);
   });
 });

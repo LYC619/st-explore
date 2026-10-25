@@ -22,7 +22,7 @@ async function content(kind) {
   return page.locator('textarea[placeholder="/pattern/flags \u6216\u7eaf pattern"]');
 }
 try {
-  await page.goto(`${base}/scripts/smoke/maintenance-reader.html`);
+  await page.goto(`${base}/src/test/browser/maintenance-reader.html`);
   await page.waitForFunction(() => !!window.maintenance);
   for (const kind of ['worldbook', 'preset', 'regex']) {
     await page.evaluate(kind => window.maintenance.mountEditor(kind), kind);

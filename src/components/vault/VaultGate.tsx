@@ -8,6 +8,7 @@ import { AlertTriangle, FolderOpen, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { bootVault, chooseVaultRoot, type VaultBootState } from '@/lib/vault/bootstrap';
 import { isInvalidAppConfigError, repairAppConfig } from '@/lib/vault/tauri-fs';
+import { VaultRecycleMaintenance } from './VaultRecycleMaintenance';
 
 export function VaultGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<VaultBootState | 'booting'>('booting');
@@ -101,5 +102,5 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <><VaultRecycleMaintenance />{children}</>;
 }

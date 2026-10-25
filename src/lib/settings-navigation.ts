@@ -1,4 +1,4 @@
-export const SETTINGS_SECTIONS = ['display', 'ai', 'directories', 'data', 'about'] as const;
+export const SETTINGS_SECTIONS = ['display', 'ai', 'prompts', 'directories', 'data', 'about'] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 

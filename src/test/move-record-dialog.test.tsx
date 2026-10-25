@@ -6,15 +6,19 @@ import { createVault } from '@/lib/vault/vault-backend';
 import { createMemFs } from '@/lib/vault/fs';
 import { setActiveVault } from '@/lib/vault/active';
 import { buildStoryFromSession } from '@/lib/archive-db';
+import * as archiveDb from '@/lib/archive-db';
 import type { SummaryItem } from '@/types/summary';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined;
-afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; setActiveVault(null); });
+afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; setActiveVault(null); vi.restoreAllMocks(); });
 it('从目标选择器移动日记，保存正确归属并保留来源', async () => {
   const vault = createVault(createMemFs()); setActiveVault(vault);
   const source = buildStoryFromSession({ id: 'a', character: { name: '角色' }, user: { name: '我' }, title: '原故事', messages: [], createdAt: 1 });
   const target = buildStoryFromSession({ id: 'b', character: { name: '角色' }, user: { name: '我' }, title: '另一故事', messages: [], createdAt: 1 });
+  target.branches = [{ id: 'branch', name: '保留的分支', session: target.session, markers: [], createdAt: 1, updatedAt: 1 }];
+  const fullStories = vi.spyOn(archiveDb, 'getAllArchiveStories');
+  const fullCharacters = vi.spyOn(archiveDb, 'getAllCharacters');
   await vault.repo('archiveStories').put(source); await vault.repo('archiveStories').put(target);
   const record: SummaryItem = { id: 'sum', kind: 'diary', title: '日记', content: '保留文字', bookId: source.id, bookTitle: source.title, floorStart: 2, floorEnd: 3, createdAt: 1, updatedAt: 1 };
   await vault.repo('summaries').put(record);
@@ -23,9 +27,14 @@ it('从目标选择器移动日记，保存正确归属并保留来源', async (
   const select = document.querySelector<HTMLSelectElement>('select[aria-label="目标故事"]')!;
   expect(select).not.toBeNull();
   await act(async () => { select.value = target.id; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect(fullStories).not.toHaveBeenCalled();
+  expect(fullCharacters).not.toHaveBeenCalled();
+  const branch = document.querySelector<HTMLSelectElement>('select[aria-label="目标脉络"]')!;
+  expect(branch.textContent).toContain('保留的分支');
+  await act(async () => { branch.value = 'branch'; branch.dispatchEvent(new Event('change', { bubbles: true })); });
   const button = [...document.querySelectorAll('button')].find(b => b.textContent === '移动')!;
   await act(async () => button.click());
-  expect(moved).toHaveBeenCalledWith(expect.objectContaining({ bookId: target.id, content: '保留文字', rangeDetached: true }));
+  expect(moved).toHaveBeenCalledWith(expect.objectContaining({ bookId: target.id, branchId: 'branch', content: '保留文字', rangeDetached: true }));
   expect(close).toHaveBeenCalledWith(false);
   expect(await vault.repo('summaries').get('sum')).toMatchObject({ bookId: target.id, provenance: { bookId: source.id } });
 });

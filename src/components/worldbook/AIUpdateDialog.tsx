@@ -1,3 +1,5 @@
+import { getBuiltinPromptDefault, getBuiltinPrompt, formatBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
+import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Sparkles, Loader2, StopCircle, Wand2, FileWarning, Pencil, RotateCcw } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,27 +24,8 @@ interface Props {
 }
 
 /** 增量更新默认提示词：在"提取世界书"基础上强调"只输出新设定、不重复已有条目"。可在弹窗内查看编辑。 */
-export const DEFAULT_WB_UPDATE_PROMPT = `你是一个世界观设定提取专家。用户会提供一段角色扮演对话记录，以及【已有世界书条目清单】。
-请从对话中提炼出【新出现】或【有重要更新】的世界观设定，输出为世界书 JSON 格式，用于追加到已有世界书。
+export const DEFAULT_WB_UPDATE_PROMPT = getBuiltinPromptDefault('worldbook.update');
 
-严格要求：
-- 只输出一个 JSON 对象，格式为 { "entries": { "0": {...}, "1": {...}, ... } }，不要任何解释文字
-- 【不要重复已有条目清单中已覆盖的设定】，只输出对话里新增/更新的内容；若对话中没有值得新增的设定，输出 { "entries": {} }
-- 每个条目字段：
-  - key: 关键词数组（触发该条目的关键词）
-  - keysecondary: 次要关键词数组（可为空）
-  - content: 详细的设定描述
-  - comment: 条目标题/简短标识
-  - constant: false
-  - vectorized: false
-  - enabled: true
-  - position: 4
-  - order: 从 100 起递增
-
-提炼这些类型的设定：角色特征（外貌/性格/能力/背景的新变化）、地点/场景、物品/道具、世界规则、组织/阵营、重要事件/历史。
-只输出 JSON。`;
-
-const PROMPT_LS_KEY = 'st-wb-update-prompt';
 
 export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }: Props) {
   const { toast } = useToast();
@@ -50,27 +33,33 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [floorStart, setFloorStart] = useState(0);
   const [floorEnd, setFloorEnd] = useState(0);
-  const [customPrompt, setCustomPrompt] = useState(DEFAULT_WB_UPDATE_PROMPT);
+  const savedPrompt = useBuiltinPrompt('worldbook.update');
+  const [customPrompt, setCustomPrompt] = useState(() => getBuiltinPrompt('worldbook.update'));
   const [promptOpen, setPromptOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [output, setOutput] = useState('');
   const abortRef = useRef<AbortController | null>(null);
 
-  // 提示词 localStorage 记忆（与故事树 AI 弹窗同款模式）
+  // 与设置页共用已保存的提示词，重新打开时读取最新版本
   useEffect(() => {
-    const saved = localStorage.getItem(PROMPT_LS_KEY);
-    if (saved) setCustomPrompt(saved);
-  }, []);
+    if (open) setCustomPrompt(savedPrompt);
+  }, [open, savedPrompt]);
 
   const handlePromptChange = (v: string) => {
     setCustomPrompt(v);
-    localStorage.setItem(PROMPT_LS_KEY, v);
+  };
+
+  const handlePromptSave = () => {
+    try { saveBuiltinPrompt('worldbook.update', customPrompt); toast({ title: '提示词已保存到设置' }); }
+    catch (err) { toast({ title: '保存失败', description: String(err), variant: 'destructive' }); }
   };
 
   const handlePromptReset = () => {
-    setCustomPrompt(DEFAULT_WB_UPDATE_PROMPT);
-    localStorage.removeItem(PROMPT_LS_KEY);
-    toast({ title: '已恢复默认提示词' });
+    try {
+      resetBuiltinPrompt('worldbook.update');
+      setCustomPrompt(getBuiltinPrompt('worldbook.update'));
+      toast({ title: '已恢复默认提示词' });
+    } catch (err) { toast({ title: '恢复失败', description: String(err), variant: 'destructive' }); }
   };
 
   // 打开时载入活跃聊天（API 配置统一在 AI 工具页维护，生成时即时读取）
@@ -111,14 +100,14 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
       return;
     }
 
-    const userContent = `【已有世界书条目清单】（请勿重复这些设定）：\n${existingSummary}\n\n【对话记录】：\n${floorsToText(session, floorStart, floorEnd)}`;
+    const userContent = formatBuiltinPrompt('worldbook.update.input', { existing: existingSummary, chat: floorsToText(session, floorStart, floorEnd) });
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
     setOutput('');
     try {
       await callOpenAIMessages(config, [
-        { role: 'system', content: customPrompt.trim() || DEFAULT_WB_UPDATE_PROMPT },
+        { role: 'system', content: customPrompt.trim() || getBuiltinPrompt('worldbook.update') },
         { role: 'user', content: userContent },
       ], {
         onChunk: (chunk) => setOutput((p) => p + chunk),
@@ -214,10 +203,11 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
                       onChange={(e) => handlePromptChange(e.target.value)}
                       className="min-h-[30vh] font-mono text-xs"
                     />
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center gap-2 justify-between">
                       <p className="text-xs text-muted-foreground">
-                        修改会自动记住。注意保留 {'{ "entries": ... }'} 的 JSON 输出约定，否则无法解析并入。
+                        本次生成使用当前输入；保存后供所有入口使用。注意保留 {'{ "entries": ... }'} 的 JSON 输出约定，否则无法解析并入。
                       </p>
+                      <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>保存提示词</Button>
                       <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={handlePromptReset}>
                         <RotateCcw className="w-3 h-3" />恢复默认
                       </Button>

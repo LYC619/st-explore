@@ -24,18 +24,6 @@ import { RoleBadge, MarkerBadge, UnreferencedBadge, EmptyBadge, InjectionBadge }
 import { isInjectionBlock, roleBorderClass } from './prompt-block-style';
 import { AIRewriteContent } from '@/components/worldbook/AIRewriteContent';
 
-/** 预设提示词块的 AI 改写语境 */
-const PRESET_REWRITE_SYSTEM = `你是一个 SillyTavern 预设（Chat Completion Preset）提示词调优助手。用户会给你一段提示词块的当前内容，以及修改要求。
-请按要求改写这段提示词，直接输出改写后的【完整提示词正文】，不要任何解释、不要代码块包裹。
-注意：这是发送给大语言模型的指令/系统提示，保持其作为"指令"的清晰与可执行性；保留 {{char}}、{{user}} 等占位宏不要替换掉。`;
-
-const PRESET_REWRITE_PRESETS = [
-  '让指令更清晰明确',
-  '精简冗余表述',
-  '强调中文回复',
-  '加强角色扮演沉浸感',
-];
-
 interface PromptEditorProps {
   preset: NormalizedPreset;
   activeCharacterId: number;
@@ -256,8 +244,8 @@ export function PromptEditor({
                               <AIRewriteContent
                                 content={block?.content ?? ''}
                                 onResult={(text) => onBlockContentChange(entry.identifier, text)}
-                                systemPrompt={PRESET_REWRITE_SYSTEM}
-                                quickPresets={PRESET_REWRITE_PRESETS}
+                                builtinPromptId="preset.rewrite"
+                                quickPresetPrefix="preset.quick"
                                 title="AI 改写本提示词块"
                                 compact
                               />

@@ -30,6 +30,13 @@ vi.mock('@/lib/worldbook-db', () => ({
 vi.mock('@/lib/preset-db', () => ({
   getPreset: db.preset.get, getAllPresets: db.preset.all, savePreset: db.preset.save,
   deletePreset: db.preset.remove, pruneAutoSavedPresets: vi.fn(),
+  // Persistence conflicts are covered with the real repository in preset-catalog-persistence.
+  saveEditedPreset: async (id: string, title: string, preset: PresetItem['preset']) => {
+    const base = await db.preset.get(id);
+    if (!base) throw new Error('预设已不存在');
+    await db.preset.save({ ...base, title, preset, autoSaved: false, updatedAt: Date.now() });
+  },
+  createPresetDiy: vi.fn(),
 }));
 vi.mock('@/lib/regex-db', () => ({
   getRegexCollection: db.regex.get, getAllRegexCollections: db.regex.all, saveRegexCollection: db.regex.save,
@@ -235,7 +242,7 @@ export function navigationTests(kind: EditorKind) {
       await mount(kind, '?assetId=A&characterId=owner-a');
       await dirty(kind);
       const slow = deferred<Item>();
-      db[kind].get.mockReturnValue(slow.promise);
+      db[kind].get.mockImplementation((id: string) => id === 'B' ? slow.promise : Promise.resolve(fixture(kind, id)));
       await go('?assetId=B&characterId=owner-b');
       await save(kind);
       expect(db[kind].save.mock.calls.at(-1)![0]).toMatchObject({ derived: { derivedFrom: 'A', characterId: 'owner-a' } });

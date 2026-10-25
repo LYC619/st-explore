@@ -9,6 +9,7 @@
  * 阶段7 的 FileVault 实现同一接口后，上层代码不感知存储介质切换。
  */
 import { openDB, type StoreName } from '@/lib/idb';
+import { notifyRecordChanged } from './changes';
 
 /** 所有持久化条目的公共形状（现有 7 个 store 均满足） */
 export interface BaseRecord {
@@ -39,9 +40,9 @@ export interface Repo<T extends BaseRecord> {
   list(): Promise<T[]>;
   /**
    * 列表投影：排序与条目数同 list()，但返回的记录**可能缺少大字段**
-   * （文件库后端会跳过角色卡面 PNG、剥掉故事正文）。
+   * （文件库后端会跳过角色卡面 PNG、剥掉故事及世界书/预设/正则正文）。
    *
-   * 只给「拿元信息渲染列表」的调用方用，且必须经 `lib/archive-index` 收敛成不含大字段的窄类型——
+   * 只给「拿元信息渲染列表」的调用方用，且必须经 `lib/archive-index` / `lib/asset-index` 收敛成不含大字段的窄类型——
    * 直接把这里的记录当完整记录写回会抹掉 PNG / 正文。要完整记录一律走 list()/get()。
    * IDB 后端省不掉（getAll 本来就是整条取出），等价于 list()。
    */
@@ -88,9 +89,11 @@ export function createIdbRepo<T extends BaseRecord>(storeName: StoreName): Repo<
     // IDB 整条记录一次写入，没有派生文件，PutOptions 对它无意义
     async put(item) {
       await write(store => { store.put(item); });
+      notifyRecordChanged(storeName, item.id);
     },
     async remove(id) {
       await write(store => { store.delete(id); });
+      notifyRecordChanged(storeName, id);
     },
   };
 }

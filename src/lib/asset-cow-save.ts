@@ -14,6 +14,7 @@ import { planCowSave, buildDerivedMeta, type CowAssetLike, type CowPlan } from '
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { getVaultEpoch } from '@/lib/vault/active';
+import type { PresetItem } from '@/types/preset';
 
 const cowWrites = new KeyedSerialQueue();
 
@@ -138,6 +139,14 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
       createdAt: now,
       updatedAt: now,
     } as unknown as T;
+    if (kind === 'preset') {
+      const original = base as unknown as PresetItem;
+      const copy = item as unknown as PresetItem;
+      copy.packageFiles = structuredClone(original.packageFiles);
+      if (original.catalog) copy.catalog = {
+        ...original.catalog, series: original.catalog.series || original.title, originId: original.id, variant: [original.catalog.variant, 'DIY'].filter(Boolean).join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now,
+      };
+    }
   }
 
   params.validate?.(all.find(asset => asset.id === targetId) ?? base, base);

@@ -1,3 +1,4 @@
+import { getBuiltinPromptDefault, getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 故事树 AI 辅助：从选定聊天楼层生成/更新事实节点。
  * 借鉴 st-memory-wizzard 的「现有树大纲 → LLM 输出 JSON ops → 幂等 apply」链路，
@@ -30,32 +31,7 @@ export interface TreeOp {
 }
 
 /** 默认填树 system prompt（UI 允许用户查看/修改，改后仍需保持 JSON ops 输出约定） */
-export const DEFAULT_TREE_FILL_PROMPT = `你是「SillyTavern 聊天记录归档工具」的故事树整理助手。故事树是一份长期档案：把角色扮演聊天里的客观设定与剧情事实按 角色/地点/物品/事件 分类沉淀，供玩家回顾与续写时查阅。
-用户会给你：当前故事树大纲 + 一段楼层聊天记录（可能是全书中段，前文事实多半已在树里）。
-你的任务：输出对树的**增量操作**——只补新信息，绝不复述树里已有的事实。
-
-各类节点的整理方式不同：
-- 角色(character)：一个角色 = 一个节点，挂在「角色」类目下。正文只写这段楼层里**新发生**的身份/关系/心境变化，写成一到三句凝练的事实句。系统会自动把内容按卷次归档到该角色名下、逐卷呈现成长轨迹，所以不要重复旧卷内容，也不要自己写"第X卷"之类的标题。
-- 事件(event)：一个关键剧情节点 = 一个**独立**节点，按发生顺序挂在「事件」类目下，标题用短句概括（如「初次相遇」「别墅夜谈」）。每个事件写成完整独立的一段，不要往旧事件节点追加内容。日常琐事不记，只记推动剧情或关系的关键转折。
-- 地点(location)/物品(item)：客观设定描述；已有节点出现新信息时用 update 追加一句即可。
-- 世界观等背景设定可用 custom 类型或挂到合适类目。
-
-通用规则：
-- 只记录聊天中确实发生/明确提及的客观事实；不虚构、不推测、不加评价。
-- 一个实体 = 一个节点；树里已有的实体用 update（按路径定位），绝不重复 insert。
-- archive 仅用于被剧情明确推翻的旧事实节点。
-- 全部用简体中文。
-
-严格输出如下 JSON（不要输出任何其它文字、不要 markdown 围栏）：
-{
-  "ops": [
-    {"op":"insert","parent":"角色","title":"爱丽丝","hint":"银发女佣","content":"与主角缔结契约，搬入别墅同住。","keywords":"女佣,契约","type":"character"},
-    {"op":"insert","parent":"事件","title":"契约之夜","content":"月圆之夜，爱丽丝与主角在地下室缔结血契，条件是三年内不得离开别墅。","keywords":"转折","type":"event"},
-    {"op":"update","path":"地点/别墅","content":"地下室藏有先代主人留下的封印阵。"},
-    {"op":"archive","path":"事件/旧设定"}
-  ]
-}
-insert 用 parent(父路径)+title 定位；update/archive 用 path(完整路径，如「角色/爱丽丝」)定位；父类目不存在会自动创建。每个 insert 都必须带 type，可选值：character(角色)/location(地点)/item(物品)/event(事件)/custom(其他)。`;
+export const DEFAULT_TREE_FILL_PROMPT = getBuiltinPromptDefault('tree.fill');
 
 /** 组装 AI 填树请求的 messages（systemPrompt 缺省用内置默认，UI 可传用户改过的版本） */
 export function buildTreeFillMessages(
@@ -65,10 +41,10 @@ export function buildTreeFillMessages(
   systemPrompt?: string
 ): ChatCompletionMessage[] {
   const outline = buildOutline(nodes, { includeArchived: false }) || '（当前树为空）';
-  const instr = extraInstruction?.trim() ? `\n\n【额外要求】\n${extraInstruction.trim()}` : '';
-  const userContent = `【当前事实树】\n${outline}\n\n【聊天记录】\n${floorText}${instr}`;
+  const instr = extraInstruction?.trim() ? formatBuiltinPrompt('tree.instruction', { instruction: extraInstruction.trim() }) : '';
+  const userContent = formatBuiltinPrompt('tree.input', { outline, chat: floorText, instruction: instr });
   return [
-    { role: 'system', content: systemPrompt?.trim() || DEFAULT_TREE_FILL_PROMPT },
+    { role: 'system', content: systemPrompt?.trim() || getBuiltinPrompt('tree.fill') },
     { role: 'user', content: userContent },
   ];
 }

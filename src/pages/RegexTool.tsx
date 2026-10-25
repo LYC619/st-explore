@@ -22,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { RegexRule } from '@/types/chat';
-import type { ArchiveStory } from '@/types/archive';
+import { listStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
 import { getInitialRegexRules } from '@/lib/session-storage';
 import { previewRegexRules, diffParts } from '@/lib/regex-preview';
 import { parseSTRegexImport } from '@/lib/st-regex-interop';
@@ -37,7 +37,8 @@ import {
 } from '@/lib/regex-db';
 import type { RegexCollectionItem } from '@/types/regex';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
-import { getCharacter, getAllArchiveStories } from '@/lib/archive-db';
+import { getCharacter, getArchiveStory } from '@/lib/archive-db';
+import { getVaultEpoch } from '@/lib/vault/active';
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
 import { executeDeleteAction } from '@/lib/destructive-action';
 import { useAssetIdentityNavigation } from '@/hooks/use-asset-identity-navigation';
@@ -63,9 +64,15 @@ const RegexTool = () => {
   const [sampleDepth, setSampleDepth] = useState('0');
   const [expandedRuleId, setExpandedRuleId] = useState<string | null>(null);
   // 从故事取某楼
-  const [stories, setStories] = useState<ArchiveStory[]>([]);
+  const [stories, setStories] = useState<StoryIndexEntry[]>([]);
   const [pickStoryId, setPickStoryId] = useState('');
   const [pickFloor, setPickFloor] = useState('');
+  const sampleRequest = useRef(0);
+  useEffect(() => {
+    const requests = sampleRequest;
+    requests.current++;
+    return () => { requests.current++; };
+  }, [pickStoryId, pickFloor]);
 
   const initialImport = useRef<Promise<RegexRule[] | null> | null>(null);
   const { pendingTarget, confirmPending, cancelPending, captureCurrent, requestAsset } = useAssetIdentityNavigation({
@@ -123,7 +130,7 @@ const RegexTool = () => {
   // 故事列表只用于预览取样，不参与编辑对象身份。
   useEffect(() => {
     let cancelled = false;
-    getAllArchiveStories().then((items) => { if (!cancelled) setStories(items); }).catch(() => {});
+    listStoryIndex().then((items) => { if (!cancelled) setStories(items); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
@@ -236,17 +243,32 @@ const RegexTool = () => {
 
   const pickStory = stories.find((s) => s.id === pickStoryId);
 
-  const handlePickFloor = () => {
+  const handlePickFloor = async () => {
     if (!pickStory) return;
+    const request = ++sampleRequest.current;
+    const epoch = getVaultEpoch();
+    const isCurrent = () => request === sampleRequest.current && epoch === getVaultEpoch();
     const n = parseInt(pickFloor, 10);
-    const msg = pickStory.session.messages[n - 1];
+    let story;
+    try {
+      story = await getArchiveStory(pickStory.id);
+    } catch {
+      if (isCurrent()) toast({ title: '故事读取失败，请重试', variant: 'destructive' });
+      return;
+    }
+    if (!isCurrent()) return;
+    if (!story) {
+      toast({ title: '故事已不存在，请重新选择', variant: 'destructive' });
+      return;
+    }
+    const msg = story.session.messages[n - 1];
     if (!msg) {
-      toast({ title: `该故事没有第 ${pickFloor} 楼（共 ${pickStory.session.messages.length} 楼）`, variant: 'destructive' });
+      toast({ title: `该故事没有第 ${pickFloor} 楼（共 ${story.session.messages.length} 楼）`, variant: 'destructive' });
       return;
     }
     setSampleText(msg.content);
     setAsUser(msg.role === 'user' || !!msg.is_user);
-    setSampleDepth(String(pickStory.session.messages.length - n));
+    setSampleDepth(String(story.session.messages.length - n));
     toast({ title: `已取「${pickStory.title}」第 ${n} 楼` });
   };
 
@@ -366,7 +388,7 @@ const RegexTool = () => {
                   <SelectContent>
                     {stories.map((s) => (
                       <SelectItem key={s.id} value={s.id}>
-                        {s.title}（{s.session.messages.length} 楼）
+                        {s.title}（{s.floorCount} 楼）
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -384,17 +406,17 @@ const RegexTool = () => {
                 <Button
                   size="sm"
                   variant={asUser ? 'secondary' : 'outline'}
-                  onClick={() => setAsUser(!asUser)}
+                  onClick={() => { sampleRequest.current++; setAsUser(!asUser); }}
                   title="切换按用户楼还是 AI 楼应用（影响「作用于」限定的规则）"
                 >
                   {asUser ? <User className="w-3.5 h-3.5 mr-1" /> : <Bot className="w-3.5 h-3.5 mr-1" />}
                   按{asUser ? '用户' : 'AI'}楼预览
                 </Button>
               </div>
-              <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>样例深度（末楼为 0）</span><Input aria-label="样例深度" type="number" min={0} step={1} value={sampleDepth} onChange={event => setSampleDepth(event.target.value)} className="w-24" /></label>
+              <label className="mb-2 flex items-center gap-2 text-xs text-muted-foreground"><span>样例深度（末楼为 0）</span><Input aria-label="样例深度" type="number" min={0} step={1} value={sampleDepth} onChange={event => { sampleRequest.current++; setSampleDepth(event.target.value); }} className="w-24" /></label>
               <Textarea
                 value={sampleText}
-                onChange={(e) => setSampleText(e.target.value)}
+                onChange={(e) => { sampleRequest.current++; setSampleText(e.target.value); }}
                 placeholder={'在这里粘贴要测试的文本，例如带 <thinking> 或状态栏的 AI 回复…'}
                 className="min-h-28 font-mono text-xs"
               />

@@ -1,11 +1,11 @@
 import { Clock3, Link2, Link2Off } from 'lucide-react';
-import type { ArchiveStory } from '@/types/archive';
+import type { StoryIndexEntry } from '@/lib/archive-index';
 import { cn } from '@/lib/utils';
 
 interface RecentStoryBarProps {
-  stories: ArchiveStory[];
+  stories: StoryIndexEntry[];
   activeStoryId: string | null;
-  onSelect: (story: ArchiveStory) => void;
+  onSelect: (story: StoryIndexEntry) => void;
   className?: string;
 }
 
@@ -34,7 +34,7 @@ export function RecentStoryBar({ stories, activeStoryId, onSelect, className }: 
               type="button"
               onClick={() => onSelect(story)}
               aria-current={active ? 'page' : undefined}
-              title={`${story.title} · ${story.session.messages.length} 楼 · ${story.characterId ? '已绑定角色' : '未绑定角色'}`}
+              title={`${story.title} · ${story.floorCount} 楼 · ${story.characterId ? '已绑定角色' : '未绑定角色'}`}
               className={cn(
                 'flex max-w-56 shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition-colors',
                 active
@@ -44,7 +44,7 @@ export function RecentStoryBar({ stories, activeStoryId, onSelect, className }: 
             >
               <LinkIcon className="h-3 w-3 shrink-0 opacity-70" />
               <span className="truncate" title={story.title || '未命名故事'}>{story.title || '未命名故事'}</span>
-              <span className="shrink-0 text-[11px] opacity-60">{story.session.messages.length} 楼</span>
+              <span className="shrink-0 text-[11px] opacity-60">{story.floorCount} 楼</span>
             </button>
           );
         })}

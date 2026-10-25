@@ -18,6 +18,7 @@ import type { StoryTree } from '@/types/story-tree';
 import { SUMMARY_KIND_LABELS } from '@/types/summary';
 import { resolveTemplateTitle } from '@/lib/organize-index';
 import { getAllPresets } from '@/lib/preset-db';
+import { presetOptionLabel } from '@/lib/preset-catalog';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 
 export type RailSelection =
@@ -62,7 +63,7 @@ export function ContextRail({
   const [presetNames, setPresetNames] = useState<Map<string, string>>(new Map());
   const [worldbookNames, setWorldbookNames] = useState<Map<string, string>>(new Map());
   useEffect(() => {
-    getAllPresets().then((ps) => setPresetNames(new Map(ps.map((p) => [p.id, p.title])))).catch(() => {});
+    getAllPresets().then((ps) => setPresetNames(new Map(ps.map((p) => [p.id, presetOptionLabel(p)])))).catch(() => {});
     getAllWorldBooks().then((ws) => setWorldbookNames(new Map(ws.map((w) => [w.id, w.title])))).catch(() => {});
   }, []);
 

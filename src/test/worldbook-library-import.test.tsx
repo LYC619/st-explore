@@ -32,6 +32,7 @@ vi.mock('@/lib/preset-db', () => ({
   getAllPresets: vi.fn().mockResolvedValue([]),
   deletePreset: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('@/lib/asset-index', () => ({ listAssetIndex: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/regex-db', () => ({
   getAllRegexCollections: vi.fn().mockResolvedValue([]),
   deleteRegexCollection: vi.fn().mockResolvedValue(undefined),
@@ -154,11 +155,8 @@ describe('附属库直接导入世界书', () => {
     ]);
     await renderLibrary();
 
-    const cardText = (title: string) => Array.from(container.querySelectorAll('*'))
-      .filter((el) => el.textContent?.includes(title) && el.querySelectorAll('*').length < 40)
-      .map((el) => el.textContent ?? '')
-      .sort((a, b) => a.length - b.length)
-      .find((text) => text.includes('STE 最后修改')) ?? '';
+    const cardText = (title: string) => Array.from(container.querySelectorAll('div[role="button"]'))
+      .find(el => el.querySelector('[title]')?.getAttribute('title') === title)?.textContent ?? '';
 
     expect(cardText('有源文件')).toContain('STE 最后修改');
     expect(cardText('有源文件')).toContain('源文件最后修改');

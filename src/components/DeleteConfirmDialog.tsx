@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import type { StoreName } from '@/lib/idb';
 import type { RemoveOptions } from '@/lib/repo';
 import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
-import { prepareFileRemoval } from '@/lib/vault/file-maintenance';
+import { prepareFileRemovals } from '@/lib/vault/file-maintenance';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -57,7 +57,7 @@ export function DeleteConfirmDialog({
     if (!vault || targetsKey === '[]') return;
     let cancelled = false;
     const targets = JSON.parse(targetsKey) as FileTarget[];
-    void Promise.all(targets.map(({ store, id }) => prepareFileRemoval(vault, store, id)))
+    void prepareFileRemovals(vault, targets)
       .then(results => {
         if (!cancelled) setPreview({ count: results.reduce((n, r) => n + r.count, 0), bytes: results.reduce((n, r) => n + r.bytes, 0), usesTrash: results.every(r => r.usesTrash) });
       }).catch(e => { if (!cancelled) setError(`无法检查文件，已停止删除：${e instanceof Error ? e.message : String(e)}`); });
@@ -89,8 +89,8 @@ export function DeleteConfirmDialog({
           <p className="text-xs text-muted-foreground">
             {preview ? `涉及 ${preview.count} 个文件 · ${(preview.bytes / 1024).toFixed(1)} KB。` : '正在检查文件…'}
             {deleteFiles
-              ? preview?.usesTrash ? '文件将移入系统回收站。' : '此平台不支持回收站，文件将永久删除。'
-              : '文件会保留在库内保留区，可在设置的文件检查中查看和清理。'}
+              ? '文件先移入库内回收站，每个文件保留满 30 天后移入系统回收站；不支持或失败时继续保留。'
+              : '文件会长期保留在库内保留区，可在设置的文件检查中查看和清理，不参与 30 天自动回收。'}
           </p>
         </div>}
         {(error || scopeChanged) && <p role="alert" className="text-sm text-destructive">{scopeChanged ? '文件库已切换，请关闭后重新选择删除目标。' : error}</p>}

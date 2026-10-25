@@ -1,6 +1,7 @@
 import type { RegexCollectionItem } from '@/types/regex';
 import type { PresetItem } from '@/types/preset';
 import type { WorldBookItem } from '@/types/worldbook';
+import type { AssetIndexEntry } from './asset-index-entry';
 
 export interface AssetLibraryRow {
   id: string;
@@ -17,7 +18,7 @@ export interface AssetLibraryRow {
 
 interface AssetLibrarySources {
   worldbooks: WorldBookItem[];
-  presets: PresetItem[];
+  presets: (PresetItem | AssetIndexEntry)[];
   regexes: RegexCollectionItem[];
 }
 
@@ -43,10 +44,10 @@ export function buildAssetLibraryRows(sources: AssetLibrarySources): {
     preset: sources.presets.map((item) => ({
       id: item.id,
       title: item.title,
-      itemCount: item.preset.prompts.length,
-      derived: !!item.derived,
+      itemCount: 'preset' in item ? item.preset.prompts.length : item.entryCount,
+      derived: 'preset' in item ? !!item.derived : item.source === 'derived',
       autoSaved: item.autoSaved,
-      fromST: !!item.sourcePath,
+      fromST: 'preset' in item ? !!item.sourcePath : item.source === 'fromST',
       sourceModifiedAt: item.sourceModifiedAt,
       updatedAt: item.updatedAt,
     })).sort(newestFirst),

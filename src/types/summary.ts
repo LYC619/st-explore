@@ -50,8 +50,10 @@ export interface SummaryItem {
   bookTitle: string;
   kind: SummaryKind;
   title: string;
-  /** kind=volume 时的卷号（从 1 开始） */
+  /** 总结或日记的卷号（从 1 开始）；未编号的旧记录继续可读 */
   volumeNumber?: number;
+  /** 番外等正文卷序之外的记录；缺省为普通分卷 */
+  volumeCategory?: 'other';
   diaryOwner?: string;
   /** Where this record was captured, independent of its coverage range. */
   source?: { messageId: string; floor: number; capturedAt: number };

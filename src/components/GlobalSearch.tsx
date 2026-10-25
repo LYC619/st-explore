@@ -11,9 +11,7 @@ import {
   flattenSearchGroups, SEARCH_KIND_LABEL, type SearchEntry,
 } from '@/lib/global-search';
 import { listCharacterIndex, listStoryIndex } from '@/lib/archive-index';
-import { getAllWorldBooks } from '@/lib/worldbook-db';
-import { getAllPresets } from '@/lib/preset-db';
-import { getAllRegexCollections } from '@/lib/regex-db';
+import { listAssetIndex } from '@/lib/asset-index';
 import { cn } from '@/lib/utils';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 
@@ -37,9 +35,9 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
       const [characters, stories, worldbooks, presets, regexes] = await Promise.all([
         listCharacterIndex().catch(() => []),
         listStoryIndex().catch(() => []),
-        getAllWorldBooks().catch(() => []),
-        getAllPresets().catch(() => []),
-        getAllRegexCollections().catch(() => []),
+        listAssetIndex('worldbooks').catch(() => []),
+        listAssetIndex('presets').catch(() => []),
+        listAssetIndex('regexes').catch(() => []),
       ]);
       setEntries(buildSearchEntries({
         characters: characters.map((c) => ({

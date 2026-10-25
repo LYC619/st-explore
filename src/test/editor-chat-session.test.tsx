@@ -35,6 +35,11 @@ vi.mock('@/lib/archive-db', async (importOriginal) => ({
   deleteArchiveStory: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('@/lib/archive-index', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/archive-index')>()),
+  listStoryIndex: async () => (await getAllArchiveStories()).map(({ session, branches, ...rest }: ArchiveStory) => ({ ...rest, floorCount: session.messages.length, branchIndex: branches?.map(({ id, name }) => ({ id, name })) })),
+}));
+
 import Index from '@/pages/Index';
 import { setEditorStoryId } from '@/lib/editor-story-context';
 import { setTourCompleted } from '@/lib/tour-steps';

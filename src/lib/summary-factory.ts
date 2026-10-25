@@ -10,6 +10,7 @@ export interface ManualSummaryInput {
   content: string;
   title?: string;
   volumeNumber?: number;
+  volumeCategory?: SummaryItem['volumeCategory'];
   existingVolumes?: Pick<SummaryItem, 'volumeNumber'>[];
   now?: number;
   diaryOwner?: string;
@@ -25,7 +26,8 @@ export function buildManualSummaryItem(input: ManualSummaryInput): SummaryItem {
   const nextVolume = volumes.length
     ? Math.max(...volumes.map((item) => item.volumeNumber ?? 0)) + 1
     : 1;
-  const volume = input.kind === 'volume' ? (input.volumeNumber ?? nextVolume) : undefined;
+  const volume = input.volumeCategory === 'other' || input.kind === 'diy' ? undefined
+    : input.volumeNumber ?? (input.kind === 'volume' ? nextVolume : undefined);
   return {
     id: generateSummaryId(),
     bookId: input.story.id,
@@ -40,6 +42,7 @@ export function buildManualSummaryItem(input: ManualSummaryInput): SummaryItem {
     diaryOwner: input.kind === 'diary' ? input.diaryOwner?.trim() || undefined : undefined,
     content: input.content.trim(),
     volumeNumber: volume,
+    volumeCategory: input.volumeCategory,
     createdAt: now,
     updatedAt: now,
   };

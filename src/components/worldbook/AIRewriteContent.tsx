@@ -1,3 +1,4 @@
+import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useState, useRef, useMemo } from 'react';
 import { Wand2, Loader2, StopCircle, Check, X } from 'lucide-react';
 import { diffChars } from 'diff';
@@ -15,17 +16,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { callOpenAI, loadAPIConfig } from '@/components/ai-tools';
 
-const WB_SYSTEM_PROMPT = `你是一个 SillyTavern 世界书条目润色助手。用户会给你一条世界书条目的当前内容，以及修改要求。
-请按要求改写这条内容，直接输出改写后的【完整正文】，不要任何解释、不要代码块包裹、不要前后缀说明。
-保持世界书条目应有的设定描述风格；若用户没有特别要求格式，保留原有的结构与分段。`;
-
-const WB_PRESETS = [
-  '优化措辞，使表达更自然流畅',
-  '精简内容，去掉冗余，保留要点',
-  '扩写得更详细具体',
-  '改写为更正式的书面语',
-];
-
 interface Props {
   content: string;
   onResult: (text: string) => void;
@@ -33,6 +23,9 @@ interface Props {
   compact?: boolean;
   /** 改写用的 system prompt（默认世界书条目润色；预设等场景可传入自己的语境） */
   systemPrompt?: string;
+  builtinPromptId?: string;
+  promptVariables?: Record<string, string>;
+  quickPresetPrefix?: string;
   /** 快捷预设要求按钮（默认世界书那套） */
   quickPresets?: string[];
   /** 弹窗标题（默认"AI 改写本条内容"） */
@@ -40,7 +33,7 @@ interface Props {
 }
 
 /** 通用 AI 改写：输入要求 → 喂当前内容+要求 → 左右对照确认后替换。世界书条目 / 预设块等均可复用 */
-export function AIRewriteContent({ content, onResult, compact, systemPrompt, quickPresets, title }: Props) {
+export function AIRewriteContent({ content, onResult, compact, systemPrompt, quickPresets, title, builtinPromptId, promptVariables, quickPresetPrefix }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
@@ -49,8 +42,7 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
   const [pendingResult, setPendingResult] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const sysPrompt = systemPrompt ?? WB_SYSTEM_PROMPT;
-  const presets = quickPresets ?? WB_PRESETS;
+  const presets = quickPresets ?? [0, 1, 2, 3].map(i => getBuiltinPrompt(`${quickPresetPrefix ?? 'worldbook.quick'}.${i}`));
   const popTitle = title ?? 'AI 改写本条内容';
 
   // 对照高亮：字符级 diff，左侧标删除、右侧标新增（中文按字比对比按词准）
@@ -73,7 +65,8 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
       toast({ title: '请填写改写要求', variant: 'destructive' });
       return;
     }
-    const userContent = `【当前内容】：\n${content}\n\n【修改要求】：\n${instruction.trim()}`;
+    const sysPrompt = systemPrompt ?? formatBuiltinPrompt(builtinPromptId ?? 'worldbook.rewrite', promptVariables ?? {});
+    const userContent = formatBuiltinPrompt('rewrite.input', { content, instruction: instruction.trim() });
     const controller = new AbortController();
     abortRef.current = controller;
     setLoading(true);
@@ -118,14 +111,14 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
             <Wand2 className="w-3.5 h-3.5 mr-1" /> AI 改写
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-80" align="end">
+        <PopoverContent className="w-[min(36rem,calc(100vw-2rem))]" align="end">
           <div className="space-y-2">
             <p className="text-xs font-medium">{popTitle}</p>
             <Textarea
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
               placeholder="填写改写要求，如：优化措辞 / 精简 / 扩写 / 改成第三人称…"
-              className="text-xs min-h-[60px]"
+              className="text-sm min-h-32"
             />
             <div className="flex flex-wrap gap-1">
               {presets.map((p) => (

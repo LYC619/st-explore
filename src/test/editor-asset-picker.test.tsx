@@ -12,6 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getAllWorldBooks = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const getAllPresets = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+vi.mock('@/lib/preset-db', () => ({
+  getPreset: async (id: string) => (await getAllPresets()).find((item: { id: string }) => item.id === id),
+}));
 
 vi.mock('@/components/AppLayout', () => ({
   AppLayout: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
@@ -20,8 +23,10 @@ vi.mock('@/lib/archive-db', () => ({
   getAllArchiveStories: vi.fn().mockResolvedValue([]),
   getAllCharacters: vi.fn().mockResolvedValue([]),
 }));
-vi.mock('@/lib/worldbook-db', () => ({ getAllWorldBooks }));
-vi.mock('@/lib/preset-db', () => ({ getAllPresets }));
+vi.mock('@/lib/asset-index', async () => {
+  const { toAssetIndex } = await import('@/lib/asset-index-entry');
+  return { listAssetIndex: async (store: string) => (await (store === 'worldbooks' ? getAllWorldBooks() : getAllPresets())).map(toAssetIndex) };
+});
 
 import Tools from '@/pages/Tools';
 
@@ -114,18 +119,24 @@ describe('编辑区资产选择器列表', () => {
     getAllPresets.mockResolvedValue([{
       id: 'ps_1',
       title: '甲预设',
-      preset: { prompts: [{}, {}, {}] },
+      preset: { prompts: [{}, {}, {}], regexRules: [], originalData: {} },
       createdAt: IMPORTED_AT,
       updatedAt: UPDATED_AT,
     }]);
     await renderTools('/tools?focus=preset');
 
     expect(getAllWorldBooks).not.toHaveBeenCalled();
-    expect(assetButton('甲预设').textContent).toContain('3 个提示词');
+    const presetButton = Array.from(container.querySelectorAll<HTMLButtonElement>('table button'))
+      .find(el => el.textContent?.includes('甲预设'));
+    expect(presetButton).toBeTruthy();
+    expect(presetButton!.textContent).toContain('未标版本');
 
-    await act(async () => { assetButton('甲预设').click(); });
-
-    expect(locationText()).toBe('/preset?assetId=ps_1');
+    await act(async () => { presetButton!.click(); });
+    expect(container.querySelector('[data-preset-details]')?.textContent).toContain('3 个提示词');
+    const edit = Array.from(container.querySelectorAll('button')).find(el => el.textContent === '编辑原版');
+    expect(edit).toBeTruthy();
+    await act(async () => { edit!.click(); });
+    expect(locationText()).toBe('/preset?assetId=ps_1&from=catalog');
   });
 
   it('资产 id 带特殊字符时深链做转义，不会把参数截断', async () => {

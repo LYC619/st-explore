@@ -4,7 +4,7 @@
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson } from 'lucide-react';
+import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -22,6 +22,7 @@ import { formatListTime, formatFullTime } from '@/lib/time-display';
 import { cn } from '@/lib/utils';
 import { RatingPanel } from '@/components/character/RatingPanel';
 import { NsfwImage } from '@/components/NsfwImage';
+import { scopedGet, scopedSet } from '@/lib/vault/vault-scope';
 import { getNsfwBlur } from '@/lib/local-settings';
 import { shouldBlurNsfw } from '@/lib/nsfw-display';
 
@@ -57,6 +58,11 @@ function InfoRow({ label, value, title }: { label: string; value: React.ReactNod
 export function CharacterInfoRail({
   character, norm, stories, onPatch, onEditCard, onReadEmbedded, onExport, onExportJson, onDelete, stacked = false,
 }: CharacterInfoRailProps) {
+  const [collapsed, setCollapsed] = useState(() => scopedGet('ste-character-info-collapsed') === '1');
+  const toggleCollapsed = () => {
+    scopedSet('ste-character-info-collapsed', collapsed ? '0' : '1');
+    setCollapsed(!collapsed);
+  };
   const [lightbox, setLightbox] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [nsfwRevealed, setNsfwRevealed] = useState(false);
@@ -88,11 +94,20 @@ export function CharacterInfoRail({
     <aside
       data-character-info-rail={stacked ? 'stacked' : 'rail'}
       className={cn(
-        stacked
+        collapsed ? (stacked ? 'border-b px-4 py-2' : 'w-12 shrink-0 border-r py-3 flex flex-col items-center') : stacked
           ? 'border-b border-[color:var(--hairline-inner)] px-4 py-4'
           : 'w-[304px] shrink-0 border-r border-[color:var(--hairline-inner)] px-6 py-6 overflow-y-auto scrollbar-thin',
       )}
     >
+      <Button variant="ghost" size="sm" onClick={toggleCollapsed}
+        className={cn(!collapsed && 'mb-3', stacked && 'w-full justify-between')}
+        aria-expanded={!collapsed} aria-label={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}
+        title={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}>
+        {stacked && <span>角色卡图与信息</span>}
+        {stacked ? (collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />)
+          : collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <><PanelLeftClose className="mr-2 h-4 w-4" />收起信息栏</>}
+      </Button>
+      <div hidden={collapsed}>
       <div className={cn(stacked && 'flex items-start gap-4')}>
       {/* 立绘 3:4（设计稿），点击放大 */}
       <button
@@ -208,6 +223,8 @@ export function CharacterInfoRail({
           </div>
         </SheetContent>
       </Sheet>
+
+      </div>
 
       {/* lightbox */}
       <Dialog open={lightbox} onOpenChange={setLightbox}>

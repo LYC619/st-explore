@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 
 const navigate = vi.hoisted(() => vi.fn());
-const getAllCharacters = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const listCharacterIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 // 必须跨渲染返回同一个 toast：Library 的 load 依赖它，每次换新函数会让加载 effect 无限重跑
 const toast = vi.hoisted(() => vi.fn());
 
@@ -30,7 +30,7 @@ vi.mock('@/components/AppLayout', () => ({
 }));
 vi.mock('@/lib/archive-db', () => ({
   CHARACTER_TYPES: ['人物', '剧情', '玩法', '综合', '同人'],
-  getAllCharacters,
+  listCharacterIndex,
   deleteCharacter: vi.fn().mockResolvedValue(undefined),
   saveCharacter: vi.fn().mockResolvedValue(undefined),
   getLibraryTagPreferences: vi.fn(async () => {
@@ -40,7 +40,7 @@ vi.mock('@/lib/archive-db', () => ({
   saveLibraryTagPreferences: vi.fn().mockResolvedValue(undefined),
   updateArchiveStory: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/archive-index', () => ({ listStoryIndex: vi.fn().mockResolvedValue([]) }));
+vi.mock('@/lib/archive-index', async original => ({ ...await original<object>(), listCharacterIndex, listStoryIndex: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/vault/tauri-fs', () => ({
   isTauri: vi.fn().mockReturnValue(false),
   pickDirectory: vi.fn(),
@@ -74,7 +74,7 @@ function mkCharacter(id: string): ArchiveCharacter {
 }
 
 async function renderLibrary(ids: string[]) {
-  getAllCharacters.mockResolvedValue(ids.map(mkCharacter));
+  listCharacterIndex.mockResolvedValue(ids.map(mkCharacter));
   await act(async () => {
     root.render(<MemoryRouter initialEntries={['/library']}><Library /></MemoryRouter>);
   });
@@ -119,7 +119,7 @@ async function switchToListView() {
 beforeEach(() => {
   localStorage.clear();
   navigate.mockClear();
-  getAllCharacters.mockClear().mockResolvedValue([]);
+  listCharacterIndex.mockClear().mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);

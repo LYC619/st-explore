@@ -11,12 +11,13 @@
  * - 网页版 IDB：没有字段投影能力，读取量不变，但结果同样收窄，
  *   大字段随即可被回收，反复翻页不再堆着整库。
  *
- * **窄类型即防护**：`Omit` 掉的字段在类型上根本不存在，所以这里的记录
- * 既读不到 pngBase64 / session，也没法传给 saveCharacter / saveArchiveStory
- * （编译期就会拒绝），不存在「用投影记录写回、把卡面和正文抹掉」的路径。
+ * 列表记录只用于展示。角色的大字段是可选字段，TypeScript 的结构类型不能
+ * 阻止把投影传给 saveCharacter；修改必须通过 updateCharacter 读取当前完整记录，
+ * 导出必须通过 buildCharacterExportSnapshot，不能直接写回列表项。
  * 要完整记录请照旧用 archive-db 的 getAllCharacters / getArchiveStory。
  */
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import { computeStoryTimeRange } from '@/lib/story-meta';
 import { createRepo } from '@/lib/repo';
 
 /** 角色列表项：整份档案减去卡面原图与立绘（后者在网页版是内联 base64，同样是大块） */
@@ -26,6 +27,8 @@ export type CharacterIndexEntry = Omit<ArchiveCharacter, 'pngBase64' | 'portrait
 export type StoryIndexEntry = Omit<ArchiveStory, 'session' | 'branches'> & {
   /** 主线楼数（= 原 session.messages.length）；正文已剥离，列表显示「N 楼」用这个 */
   floorCount: number;
+  /** 消息时间范围，在剥离正文前计算，不写入持久格式。 */
+  storyTimeRange?: { startedAt?: number; endedAt?: number };
   /** 分支目录，不包含分支正文；用于回顾时标明总结来源。 */
   branchIndex?: { id: string; name: string }[];
 };
@@ -37,17 +40,18 @@ const storyRepo = createRepo<ArchiveStory>('archiveStories');
  * 两个 to*Index 必须幂等：文件库后端返回的已经是投影过的记录（无 session、已带 floorCount），
  * IDB 后端返回的是完整记录。同一个函数要能吃下两种输入。
  */
-function toCharacterIndex(c: ArchiveCharacter): CharacterIndexEntry {
+export function toCharacterIndex(c: ArchiveCharacter): CharacterIndexEntry {
   const { pngBase64, portraitRows, ...rest } = c;
   return rest;
 }
 
-function toStoryIndex(s: ArchiveStory): StoryIndexEntry {
-  const { session, branches, ...rest } = s as ArchiveStory & Pick<StoryIndexEntry, 'floorCount' | 'branchIndex'>;
+export function toStoryIndex(s: ArchiveStory): StoryIndexEntry {
+  const { session, branches, ...rest } = s as ArchiveStory & Pick<StoryIndexEntry, 'floorCount' | 'branchIndex' | 'storyTimeRange'>;
   return {
     ...rest,
+    storyTimeRange: rest.storyTimeRange ?? computeStoryTimeRange(session?.messages ?? []),
     floorCount: rest.floorCount ?? session?.messages?.length ?? 0,
-    branchIndex: branches?.map(({ id, name }) => ({ id, name })) ?? rest.branchIndex ?? [],
+    branchIndex: (Array.isArray(branches) ? branches.map(({ id, name }) => ({ id, name })) : undefined) ?? rest.branchIndex ?? [],
   };
 }
 

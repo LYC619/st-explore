@@ -23,13 +23,13 @@ import { HOME_TOUR_STEPS, isTourCompleted, setTourCompleted } from '@/lib/tour-s
 import { DemoData } from '@/components/DemoData';
 import { demoSession } from '@/lib/demo-session';
 import type { ChatSession, ExportSettings, ChapterMarker } from '@/types/chat';
+import { listStoryIndex, toStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
   buildStoryFromSession,
   saveArchiveStory,
   updateArchiveStory,
   getArchiveStory,
-  getAllArchiveStories,
   deleteArchiveStory,
   updateBranchLine,
   getBranchLine,
@@ -80,8 +80,8 @@ const Index = () => {
   // 小说视图（阶段6）：未绑定聊天也可用；润色上下文用当前暂存的归档故事
   const [novelStory, setNovelStory] = useState<ArchiveStory | null>(null);
   const [novelOpen, setNovelOpen] = useState(false);
-  const [allStories, setAllStories] = useState<ArchiveStory[]>([]);
-  const [deleteTarget, setDeleteTarget] = useState<ArchiveStory | null>(null);
+  const [allStories, setAllStories] = useState<StoryIndexEntry[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<StoryIndexEntry | null>(null);
   const [copyingStory, setCopyingStory] = useState<string | null>(null);
   // 处理区入口交接来的文件（挂载时取一次，交给 ChatImporter 自动解析）
   const [handoffFile] = useState<File | null>(() => takePendingToolFile('chat'));
@@ -95,7 +95,7 @@ const Index = () => {
 
   const refreshStories = useCallback(async () => {
     try {
-      setAllStories(await getAllArchiveStories());
+      setAllStories(await listStoryIndex());
     } catch {
       setAllStories([]);
     }
@@ -284,7 +284,7 @@ const Index = () => {
     navigate('/chat', { replace: true });
   };
 
-  const handleOpenStory = async (story: ArchiveStory) => {
+  const handleOpenStory = async (story: StoryIndexEntry) => {
     try {
       await persistCurrentStory();
     } catch {
@@ -340,7 +340,7 @@ const Index = () => {
       });
       setCurrentStoryId(story.id);
       setEditorStoryId(story.id);
-      setAllStories((current) => [story, ...current.filter((item) => item.id !== story.id)]);
+      setAllStories((current) => [toStoryIndex(story), ...current.filter((item) => item.id !== story.id)]);
       toast({
         title: `已绑定到「${character.name}」`,
         description: carried > 0 ? `${carried} 条总结/故事树已一并带走` : undefined,
@@ -405,7 +405,7 @@ const Index = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate" title={story.title}>{story.title}</p>
                         <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                          <span>{story.session.messages.length} 楼</span>
+                          <span>{story.floorCount} 楼</span>
                           {story.meta.lastModel && <span className="truncate" title={story.meta.lastModel}>{story.meta.lastModel}</span>}
                           <span className="flex items-center gap-0.5">
                             <Clock className="w-3 h-3" />
@@ -417,7 +417,7 @@ const Index = () => {
                         onClick={event => {
                           event.stopPropagation(); setCopyingStory(story.id);
                           void duplicateArchiveStory(story.id).then(copy => {
-                            setAllStories(current => [...current, copy]);
+                            setAllStories(current => [...current, toStoryIndex(copy)]);
                             toast({ title: '已复制故事', description: copy.title });
                           }).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
                             .finally(() => setCopyingStory(null));
@@ -459,6 +459,12 @@ const Index = () => {
           {/* 工作态不再放最近故事栏（用户拍板：只在导入前需要）；切故事走全局菜单/窄工具栏 */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ChatWorkbench
+              key={`${currentStoryId ?? 'preview'}:${currentBranchId ?? 'main'}`}
+              recordContext={currentStoryId ? {
+                storyId: currentStoryId,
+                branchId: currentBranchId,
+                flush: persistCurrentStory,
+              } : undefined}
               session={session}
               markers={markers}
               favorites={favorites}
@@ -520,7 +526,7 @@ const Index = () => {
       <DeleteConfirmDialog
         open={!!deleteTarget}
         title={`删除暂存故事「${deleteTarget?.title ?? ''}」？`}
-        description={`日记、总结和故事树会保留为未绑定记录。当前共 ${deleteTarget?.session.messages.length ?? 0} 楼。`}
+        description={`日记、总结和故事树会保留为未绑定记录。当前共 ${deleteTarget?.floorCount ?? 0} 楼。`}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         fileTarget={deleteTarget ? { store: 'archiveStories', id: deleteTarget.id } : undefined}
         onConfirm={handleDeleteUnbound}

@@ -54,6 +54,7 @@ export function summaryToObsidian(item: SummaryItem): string {
     book: item.bookTitle,
     type: KIND_TAG[item.kind],
     volume: item.volumeNumber,
+    volumeCategory: item.volumeCategory,
     floors: `${item.floorStart}-${item.floorEnd}`,
     created: new Date(item.createdAt).toISOString().slice(0, 10),
     tags: ['st-归档', KIND_TAG[item.kind]],

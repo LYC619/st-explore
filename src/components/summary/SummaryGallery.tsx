@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { getAllSummaries } from '@/lib/summary-db';
 import { exportTextFile } from '@/lib/text-file-export';
 import { SUMMARY_KIND_LABELS, type SummaryItem, type SummaryKind } from '@/types/summary';
+import { compareSummaryOrder, summaryVolumeLabel } from '@/lib/summary-order';
 
 interface SummaryGalleryProps {
   currentBookId: string | null;
@@ -30,12 +31,7 @@ export function SummaryGallery({ currentBookId, refreshKey, kind, charName, onEd
   const filtered = useMemo(() => all.filter((item) => {
     if (currentBookId && item.bookId !== currentBookId) return false;
     return item.kind === kind;
-  }).sort((a, b) => {
-    if (a.kind === 'volume' && b.kind === 'volume') return (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0);
-    if (a.kind === 'volume') return -1;
-    if (b.kind === 'volume') return 1;
-    return b.updatedAt - a.updatedAt;
-  }), [all, currentBookId, kind]);
+  }).sort(compareSummaryOrder), [all, currentBookId, kind]);
 
   const active = filtered.find((item) => item.id === activeId) ?? filtered[0];
 
@@ -78,7 +74,7 @@ export function SummaryGallery({ currentBookId, refreshKey, kind, charName, onEd
                       : 'w-full flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-sm hover:bg-accent/40'}
                   >
                     <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">{SUMMARY_KIND_LABELS[item.kind]}</Badge>
-                    {item.volumeNumber != null && <span className="text-xs text-muted-foreground shrink-0">第{item.volumeNumber}卷</span>}
+                    {summaryVolumeLabel(item) && <span className="text-xs text-muted-foreground shrink-0">{summaryVolumeLabel(item)}</span>}
                     <span className="truncate flex-1" title={item.title || '（无标题）'}>{item.title || '（无标题）'}</span>
                   </button>
                 ))}

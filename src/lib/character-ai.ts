@@ -1,7 +1,8 @@
+import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 角色页 AI 引擎（2.0 阶段6：AI 简介 + AI 评分）。
  *
- * 纯函数：组装 messages / 解析 AI 回复，不触网不碰存储；
+ * 组装 messages 时读取本地内置提示词偏好；解析 AI 回复不触网不改档案；
  * 实际请求由 UI 层用返回的 messages 调 callOpenAIMessages（配置走全局 AI 配置页）。
  *
  * 读取范围（定稿第四章）：每次由用户勾选——仅角色卡 / +世界书 / +指定故事，
@@ -12,6 +13,7 @@ import type { NormalizedCharacterCard } from '@/lib/png-parser';
 import type { WorldBook } from '@/types/worldbook';
 import type { ChatSession } from '@/types/chat';
 import type { RatingTemplateItem, RatingDimensionScore } from '@/types/rating';
+import { resolveRatingTemplate } from '@/lib/rating-templates';
 import { collectWorldbookEntries } from '@/lib/summary-engine';
 
 // ---------- 资料块组装 ----------
@@ -84,20 +86,13 @@ export interface IntroEngineResult {
   readScope: string[];
 }
 
-const INTRO_SYSTEM = `你是角色卡归档助手。用户会给你一张 SillyTavern 角色卡的原始字段（可能还有关联世界书），请为它写一份「档案简介」，给已经拥有这张卡的玩家在自己的收藏库里回看用。
-要求：
-- 用中文写，300~500 字左右，Markdown 格式（可用少量小标题或列表）。
-- 内容覆盖：这是个什么角色（身份/性格核心）、故事发生的世界与处境、这张卡的玩法特点（开场情境、可能的发展方向）。
-- 忠于原文：只整理与提炼，不虚构原文没有的设定；原文是外语时用中文转述。
-- 不要输出「好的，以下是简介」之类的过场话，直接输出简介正文。`;
-
 export function buildIntroMessages(input: IntroEngineInput): IntroEngineResult {
   const { norm, worldbooks = [] } = input;
   const readScope = ['card', ...worldbooks.map((w) => `worldbook:${w.id}`)];
   const blocks = [buildCardBlock(norm), ...worldbooks.map((w) => buildWorldbookBlock(w.title, w.wb))];
   const messages: ChatCompletionMessage[] = [
-    { role: 'system', content: INTRO_SYSTEM },
-    { role: 'user', content: `以下是角色卡资料：\n\n${blocks.join('\n\n')}\n\n请生成档案简介。` },
+    { role: 'system', content: getBuiltinPrompt('character.intro') },
+    { role: 'user', content: formatBuiltinPrompt('character.intro.input', { materials: blocks.join('\n\n') }) },
   ];
   return { messages, readScope };
 }
@@ -137,17 +132,11 @@ export function buildRatingMessages(input: RatingEngineInput): RatingEngineResul
     ...worldbooks.map((w) => `worldbook:${w.id}`),
     ...stories.map((s) => `story:${s.id}`),
   ];
-  const dimensionList = template.dimensions
+  const resolvedTemplate = resolveRatingTemplate(template);
+  const dimensionList = resolvedTemplate.dimensions
     .map((d) => `- ${d.name}（权重 ${d.weight}${d.hint ? `；${d.hint}` : ''}）`)
     .join('\n');
-  const system = `${template.prompt.trim()}
-
-评分维度：
-${dimensionList}
-
-输出格式：只输出一个 JSON 对象，不要输出其他文字。结构：
-{"dimensions":[{"name":"维度名","score":分数,"reason":"打分理由"}],"note":"一句话总评"}
-其中 score 为 0~10 的数字（可含 0.5），dimensions 必须覆盖上面列出的每个维度，name 与维度名一致。`;
+  const system = formatBuiltinPrompt('character.rating.format', { prompt: resolvedTemplate.prompt.trim(), dimensions: dimensionList });
   const blocks = [
     buildCardBlock(norm),
     ...worldbooks.map((w) => buildWorldbookBlock(w.title, w.wb)),
@@ -155,7 +144,7 @@ ${dimensionList}
   ];
   const messages: ChatCompletionMessage[] = [
     { role: 'system', content: system },
-    { role: 'user', content: `以下是这张角色卡的资料，请按要求打分：\n\n${blocks.join('\n\n')}` },
+    { role: 'user', content: formatBuiltinPrompt('character.rating.input', { materials: blocks.join('\n\n') }) },
   ];
   return { messages, readScope };
 }

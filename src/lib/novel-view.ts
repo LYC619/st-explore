@@ -1,3 +1,4 @@
+import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 小说视图三层管道（2.0 阶段6，定稿 5.1「小说视图」）。
  *
@@ -501,22 +502,16 @@ export interface ChapterSuggestInput {
   maxProbes?: number;
 }
 
-const CHAPTER_SYSTEM = `你是小说编辑。用户给你一段角色扮演故事的梗概资料（分卷总结或抽样楼层），请判断按剧情场景应该在哪些楼层开新章节，并为每章拟一个简洁有味道的标题。
-规则：
-- 只依据给出的资料判断，边界尽量落在场景/时间/地点切换处。
-- 章节数量适度（一般每 30~80 楼一章，随剧情密度调整），第 0 楼不用标记（开头自然成章）。
-- 只输出一个 JSON 数组，不要输出其他文字。结构：[{"floor":楼层号,"title":"章节标题"}]，floor 为数字且严格递增。`;
-
 export function buildChapterSuggestMessages(input: ChapterSuggestInput): ChatCompletionMessage[] {
   const { session, volumeSummaries = [], maxProbes = 40 } = input;
   const total = session.messages.length;
-  const parts: string[] = [`故事共 ${total} 楼（楼层号 0~${total - 1}）。`];
+  const parts: string[] = [formatBuiltinPrompt('novel.total', { total, last: total - 1 })];
 
   if (volumeSummaries.length > 0) {
     const sums = volumeSummaries
       .map((s) => `【第${s.volumeNumber ?? '?'}卷（楼层 ${s.floorStart}~${s.floorEnd}）】\n${s.content.slice(0, 2000)}`)
       .join('\n\n');
-    parts.push(`已有分卷总结如下（可作为主要依据）：\n\n${sums}`);
+    parts.push(formatBuiltinPrompt('novel.summaries', { content: sums }));
   }
 
   // 抽样楼层：均匀取，每楼截前 120 字，标楼层号，供 AI 对齐边界
@@ -528,10 +523,10 @@ export function buildChapterSuggestMessages(input: ChapterSuggestInput): ChatCom
     const text = m.content.replace(/\s+/g, ' ').trim().slice(0, 120);
     if (text) probes.push(`#${i}：${text}`);
   }
-  parts.push(`抽样楼层（#楼层号：开头文字）：\n${probes.join('\n')}`);
+  parts.push(formatBuiltinPrompt('novel.probes', { content: probes.join('\n') }));
 
   return [
-    { role: 'system', content: CHAPTER_SYSTEM },
+    { role: 'system', content: getBuiltinPrompt('novel.chapters') },
     { role: 'user', content: parts.join('\n\n') },
   ];
 }

@@ -344,8 +344,16 @@ export async function saveLibraryTagPreferences(preferences: LibraryTagPreferenc
 
 /** 某角色名下的全部故事（未排序，展示排序用 sortStoriesForDisplay） */
 export async function getStoriesByCharacter(characterId: string): Promise<ArchiveStory[]> {
-  const all = await storyRepo.list();
-  return all.filter((s) => s.characterId === characterId);
+  // Capture the backend once: switching vaults during the listing must not read
+  // matching IDs from a different library. Only hydrate this character's stories.
+  const repo = getCurrentRepo<ArchiveStory>('archiveStories');
+  const matches = (await repo.listLight()).filter((s) => s.characterId === characterId);
+  const result: ArchiveStory[] = [];
+  for (const entry of matches) {
+    const story = await repo.get(entry.id);
+    if (story?.characterId === characterId) result.push(story);
+  }
+  return result;
 }
 
 export function generateCharacterId(): string {

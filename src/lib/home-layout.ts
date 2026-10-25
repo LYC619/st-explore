@@ -1,5 +1,6 @@
 /** 首页首屏的空间约束，集中维护，避免 JSX 中散落难以复验的魔法数字。 */
-import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import type { ArchiveStory } from '@/types/archive';
+import type { StoryIndexEntry } from '@/lib/archive-index';
 import { computeStoryTimeRange } from '@/lib/story-meta';
 
 /** 首页最近故事默认保留的可滚动数量。 */
@@ -31,7 +32,7 @@ export function storyWorkspaceViewForEditorFocus(focus: string | null): StoryWor
 }
 
 export interface EditorStoryPickerItem {
-  story: ArchiveStory;
+  story: ArchiveStory | StoryIndexEntry;
   characterName: string;
   floorCount: number;
   startedAt?: number;
@@ -45,7 +46,7 @@ export const EDITOR_STORY_PICKER_VISIBLE_COUNT = 10;
  * 角色、楼层和起止时间集中计算，避免总结/故事树选择页出现两套展示逻辑。
  */
 export function buildEditorStoryPickerItems(
-  stories: ArchiveStory[],
+  stories: (ArchiveStory | StoryIndexEntry)[],
   // 只用到 id → name 的映射，收窄到最小形状，好让调用方传 archive-index 的轻量角色列表
   characters: readonly { id: string; name: string }[],
   query = '',
@@ -55,13 +56,13 @@ export function buildEditorStoryPickerItems(
   const items = [...stories]
     .sort((a, b) => (b.lastViewedAt ?? b.updatedAt) - (a.lastViewedAt ?? a.updatedAt))
     .map((story) => {
-      const timeRange = computeStoryTimeRange(story.session.messages);
+      const timeRange = 'session' in story ? computeStoryTimeRange(story.session.messages) : story.storyTimeRange ?? {};
       return {
         story,
         characterName: story.characterId
           ? (characterNames.get(story.characterId) ?? '未知角色')
           : '未绑定角色',
-        floorCount: story.session.messages.length,
+        floorCount: 'session' in story ? story.session.messages.length : story.floorCount,
         startedAt: timeRange.startedAt ?? story.createdAt,
         endedAt: timeRange.endedAt ?? story.lastMessageAt ?? story.updatedAt,
       };
@@ -86,7 +87,7 @@ export function pickRecentlyViewedStories<T extends { lastViewedAt?: number }>(
 }
 
 /** 聊天处理的快速切换列表：绑定和未绑定故事一视同仁，未查看记录以更新时间补位。 */
-export function pickRecentEditorStories(stories: ArchiveStory[], limit = 8): ArchiveStory[] {
+export function pickRecentEditorStories<T extends { lastViewedAt?: number; updatedAt: number }>(stories: T[], limit = 8): T[] {
   const count = Math.max(0, Math.floor(limit));
   return [...stories]
     .sort((a, b) => (b.lastViewedAt ?? b.updatedAt) - (a.lastViewedAt ?? a.updatedAt))

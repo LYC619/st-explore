@@ -13,7 +13,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 
-const getAllCharacters = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const listCharacterIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const listStoryIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const deleteCharacter = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const exportCharactersToDirectory = vi.hoisted(() => vi.fn().mockResolvedValue({ exported: [], failed: [] }));
@@ -30,7 +30,7 @@ vi.mock('@/components/AppLayout', () => ({
 }));
 vi.mock('@/lib/archive-db', () => ({
   CHARACTER_TYPES: ['人物', '剧情', '玩法', '综合', '同人'],
-  getAllCharacters,
+  listCharacterIndex,
   deleteCharacter,
   saveCharacter: vi.fn().mockResolvedValue(undefined),
   updateCharacter,
@@ -42,7 +42,7 @@ vi.mock('@/lib/archive-db', () => ({
   saveLibraryTagPreferences: vi.fn().mockResolvedValue(undefined),
   updateArchiveStory: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/archive-index', () => ({ listStoryIndex }));
+vi.mock('@/lib/archive-index', async original => ({ ...await original<object>(), listCharacterIndex, listStoryIndex }));
 vi.mock('@/lib/character-batch-export', () => ({ exportCharactersToDirectory }));
 vi.mock('@/lib/vault/tauri-fs', () => ({
   isTauri,
@@ -78,7 +78,7 @@ function mkCharacter(id: string, over: Partial<ArchiveCharacter> = {}): ArchiveC
 }
 
 async function renderLibrary(characters: ArchiveCharacter[]) {
-  getAllCharacters.mockResolvedValue(characters);
+  listCharacterIndex.mockResolvedValue(characters);
   await act(async () => {
     root.render(<MemoryRouter initialEntries={['/library']}><Library /></MemoryRouter>);
   });
@@ -133,7 +133,7 @@ async function enterBatchMode() {
 
 beforeEach(() => {
   localStorage.clear();
-  getAllCharacters.mockClear().mockResolvedValue([]);
+  listCharacterIndex.mockClear().mockResolvedValue([]);
   listStoryIndex.mockClear().mockResolvedValue([]);
   deleteCharacter.mockClear().mockResolvedValue(undefined);
   exportCharactersToDirectory.mockClear().mockResolvedValue({ exported: [], failed: [] });

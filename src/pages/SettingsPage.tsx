@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Eye, FolderCog, Info, KeyRound, Settings } from 'lucide-react';
+import { Database, Eye, FolderCog, Info, KeyRound, Settings, BookText } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { APIConfigCard } from '@/components/ai-tools';
 import { AboutSettingsPanel, DataSettingsPanel } from '@/components/GlobalSettings';
@@ -13,11 +13,13 @@ import {
   saveSettingsSection,
   type SettingsSection,
 } from '@/lib/settings-navigation';
+import { BuiltinPromptsPanel } from '@/components/settings/BuiltinPromptsPanel';
 import { cn } from '@/lib/utils';
 
 const SECTION_ITEMS = [
   { key: 'display', label: '显示', icon: Eye },
   { key: 'ai', label: 'AI 配置', icon: KeyRound },
+  { key: 'prompts', label: '内置提示词', icon: BookText },
   { key: 'directories', label: '目录与连接', icon: FolderCog },
   { key: 'data', label: '数据与备份', icon: Database },
   { key: 'about', label: '关于与引导', icon: Info },
@@ -39,6 +41,8 @@ function renderSettingsPanel(activeSection: SettingsSection) {
           <APIConfigCard />
         </div>
       );
+    case 'prompts':
+      return <BuiltinPromptsPanel />;
     case 'directories':
       return <DirectorySettingsPanel />;
     case 'data':

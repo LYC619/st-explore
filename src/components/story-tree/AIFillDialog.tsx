@@ -1,3 +1,5 @@
+import { getBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
+import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Square, Loader2, Check, Pencil, RotateCcw, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -28,10 +30,9 @@ import type { StoryNode, StoryTree } from '@/types/story-tree';
 import { NODE_TYPE_LABELS, isStoryNodeType } from '@/types/story-tree';
 import {
   parseTreeOpsResult, applyTreeOps,
-  DEFAULT_TREE_FILL_PROMPT, floorsToText, type TreeOp,
+  floorsToText, type TreeOp,
 } from '@/lib/story-tree-ai';
 
-const PROMPT_LS_KEY = 'st-story-tree-fill-prompt';
 
 interface AIFillDialogProps {
   storyId?: string | null;
@@ -79,9 +80,10 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
   const generatedRequest = useRef('');
   const requestEpoch = useRef(getVaultEpoch());
 
-  // 可编辑提示词（改后记忆；空=用默认）
+  // 可编辑提示词（本次输入；显式保存后与设置页共用）
   const [promptOpen, setPromptOpen] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState(DEFAULT_TREE_FILL_PROMPT);
+  const savedPrompt = useBuiltinPrompt('tree.fill');
+  const [customPrompt, setCustomPrompt] = useState(() => getBuiltinPrompt('tree.fill'));
   const request = useMemo(() => buildScopedTreeRequest({ storyId, branchId, session, nodes, floorStart, floorEnd,
     references: references.filter(record => selectedRefs.has(record.id)), allowCrossBranch: crossBranch,
     preset: presets.find(preset => preset.id === attach.presetId)?.preset,
@@ -90,19 +92,24 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
   [storyId, branchId, session, nodes, floorStart, floorEnd, references, selectedRefs, crossBranch, presets, books, attach, processed, rules, instruction, customPrompt]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(PROMPT_LS_KEY);
-    if (saved) setCustomPrompt(saved);
-  }, []);
+    if (open) setCustomPrompt(savedPrompt);
+  }, [open, savedPrompt]);
 
   const handlePromptChange = (v: string) => {
     setCustomPrompt(v);
-    localStorage.setItem(PROMPT_LS_KEY, v);
+  };
+
+  const handlePromptSave = () => {
+    try { saveBuiltinPrompt('tree.fill', customPrompt); toast({ title: '提示词已保存到设置' }); }
+    catch (err) { toast({ title: '保存失败', description: String(err), variant: 'destructive' }); }
   };
 
   const handlePromptReset = () => {
-    setCustomPrompt(DEFAULT_TREE_FILL_PROMPT);
-    localStorage.removeItem(PROMPT_LS_KEY);
-    toast({ title: '已恢复默认提示词' });
+    try {
+      resetBuiltinPrompt('tree.fill');
+      setCustomPrompt(getBuiltinPrompt('tree.fill'));
+      toast({ title: '已恢复默认提示词' });
+    } catch (err) { toast({ title: '恢复失败', description: String(err), variant: 'destructive' }); }
   };
 
   const abortRef = useRef<AbortController | null>(null);
@@ -281,10 +288,11 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                   onChange={(e) => handlePromptChange(e.target.value)}
                   className="min-h-[30vh] font-mono text-xs"
                 />
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
                   <p className="text-xs text-muted-foreground">
-                    修改会自动记住。注意保留 JSON ops 输出格式约定，否则无法解析。
+                    本次生成使用当前输入；保存后供所有入口使用。注意保留 JSON ops 输出格式约定，否则无法解析。
                   </p>
+                  <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>保存提示词</Button>
                   <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={handlePromptReset}>
                     <RotateCcw className="w-3 h-3" />恢复默认
                   </Button>

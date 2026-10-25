@@ -20,6 +20,7 @@ vi.mock('@/components/AppLayout', () => ({
   ),
 }));
 vi.mock('@/lib/archive-db', () => ({ getAllArchiveStories, getAllCharacters }));
+vi.mock('@/lib/archive-index', () => ({ listStoryIndex: async () => (await getAllArchiveStories()).map(({ session, ...rest }: import('@/types/archive').ArchiveStory) => ({ ...rest, floorCount: session.messages.length })), listCharacterIndex: getAllCharacters }));
 vi.mock('@/lib/worldbook-db', () => ({ getAllWorldBooks: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/preset-db', () => ({ getAllPresets: vi.fn().mockResolvedValue([]) }));
 

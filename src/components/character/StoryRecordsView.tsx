@@ -18,6 +18,7 @@ import type { ArchiveStory } from '@/types/archive';
 import type { SummaryItem, SummaryKind } from '@/types/summary';
 import type { StoryTree } from '@/types/story-tree';
 import { getAllSummaries } from '@/lib/summary-db';
+import { compareSummaryOrder, summaryVolumeLabel } from '@/lib/summary-order';
 import { getAllStoryTrees } from '@/lib/story-tree-db';
 import { loadAPIConfig } from '@/components/ai-tools';
 import { formatFullTime, formatListTime } from '@/lib/time-display';
@@ -82,7 +83,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
         if (!cancelled) {
           setSummaries(all
             .filter((s) => s.bookId === storyId && s.kind === (kind as SummaryKind))
-            .sort((a, b) => b.updatedAt - a.updatedAt));
+            .sort(compareSummaryOrder));
         }
       }
     })().catch((error: unknown) => { if (!cancelled) setRecordsError(error instanceof Error ? error.message : String(error)); })
@@ -229,8 +230,8 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                     })} /></span>
                     <span className="truncate" title={item.title}>{item.title}</span>
                     {(item.diaryOwner || item.genParams?.diaryOwner) && <Badge variant="secondary">{item.diaryOwner || item.genParams?.diaryOwner}</Badge>}
-                    {item.volumeNumber !== undefined && (
-                      <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal shrink-0">第 {item.volumeNumber} 卷</Badge>
+                    {summaryVolumeLabel(item) && (
+                      <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{summaryVolumeLabel(item)}</Badge>
                     )}
                     <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(item.branchId)}</Badge>
                   </div>

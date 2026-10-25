@@ -3,6 +3,7 @@ import { placeholderArtClass } from '@/lib/character-placeholder';
 import { displayCharacterName } from '@/lib/library-query';
 import { cn } from '@/lib/utils';
 import type { ArchiveCharacter } from '@/types/archive';
+import { useCharacterPortrait } from '@/hooks/use-character-portrait';
 
 interface CharacterPortraitProps {
   character: ArchiveCharacter;
@@ -20,18 +21,17 @@ interface CharacterPortraitProps {
  */
 export function CharacterPortrait({ character, className, markFontSize }: CharacterPortraitProps) {
   const displayName = displayCharacterName(character);
-  if (character.pngBase64) {
-    return (
+  const { ref, pngBase64 } = useCharacterPortrait(character);
+  return <div ref={ref} className="absolute inset-0">
+    {pngBase64 ? (
       <NsfwImage
-        src={`data:image/png;base64,${character.pngBase64}`}
+        src={`data:image/png;base64,${pngBase64}`}
         alt={displayName}
         nsfw={character.nsfw}
         className={cn('absolute inset-0 w-full h-full object-cover object-top', className)}
         loading="lazy"
       />
-    );
-  }
-  return (
+    ) : (
     <div className={cn('absolute inset-0', placeholderArtClass(character.name))}>
       {markFontSize !== undefined && (
         <div className="char-mark" style={markFontSize === 'default' ? undefined : { fontSize: markFontSize }}>
@@ -39,5 +39,6 @@ export function CharacterPortrait({ character, className, markFontSize }: Charac
         </div>
       )}
     </div>
-  );
+    )}
+  </div>;
 }

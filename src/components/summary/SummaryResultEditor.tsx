@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Copy, Check, Save, Bookmark, Pencil, BookOpen, Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,14 +28,13 @@ interface SummaryResultEditorProps {
   onDiscard?: () => void;
   /** 角色名（日记本署名兜底） */
   charName?: string;
+  metadataFields?: ReactNode;
 }
-
-const REWRITE_PRESETS = ['润色措辞', '精简篇幅', '扩写细节', '调整语气更客观'];
 
 /** 总结结果编辑器：标题 + 正文编辑 + AI 微调 + 保存/复制/导出 .md；日记支持日记本预览 */
 export function SummaryResultEditor({
   kind, title, onTitleChange, content, onContentChange,
-  streaming, onSave, saving, savedPermanent, onDiscard, charName,
+  streaming, onSave, saving, savedPermanent, onDiscard, charName, metadataFields,
 }: SummaryResultEditorProps) {
   const { toast } = useToast();
   const [diaryView, setDiaryView] = useState(false);
@@ -74,8 +73,9 @@ export function SummaryResultEditor({
                 onResult={onContentChange}
                 compact
                 title="AI 微调本篇总结"
-                systemPrompt={`你是一位文本编辑。请根据用户的要求改写下面的${SUMMARY_KIND_LABELS[kind]}文本，保持原有信息与结构，只按要求调整。直接输出改写后的完整文本，不要加解释。`}
-                quickPresets={REWRITE_PRESETS}
+                builtinPromptId="summary.rewrite"
+                promptVariables={{ kind: SUMMARY_KIND_LABELS[kind] }}
+                quickPresetPrefix="summary.quick"
               />
             )}
             <Button variant="ghost" size="sm" className="gap-1" onClick={handleCopy} disabled={!content}>
@@ -104,6 +104,7 @@ export function SummaryResultEditor({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {metadataFields}
         <div className="space-y-1">
           <Label htmlFor="sum-title" className="text-xs text-muted-foreground">标题</Label>
           <Input

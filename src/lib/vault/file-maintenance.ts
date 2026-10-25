@@ -11,6 +11,7 @@ import { isSafeFileSegment, resolveAttachmentRelativePath } from './character-re
 import { parseFrontmatter } from './frontmatter';
 import { isRuntimePath, branchKey } from '@/lib/roleplay/paths';
 import { getActiveVault, getVaultEpoch } from './active';
+import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 
 export interface ManagedFile { path: string; size: number; version: string }
 export interface FileRemovalPreview {
@@ -19,6 +20,7 @@ export interface FileRemovalPreview {
 export type MaintenanceCategory = 'retained' | 'unreferenced' | 'unknown' | 'empty-directory';
 export interface FileMaintenanceEntry extends ManagedFile {
   category: MaintenanceCategory; reason: string; selectable: boolean;
+  recycleAfter?: number;
 }
 export interface FileMaintenanceScan {
   vault: VaultBackend; epoch: number; createdAt: number; entries: FileMaintenanceEntry[];
@@ -36,8 +38,12 @@ interface Inventory {
 interface Manifest {
   schema: 1; operationId: string; store: StoreName; id: string; createdAt: number;
   deleteFiles: boolean; files: ManagedFile[];
+  /** Only new, explicitly deleted files receive a deadline; legacy/retained files stay manual. */
+  recycleAfter?: number;
 }
 const RETAINED = '.ste/retained';
+export const RECYCLE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const cleanupQueues = new WeakMap<VaultFs, KeyedSerialQueue>();
 const operationIdPattern = /^[a-f0-9-]{36}$/i;
 const activeOperations = new WeakMap<VaultFs, Set<string>>();
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -200,11 +206,25 @@ async function inventory(fs: VaultFs, ignoredJournal?: string): Promise<Inventor
 }
 
 export async function prepareFileRemoval(vault: VaultBackend, store: StoreName, id: string): Promise<FileRemovalPreview> {
-  const path = await vault.pathOf(store, id);
+  return (await prepareFileRemovals(vault, [{ store, id }]))[0];
+}
+
+/** One fresh inventory for the whole confirmation dialog; execution still revalidates each removal. */
+export async function prepareFileRemovals(vault: VaultBackend, targets: { store: StoreName; id: string }[]): Promise<FileRemovalPreview[]> {
+  const paths = await Promise.all(targets.map(target => vault.pathOf(target.store, target.id)));
+  const disk = paths.some(Boolean) ? await inventory(vault.fs) : undefined;
+  if (disk?.errors.length) throw new Error(`文件检查未完成，已停止删除：${disk.errors.join('；')}`);
+  const previews: FileRemovalPreview[] = [];
+  for (let index = 0; index < targets.length; index++) {
+    const { store, id } = targets[index];
+    previews.push(await buildRemovalPreview(vault, store, id, paths[index] ? disk : undefined));
+  }
+  return previews;
+}
+
+async function buildRemovalPreview(vault: VaultBackend, store: StoreName, id: string, disk?: Inventory): Promise<FileRemovalPreview> {
   const preview: FileRemovalPreview = { store, id, files: [], count: 0, bytes: 0, usesTrash: !!vault.fs.trashFile };
-  if (!path) return preview;
-  const disk = await inventory(vault.fs);
-  if (disk.errors.length) throw new Error(`文件检查未完成，已停止删除：${disk.errors.join('；')}`);
+  if (!disk) return preview;
   const item = disk.records.find(record => record.store === store && record.record.id === id);
   if (!item) throw new Error('记录已改变或无法读取，请重新检查');
   for (const file of ownedPaths(item, disk.files)) {
@@ -225,6 +245,8 @@ async function readManifest(fs: VaultFs, operationId: string): Promise<Manifest>
   const value = JSON.parse(await fs.readText(path)) as Manifest;
   if (value?.schema !== 1 || value.operationId !== operationId || !operationIdPattern.test(operationId)
     || typeof value.id !== 'string' || typeof value.store !== 'string' || typeof value.deleteFiles !== 'boolean'
+    || value.recycleAfter !== undefined && (!value.deleteFiles || !Number.isSafeInteger(value.createdAt)
+      || !Number.isSafeInteger(value.recycleAfter) || value.recycleAfter !== value.createdAt + RECYCLE_RETENTION_MS)
     || !Array.isArray(value.files) || new Set(value.files.map(file => pathKey(file.path))).size !== value.files.length
     || value.files.some(file => !safePath(file.path) || file.path.startsWith('.ste/')
       || typeof file.size !== 'number' || !Number.isFinite(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/.test(file.version))) {
@@ -301,13 +323,6 @@ export async function finalizeRetainedFiles(fs: VaultFs, options: {
     if (manifest.store !== options.store || manifest.id !== options.id || manifest.deleteFiles !== options.deleteFiles
       || manifest.files.some(file => !options.paths.includes(file.path))) throw new Error('文件保留操作身份冲突');
     if (await isCommitted(fs, manifest)) {
-      if (options.deleteFiles) for (const file of manifest.files) {
-        if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，文件清理已停止');
-        const path = stagedPath(manifest, file.path);
-        if (!(await fs.stat(path)).exists) continue;
-        if (await fileVersion(fs, path) !== file.version) throw new Error(`文件已改变：${path}`);
-        await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
-      }
       return;
     }
     await rollback(fs, manifest);
@@ -327,6 +342,7 @@ export async function finalizeRetainedFiles(fs: VaultFs, options: {
 }
 
 async function movePreparedFiles(fs: VaultFs, manifest: Manifest): Promise<void> {
+  if (manifest.deleteFiles) manifest = { ...manifest, recycleAfter: manifest.createdAt + RECYCLE_RETENTION_MS };
   const { operationId } = manifest;
   const epoch = getVaultEpoch();
   const check = () => { if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，文件操作已停止'); };
@@ -353,14 +369,6 @@ async function movePreparedFiles(fs: VaultFs, manifest: Manifest): Promise<void>
     check();
     await fs.writeText(`${root}/committed.json`, JSON.stringify({ digest: sha256(JSON.stringify(manifest)) }));
     committed = await isCommitted(fs, manifest);
-    if (manifest.deleteFiles) {
-      for (const file of manifest.files) {
-        check();
-        const path = stagedPath(manifest, file.path);
-        if (await fileVersion(fs, path) !== file.version) throw new Error(`保留文件已改变：${path}`);
-        await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
-      }
-    }
     const directories = new Set<string>();
     for (const file of manifest.files) {
       let dir = parentDir(file.path);
@@ -383,7 +391,7 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
   const epoch = getVaultEpoch(), fs = vault.fs;
   const disk = await inventory(fs);
   const entries: FileMaintenanceEntry[] = [];
-  const retained = new Map<string, ManagedFile>();
+  const retained = new Map<string, ManagedFile & { recycleAfter?: number }>();
   for (const entry of await fs.list(RETAINED).catch(error => { disk.errors.push(errorText(error)); return []; })) {
     if (!entry.isDir || entry.isSymlink || !operationIdPattern.test(entry.name)) { disk.errors.push('保留区含未知恢复内容'); continue; }
     if (!(await fs.stat(manifestPath(entry.name))).exists) continue;
@@ -392,7 +400,7 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
       disk.known.add(manifestPath(entry.name));
       if (!await isCommitted(fs, manifest)) throw new Error('删除操作未完成，请重新打开库以恢复');
       disk.known.add(`${RETAINED}/${entry.name}/committed.json`);
-      for (const file of manifest.files) retained.set(stagedPath(manifest, file.path), file);
+      for (const file of manifest.files) retained.set(stagedPath(manifest, file.path), { ...file, recycleAfter: manifest.recycleAfter });
     } catch (error) { disk.errors.push(`${entry.name}: ${errorText(error)}`); }
   }
   for (const [path, entry] of disk.files) {
@@ -400,7 +408,12 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
     let category: MaintenanceCategory = 'unknown', reason = '无法确认归属，仅供查看', version = '';
     if (retained.has(path)) {
       if (disk.references.has(pathKey(path))) reason = '保留文件正在被有效记录引用，仅供查看';
-      else { category = 'retained'; reason = `删除时保留；原路径：${retained.get(path)!.path}`; }
+      else {
+        category = 'retained';
+        const file = retained.get(path)!;
+        reason = file.recycleAfter === undefined ? `长期保留；原路径：${file.path}`
+          : `库内回收站；${new Date(file.recycleAfter).toLocaleString('zh-CN')}后尝试移入系统回收站；原路径：${file.path}`;
+      }
     }
     else if (/^角色\/[^/]+\/立绘\/[^/]+\/\.ste-portrait-[a-f0-9-]{36}-\d+\.(?:png|jpe?g|webp|gif|tmp)$/i.test(path)
       && !disk.references.has(pathKey(path))) { category = 'unreferenced'; reason = 'STE 创建的立绘文件，当前档案与恢复记录均无引用'; }
@@ -410,7 +423,7 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
         if (category === 'retained' && version !== retained.get(path)!.version) { category = 'unknown'; reason = '保留文件已改变，需手动检查'; }
       } catch (error) { disk.errors.push(`${path}: ${errorText(error)}`); category = 'unknown'; }
     }
-    entries.push({ path, size: entry.size, version, category, reason, selectable: category !== 'unknown' });
+    entries.push({ path, size: entry.size, version, category, reason, selectable: category !== 'unknown', recycleAfter: retained.get(path)?.recycleAfter });
   }
   for (const path of disk.directories) {
     if (![...disk.files.keys(), ...disk.directories].some(child => parentDir(child) === path)) {
@@ -423,6 +436,16 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
 }
 
 export async function cleanupVaultFiles(scan: FileMaintenanceScan, selectedPaths: string[]): Promise<FileCleanupResult> {
+  return queueCleanup(scan, selectedPaths);
+}
+
+function queueCleanup(scan: FileMaintenanceScan, selectedPaths: string[], expiredBefore?: number): Promise<FileCleanupResult> {
+  let queue = cleanupQueues.get(scan.vault.fs);
+  if (!queue) { queue = new KeyedSerialQueue(); cleanupQueues.set(scan.vault.fs, queue); }
+  return queue.enqueue('cleanup', () => cleanupFiles(scan, selectedPaths, expiredBefore));
+}
+
+async function cleanupFiles(scan: FileMaintenanceScan, selectedPaths: string[], expiredBefore?: number): Promise<FileCleanupResult> {
   const { vault, epoch } = scan, fs = vault.fs;
   const check = () => { if (getVaultEpoch() !== epoch || getActiveVault() && getActiveVault() !== vault) throw new Error('文件库已切换，请重新检查'); };
   check();
@@ -440,18 +463,51 @@ export async function cleanupVaultFiles(scan: FileMaintenanceScan, selectedPaths
       if (!fresh.complete || !current?.selectable || current.category !== original.category || current.version !== original.version) {
         result.skipped.push({ path, reason: '文件、引用或恢复状态已改变，请重新检查' }); continue;
       }
+      if (expiredBefore !== undefined && (!fs.trashFile || current.category !== 'retained' || current.recycleAfter === undefined
+        || current.recycleAfter > expiredBefore || current.recycleAfter !== original.recycleAfter)) {
+        result.skipped.push({ path, reason: '尚未到期或无法移入系统回收站，继续保留' }); continue;
+      }
       await assertSafePath(fs, path);
       check();
       if (current.category === 'empty-directory') {
         if (!await fs.removeEmptyDir(path)) { result.skipped.push({ path, reason: '目录已不为空' }); continue; }
       } else {
         if (await fileVersion(fs, path) !== original.version) { result.skipped.push({ path, reason: '文件已改变' }); continue; }
-        check(); await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
+        check();
+        if (expiredBefore !== undefined) await fs.trashFile!(path);
+        else await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
       }
       result.removed.push(path); result.bytes += current.size;
     } catch (error) { result.failed.push({ path, reason: errorText(error) }); }
   }
   return result;
+}
+
+/** No full-library scan until a committed, explicitly expiring operation is due. */
+export async function recycleExpiredFiles(vault: VaultBackend, now = Date.now()): Promise<FileCleanupResult> {
+  const fs = vault.fs, epoch = getVaultEpoch();
+  const result: FileCleanupResult = { removed: [], skipped: [], failed: [], bytes: 0, usesTrash: !!fs.trashFile };
+  const check = () => { if (getVaultEpoch() !== epoch || getActiveVault() !== vault) throw new Error('文件库已切换，自动回收已停止'); };
+  check();
+  if (!fs.trashFile) return result;
+  await assertSafePath(fs, RETAINED, true);
+  let due = false;
+  for (const entry of await fs.list(RETAINED)) {
+    check();
+    if (!entry.isDir || entry.isSymlink || !operationIdPattern.test(entry.name)) throw new Error('回收区存在无法确认的内容，请在文件检查中查看');
+    if (activeOperations.get(fs)?.has(entry.name) || !(await fs.stat(manifestPath(entry.name))).exists) continue;
+    const manifest = await readManifest(fs, entry.name);
+    if (manifest.recycleAfter !== undefined && manifest.recycleAfter <= now && await isCommitted(fs, manifest)) {
+      for (const file of manifest.files) if ((await fs.stat(stagedPath(manifest, file.path))).exists) { due = true; break; }
+    }
+    if (due) break;
+  }
+  check();
+  if (!due) return result;
+  const scan = await scanVaultFiles(vault);
+  check();
+  const expired = scan.entries.filter(entry => entry.selectable && entry.category === 'retained' && entry.recycleAfter !== undefined && entry.recycleAfter <= now);
+  return queueCleanup(scan, expired.map(entry => entry.path), now);
 }
 
 interface RecordMove {

@@ -4,21 +4,21 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, afterEach, it, expect, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 
-const getAllCharacters = vi.hoisted(() => vi.fn());
+const listCharacterIndex = vi.hoisted(() => vi.fn());
 const listStoryIndex = vi.hoisted(() => vi.fn());
 const toast = vi.hoisted(() => vi.fn());
 const flushPendingSave = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast }), toast }));
 vi.mock('@/components/AppLayout', () => ({ AppLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('@/lib/archive-db', () => ({
-  CHARACTER_TYPES: ['人物', '剧情', '玩法', '综合', '同人'], getAllCharacters,
+  CHARACTER_TYPES: ['人物', '剧情', '玩法', '综合', '同人'], listCharacterIndex,
   getLibraryTagPreferences: vi.fn(async () => {
     const { normalizeLibraryTagPreferences } = await import('@/lib/library-tag-preferences');
     return normalizeLibraryTagPreferences(undefined);
   }),
   saveLibraryTagPreferences: vi.fn(), updateArchiveStory: vi.fn(), deleteCharacter: vi.fn(), saveCharacter: vi.fn(),
 }));
-vi.mock('@/lib/archive-index', () => ({ listStoryIndex }));
+vi.mock('@/lib/archive-index', async original => ({ ...await original<object>(), listCharacterIndex, listStoryIndex }));
 vi.mock('@/components/library/review/LibraryReviewView', async () => {
   const { forwardRef, useImperativeHandle } = await import('react');
   const LibraryReviewView = forwardRef<{ flushPendingSave: () => Promise<void> }, { characters: ArchiveCharacter[]; storyIndex: { id: string }[] }>((props, ref) => {
@@ -45,7 +45,7 @@ beforeEach(() => {
   flushPendingSave.mockReset().mockResolvedValue(undefined);
   toast.mockReset();
   setCurrentVaultId(crypto.randomUUID());
-  getAllCharacters.mockResolvedValue(characters);
+  listCharacterIndex.mockResolvedValue(characters);
   listStoryIndex.mockResolvedValue([{ id: 'story', characterId: 'c1' }]);
   container = document.createElement('div'); document.body.appendChild(container); root = createRoot(container);
 });

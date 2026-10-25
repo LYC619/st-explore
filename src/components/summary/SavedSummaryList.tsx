@@ -11,6 +11,7 @@ import { deleteSummary, getAllSummaries } from '@/lib/summary-db';
 import { summaryToObsidian } from '@/lib/obsidian-export';
 import { exportTextFile, type TextFileExportResult } from '@/lib/text-file-export';
 import { SUMMARY_KIND_LABELS, type SummaryItem, type SummaryKind } from '@/types/summary';
+import { compareSummaryOrder, summaryVolumeLabel } from '@/lib/summary-order';
 
 interface SavedSummaryListProps {
   currentBookId: string | null;
@@ -44,7 +45,7 @@ export function SavedSummaryList({
 
   const filtered = useMemo(() => all
     .filter((item) => (!currentBookId || item.bookId === currentBookId) && item.kind === kind)
-    .sort((a, b) => b.updatedAt - a.updatedAt), [all, currentBookId, kind]);
+    .sort(compareSummaryOrder), [all, currentBookId, kind]);
 
   const handleDelete = async (options: RemoveOptions) => {
     if (!deleteId) return;
@@ -84,11 +85,11 @@ export function SavedSummaryList({
   return (
     <Card className="h-full min-h-0">
       <CardContent className="flex h-full min-h-0 flex-col gap-3 p-4">
-        <div className="flex shrink-0 items-center gap-2 text-xs">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs">
           <span className="text-sm font-medium">{SUMMARY_KIND_LABELS[kind]}</span>
           <span className="text-muted-foreground">共 {filtered.length} 条</span>
-          <Button variant="ghost" size="icon" className="ml-auto" aria-label="手动添加总结" title="手动添加总结" onClick={onAdd}>
-            <Plus className="h-4 w-4" />
+          <Button variant="outline" size="sm" className="ml-auto gap-1" aria-label="手动添加总结" title="手动添加总结" onClick={onAdd}>
+            <Plus className="h-4 w-4" />手动添加
           </Button>
           {filtered.length > 0 && (
             <Button variant="outline" size="sm" className="gap-1 px-2" onClick={() => void handleExportAll()}>
@@ -104,7 +105,7 @@ export function SavedSummaryList({
             {filtered.map((item) => (
               <div key={item.id} className="flex items-center gap-2 p-2 rounded-md border hover:bg-accent/40 text-sm">
                 <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">{SUMMARY_KIND_LABELS[item.kind]}</Badge>
-                {item.volumeNumber != null && <span className="text-xs text-muted-foreground shrink-0">第{item.volumeNumber}卷</span>}
+                {summaryVolumeLabel(item) && <span className="text-xs text-muted-foreground shrink-0">{summaryVolumeLabel(item)}</span>}
                 <span className="truncate flex-1" title={item.title}>{item.title || '（无标题）'}</span>
                 <span className="text-xs text-muted-foreground shrink-0">{item.rangeDetached ? "原来源 " : ""}{item.floorStart}~{item.floorEnd}</span>
                 {!item.autoSaved && <Badge variant="secondary" className="text-[11px] px-1 py-0 shrink-0">永久</Badge>}

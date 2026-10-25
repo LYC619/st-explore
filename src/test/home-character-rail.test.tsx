@@ -19,7 +19,7 @@ import type { ArchiveCharacter } from '@/types/archive';
 import type { StoryIndexEntry } from '@/lib/archive-index';
 
 const navigate = vi.hoisted(() => vi.fn());
-const getAllCharacters = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const listCharacterIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const listStoryIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 
 vi.mock('react-router-dom', async () => {
@@ -36,8 +36,8 @@ vi.mock('@/lib/vault/tauri-fs', () => ({
   isTauri: () => false,
   getAppConfig: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('@/lib/archive-db', () => ({ getAllCharacters }));
-vi.mock('@/lib/archive-index', () => ({ listStoryIndex }));
+vi.mock('@/lib/archive-db', () => ({ listCharacterIndex }));
+vi.mock('@/lib/archive-index', async original => ({ ...await original<object>(), listCharacterIndex, listStoryIndex }));
 vi.mock('@/lib/worldbook-db', () => ({ getAllWorldBooks: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/preset-db', () => ({ getAllPresets: vi.fn().mockResolvedValue([]) }));
 vi.mock('@/lib/regex-db', () => ({ getAllRegexCollections: vi.fn().mockResolvedValue([]) }));
@@ -82,7 +82,7 @@ function mkStory(id: string, characterId: string): StoryIndexEntry {
 }
 
 async function renderHome(characters: ArchiveCharacter[], stories: StoryIndexEntry[] = []) {
-  getAllCharacters.mockResolvedValue(characters);
+  listCharacterIndex.mockResolvedValue(characters);
   listStoryIndex.mockResolvedValue(stories);
   await act(async () => {
     root.render(
@@ -105,7 +105,7 @@ const cardOf = (id: string) => {
 beforeEach(() => {
   localStorage.clear();
   navigate.mockClear();
-  getAllCharacters.mockClear().mockResolvedValue([]);
+  listCharacterIndex.mockClear().mockResolvedValue([]);
   listStoryIndex.mockClear().mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);

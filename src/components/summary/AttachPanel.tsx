@@ -9,9 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { getAllPresets } from '@/lib/preset-db';
+import { PresetSelect } from '@/components/preset/PresetSelect';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
-import type { PresetItem } from '@/types/preset';
 import type { WorldBookItem, WorldBookEntry } from '@/types/worldbook';
 import type { WorldbookMode } from '@/lib/summary-engine';
 
@@ -33,11 +32,9 @@ const NONE = '__none__';
 
 /** 挂载预设/世界书面板：选预设、选世界书 + 注入范围(constant/all/manual)，展示 token 估算 */
 export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps) {
-  const [presets, setPresets] = useState<PresetItem[]>([]);
   const [worldbooks, setWorldbooks] = useState<WorldBookItem[]>([]);
 
   useEffect(() => {
-    getAllPresets().then(setPresets).catch(() => {});
     getAllWorldBooks().then(setWorldbooks).catch(() => {});
   }, []);
 
@@ -72,20 +69,7 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
           <Label className="text-xs text-muted-foreground flex items-center gap-1">
             <SlidersHorizontal className="w-3.5 h-3.5" />预设（决定上下文组装顺序）
           </Label>
-          <Select
-            value={value.presetId ?? NONE}
-            onValueChange={(v) => set({ presetId: v === NONE ? null : v })}
-          >
-            <SelectTrigger className="h-8">
-              <SelectValue placeholder="不挂预设（用内置骨架）" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NONE}>不挂预设（用内置骨架）</SelectItem>
-              {presets.map((p) => (
-                <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <PresetSelect value={value.presetId} onChange={presetId => set({ presetId })} />
         </div>
 
         {/* 世界书 */}

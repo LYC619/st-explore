@@ -6,7 +6,7 @@
  * - 右列：单列编辑处理入口 + 独立共享资产区
  * 硬约束：占满一屏且页面本身不滚动（基准 1440×900、100% 缩放）。
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, ArrowRight, BookOpenText, KeyRound, ChevronRight,
@@ -20,15 +20,13 @@ import { STImportCard } from '@/components/tools/STImportCard';
 import { isEmptyVault } from '@/lib/vault/empty-vault';
 import { AppLayout } from '@/components/AppLayout';
 import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
-import { NsfwImage } from '@/components/NsfwImage';
+import { CharacterPortrait } from '@/components/library/CharacterPortrait';
 import { CharacterTile } from '@/components/library/CharacterTile';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
-import { getAllCharacters } from '@/lib/archive-db';
-import { listStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
-import { getAllWorldBooks } from '@/lib/worldbook-db';
-import { getAllPresets } from '@/lib/preset-db';
-import { getAllRegexCollections } from '@/lib/regex-db';
+import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
+import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { listAssetIndex } from '@/lib/asset-index';
 import { introOf } from '@/lib/character-intro';
 import { displayCharacterName } from '@/lib/library-query';
 import { formatListTime, formatFullTime } from '@/lib/time-display';
@@ -40,7 +38,7 @@ import {
 
 /** 故事行的下属资源标签计数 */
 interface HomeSnapshot {
-  readonly characters: ArchiveCharacter[];
+  readonly characters: CharacterIndexEntry[];
   readonly stories: StoryIndexEntry[];
   readonly recentStories: StoryIndexEntry[];
   /** 预留给故事资源徽标，快照结构保持与既有缓存兼容。 */
@@ -61,6 +59,10 @@ let homeSnapshot: HomeSnapshot = {
   assetCounts: { worldbooks: 0, presets: 0, regexes: 0 },
   loaded: false,
 };
+subscribeActiveVault(() => {
+  homeSnapshot = { characters: [], stories: [], recentStories: [], resources: {},
+    assetCounts: { worldbooks: 0, presets: 0, regexes: 0 }, loaded: false };
+});
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -97,6 +99,8 @@ const EDIT_TOOLS = [
 
 const Home = () => {
   const navigate = useNavigate();
+  const [scopeEpoch] = useState(getVaultEpoch);
+  const loadSequence = useRef(0);
   const { isMobile } = useViewport();
   const [characters, setCharacters] = useState(() => homeSnapshot.characters);
   const [stories, setStories] = useState(() => homeSnapshot.stories);
@@ -125,14 +129,17 @@ const Home = () => {
   });
 
   const loadData = useCallback(async () => {
+    const sequence = ++loadSequence.current;
+    const isCurrent = () => getVaultEpoch() === scopeEpoch && sequence === loadSequence.current;
     try {
       const [chars, allStories, wbs, presets, regexes] = await Promise.all([
-        getAllCharacters(),
+        listCharacterIndex(),
         listStoryIndex(),
-        getAllWorldBooks().catch(() => []),
-        getAllPresets().catch(() => []),
-        getAllRegexCollections().catch(() => []),
+        listAssetIndex('worldbooks').catch(() => []),
+        listAssetIndex('presets').catch(() => []),
+        listAssetIndex('regexes').catch(() => []),
       ]);
+      if (!isCurrent()) return;
       // 最近在看的故事：只列看过的（无记录的还谈不上「最近」），绑定与未绑定都算
       const viewed = pickRecentlyViewedStories(allStories, 12);
       const nextSnapshot: HomeSnapshot = {
@@ -150,14 +157,19 @@ const Home = () => {
       setAssetCounts(nextSnapshot.assetCounts);
       setLoadFailed(false);
     } catch {
+      if (!isCurrent()) return;
       // 整页读失败以前静默显示空态，用户会以为数据丢了（对照 Library 是有明确报错的）
       setLoadFailed(true);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }, []);
+  }, [scopeEpoch]);
 
-  useEffect(() => { void loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    const sequence = loadSequence;
+    return () => { sequence.current++; };
+  }, [loadData]);
 
   const refreshStConnected = useCallback(async () => {
     if (!isTauri()) {
@@ -402,9 +414,9 @@ const Home = () => {
                         onClick={() => navigate(s.characterId ? `/character/${s.characterId}?story=${s.id}` : `/story/${s.id}`)}
                         className="flex h-full min-h-0 min-w-0 items-center gap-2.5 rounded-lg bg-chrome px-3 py-2.5 text-left transition-colors hover:bg-elevated-strong"
                       >
-                        <div className="aspect-[3/4] h-full max-h-14 shrink-0 overflow-hidden rounded bg-[var(--hover-overlay)]">
-                          {char?.pngBase64 ? (
-                            <NsfwImage src={`data:image/png;base64,${char.pngBase64}`} alt={displayCharacterName(char)} nsfw={char.nsfw} className="h-full w-full object-cover object-top" loading="lazy" />
+                        <div className="relative aspect-[3/4] h-full max-h-14 shrink-0 overflow-hidden rounded bg-[var(--hover-overlay)]">
+                          {char ? (
+                            <CharacterPortrait character={char} />
                           ) : <BookOpenText className="m-2 h-4 w-4 text-muted-foreground/50" />}
                         </div>
                         <span className="min-w-0 flex-1 truncate text-xs font-medium text-[color:var(--text-body)]" title={s.title}>{s.title}</span>
@@ -515,4 +527,7 @@ const Home = () => {
   );
 };
 
-export default Home;
+export default function HomePage() {
+  const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
+  return <Home key={epoch} />;
+}

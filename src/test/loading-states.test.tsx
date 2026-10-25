@@ -16,7 +16,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 
-const getAllCharacters = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+const listCharacterIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const listStoryIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
 const toast = vi.hoisted(() => vi.fn());
 
@@ -35,7 +35,6 @@ vi.mock('@/components/tools/STImportCard', () => ({ STImportCard: () => null }))
 vi.mock('@/components/tools/STAIConfigDialog', () => ({ STAIConfigDialog: () => null }));
 vi.mock('@/lib/archive-db', () => ({
   CHARACTER_TYPES: ['人物', '剧情', '玩法', '综合', '同人'],
-  getAllCharacters,
   deleteCharacter: vi.fn().mockResolvedValue(undefined),
   saveCharacter: vi.fn().mockResolvedValue(undefined),
   getLibraryTagPreferences: vi.fn(async () => {
@@ -45,7 +44,7 @@ vi.mock('@/lib/archive-db', () => ({
   saveLibraryTagPreferences: vi.fn().mockResolvedValue(undefined),
   updateArchiveStory: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/archive-index', () => ({ listStoryIndex }));
+vi.mock('@/lib/archive-index', () => ({ listStoryIndex, listCharacterIndex }));
 vi.mock('@/lib/character-batch-export', () => ({
   exportCharactersToDirectory: vi.fn().mockResolvedValue({ exported: [], failed: [] }),
 }));
@@ -103,7 +102,7 @@ const buttonByText = (label: string) =>
 beforeEach(() => {
   localStorage.clear();
   toast.mockClear();
-  getAllCharacters.mockClear().mockResolvedValue([]);
+  listCharacterIndex.mockClear().mockResolvedValue([]);
   listStoryIndex.mockClear().mockResolvedValue([]);
   container = document.createElement('div');
   document.body.appendChild(container);
@@ -128,7 +127,7 @@ async function renderLibrary() {
 describe('角色库加载状态', () => {
   it('首屏读档期间给卡墙骨架，不提前显示空库引导', async () => {
     const pending = deferred<ArchiveCharacter[]>();
-    getAllCharacters.mockReturnValue(pending.promise);
+    listCharacterIndex.mockReturnValue(pending.promise);
 
     await renderLibrary();
 
@@ -145,7 +144,7 @@ describe('角色库加载状态', () => {
   });
 
   it('确实读到空库才显示导入引导', async () => {
-    getAllCharacters.mockResolvedValue([]);
+    listCharacterIndex.mockResolvedValue([]);
 
     await renderLibrary();
     await flush();
@@ -155,7 +154,7 @@ describe('角色库加载状态', () => {
   });
 
   it('读档失败显示失败态和重试，不冒充空库', async () => {
-    getAllCharacters.mockRejectedValueOnce(new Error('idb 挂了'));
+    listCharacterIndex.mockRejectedValueOnce(new Error('idb 挂了'));
 
     await renderLibrary();
     await flush();
@@ -166,7 +165,7 @@ describe('角色库加载状态', () => {
     expect(text()).not.toContain('角色库还是空的');
 
     // 重试成功后回到正常卡墙
-    getAllCharacters.mockResolvedValue([mkCharacter('a')]);
+    listCharacterIndex.mockResolvedValue([mkCharacter('a')]);
     const retry = buttonByText('重试');
     expect(retry).toBeDefined();
     await act(async () => { retry!.click(); });
@@ -177,7 +176,7 @@ describe('角色库加载状态', () => {
   });
 
   it('已有数据时刷新只给顶部指示条，不把卡墙换回骨架', async () => {
-    getAllCharacters.mockResolvedValue([mkCharacter('a'), mkCharacter('b'), mkCharacter('c')]);
+    listCharacterIndex.mockResolvedValue([mkCharacter('a'), mkCharacter('b'), mkCharacter('c')]);
     await renderLibrary();
     await flush();
     expect(document.querySelectorAll('[data-character-id]').length).toBe(3);
@@ -191,7 +190,7 @@ describe('角色库加载状态', () => {
 
     // 第二次读档挂在半空。确认按钮跟批量栏那颗同样叫「删除」，得限定在弹窗里找
     const pending = deferred<ArchiveCharacter[]>();
-    getAllCharacters.mockReturnValue(pending.promise);
+    listCharacterIndex.mockReturnValue(pending.promise);
     const dialog = document.querySelector('[role="alertdialog"]');
     expect(dialog).not.toBeNull();
     const confirm = Array.from(dialog!.querySelectorAll('button')).find((b) => b.textContent?.trim() === '删除');

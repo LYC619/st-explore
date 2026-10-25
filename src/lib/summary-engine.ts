@@ -1,3 +1,4 @@
+import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 总结生成引擎：把「楼层区间 + 模板 + 可选预设/世界书 + 前情总结」组装成 OpenAI messages 数组。
  *
@@ -238,8 +239,8 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
 
   if (!preset) {
     // ---- 无预设：最小骨架 ----
-    if (wbStatic) messages.push({ role: 'system', content: `【世界观设定】\n${wbStatic}` });
-    if (priorBlock) messages.push({ role: 'system', content: `【前情存档】\n${priorBlock}` });
+    if (wbStatic) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: wbStatic }) });
+    if (priorBlock) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.prior', { content: priorBlock }) });
     applyDepthInjections();
     messages.push(...floorMsgs);
     messages.push(templateMsg);
@@ -278,14 +279,14 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
       if (block.marker) {
         switch (block.identifier) {
           case 'chatHistory':
-            if (priorBlock) messages.push({ role: 'system', content: `【前情存档】\n${priorBlock}` });
+            if (priorBlock) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.prior', { content: priorBlock }) });
             messages.push(...floorMsgs);
             messages.push(templateMsg); // D0：模板作为聊天末尾的用户消息
             chatHistoryEmitted = true;
             break;
           case 'worldInfoBefore':
           case 'worldInfoAfter':
-            if (wbStatic) messages.push({ role: 'system', content: `【世界观设定】\n${wbStatic}` });
+            if (wbStatic) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: wbStatic }) });
             break;
           // charDescription/charPersonality/scenario/dialogueExamples/personaDescription：
           // 一期无角色卡挂载，跳过（marker 运行时无内容）
@@ -300,7 +301,7 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
     // 预设未启用 chatHistory（异常）→ 兜底把楼层+模板追加到末尾
     if (!chatHistoryEmitted) {
       warnings.push('预设未启用「聊天历史」块，已把楼层与模板追加到末尾');
-      if (priorBlock) messages.push({ role: 'system', content: `【前情存档】\n${priorBlock}` });
+      if (priorBlock) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.prior', { content: priorBlock }) });
       messages.push(...floorMsgs);
       messages.push(templateMsg);
     }

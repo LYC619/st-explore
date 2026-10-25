@@ -1,3 +1,4 @@
+import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 记录工作台（2.0 阶段3，从 pages/Summary.tsx 拆出的生成+编辑流）。
  * 管一条总结/日记/DIY 记录：选脉络（主线/分支）和楼层范围 → 挂预设/世界书 → 选模板
@@ -55,6 +56,8 @@ import { PriorVolumesPanel } from '@/components/summary/PriorVolumesPanel';
 import { BatchProcessor } from '@/components/summary/BatchProcessor';
 import { substituteVars } from '@/lib/preset-parser';
 import { hasUnsavedSummaryDraft } from '@/lib/summary-draft-state';
+import { RecordVolumeFields } from '@/components/summary/RecordVolumeFields';
+import { compareSummaryOrder } from '@/lib/summary-order';
 
 const MAIN = '__main__';
 
@@ -120,7 +123,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     const [rangeAttached, setRangeAttached] = useState(!record?.rangeDetached);
     const rangeDetached = !!record?.rangeDetached && !rangeAttached;
     const [moveOpen, setMoveOpen] = useState(false);
-    const [diaryOwner, setDiaryOwner] = useState(record?.genParams?.diaryOwner ?? '');
+    const [diaryOwner, setDiaryOwner] = useState(record?.diaryOwner ?? record?.genParams?.diaryOwner ?? '');
 
     const [templates, setTemplates] = useState<AnySummaryTemplate[]>([]);
     const [templateId, setTemplateId] = useState<string>(record?.genParams?.templateId ?? defaultTemplateIdForKind(kind));
@@ -134,7 +137,13 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     const [currentSummaryId, setCurrentSummaryId] = useState<string | null>(record?.id ?? null);
     const [savedPermanent, setSavedPermanent] = useState(record ? !record.autoSaved : false);
     // 当前结果所属卷号（生成时盖章/载入回填）；保存用它而非实时 nextVolumeNumber，防 priors 变化顶号
-    const [resultVolume, setResultVolume] = useState<number | null>(record?.volumeNumber ?? null);
+    const [resultVolume, setResultVolume] = useState(record?.volumeNumber?.toString() ?? '');
+    const [resultCategory, setResultCategory] = useState<SummaryItem['volumeCategory']>(record?.volumeCategory);
+    const [metadataEdited, setMetadataEdited] = useState(false);
+    const resultMetadata = { volumeNumber: resultCategory !== 'other' && resultVolume ? Number(resultVolume) : undefined, volumeCategory: resultCategory };
+    const hasDraft = (!!record?.rangeDetached && rangeAttached) || (!record && metadataEdited) || hasUnsavedSummaryDraft({
+      record, title: resultTitle, content: resultContent, streaming, metadata: resultMetadata,
+    });
     const [manualDraft, setManualDraft] = useState(false);
     // 预览模式：MD 排版阅读（日记用日记本）；编辑回 textarea
     const [preview, setPreview] = useState(false);
@@ -186,7 +195,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       const all = await getAllSummaries();
       const vols = all
         .filter((s) => s.bookId === story.id && s.kind === 'volume')
-        .sort((a, b) => (a.volumeNumber ?? 0) - (b.volumeNumber ?? 0));
+        .sort(compareSummaryOrder);
       setPriorVolumes(vols);
       setPriorSelectedIds(vols.map((v) => v.id)); // 默认全选（连贯性关键）
     }, [story.id]);
@@ -247,7 +256,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     const effectiveTemplate = useMemo(() => {
       const owner = diaryOwner.trim();
       if (kind === 'diary' && owner) {
-        return `${templateContent.trimEnd()}\n\n请根据以上故事内容，以「${owner}」的第一人称视角生成${owner}的日记。`;
+        return `${templateContent.trimEnd()}\n\n${formatBuiltinPrompt('summary.diary-owner', { owner })}`;
       }
       return templateContent;
     }, [kind, diaryOwner, templateContent]);
@@ -295,7 +304,8 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setResultContent(text);
       setCurrentSummaryId(null);
       setSavedPermanent(false);
-      setResultVolume(null);
+      setResultVolume('');
+      setResultCategory(undefined);
       setPreview(false);
       setManualDraft(false);
       scrollResultIntoView();
@@ -305,13 +315,16 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     /** 选中模板的显示名（存进快照，索引里 diy 显示模板名） */
     const selectedTemplateTitle = templates.find((t) => t.id === templateId)?.title;
 
-    const buildItem = (content: string, title: string, autoSaved: boolean, id: string, volume?: number): SummaryItem => ({
+    const buildItem = (content: string, title: string, autoSaved: boolean, id: string, volume?: number, category?: SummaryItem['volumeCategory']): SummaryItem => ({
+      ...(record?.id === id ? record : {}),
       id,
       bookId: story.id,
       bookTitle: story.title,
       kind,
       title,
-      volumeNumber: kind === 'volume' ? volume : undefined,
+      volumeNumber: kind !== 'diy' && category !== 'other' ? volume : undefined,
+      volumeCategory: kind !== 'diy' ? category : undefined,
+      diaryOwner: kind === 'diary' ? diaryOwner.trim() || undefined : undefined,
       branchId: branchId ?? undefined,
       floorStart: rangeDetached && record ? record.floorStart : floorStart,
       floorEnd: rangeDetached && record ? record.floorEnd : floorEnd,
@@ -365,7 +378,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       warnings.forEach((w) => toast({ title: '提示', description: w }));
 
       const vol = kind === 'volume' ? effectiveVolume : undefined;
-      setResultVolume(vol ?? null);
+      setResultVolume(vol?.toString() ?? '');
+      setResultCategory(undefined);
+      setMetadataEdited(false);
       setPreview(false);
       setManualDraft(false);
       setStreaming(true);
@@ -405,11 +420,16 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     // 手动保存 → 永久。卷号沿用盖章值（无盖章才现算）
     const handleSave = async () => {
       if (!resultContent) return;
+      if (resultCategory !== 'other' && resultVolume && (!/^\d+$/.test(resultVolume) || !Number.isSafeInteger(Number(resultVolume)) || Number(resultVolume) < 1)) {
+        toast({ title: '卷号必须是正整数', variant: 'destructive' });
+        return;
+      }
       const id = currentSummaryId ?? generateSummaryId();
-      const item = buildItem(resultContent, resultTitle || SUMMARY_KIND_LABELS[kind], false, id, resultVolume ?? effectiveVolume);
+      const item = buildItem(resultContent, resultTitle || SUMMARY_KIND_LABELS[kind], false, id, resultMetadata.volumeNumber, resultCategory);
       await saveSummary(item);
       setCurrentSummaryId(id);
       setSavedPermanent(true);
+      setMetadataEdited(false);
       setVolumeOverride(null);
       reloadVolumes();
       onSaved(item);
@@ -431,7 +451,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setResultContent('');
       setCurrentSummaryId(null);
       setSavedPermanent(false);
-      setResultVolume(null);
+      setResultVolume('');
+      setResultCategory(undefined);
+      setMetadataEdited(false);
       setVolumeOverride(null);
       setPreview(false);
       setManualDraft(false);
@@ -447,7 +469,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         setResultContent('');
         setCurrentSummaryId(null);
         setSavedPermanent(false);
-        setResultVolume(null);
+        setResultVolume(kind === 'volume' ? String(effectiveVolume) : '');
+        setResultCategory(undefined);
+        setMetadataEdited(false);
         setPreview(false);
         setManualDraft(true);
         scrollResultIntoView();
@@ -474,14 +498,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         toast({ title: '已回填设置', description: '楼层/挂载/模板已按原条目填好，点「生成」即可重做' });
       },
       hasUnsavedDraft() {
-        return (!!record?.rangeDetached && rangeAttached) || hasUnsavedSummaryDraft({
-          record,
-          title: resultTitle,
-          content: resultContent,
-          streaming,
-        });
+        return hasDraft;
       },
-    }), [record, kind, resultTitle, resultContent, streaming, scrollResultIntoView, toast, rangeDetached, rangeAttached]);
+    }), [record, kind, effectiveVolume, scrollResultIntoView, toast, rangeDetached, hasDraft]);
 
     const charName = session.character?.name;
     const branchName = branchId ? story.branches?.find((b) => b.id === branchId)?.name : null;
@@ -491,7 +510,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         {showApiStatus && <ApiStatusLine />}
         {record && currentSummaryId === record.id && <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <span className="text-muted-foreground">{record.provenance ? `原始来源：${record.provenance.bookTitle} · ${record.provenance.branchTitle ?? '主线'} · #${record.provenance.floorStart}–${record.provenance.floorEnd}` : ''}</span>
-          <Button variant="outline" size="sm" disabled={(!!record.rangeDetached && rangeAttached) || hasUnsavedSummaryDraft({ record, title: resultTitle, content: resultContent, streaming })}
+          <Button variant="outline" size="sm" disabled={hasDraft}
             title="有未保存修改时，请先保存再移动" onClick={() => setMoveOpen(true)}>移动到其他故事</Button>
         </div>}
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 overflow-hidden">
@@ -646,7 +665,10 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               <SummaryResultEditor
                 kind={kind}
                 title={resultTitle}
-                onTitleChange={setResultTitle}
+                onTitleChange={title => { setResultTitle(title); setSavedPermanent(false); }}
+                metadataFields={kind !== 'diy' && <RecordVolumeFields volume={resultVolume} category={resultCategory} disabled={streaming}
+                  onVolumeChange={value => { setResultVolume(value); setMetadataEdited(true); setSavedPermanent(false); }}
+                  onCategoryChange={value => { setResultCategory(value); setMetadataEdited(true); setSavedPermanent(false); }} />}
                 content={resultContent}
                 onContentChange={handleContentEdit}
                 streaming={streaming}

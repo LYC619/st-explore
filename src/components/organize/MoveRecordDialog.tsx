@@ -2,10 +2,9 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { getAllArchiveStories, getAllCharacters } from '@/lib/archive-db';
+import { listStoryIndex, listCharacterIndex, type StoryIndexEntry } from '@/lib/archive-index';
 import { moveSummaryToStory } from '@/lib/story-maintenance';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
-import type { ArchiveStory } from '@/types/archive';
 import type { SummaryItem } from '@/types/summary';
 
 interface Props {
@@ -17,7 +16,7 @@ interface Props {
 
 export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props) {
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
-  const [stories, setStories] = useState<ArchiveStory[]>([]);
+  const [stories, setStories] = useState<StoryIndexEntry[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState('');
@@ -34,7 +33,7 @@ export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props)
     capturedEpoch.current = getVaultEpoch();
     setLoading(true); setError(''); setTarget(''); setBranch(''); setSearch('');
     let cancelled = false;
-    void Promise.all([getAllArchiveStories(), getAllCharacters()]).then(([items, characters]) => {
+    void Promise.all([listStoryIndex(), listCharacterIndex()]).then(([items, characters]) => {
       if (cancelled || capturedEpoch.current !== getVaultEpoch()) return;
       setStories(items.filter(story => story.id !== record?.bookId));
       setNames(Object.fromEntries(characters.map(character => [character.id, character.displayMeta?.name || character.name])));
@@ -72,7 +71,7 @@ export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props)
       {selected && <label className="space-y-1 text-sm">目标脉络
         <select aria-label="目标脉络" className="w-full rounded-md border bg-background p-2" value={branch} disabled={pending || stale} onChange={event => setBranch(event.target.value)}>
           <option value="">主线</option>
-          {(selected.branches ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {(selected.branchIndex ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </label>}
       {!loading && !stories.length && !error && <p className="text-sm text-muted-foreground">还没有其他故事。</p>}

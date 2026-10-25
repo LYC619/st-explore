@@ -6,7 +6,7 @@
 
 > SillyTavern 角色卡与聊天记录的**归档 · 编辑**工具。
 
-[![version](https://img.shields.io/badge/version-v0.9.0-orange)](https://github.com/LYC619/st-explore/releases)
+[![version](https://img.shields.io/badge/version-v0.9.2-orange)](https://github.com/LYC619/st-explore/releases)
 [![platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows-blue)](https://github.com/LYC619/st-explore)
 [![stack](https://img.shields.io/badge/stack-React%2018%20%2B%20Tauri%202-4FC08D)](https://github.com/LYC619/st-explore)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
@@ -309,7 +309,7 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:8080` 即可访问。Windows 用户也可以直接运行仓库中的 `start.bat`（默认端口 `4173`）。
+打开 `http://localhost:8080` 即可访问。Windows 用户也可以直接运行仓库中的 `dev.bat`（默认端口 `8080`，效果同上）。
 
 ### 桌面版（Tauri，推荐）
 
@@ -381,7 +381,7 @@ npm run lint                            # 代码检查
 
 ## 🗺 路线图
 
-- [ ] 移动端适配（响应式布局）
+- [x] 移动端适配（响应式布局）
 - [ ] Agent 化改造（故事分析、剧情推进、总结工作流的自动编排）
 - [ ] 界面美化（展示页阅读体验、正则工具页作为"自定义前端美化"重构）
 

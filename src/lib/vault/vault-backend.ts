@@ -1,3 +1,4 @@
+import { computeStoryTimeRange } from '@/lib/story-meta';
 /**
  * 文件库后端（2.0 阶段7.2b）：store → 明文文件 的映射策略层，实现 Repo 契约。
  *
@@ -37,6 +38,9 @@ import { recoverCharacterJournals } from '@/lib/portrait-journal';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { sha256 } from 'js-sha256';
 import { executeFileRemoval, recoverFileMaintenance, moveRecordFile } from './file-maintenance';
+import { BoundedRecordCache, type FullCacheOptions } from './bounded-record-cache';
+import { notifyRecordChanged } from '@/lib/repo/changes';
+import { toAssetIndex, type IndexedAsset } from '@/lib/asset-index-entry';
 
 type PackageDependencyStore = 'characters' | 'worldbooks' | 'presets' | 'regexes';
 
@@ -151,18 +155,33 @@ function stripStoryBody(rec: BaseRecord | null): BaseRecord | null {
   const { session, branches, ...rest } = rec as unknown as ArchiveStory;
   return {
     ...rest,
+    storyTimeRange: computeStoryTimeRange(session?.messages ?? []),
     floorCount: session?.messages?.length ?? 0,
-    branchIndex: branches?.map(({ id, name }) => ({ id, name })) ?? [],
+    branchIndex: (Array.isArray(branches) ? branches.map(({ id, name }) => ({ id, name })) : undefined) ?? [],
   } as unknown as BaseRecord;
 }
 
-export function createVault(fs: VaultFs): VaultBackend {
+export interface VaultOptions {
+  /** Shared full-record LRU: defaults to 32 MiB estimated JS bytes / 128 records. */
+  fullCache?: FullCacheOptions;
+}
+
+export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBackend {
   const publications = new KeyedSerialQueue();
   // ---- 索引：id → 相对路径 ----
   const idx = new Map<VaultStore, Map<string, string>>(VAULT_STORES.map((s) => [s, new Map()]));
   const of = (s: VaultStore) => idx.get(s)!;
   let indexReady: Promise<void> | null = null;
   const ensureIndex = () => (indexReady ??= buildIndex());
+  let maintenanceRecovery: Promise<void> | null = null;
+
+  async function recoverMaintenance(): Promise<void> {
+    // Overlapping entry points share recovery, but never remember a settled
+    // success or failure: a later call must discover new journals and retry.
+    const pending = maintenanceRecovery ??= recoverFileMaintenance(fs);
+    try { await pending; }
+    finally { if (maintenanceRecovery === pending) maintenanceRecovery = null; }
+  }
 
   // ---- 记录读缓存（阶段9.1 性能）：id → 记录本体 ----
   // 读时填充；put/remove 只失效不回填（下次读回盘，序列化往返保持真实，测试不被缓存遮蔽）。
@@ -170,12 +189,19 @@ export function createVault(fs: VaultFs): VaultBackend {
   //
   // 两池分开（阶段 D1）：light 池装的是剥掉大字段的投影，绝不能回填 full 池——
   // 否则后续 get() 会拿到缺 pngBase64 / session 的记录，保存时把卡面与正文一起写没。
-  const recCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
+  const recCache = new BoundedRecordCache<BaseRecord>(options.fullCache);
   const lightCache = new Map<VaultStore, Map<string, BaseRecord>>(VAULT_STORES.map((s) => [s, new Map()]));
   const cacheVersions = new Map<VaultStore, Map<string, number>>(VAULT_STORES.map((s) => [s, new Map()]));
+  const pendingReads = new Map<string, { version: number; promise: Promise<BaseRecord | null> }>();
+  const cacheKey = (store: VaultStore, id: string) => `${store}:${id}`;
 
   async function recoverCharacter(id: string, dir: string, requireClean = false): Promise<void> {
     const reports = await recoverCharacterJournals(dir, id, fs);
+    // A journal can appear after an earlier cache hit. Recovery reads the current
+    // profile; neither a cached snapshot nor an older in-flight read can outlive it.
+    // Persistent blocked/cleanup-warning journals must evict stale snapshots,
+    // but must not broadcast another retry to the portrait currently reading.
+    if (reports.length) invalidate('characters', id, reports.every(report => report.action !== 'blocked' && report.warnings.length === 0));
     const blocked = reports.find((report) => report.action === 'blocked' || requireClean && report.warnings.length > 0);
     if (blocked) {
       const error = new Error(blocked.warnings.join('；'));
@@ -185,35 +211,60 @@ export function createVault(fs: VaultFs): VaultBackend {
   }
 
   async function readRecordCached(store: VaultStore, id: string, path: string, light = false): Promise<BaseRecord | null> {
+    // Only these stores have projections. Other listLight calls still return
+    // full payloads and must share the bounded pool instead of bypassing its cap.
+    light = light && (store === 'characters' || store === 'archiveStories' || store === 'worldbooks' || store === 'presets' || store === 'regexes');
     if (store === 'characters') await recoverCharacter(id, path);
-    const m = (light ? lightCache : recCache).get(store)!;
-    const hit = m.get(id);
-    // 出入缓存都克隆：调用方拿到的对象与缓存互不别名（与 IDB 每次返回新对象的语义一致）
-    if (hit) return structuredClone(hit);
+    const key = cacheKey(store, id);
+    const hit = light ? lightCache.get(store)!.get(id) : recCache.get(key);
+    if (hit) return light ? structuredClone(hit) : hit;
     const version = cacheVersions.get(store)!.get(id) ?? 0;
-    const rec = light ? await readRecordLight(store, path) : await readRecord(store, path);
-    // A disk read started before a mutation may finish afterward. Its caller gets
-    // that snapshot, but it must not put the older record back into either cache.
-    if (rec && version === (cacheVersions.get(store)!.get(id) ?? 0)) m.set(id, structuredClone(rec));
-    return rec;
+    const pendingKey = `${light ? 'light' : 'full'}:${key}`;
+    let pending = pendingReads.get(pendingKey);
+    if (!pending || pending.version !== version) {
+      const promise = (async () => {
+        const rec = light ? await readRecordLight(store, path) : await readRecord(store, path);
+        // An old read may finish after a mutation; its callers keep that snapshot,
+        // but it cannot repopulate either cache or be joined by a newer version.
+        if (rec && version === (cacheVersions.get(store)!.get(id) ?? 0)) {
+          if (light) lightCache.get(store)!.set(id, rec);
+          else recCache.retain(key, rec);
+        }
+        return rec;
+      })();
+      pending = { version, promise };
+      pendingReads.set(pendingKey, pending);
+    }
+    try {
+      const rec = await pending.promise;
+      // The disk result belongs to the cache/in-flight operation. Every caller
+      // receives a separate object, including callers of oversized uncached reads.
+      return rec ? structuredClone(rec) : null;
+    } finally {
+      if (pendingReads.get(pendingKey) === pending) pendingReads.delete(pendingKey);
+    }
   }
 
   /** 记录变更后两池一起失效，避免 light 池留着旧标题/旧楼数 */
-  function invalidate(store: VaultStore, id: string): void {
+  function invalidate(store: VaultStore, id: string, notify = true): void {
     const versions = cacheVersions.get(store)!;
     versions.set(id, (versions.get(id) ?? 0) + 1);
-    recCache.get(store)!.delete(id);
+    recCache.delete(cacheKey(store, id));
     lightCache.get(store)!.delete(id);
+    if (notify) notifyRecordChanged(store, id);
   }
 
   const warnSkip = (path: string, err: unknown) => console.warn(`[vault] 跳过无法读取的文件 ${path}:`, err);
 
   /** 目录整体改名后，把所有 store 里位于旧前缀下的索引路径同步搬过去 */
   function fixupPrefixes(from: string, to: string): void {
-    for (const m of idx.values()) {
+    for (const [store, m] of idx) {
       for (const [id, p] of m) {
-        if (p === from) m.set(id, to);
-        else if (p.startsWith(from + '/')) m.set(id, to + p.slice(from.length));
+        if (p === from || p.startsWith(from + '/')) {
+          m.set(id, to + p.slice(from.length));
+          // Reads that captured the old path must not be joined after a move.
+          invalidate(store, id);
+        }
       }
     }
   }
@@ -254,7 +305,14 @@ export function createVault(fs: VaultFs): VaultBackend {
       const rec = await readJson(path);
       const ste = rec?.__ste as Record<string, unknown> | undefined;
       // 无 __ste = 用户自己放进来的 ST 文件，不认领（也永不删改）
-      if (ste && typeof ste.id === 'string') m.set(ste.id, path);
+      if (ste && typeof ste.id === 'string') {
+        m.set(ste.id, path);
+        try {
+          const item = store === 'worldbooks' ? decodeWorldbook(rec!)
+            : store === 'presets' ? decodePreset(rec!, path) : decodeRegexes(rec!);
+          if (item) lightCache.get(store)!.set(ste.id, toAssetIndex(item as IndexedAsset));
+        } catch (error) { warnSkip(path, error); }
+      }
     });
   }
 
@@ -268,7 +326,13 @@ export function createVault(fs: VaultFs): VaultBackend {
   }
 
   async function buildIndex(): Promise<void> {
-    await recoverFileMaintenance(fs);
+    try { await recoverMaintenance(); }
+    catch (error) {
+      // No scanning has started yet; repairing a blocked journal must let this
+      // same vault retry, including after a successful fixed-path schema read.
+      indexReady = null;
+      throw error;
+    }
     // 1. 角色：角色/*/档案.json
     const chars = of('characters');
     await mapLimit((await fs.list(DIR_CHAR)).filter((e) => e.isDir), IO_LIMIT, async (e) => {
@@ -311,7 +375,17 @@ export function createVault(fs: VaultFs): VaultBackend {
     await mapLimit(storyDirs, IO_LIMIT, async (dir) => {
       if (!(await fs.stat(joinPath(dir, FILE_STORY))).exists) return;
       const rec = await readJson(joinPath(dir, FILE_STORY));
-      if (rec && typeof rec.id === 'string') storyIdx.set(rec.id, dir);
+      if (rec && typeof rec.id === 'string') {
+        storyIdx.set(rec.id, dir);
+        // The scan already paid for parsing the body. Retain only its projection;
+        // full reads still go to disk when explicitly requested.
+        try { lightCache.get('archiveStories')!.set(rec.id, stripStoryBody(rec as unknown as BaseRecord)!); }
+        catch (error) {
+          // A malformed optional field must not make an otherwise readable JSON
+          // record disappear or block every other store's index.
+          warnSkip(joinPath(dir, FILE_STORY), error);
+        }
+      }
     });
     // 3. 记录文件（总结 md + 故事树 json）：全部故事候选目录 + 临时/记录
     //    故事被删后遗留在原文件夹里的记录也要扫到，所以扫候选目录而非仅已索引的故事目录
@@ -386,6 +460,10 @@ export function createVault(fs: VaultFs): VaultBackend {
   async function readWorldbook(path: string): Promise<BaseRecord | null> {
     const rec = await readJson(path);
     if (!rec) return null;
+    return decodeWorldbook(rec);
+  }
+
+  function decodeWorldbook(rec: Record<string, unknown>): BaseRecord | null {
     const { __ste, entries, ...rest } = rec;
     const ste = __ste as Record<string, unknown> | undefined;
     if (!ste || typeof ste.id !== 'string') return null;
@@ -398,6 +476,10 @@ export function createVault(fs: VaultFs): VaultBackend {
 
   async function readPreset(path: string): Promise<BaseRecord | null> {
     const rec = await readJson(path);
+    return rec ? decodePreset(rec, path) : null;
+  }
+
+  function decodePreset(rec: Record<string, unknown>, path: string): BaseRecord | null {
     const ste = rec?.__ste as Record<string, unknown> | undefined;
     if (!rec || !ste || typeof ste.id !== 'string') return null;
     const stJson = { ...rec };
@@ -413,6 +495,10 @@ export function createVault(fs: VaultFs): VaultBackend {
 
   async function readRegexes(path: string): Promise<BaseRecord | null> {
     const rec = await readJson(path);
+    return rec ? decodeRegexes(rec) : null;
+  }
+
+  function decodeRegexes(rec: Record<string, unknown>): BaseRecord | null {
     const ste = rec?.__ste as Record<string, unknown> | undefined;
     if (!rec || !ste || typeof ste.id !== 'string') return null;
     return { ...ste, rules: rec.rules ?? [] } as unknown as BaseRecord;
@@ -448,12 +534,16 @@ export function createVault(fs: VaultFs): VaultBackend {
    *   （每张卡一趟 IPC 把整张 PNG 读成 base64），而列表元信息只需要 档案.json。
    * - 故事：故事.json 仍要整读（正文与元信息同文件，省不掉 IO），但读完就剥掉正文，
    *   省下缓存占用与每次 list 的 structuredClone——那才是反复翻页时的大头。
-   * - 其余 store 没有大字段，与完整读一致。
+   * - 世界书/预设/正则：只缓存标题、条目数与时间；完整读取仍保留原始表示。
+   * - 其余 store 与完整读一致，计入完整缓存预算。
    */
   function readRecordLight(store: VaultStore, path: string): Promise<BaseRecord | null> {
     switch (store) {
       case 'characters': return readJsonRecord(joinPath(path, FILE_PROFILE));
       case 'archiveStories': return readJsonRecord(joinPath(path, FILE_STORY)).then(stripStoryBody);
+      case 'worldbooks':
+      case 'presets':
+      case 'regexes': return readRecord(store, path).then(rec => rec ? toAssetIndex(rec as IndexedAsset) : null);
       default: return readRecord(store, path);
     }
   }
@@ -726,13 +816,21 @@ export function createVault(fs: VaultFs): VaultBackend {
       list: () => listWith(false),
       listLight: () => listWith(true),
       async get(id) {
+        if (store === 'archiveMeta') {
+          // Metadata lives at a fixed path, but the recovery gate still runs on
+          // every request, even when an earlier schema read succeeded.
+          await recoverMaintenance();
+          if (!(await fs.stat(FILE_ARCHIVE_META)).exists) return undefined;
+          const rec = await readRecord('archiveMeta', FILE_ARCHIVE_META);
+          return rec?.id === id ? rec : undefined;
+        }
         await ensureIndex();
         const path = of(store).get(id);
         if (!path) return undefined;
         return (await readRecordCached(store, id, path)) ?? undefined;
       },
       async put(item, opts) {
-        await recoverFileMaintenance(fs);
+        await recoverMaintenance();
         await ensureIndex();
         if (store === 'characters') {
           const path = of(store).get(item.id);

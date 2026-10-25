@@ -10,6 +10,7 @@ export interface CaptureRecordInput {
   recordId: string; storyId: string; branchId: string | null; messageId?: string; kind: SummaryKind;
   content: string; title?: string; diaryOwner?: string; volumeNumber?: number; range?: { start: number; end: number };
   expectedSource?: string;
+  volumeCategory?: SummaryItem['volumeCategory'];
 }
 
 export async function captureRecord(input: CaptureRecordInput): Promise<SummaryItem> {
@@ -34,7 +35,7 @@ export async function captureRecord(input: CaptureRecordInput): Promise<SummaryI
     }
     const volumes = (await records.list()).filter(item => item.bookId === story.id && item.branchId === (input.branchId ?? undefined) && item.kind === 'volume');
     const item = { ...buildManualSummaryItem({ ...input, story, existingVolumes: volumes,
-      source: floor >= 0 ? { messageId: input.messageId!, floor, capturedAt: Date.now() } : undefined }), id: input.recordId, rangeDetached: !input.range };
+      source: floor >= 0 ? { messageId: input.messageId!, floor, capturedAt: Date.now() } : undefined }), id: input.recordId, rangeDetached: floor >= 0 && !input.range };
     check(); await records.put(item); return item;
   }));
 }

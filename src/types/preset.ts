@@ -74,6 +74,40 @@ export interface PresetItem {
   sourcePath?: string;
   /** ST 源文件最后修改时间（Unix epoch 毫秒），与 STE 导入/编辑时间分开保存。 */
   sourceModifiedAt?: number;
+  /** STE 管理资料，不作为模型参数或提示词导出。 */
+  catalog?: PresetCatalog;
+  /** 社区随包的文件原文；不执行，不自动挂载到聊天。 */
+  packageFiles?: PresetPackageFile[];
+}
+
+export type PresetStatus = 'unreviewed' | 'testing' | 'active' | 'reserve' | 'retired';
+export interface PresetCatalog {
+  author?: string;
+  series?: string;
+  version?: string;
+  variant?: string;
+  models?: string[];
+  modelBasis?: 'manual' | 'author';
+  modelNotes?: string;
+  purposes?: string[];
+  tags?: string[];
+  status?: PresetStatus;
+  favorite?: boolean;
+  notes?: string;
+  releaseNotes?: string;
+  sourceUrl?: string;
+  publishedAt?: string;
+  representativeCards?: string[];
+  /** DIY 来源，不改变角色引用；不同于角色专属派生关系。 */
+  originId?: string;
+  updatedAt?: number;
+}
+
+export interface PresetPackageFile {
+  id: string;
+  name: string;
+  kind: 'regex' | 'script' | 'notes' | 'other';
+  text: string;
 }
 
 /** prompt 块的 role 中文标签 */

@@ -71,16 +71,18 @@ describe('vault file lifecycle', () => {
     expect(await createVault(mem).repo('characters').get('c')).toMatchObject({ id: 'c', pngBase64: 'YQ==' });
   });
 
-  it('reports a failed trash operation and exposes the remaining retained files', async () => {
+  it('defers unavailable system trash and exposes files for an explicit cleanup retry', async () => {
     const mem = createMemFs(), fs: VaultFs = { ...mem, trashFile: async () => { throw new Error('trash offline'); } };
     const vault = createVault(fs);
     await vault.repo<ArchiveCharacter>('characters').put(character());
-    await expect(vault.repo('characters').remove('c', { deleteFiles: true })).rejects.toThrow('部分文件仍保留');
+    await vault.repo('characters').remove('c', { deleteFiles: true });
     expect(await vault.repo('characters').get('c')).toBeUndefined();
     expect(await createVault(mem).repo('characters').get('c')).toBeUndefined();
     const scan = await maintenance.scanVaultFiles(createVault(mem));
     const paths = scan.entries.filter(entry => entry.category === 'retained').map(entry => entry.path);
     expect(paths).toHaveLength(1);
+    const failed = await maintenance.cleanupVaultFiles(await maintenance.scanVaultFiles(vault), paths);
+    expect(failed.failed[0].reason).toContain('trash offline');
     expect((await maintenance.cleanupVaultFiles(scan, paths)).removed).toEqual(paths);
   });
 

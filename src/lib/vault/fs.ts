@@ -34,7 +34,7 @@ export interface VaultFs {
   removeFile(path: string): Promise<void>;
   /**
    * 送进系统回收站（删错了能捞回来）。只有客户端实现；网页版/内存实现没有这个能力，
-   * 调用方拿不到就退回 removeFile。用户主动删自己的文件（立绘等）走这条。
+   * 自动回收拿不到此能力时必须继续保留；手动清理的降级行为由确认入口明确说明。
    */
   trashFile?(path: string): Promise<void>;
   /**
