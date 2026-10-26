@@ -51,7 +51,7 @@ try {
   await page.getByRole('button', { name: '添加标签', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('生产标签');
   await page.getByRole('dialog').getByRole('button', { name: '完成', exact: true }).click();
-  await page.reload(); await expect(page.getByRole('button', { name: '生产标签0', exact: true })).toBeVisible();
+  await page.reload(); await expect(page.locator('button[title="类型/生产标签"]')).toBeVisible();
   passed.push('生产IndexedDB标签新增与刷新恢复');
 
   await page.goto(`${base}/settings`);
