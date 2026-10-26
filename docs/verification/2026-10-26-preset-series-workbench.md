@@ -60,7 +60,7 @@
 
 二进制和共享档案仅本地保存；未远端发布包、创建 tag 或合并主分支。旧 0.9.3 包保留。用户尚未验收 0.9.4。
 
-收尾同步状态：功能源码 `ba81eb7` 的推送此前已成功；最后交付文档已本地提交，但推送和远端查询等待认证。取消等待后，以禁止交互的方式重试返回 `could not read Username for 'https://github.com': terminal prompts disabled`；未配置可用的 GitHub CLI 或任务环境凭据。文档推送尚未完成，恢复认证后继续 `git push origin codex/playtest-1007`，不要把本地文档提交误当远端已同步。
+收尾同步状态：功能源码 `ba81eb7` 的推送此前已成功；交付文档 `7d088dd` 首次推送等待认证，禁止交互重试返回无法读取用户名。26 日用户要求重推，查询 Git Credential Manager 发现已有多个登录账号，为单次命令指定 `credential.username=LYC619` 后成功推送；`ls-remote` 核对远端为完整提交 `7d088ddd5913e29c5f3bf2d44eee523f7a16cdeb`。无需重新登录，未改全局凭据配置；本条同步状态另行提交。
 
 共享档案按协作约定统一更新总览、回顾、预设、进度与证据五页；保留旧原文、批注、快照和日志。生成及链接检查另记 `.user/_checks/验收记录.md`。
 
