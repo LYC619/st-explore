@@ -62,7 +62,7 @@ export function buildSearchEntries(input: BuildInput): SearchEntry[] {
     ...input.presets.map<SearchEntry>((p) => {
       const identity = getPresetPresentation(p), catalog = p.catalog;
       return {
-        kind: 'preset', id: p.id, title: p.title, path: `/presets?presetId=${encodeURIComponent(p.id)}`,
+        kind: 'preset', id: p.id, title: identity.displayName, path: `/presets/${encodeURIComponent(p.id)}`,
         sub: [identity.author, identity.version, identity.models.join(' / ')].filter(Boolean).join(' · ') || undefined,
         searchText: [p.title, identity.displayName, identity.author, identity.series, identity.version,
           ...identity.models, ...identity.purposes, catalog?.variant, catalog?.noteExcerpt,

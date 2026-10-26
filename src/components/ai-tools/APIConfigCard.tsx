@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Key, Check, AlertCircle, PlugZap, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,34 +20,40 @@ import { ModelNameInput } from './ModelNameInput';
 export function APIConfigCard() {
   const {
     profiles, activeId, savedActive,
-    name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList,
-    dirty, setDirty, fetchingModels, testing, testResult, reload,
+    name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList, favoriteModels, setFavoriteModels,
+    dirty, setDirty, externalChanged, fetchingModels, testing, testResult, reload,
     handleSwitch, handleAdd, handleDuplicate, handleDelete,
     handleSave, handleFetchModels, handleTest,
   } = useApiProfiles();
 
   const [isKeyVisible, setIsKeyVisible] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [pending, setPending] = useState<(() => void) | null>(null);
+  useEffect(() => setIsKeyVisible(false), [activeId]);
+  const requestChange = (action: () => void) => {
+    const apply = () => { setIsKeyVisible(false); action(); };
+    if (dirty) setPending(() => apply); else apply();
+  };
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Key className="w-5 h-5" />
-          API 提供商
+          AI 服务配置
         </CardTitle>
         <CardDescription>
-          可保存多个提供商配置（OpenAI 兼容格式），随时切换；全应用的 AI 功能都使用当前选中的提供商。密钥仅保存在本地浏览器。
+          每个服务保存自己的地址、密钥和常用模型。各 AI 工作区可直接切换已保存的服务与模型；连接信息在这里维护，密钥保存在本机。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <ApiScopeToggle onChanged={reload} />
+        <ApiScopeToggle onChanged={reload} onRequestChange={requestChange} />
 
         <ProfileToolbar
           profiles={profiles}
           activeId={activeId}
-          onSwitch={handleSwitch}
-          onAdd={handleAdd}
+          onSwitch={id => requestChange(() => handleSwitch(id))}
+          onAdd={() => requestChange(handleAdd)}
           onDuplicate={handleDuplicate}
           onDeleteClick={() => setDeleteOpen(true)}
         />
@@ -56,6 +62,7 @@ export function APIConfigCard() {
           <Label>提供商名称</Label>
           <Input
             value={name}
+            aria-label="提供商名称"
             onChange={(e) => { setName(e.target.value); setDirty(true); }}
             placeholder="例如：OpenAI / 中转站 A / 本地 Ollama"
           />
@@ -68,6 +75,7 @@ export function APIConfigCard() {
               <Input
                 type={isKeyVisible ? 'text' : 'password'}
                 value={apiKey}
+                aria-label="API Key"
                 onChange={(e) => { setApiKey(e.target.value); setDirty(true); }}
                 placeholder="sk-..."
               />
@@ -82,6 +90,7 @@ export function APIConfigCard() {
           <Label>API 接口地址</Label>
           <Input
             value={apiUrl}
+            aria-label="API 接口地址"
             onChange={(e) => { setApiUrl(e.target.value); setDirty(true); }}
             placeholder={DEFAULT_API_URL}
           />
@@ -93,10 +102,14 @@ export function APIConfigCard() {
         <ModelNameInput
           model={model}
           modelList={modelList}
+          favoriteModels={favoriteModels}
+          onFavoriteToggle={value => { setFavoriteModels(previous => previous.includes(value) ? previous.filter(item => item !== value) : [...previous, value]); setDirty(true); }}
           fetching={fetchingModels}
           onModelChange={(v) => { setModel(v); setDirty(true); }}
           onFetch={handleFetchModels}
         />
+
+        {externalChanged && <div role="status" className="rounded-md border border-border p-3 text-xs text-muted-foreground">当前使用的服务已在其他位置切换。这里保留的是「{name}」的草稿，保存只更新该服务。<Button variant="link" size="sm" onClick={() => requestChange(reload)}>查看当前配置</Button></div>}
 
         <div className="flex gap-2 pt-2 flex-wrap items-center">
           <Button onClick={handleSave}>保存配置</Button>
@@ -121,7 +134,7 @@ export function APIConfigCard() {
         {savedActive?.apiKey ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Check className="w-4 h-4 text-primary" />
-            使用中：{savedActive.name} · {savedActive.model}
+            已保存：{savedActive.name} · {savedActive.model}
             {savedActive.apiUrl !== DEFAULT_API_URL && <span className="text-xs">· 自定义接口</span>}
           </div>
         ) : (
@@ -141,6 +154,14 @@ export function APIConfigCard() {
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction onClick={() => { handleDelete(); setDeleteOpen(false); }}>删除</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={!!pending} onOpenChange={open => { if (!open) setPending(null); }}>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>服务配置还未保存</AlertDialogTitle><AlertDialogDescription>切换会离开当前草稿。可以先保存，或放弃这次修改。</AlertDialogDescription></AlertDialogHeader>
+          <AlertDialogFooter><AlertDialogCancel onClick={() => setPending(null)}>继续编辑</AlertDialogCancel>
+            <Button variant="outline" onClick={() => { const action = pending; setPending(null); action?.(); }}>放弃修改并切换</Button>
+            <AlertDialogAction onClick={event => { event.preventDefault(); if (handleSave()) { const action = pending; setPending(null); action?.(); } }}>保存并切换</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { getPresetPresentation, inferPresetIdentity } from '@/lib/preset-presentation';
 import { toAssetIndex } from '@/lib/asset-index-entry';
 import type { PresetItem } from '@/types/preset';
+import { applyPresetBulkPatch } from '@/components/preset/PresetBulkEdit';
+
+it('keeps an explicitly cleared model empty across the list summary', () => {
+  const item = { title: '星海-Claude-v1', catalog: applyPresetBulkPatch({ models: ['Claude'] }, { models: { Claude: false }, tags: {} }) };
+  expect(getPresetPresentation(item).models).toEqual([]);
+});
 
 describe('preset identity hints from real filename patterns', () => {
   it('separates a bracketed model version from the preset version', () => {

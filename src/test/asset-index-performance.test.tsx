@@ -157,9 +157,9 @@ it('real global search finds preset metadata and inferred series using summaries
   expect(await search('Gemini')).toHaveLength(0);
   const inferred = await search('幻 境');
   expect(inferred).toHaveLength(1);
-  expect(inferred[0].textContent).toContain('幻_境 v2.0');
+  expect(inferred[0].textContent).toContain('幻 境');
   await act(async () => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
-  expect(container.querySelector('[data-search-location]')?.textContent).toBe('/presets?presetId=inferred');
+  expect(container.querySelector('[data-search-location]')?.textContent).toBe('/presets/inferred');
   expect(clonedPayloads).toEqual([]);
   expect(reads).toEqual([]);
 });

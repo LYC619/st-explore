@@ -4,7 +4,7 @@
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson, PanelLeftClose, PanelLeftOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -95,22 +95,16 @@ export function CharacterInfoRail({
       data-character-info-rail={stacked ? 'stacked' : 'rail'}
       data-info-collapsed={collapsed}
       aria-label="角色卡图与信息"
-      tabIndex={!stacked && !collapsed ? 0 : undefined}
       className={cn(
-        collapsed ? (stacked ? 'border-b px-4 py-2' : 'w-9 shrink-0 border-r py-3 flex flex-col items-center overflow-hidden') : stacked
-          ? 'border-b border-[color:var(--hairline-inner)] px-4 py-4'
-          : 'w-[304px] shrink-0 border-r border-[color:var(--hairline-inner)] px-6 py-6 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand',
+        'relative overflow-hidden border-[color:var(--hairline-inner)]',
+        stacked ? 'shrink-0' : 'min-h-0',
+        collapsed ? (stacked ? 'h-10 border-b' : 'w-9 shrink-0 border-r') : stacked
+          ? 'border-b'
+          : 'w-[304px] shrink-0 border-r flex flex-col',
       )}
     >
-      <Button variant="ghost" size="sm" onClick={toggleCollapsed}
-        className={cn(!collapsed && 'mb-3', stacked && 'w-full justify-between', collapsed && !stacked && 'w-8 shrink-0 p-0')}
-        aria-expanded={!collapsed} aria-label={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}
-        title={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}>
-        {stacked && <span>角色卡图与信息</span>}
-        {stacked ? (collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />)
-          : collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <><PanelLeftClose className="mr-2 h-4 w-4" />收起信息栏</>}
-      </Button>
-      <div hidden={collapsed}>
+      <div hidden={collapsed} data-character-info-scroll aria-label="角色信息内容" tabIndex={!stacked && !collapsed ? 0 : undefined}
+        className={cn('min-h-0', stacked ? 'px-4 pt-4 pb-14' : 'flex-1 pl-6 pr-10 pt-6 pb-6 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand')}>
       <div className={cn(stacked && 'flex items-start gap-4')}>
       {/* 立绘 3:4（设计稿），点击放大 */}
       <button
@@ -228,6 +222,13 @@ export function CharacterInfoRail({
       </Sheet>
 
       </div>
+
+      <Button variant="ghost" size="icon" onClick={toggleCollapsed}
+        className={cn('absolute bottom-2 bg-background/90 p-0 text-muted-foreground hover:text-foreground', stacked ? 'right-2' : 'right-0.5')}
+        aria-expanded={!collapsed} aria-label={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}
+        title={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}>
+        {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      </Button>
 
       {/* lightbox */}
       <Dialog open={lightbox} onOpenChange={setLightbox}>

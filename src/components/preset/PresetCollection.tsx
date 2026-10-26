@@ -1,7 +1,6 @@
 import { FileText, Layers, SlidersHorizontal, Star, Braces, Paperclip } from 'lucide-react';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
-import { getPresetPresentation } from '@/lib/preset-presentation';
-import { PRESET_STATUS_LABELS } from '@/lib/preset-catalog';
+import { getPresetPresentation, presetSeriesKey } from '@/lib/preset-presentation';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 
@@ -11,8 +10,7 @@ export function PresetCollection({ items, selected, onSelect, batch, checked, on
 }) {
   const groups = new Map<string, AssetIndexEntry[]>();
   for (const item of items) {
-    const p = getPresetPresentation(item);
-    const identity = `${p.author ?? ''}\0${p.series || p.displayName}`.toLocaleLowerCase();
+    const identity = presetSeriesKey(item);
     groups.set(identity, [...(groups.get(identity) ?? []), item]);
   }
   return <div className={layout === 'cards' ? 'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))]' : 'space-y-2'} data-preset-collection>
@@ -21,13 +19,14 @@ export function PresetCollection({ items, selected, onSelect, batch, checked, on
       const p = getPresetPresentation(item), active = versions.some(item => item.id === selected);
       const modelLabel = p.models.join(' / ');
       const abbreviation = p.models[0]?.slice(0, 2).toUpperCase();
-      const title = p.series || p.displayName;
+      const title = p.displayName;
+      const allChecked = versions.every(version => checked.includes(version.id));
       const versionLabels = versions.map(version => {
         const identity = getPresetPresentation(version);
         return [identity.version || identity.displayName, version.catalog?.variant].filter(Boolean).join(' · ');
       });
-      return <article key={key} className={`group relative rounded-xl border transition-colors ${active ? 'border-[color:var(--brand)] bg-[var(--brand-active-bg)]' : 'border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[color:var(--border-strong)]'} ${layout === 'table' ? 'flex flex-wrap items-center gap-x-3' : ''}`} data-preset-series>
-        <button className={`text-left min-w-0 p-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${layout === 'table' ? 'flex-1' : 'w-full'}`} aria-label={`查看预设 ${item.title}`} aria-pressed={active} onClick={() => onSelect(item.id)}>
+      return <article key={key} className={`group relative rounded-xl border transition-colors ${(batch ? allChecked : active) ? 'border-[color:var(--brand)] bg-[var(--brand-active-bg)]' : 'border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] hover:border-[color:var(--border-strong)]'} ${layout === 'table' ? 'flex flex-wrap items-center gap-x-3' : ''}`} data-preset-series>
+        <button className={`text-left min-w-0 p-4 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${layout === 'table' ? 'flex-1' : 'w-full'}`} aria-label={`${batch ? '选择' : '查看预设'} ${p.displayName}`} aria-pressed={batch ? allChecked : active} onClick={() => { if (batch) versions.filter(version => allChecked || !checked.includes(version.id)).forEach(version => onCheck(version.id)); else onSelect(item.id); }}>
           <div className="flex gap-3 items-start">
             <div className="w-11 h-11 shrink-0 rounded-lg border border-[color:var(--border-subtle)] bg-[var(--hover-overlay)] text-brand flex items-center justify-center font-sans font-semibold text-sm" aria-hidden="true">{abbreviation || <SlidersHorizontal className="w-5 h-5" />}</div>
             <div className="min-w-0 flex-1">
@@ -37,11 +36,12 @@ export function PresetCollection({ items, selected, onSelect, batch, checked, on
           </div>
           <div className="flex gap-1.5 flex-wrap mt-3 min-h-5 text-xs">
             {p.version && <span className="px-2 py-0.5 rounded bg-[var(--hover-overlay)]">{p.version}</span>}
-            {p.purposes.slice(0, 2).map(purpose => <span key={purpose} className="px-2 py-0.5 rounded bg-[var(--hover-overlay)] text-muted-foreground">{purpose}</span>)}
-            {item.catalog?.status && item.catalog.status !== 'unreviewed' && <span className="px-2 py-0.5 rounded bg-[var(--brand-active-bg)] text-brand">{PRESET_STATUS_LABELS[item.catalog.status]}</span>}
-            {versions.length > 1 && <span className="flex items-center gap-1 text-muted-foreground ml-auto"><Layers className="w-3 h-3" />{versions.length} 份文件</span>}
+            {(item.catalog?.tags ?? []).slice(0, 2).map(tag => <span key={tag} className="px-2 py-0.5 rounded bg-[var(--hover-overlay)] text-muted-foreground">{tag.split('/').pop()}</span>)}
+            {versions.length > 1 && <span className="flex items-center gap-1 text-muted-foreground ml-auto"><Layers className="w-3 h-3" />{versions.length} 个版本</span>}
           </div>
-          {item.catalog?.noteExcerpt && <p className="line-clamp-2 text-xs text-muted-foreground mt-2 leading-relaxed">{item.catalog.noteExcerpt}</p>}
+          {p.series && <p className="text-xs text-muted-foreground truncate mt-2" title={p.series}>系列 · {p.series}</p>}
+          {item.catalog?.releaseExcerpt && <p className="line-clamp-2 text-xs mt-2 leading-relaxed"><span className="text-muted-foreground">作者说明 · </span>{item.catalog.releaseExcerpt}</p>}
+          {item.catalog?.noteExcerpt && <p className="line-clamp-2 text-xs text-muted-foreground mt-2 leading-relaxed">笔记 · {item.catalog.noteExcerpt}</p>}
           <div className="flex gap-3 text-xs text-muted-foreground mt-3" aria-label="预设内容数量">
             <span className="inline-flex items-center gap-1" title="提示词块"><FileText className="w-3.5 h-3.5" />{item.entryCount}</span>
             {!!item.regexCount && <span className="inline-flex items-center gap-1" title="内嵌正则"><Braces className="w-3.5 h-3.5" />{item.regexCount} 正则</span>}

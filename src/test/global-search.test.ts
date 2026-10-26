@@ -22,14 +22,14 @@ describe('global-search', () => {
     expect(entries.find((e) => e.id === 's1')?.sub).toBe('奏枝');
     expect(entries.find((e) => e.id === 's2')?.sub).toBe('未绑定');
     expect(entries.find((e) => e.id === 'w1')?.path).toBe('/worldbook?assetId=w1');
-    expect(entries.find((e) => e.id === 'p1')?.path).toBe('/presets?presetId=p1');
+    expect(entries.find((e) => e.id === 'p1')?.path).toBe('/presets/p1');
   });
 
   it('预设搜索打开库内详情，特殊 id 不截断深链', () => {
     const result = buildSearchEntries({ characters: [], stories: [], worldbooks: [], regexes: [], presets: [{ id: 'p& one', title: '目标' }] });
     const url = new URL(result[0].path, 'http://localhost');
-    expect(url.pathname).toBe('/presets');
-    expect(url.searchParams.get('presetId')).toBe('p& one');
+    expect(url.pathname).toBe('/presets/p%26%20one');
+    expect(decodeURIComponent(url.pathname.slice('/presets/'.length))).toBe('p& one');
   });
 
   it('预设搜索复用确认资料和推断摘要，含作者、模型、系列、版本和用途', () => {

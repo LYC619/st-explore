@@ -45,6 +45,7 @@ const AssetLibrary = lazy(PAGE_LOADERS.assets);
 const CardViewer = lazy(PAGE_LOADERS.cardViewer);
 const Preset = lazy(PAGE_LOADERS.preset);
 const PresetLibrary = lazy(PAGE_LOADERS.presets);
+const PresetDetail = lazy(() => import("./pages/PresetDetail"));
 const RegexTool = lazy(PAGE_LOADERS.regex);
 const Beautify = lazy(PAGE_LOADERS.beautify);
 const NotFound = lazy(PAGE_LOADERS.notFound);
@@ -65,6 +66,7 @@ const App = () => {
       <Route path="/card-viewer" element={<CardViewer />} />
       <Route path="/preset" element={<Preset />} />
       <Route path="/presets" element={<PresetLibrary />} />
+      <Route path="/presets/:id" element={<PresetDetail />} />
       <Route path="/regex" element={<RegexTool />} />
       <Route path="/beautify" element={<Beautify />} />
       <Route path="/settings" element={<SettingsPage />} />

@@ -55,7 +55,7 @@ export async function createPresetDiy(id: string, draft?: { title: string; prese
   const item: PresetItem = {
     id: generatePresetId(), title: `${(draft?.title ?? base.title).replace(/(?:\s*·\s*DIY)+\s*$/i, '')} · DIY`, preset: structuredClone(draft?.preset ?? base.preset),
     createdAt: now, updatedAt: now, autoSaved: false, packageFiles: structuredClone(base.packageFiles),
-    catalog: { ...base.catalog, series: identity.series || identity.displayName, originId: base.id, variant: [...(base.catalog?.variant?.split('·').map(value => value.trim()).filter(value => value && value.toUpperCase() !== 'DIY') ?? []), 'DIY'].join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now },
+    catalog: { ...base.catalog, name: identity.displayName, series: identity.series || identity.displayName, originId: base.id, variant: [...(base.catalog?.variant?.split('·').map(value => value.trim()).filter(value => value && value.toUpperCase() !== 'DIY') ?? []), 'DIY'].join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now },
   };
   if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
   await target.put(item);

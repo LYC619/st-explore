@@ -14,6 +14,7 @@
  */
 import { getAppConfig, isTauri, setAppConfig } from './tauri-fs';
 import { getCurrentVaultId } from './vault-scope';
+import { notifyApiProfilesChanged } from '@/components/ai-tools/api-profile-events';
 
 const PROFILES_KEY = 'st-beautifier-api-profiles';
 const ACTIVE_KEY = 'st-beautifier-api-active-profile';
@@ -104,6 +105,8 @@ export async function hydrateApiProfilesFromSystem(): Promise<void> {
     if (active) localStorage.setItem(ACTIVE_KEY, active);
   } catch (err) {
     console.warn('恢复 API 配置失败（继续用 localStorage 现值）', err);
+  } finally {
+    notifyApiProfilesChanged('scope');
   }
 }
 

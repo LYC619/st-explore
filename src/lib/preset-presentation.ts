@@ -113,16 +113,22 @@ export function getPresetPresentation(item: {
   const version = nonempty(catalog?.version), series = nonempty(catalog?.series);
   return {
     ...hints,
+    displayName: nonempty(catalog?.name) ?? hints.displayName,
     author: nonempty(catalog?.author),
     version: version ?? hints.version,
-    series: series ?? hints.series,
-    models: models.length ? models : hints.models,
+    series: series ?? nonempty(catalog?.author) ?? hints.series,
+    models: models.length || catalog?.modelsConfirmed === true ? models : hints.models,
     purposes: purposes.length ? purposes : hints.purposes,
     inferred: {
       version: !version && !!hints.version,
-      series: !series && !!hints.series,
-      models: !models.length && !!hints.models.length,
+      series: !series && !nonempty(catalog?.author) && !!hints.series,
+      models: !models.length && catalog?.modelsConfirmed !== true && !!hints.models.length,
       purposes: !purposes.length && !!hints.purposes.length,
     },
   };
+}
+
+export function presetSeriesKey(item: Parameters<typeof getPresetPresentation>[0]): string {
+  const p = getPresetPresentation(item);
+  return `${p.author ?? ''}\0${p.series || p.displayName}`.toLocaleLowerCase();
 }

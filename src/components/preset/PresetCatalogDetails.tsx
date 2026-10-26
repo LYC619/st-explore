@@ -12,9 +12,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { PresetCatalogFields } from './PresetCatalogFields';
 import { PresetDiscardDialog } from './PresetDraftBoundary';
+import type { AssetIndexEntry } from '@/lib/asset-index-entry';
+import { PresetPlayground } from './PresetPlayground';
 import { openExternalUrl } from '@/lib/roleplay/external-url';
 
-export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, onDelete }: {
+export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, onDelete, full = false, versions = [], onVersion }: {
+  full?: boolean; versions?: AssetIndexEntry[]; onVersion?: (id: string) => void;
   id: string; onDirty: (value: boolean) => void; onEdit: (id: string) => void;
   onImport: (seed: PresetCatalog) => void; onSaved: () => void; onDelete: () => void;
 }) {
@@ -22,6 +25,7 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
   const live = useRef(true);
   const inFlight = useRef(false);
   const [editing, setEditing] = useState(false);
+  const [trialOpened, setTrialOpened] = useState(false);
   const [opened, setOpened] = useState('');
   const [base, setBase] = useState<PresetItem | null>(null);
   const [catalog, setCatalog] = useState<PresetCatalog>({});
@@ -64,7 +68,7 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
   if (!base) return <div className="p-4 text-sm">{error || '正在读取预设…'}{error && <Button variant="outline" onClick={() => setReload(n => n + 1)}>重试</Button>}</div>;
   const identity = getPresetPresentation(base);
   const startEditing = () => {
-    setCatalog(normalizePresetCatalog({ ...base.catalog, author: identity.author, series: identity.series, version: identity.version, models: identity.models, purposes: identity.purposes }));
+    setCatalog(normalizePresetCatalog({ ...base.catalog, name: identity.displayName, author: identity.author, series: base.catalog?.series || identity.author, version: identity.version, models: identity.models }));
     setEditing(true);
   };
   const resource = (key: string, title: string, content: string) => <div key={key} className="border-b border-[color:var(--border-subtle)]">
@@ -76,13 +80,19 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
     if (!live.current || epoch !== getVaultEpoch()) return;
     setBase(saved); setCatalog(normalizePresetCatalog(saved.catalog)); onSaved();
   });
-  return <div className="flex-1 flex flex-col min-h-0" data-preset-details={id}>
+  return <div className={`flex-1 flex min-h-0 min-w-0 ${full ? 'flex-col md:flex-row' : 'flex-col'}`} data-preset-details={id}>
+    {full && <aside aria-label="预设信息与版本" className="shrink-0 md:w-60 xl:w-72 border-b md:border-b-0 md:border-r border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] p-5 overflow-y-auto max-h-48 md:max-h-none space-y-5">
+      <div className="hidden md:flex h-28 rounded-xl border border-[color:var(--border-subtle)] bg-[var(--hover-overlay)] items-center justify-center text-brand"><SlidersHorizontal className="w-10 h-10" /></div>
+      <dl className="text-xs space-y-3">{[['名称', identity.displayName], ['系列', identity.series || '未分系列'], ['作者', identity.author || '未注明'], ['适配模型', identity.models.join(' / ') || '未标记']].map(([label, value]) => <div key={label} className="flex gap-3 border-b border-[color:var(--border-subtle)] pb-2"><dt className="text-muted-foreground shrink-0">{label}</dt><dd className="flex-1 min-w-0 text-right break-words">{value}</dd></div>)}</dl>
+      <section><h2 className="text-xs text-muted-foreground mb-3">同系列版本 · {versions.length}</h2><div className="flex flex-wrap md:flex-col gap-2">{[...versions].sort((a,b) => (getPresetPresentation(b).version || '').localeCompare(getPresetPresentation(a).version || '', 'zh-CN', { numeric: true })).map(version => { const p = getPresetPresentation(version); return <button key={version.id} aria-label={`切换版本 ${p.version || p.displayName} ${version.title}`} aria-current={version.id === id ? 'page' : undefined} onClick={() => onVersion?.(version.id)} className={`min-w-0 text-left p-3 rounded-lg border ${version.id === id ? 'border-[color:var(--brand)] bg-[var(--brand-active-bg)]' : 'border-[color:var(--border-subtle)] hover:bg-[var(--hover-overlay)]'}`}><div className="flex gap-2 text-sm"><span className="font-medium flex-1">{p.version || '未标版本'}</span>{version.id === id && <span className="text-xs text-brand">当前</span>}</div><p className="text-xs text-muted-foreground truncate mt-1" title={version.title}>{p.displayName}{version.catalog?.variant ? ` · ${version.catalog.variant}` : ''}</p><p className="text-xs text-muted-foreground mt-1">{version.entryCount} 个提示词 · {new Date(version.createdAt).toLocaleDateString()}</p></button>; })}</div></section>
+    </aside>}
+    <div className="flex-1 flex flex-col min-h-0 min-w-0">
     <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-5">
       <header>
-        <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><h2 className="text-lg font-serif font-semibold leading-snug break-words" title={base.title}>{identity.series || identity.displayName}</h2><p className="text-xs text-muted-foreground mt-2">{[identity.author, identity.version, base.catalog?.variant].filter(Boolean).join(' · ') || '原始预设'}</p></div>
+        <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><h2 className="text-lg font-serif font-semibold leading-snug break-words" title={base.title}>{identity.displayName}</h2><p className="text-xs text-muted-foreground mt-2">{[identity.author, identity.version, base.catalog?.variant].filter(Boolean).join(' · ') || '原始预设'}</p></div>
           {!editing && <Button size="icon" variant="ghost" disabled={busy} aria-label={catalog.favorite ? '取消收藏' : '收藏预设'} aria-pressed={!!catalog.favorite} onClick={toggleFavorite}><Star className={`w-4 h-4 ${catalog.favorite ? 'text-brand fill-current' : ''}`} /></Button>}
         </div>
-        <div className="flex gap-1.5 flex-wrap mt-3">{identity.models.map(model => <span key={model} className="text-xs rounded-full bg-[var(--brand-active-bg)] text-brand px-2.5 py-1">{model}</span>)}{identity.purposes.map(purpose => <span key={purpose} className="text-xs rounded-full bg-[var(--hover-overlay)] text-muted-foreground px-2.5 py-1">{purpose}</span>)}</div>
+        <div className="flex gap-1.5 flex-wrap mt-3">{identity.models.map(model => <span key={model} className="text-xs rounded-full bg-[var(--brand-active-bg)] text-brand px-2.5 py-1">{model}</span>)}</div>
         {(identity.inferred.models || identity.inferred.version) && <p className="text-xs text-muted-foreground mt-2">模型／版本含文件名或配置中的线索，尚未确认适配。</p>}
       </header>
       {!editing && <>
@@ -97,8 +107,8 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
             <Button variant="ghost" className="justify-start text-destructive" disabled={busy} onClick={onDelete}>删除预设</Button>
           </PopoverContent></Popover>
         </div>
-        <Tabs defaultValue="about">
-          <TabsList className="w-full"><TabsTrigger value="about" className="flex-1">概览</TabsTrigger><TabsTrigger value="content" className="flex-1">内容</TabsTrigger><TabsTrigger value="files" className="flex-1">附件{files.length ? ` · ${files.length}` : ''}</TabsTrigger></TabsList>
+        <Tabs defaultValue="about" onValueChange={value => { if (value === 'playground') setTrialOpened(true); }}>
+          <TabsList className="w-full flex-wrap h-auto"><TabsTrigger value="about" className="flex-1">概览</TabsTrigger><TabsTrigger value="content" className="flex-1">内容</TabsTrigger><TabsTrigger value="files" className="flex-1">附件{files.length ? ` · ${files.length}` : ''}</TabsTrigger>{full && <TabsTrigger value="playground" className="flex-1">试用</TabsTrigger>}</TabsList>
           <TabsContent value="about" className="space-y-4 mt-4">
             <div className="grid grid-cols-3 gap-2 text-center rounded-lg bg-[var(--hover-overlay)] p-3"><div><FileText className="w-4 h-4 mx-auto text-muted-foreground mb-1" /><span className="font-medium text-base">{base.preset.prompts.length}</span><p className="text-xs text-muted-foreground">提示词</p></div><div><Braces className="w-4 h-4 mx-auto text-muted-foreground mb-1" /><span className="font-medium text-base">{base.preset.regexRules.length}</span><p className="text-xs text-muted-foreground">内嵌正则</p></div><div><SlidersHorizontal className="w-4 h-4 mx-auto text-muted-foreground mb-1" /><span className="font-medium text-base">{scripts.length}</span><p className="text-xs text-muted-foreground">内嵌脚本</p></div></div>
             <section><h3 className="text-sm font-medium mb-2">作者说明</h3>{catalog.releaseNotes ? <div className="note-markdown prose prose-sm max-w-none text-sm break-words leading-relaxed" dangerouslySetInnerHTML={{ __html: notesMarkup.html }} /> : <div className="rounded-lg border border-dashed border-[color:var(--border-normal)] p-4 text-sm text-muted-foreground leading-relaxed">还没有随附说明。可在整理资料时粘贴发布说明，或补充作者的 MD / TXT 文件。<Button variant="ghost" size="sm" className="mt-2 block" onClick={startEditing}>补充说明</Button></div>}</section>
@@ -108,6 +118,7 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
           </TabsContent>
           <TabsContent value="content" className="mt-4"><p className="text-xs text-muted-foreground mb-2">只读预览；需要修改时复制后 DIY。</p>{base.preset.prompts.map((block,i) => resource(`p-${i}`, block.name || block.identifier, block.content ?? ''))}{base.preset.regexRules.map((rule,i) => resource(`r-${i}`, `正则 · ${rule.name}`, `${rule.findRegex}\n→\n${rule.replaceString}`))}{scripts.map((script,i) => resource(`s-${i}`, `脚本 · ${script.name}`, script.content))}</TabsContent>
           <TabsContent value="files" className="mt-4"><p className="text-xs text-muted-foreground mb-3">随包原文件独立保留，导出取用包时一起带走。</p>{files.map(file => resource(file.id, `${PACKAGE_KIND_LABELS[file.kind]} · ${file.name}`, file.text))}{!files.length && <div className="text-sm text-muted-foreground text-center py-8"><Paperclip className="w-8 h-8 mx-auto mb-3" />尚无独立附件</div>}<Button variant="outline" className="mt-3" onClick={startEditing}>管理附件</Button></TabsContent>
+          {full && trialOpened && <TabsContent forceMount value="playground" className="mt-4 data-[state=inactive]:hidden"><PresetPlayground presetId={id} /></TabsContent>}
         </Tabs>
       </>}
       {editing && <fieldset disabled={busy} className="min-w-0 space-y-4">
@@ -134,6 +145,7 @@ export function PresetCatalogDetails({ id, onDirty, onEdit, onImport, onSaved, o
     <footer className="shrink-0 border-t border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] px-5 py-3 flex items-center gap-2">
       {editing ? <><Button disabled={busy || !dirty} onClick={() => void save()}><Save className="w-4 h-4 mr-1" />{busy ? '保存中…' : '保存资料'}</Button><Button variant="ghost" disabled={busy} onClick={() => { if (dirty) setConfirmReload(true); else setEditing(false); }}>取消</Button>{dirty && <span className="text-xs text-muted-foreground ml-auto">未保存</span>}</> : <><Button variant="outline" disabled={busy} onClick={startEditing}><SlidersHorizontal className="w-4 h-4 mr-1.5" />整理资料</Button><span className="text-xs text-muted-foreground ml-auto">{busy ? '处理中…' : '资料与预设正文分别保存'}</span></>}
     </footer>
+    </div>
     <PresetDiscardDialog open={confirmReload} cancel={() => setConfirmReload(false)} discard={() => { setConfirmReload(false); setEditing(false); setReload(n => n + 1); }} />
   </div>;
 }

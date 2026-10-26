@@ -3,6 +3,7 @@ import {
   loadApiProfiles, getActiveProfile, loadAPIConfig, saveAPIConfig, clearAPIConfig,
   persistProfiles, DEFAULT_API_URL, DEFAULT_MODEL, type ApiProfile,
   storeProfileModelsIfCurrent,
+  activateApiModel, getActiveModelSelection, getAPIConfigForSelection, setProfileModelFavorite, profileModels,
 } from '@/components/ai-tools/api-profiles';
 
 const PROFILES_KEY = 'st-beautifier-api-profiles';
@@ -13,6 +14,33 @@ beforeEach(() => {
 });
 
 describe('api-profiles 持久化层', () => {
+  it('模型切换保存服务与模型，旧请求快照和另一服务保持独立', () => {
+    persistProfiles([
+      { id: 'a', name: '甲', apiKey: 'fixture-a', apiUrl: 'https://a.example/v1/chat/completions', model: 'a1', favoriteModels: ['a2'] },
+      { id: 'b', name: '乙', apiKey: 'fixture-b', apiUrl: 'https://b.example/v1/chat/completions', model: 'b1' },
+    ], 'a');
+    const snapshot = getAPIConfigForSelection(getActiveModelSelection());
+    expect(activateApiModel({ profileId: 'b', model: ' b2 ' })).toBe(true);
+    expect(getActiveModelSelection()).toEqual({ profileId: 'b', model: 'b2' });
+    expect(snapshot).toEqual({ apiKey: 'fixture-a', apiUrl: 'https://a.example/v1/chat/completions', model: 'a1' });
+    expect(loadApiProfiles().profiles[0].model).toBe('a1');
+    expect(getAPIConfigForSelection({ profileId: 'gone', model: 'b2' })).toBeUndefined();
+  });
+
+  it('常用与自定义模型不随服务列表刷新丢失，也不改变活跃配置', () => {
+    const profile = { id: 'a', name: '甲', apiKey: 'fixture', apiUrl: DEFAULT_API_URL, model: 'a1', modelList: ['a1', 'a2'] };
+    persistProfiles([profile], 'a');
+    expect(setProfileModelFavorite('a', ' custom-x ', true)).toBe(true);
+    expect(setProfileModelFavorite('a', 'custom-x', true)).toBe(true);
+    storeProfileModelsIfCurrent(profile, [' a3 ', 'a3', '']);
+    const saved = getActiveProfile();
+    expect(saved.favoriteModels).toEqual(['custom-x']);
+    expect(profileModels(saved)).toEqual(['a1', 'custom-x', 'a3']);
+    expect(saved.model).toBe('a1');
+    setProfileModelFavorite('a', 'custom-x', false);
+    expect(getActiveProfile().favoriteModels).toEqual([]);
+  });
+
   it('never writes a late model list into the new active connection or a changed address', () => {
     const original = { id: 'a', name: 'A', apiUrl: 'https://a.example/v1/chat/completions', apiKey: 'fixture-key', model: 'a' };
     const other = { ...original, id: 'b', name: 'B', apiUrl: 'https://b.example/v1/chat/completions', model: 'b' };

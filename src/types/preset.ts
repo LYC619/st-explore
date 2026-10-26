@@ -82,6 +82,10 @@ export interface PresetItem {
 
 export type PresetStatus = 'unreviewed' | 'testing' | 'active' | 'reserve' | 'retired';
 export interface PresetCatalog {
+  /** A deliberately empty model selection suppresses filename suggestions. */
+  modelsConfirmed?: boolean;
+  /** User-facing preset name, independent of its author/series and original filename. */
+  name?: string;
   author?: string;
   series?: string;
   version?: string;

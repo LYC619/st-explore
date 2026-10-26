@@ -55,11 +55,11 @@ try {
   const search = page.getByRole('textbox', { name: '全局搜索', exact: true }).filter({ visible: true });
   await search.fill('导航甲');
   await page.locator('[data-tour="global-search"]').getByRole('button', { name: /^导航甲预设/ }).click();
-  await expect(page).toHaveURL(`${base}/presets?presetId=nav-a`);
+  await expect(page).toHaveURL(`${base}/presets/nav-a`);
   await expect(page.locator('[data-preset-details="nav-a"]')).toBeVisible();
   await search.fill('导航乙');
   await page.locator('[data-tour="global-search"]').getByRole('button', { name: /^导航乙预设/ }).click();
-  await expect(page).toHaveURL(`${base}/presets?presetId=nav-b`);
+  await expect(page).toHaveURL(`${base}/presets/nav-b`);
   await expect(page.locator('[data-preset-details="nav-b"]')).toBeVisible();
   passed.push('全局搜索在同一路由连续选择两份预设，URL 和详情同步');
   for (const query of ['导航作者', 'Claude']) {

@@ -1,0 +1,80 @@
+import { chromium, expect } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+
+const base = process.env.STE_SMOKE_URL ?? 'http://127.0.0.1:4194';
+const output = '.cache/preset-series-production';
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({ headless: true, channel: 'msedge' });
+const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
+const passed = [], errors = [], requests = [];
+page.on('pageerror', e => errors.push(e.message));
+await page.route(/https:\/\//, async route => {
+  if (!route.request().url().startsWith('https://fixture.invalid/')) return route.abort();
+  requests.push(route.request().postDataJSON());
+  await route.fulfill({ contentType: 'text/event-stream', body: 'data: {"choices":[{"delta":{"content":"生产试用回复"}}]}\n\ndata: [DONE]\n\n' });
+});
+const file = version => ({ name: `生产预设-Claude-v${version}.json`, mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ prompts: [{ identifier: 'main', name: '主提示', content: `生产版本 ${version}` }], prompt_order: [] })) });
+try {
+  await page.goto(`${base}/presets`);
+  await page.getByRole('button', { name: '导入预设', exact: true }).first().click();
+  await page.getByLabel('选择预设和附带文件').setInputFiles(file(1));
+  await page.getByLabel('名称', { exact: true }).fill('第一版独立名称');
+  await page.getByLabel('作者', { exact: true }).fill('生产作者');
+  await expect(page.getByLabel('系列', { exact: true })).toHaveValue('生产作者');
+  await page.getByRole('button', { name: '导入 1 份预设', exact: true }).click();
+  await page.getByRole('button', { name: '打开完整详情', exact: true }).click();
+  const firstUrl = page.url();
+  await page.reload();
+  await expect(page.locator('[data-preset-details] h2').filter({ hasText: /^第一版独立名称$/ })).toBeVisible();
+  await page.getByRole('button', { name: '更多预设操作', exact: true }).click();
+  await page.getByRole('button', { name: '导入同系列新版', exact: true }).click();
+  await page.getByLabel('选择预设和附带文件').setInputFiles(file(2));
+  await expect(page.getByLabel('系列', { exact: true })).toHaveValue('生产作者');
+  await page.getByLabel('名称', { exact: true }).fill('第二版独立名称');
+  await page.getByRole('button', { name: '导入 1 份预设', exact: true }).click();
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.locator('[data-preset-details] h2').filter({ hasText: /^第二版独立名称$/ })).toBeVisible();
+  const secondUrl = page.url(); expect(secondUrl).not.toBe(firstUrl);
+  await page.reload(); await expect(page.getByLabel('预设信息与版本')).toContainText('同系列版本 · 2');
+  await page.getByRole('button', { name: '整理资料', exact: true }).click();
+  await page.getByLabel('适配模型', { exact: true }).fill('');
+  await page.getByLabel('我的使用笔记').fill('生产包刷新后保留笔记');
+  await page.getByRole('button', { name: '保存资料', exact: true }).click();
+  await expect(page.getByRole('button', { name: '整理资料', exact: true })).toBeVisible();
+  await page.reload(); await expect(page.locator('[data-preset-details]')).toContainText('生产包刷新后保留笔记');
+  await expect(page.getByLabel('预设信息与版本')).toContainText('未标记');
+  passed.push('生产dist实际导入、默认作者系列、独立名称、新版继承并自动进入、刷新恢复和清空模型');
+
+  await page.getByRole('button', { name: '返回预设库', exact: true }).click();
+  await page.getByRole('button', { name: '管理预设标签', exact: true }).click();
+  await page.getByLabel('新建预设标签', { exact: true }).fill('生产标签');
+  await page.getByRole('button', { name: '添加标签', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('生产标签');
+  await page.getByRole('dialog').getByRole('button', { name: '完成', exact: true }).click();
+  await page.reload(); await expect(page.getByRole('button', { name: '生产标签0', exact: true })).toBeVisible();
+  passed.push('生产IndexedDB标签新增与刷新恢复');
+
+  await page.goto(`${base}/settings`);
+  await page.getByRole('button', { name: 'AI 配置', exact: true }).click();
+  await page.getByLabel('提供商名称').fill('生产服务');
+  await page.getByLabel('API Key', { exact: true }).fill('fixture-key');
+  await page.getByLabel('API 接口地址').fill('https://fixture.invalid/v1/chat/completions');
+  await page.locator('#api-model-name').fill('fixture-model');
+  await page.getByRole('button', { name: '当前模型加入常用', exact: true }).click();
+  await page.getByRole('button', { name: '保存配置', exact: true }).click();
+  await page.reload(); await expect(page.locator('#api-model-name')).toHaveValue('fixture-model');
+  await page.goto(secondUrl); await page.getByRole('tab', { name: '试用', exact: true }).click();
+  const playground = page.getByRole('region', { name: '预设试用' });
+  await playground.getByLabel('试用消息', { exact: true }).fill('生产请求');
+  await playground.getByRole('button', { name: '发送', exact: true }).click();
+  await expect(playground.getByRole('log')).toContainText('生产试用回复');
+  expect(requests).toHaveLength(1); expect(requests[0].model).toBe('fixture-model');
+  expect(JSON.stringify(requests[0])).toContain('生产版本 2');
+  await page.screenshot({ path: `${output}/playground.png` });
+  await page.reload(); await page.getByRole('tab', { name: '试用', exact: true }).click();
+  await expect(playground.getByRole('log')).not.toContainText('生产试用回复');
+  passed.push('生产服务和常用模型保存、真实发送入口及请求内容、刷新清空临时试用');
+  expect(errors).toEqual([]);
+  console.log(JSON.stringify({ passed, errors }));
+} catch (error) { await page.screenshot({ path: `${output}/failure.png` }); throw error; }
+finally { await writeFile(`${output}/results.json`, JSON.stringify({ passed, errors, requests: requests.length }, null, 2)); await browser.close(); }

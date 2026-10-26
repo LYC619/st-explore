@@ -15,6 +15,7 @@ import { PresetDiscardDialog } from './PresetDraftBoundary';
 
 interface Row {
   selected: boolean; name: string; series: string; version: string; variant: string; models: string[]; files: string[];
+  modelsTouched?: boolean;
   savedId?: string; error?: string;
 }
 
@@ -22,7 +23,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
   seed: PresetCatalog; onClose: () => void; onImported: (ids: string[]) => void;
 }) {
   const epoch = useRef(getVaultEpoch()).current;
-  const [catalog, setCatalog] = useState<PresetCatalog>({ ...seed, version: '', variant: '', releaseNotes: '', status: 'unreviewed', favorite: false, notes: '', originId: undefined, publishedAt: '', updatedAt: undefined });
+  const [catalog, setCatalog] = useState<PresetCatalog>({ ...seed, name: '', version: '', variant: '', releaseNotes: '', status: 'unreviewed', favorite: false, notes: '', originId: undefined, publishedAt: '', updatedAt: undefined });
   const [preview, setPreview] = useState<PresetPackagePreview | null>(null);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -41,17 +42,17 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
       setRows(Object.fromEntries(result.presets.map(candidate => {
         const hint = inferPresetIdentity(candidate.name, candidate.preset.originalData);
         return [candidate.key, {
-          selected: true, name: candidate.name, series: result.presets.length > 1 ? hint.series ?? '' : '',
+          selected: true, name: hint.displayName, series: '',
           version: result.presets.length > 1 ? hint.version ?? '' : '', variant: '', models: result.presets.length > 1 ? hint.models : [],
           files: result.presets.length === 1 ? result.files.map(file => file.id) : [],
         }];
       })));
       const hint = result.presets.length === 1 ? inferPresetIdentity(result.presets[0].name, result.presets[0].preset.originalData) : undefined;
       setCatalog(value => ({ ...value,
-        ...(!touchedFields.current.has('series') ? { series: seed.series || hint?.series } : {}),
+        ...(!touchedFields.current.has('name') ? { name: hint?.displayName } : {}),
+        ...(!touchedFields.current.has('series') ? { series: seed.series || value.author } : {}),
         ...(!touchedFields.current.has('version') ? { version: hint?.version } : {}),
         ...(!touchedFields.current.has('models') ? { models: hint?.models.length ? hint.models : seed.models } : {}),
-        ...(!touchedFields.current.has('purposes') ? { purposes: hint?.purposes.length ? hint.purposes : seed.purposes } : {}),
         ...(!touchedFields.current.has('releaseNotes') ? { releaseNotes: result.presets.length === 1 ? result.files.filter(file => file.kind === 'notes').map(file => file.text).join('\n\n') : '' } : {}),
       }));
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -67,9 +68,10 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
       if (!row.selected || row.savedId) continue;
       try {
         if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，本批剩余项目已停止');
-        const item = buildImportedPreset({ ...candidate, name: row.name }, {
-          ...catalog, series: row.series || catalog.series, version: row.version || catalog.version, variant: row.variant || catalog.variant,
-          models: row.models.length ? row.models : catalog.models,
+        const item = buildImportedPreset(candidate, {
+          ...catalog, name: preview.presets.length === 1 ? catalog.name || row.name : row.name, series: row.series || catalog.series || catalog.author, version: row.version || catalog.version, variant: row.variant || catalog.variant,
+          models: row.modelsTouched ? row.models : touchedFields.current.has('models') ? catalog.models : row.models.length ? row.models : catalog.models,
+          modelsConfirmed: row.modelsTouched || catalog.modelsConfirmed,
         }, preview.files.filter(file => row.files.includes(file.id)));
         await target.put(item);
         pendingIds.current.push(item.id);
@@ -103,8 +105,8 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
                     <p className="text-xs text-muted-foreground">{[hint.version, ...hint.models].filter(Boolean).join(' · ') || '保留原文件内容'}<span className="block mt-1">{candidate.preset.prompts.length} 提示词 · {candidate.preset.regexRules.length} 正则 · {inspectPresetScripts(candidate.preset.originalData).length} 脚本</span></p>
                     {candidate.duplicateTitles.length > 0 && <p className="text-xs text-[color:var(--status-warn)]">已有相同内容：{candidate.duplicateTitles.join('、')}。继续会独立保存。</p>}
                     <details className="text-xs"><summary className="cursor-pointer min-h-8 pt-1 text-muted-foreground">调整本项</summary><div className="space-y-2 py-2">
-                      <label className="block space-y-1">预设名称<Input value={row.name} onChange={e => changeRow(candidate.key, { name: e.target.value })} /></label>
-                      {preview.presets.length > 1 && <><label className="block space-y-1">本项系列<Input value={row.series} onChange={e => changeRow(candidate.key, { series: e.target.value })} /></label><label className="block space-y-1">本项版本<Input value={row.version} placeholder={catalog.version || '沿用共同版本'} onChange={e => changeRow(candidate.key, { version: e.target.value })} /></label><label className="block space-y-1">本项模型<Input value={row.models.join('，')} placeholder={catalog.models?.join('，') || '可用逗号分隔'} onChange={e => changeRow(candidate.key, { models: e.target.value ? e.target.value.split(/[,，]/) : [] })} /></label></>}
+                      {preview.presets.length > 1 && <label className="block space-y-1">预设名称<Input value={row.name} onChange={e => changeRow(candidate.key, { name: e.target.value })} /></label>}
+                      {preview.presets.length > 1 && <><label className="block space-y-1">本项系列<Input value={row.series} onChange={e => changeRow(candidate.key, { series: e.target.value })} /></label><label className="block space-y-1">本项版本<Input value={row.version} placeholder={catalog.version || '沿用共同版本'} onChange={e => changeRow(candidate.key, { version: e.target.value })} /></label><label className="block space-y-1">本项模型<Input value={row.models.join('，')} placeholder={catalog.models?.join('，') || '可用逗号分隔'} onChange={e => changeRow(candidate.key, { models: e.target.value ? e.target.value.split(/[,，]/) : [], modelsTouched: true })} /></label></>}
                       <label className="block space-y-1">本项变体<Input value={row.variant} placeholder={catalog.variant || '选填'} onChange={e => changeRow(candidate.key, { variant: e.target.value })} /></label>
                     </div></details>
                     {preview.files.map(file => <label key={file.id} className="flex items-center gap-2 text-xs min-h-8"><Checkbox checked={row.files.includes(file.id)} onCheckedChange={checked => changeRow(candidate.key, { files: checked ? [...row.files, file.id] : row.files.filter(id => id !== file.id) })} /><span className="break-all">{PACKAGE_KIND_LABELS[file.kind]} · {file.name}</span></label>)}
@@ -113,7 +115,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
                 })}
                 {preview.files.length > 0 && <p className="text-xs text-muted-foreground leading-relaxed">所选说明原文随附件保留，脚本只归档。单份预设已自动选中全部附件。</p>}
               </div>
-              {!!preview.presets.length && <div className="space-y-3"><h3 className="text-sm font-medium">{preview.presets.length > 1 ? '共同资料（选填）' : '确认资料'}</h3><p className="text-xs text-muted-foreground leading-relaxed">模型与版本来自名称或当前配置，先帮你填好；无需填完所有项也能导入。</p><PresetCatalogFields compact value={catalog} onChange={value => { for (const key of Object.keys(value) as (keyof PresetCatalog)[]) if (JSON.stringify(value[key]) !== JSON.stringify(catalog[key])) touchedFields.current.add(key); setCatalog(value); }} /></div>}
+              {!!preview.presets.length && <div className="space-y-3"><h3 className="text-sm font-medium">{preview.presets.length > 1 ? '共同资料（选填）' : '确认资料'}</h3><p className="text-xs text-muted-foreground leading-relaxed">模型与版本来自名称或当前配置，先帮你填好；无需填完所有项也能导入。</p><PresetCatalogFields compact multiple={preview.presets.length > 1} value={catalog} onChange={value => { for (const key of Object.keys(value) as (keyof PresetCatalog)[]) if (JSON.stringify(value[key]) !== JSON.stringify(catalog[key])) touchedFields.current.add(key); setCatalog(value); }} /></div>}
             </div>
           </fieldset>}
           {error && <p role="alert" className="text-sm text-destructive mt-3">{error}</p>}

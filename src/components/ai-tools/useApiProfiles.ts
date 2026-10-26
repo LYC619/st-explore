@@ -7,7 +7,9 @@ import {
   type APIConfig, type ApiProfile, DEFAULT_API_URL, DEFAULT_MODEL,
   generateProfileId, persistProfiles, loadApiProfiles,
   storeProfileModelsIfCurrent,
+  normalizeModelNames,
 } from './api-profiles';
+import { subscribeApiProfileChanges } from './useApiProfileState';
 
 export interface TestResult { ok: boolean; text: string }
 
@@ -22,23 +24,33 @@ export function useApiProfiles() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [modelList, setModelList] = useState<string[]>([]);
+  const [favoriteModels, setFavoriteModels] = useState<string[]>([]);
   const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(dirty); dirtyRef.current = dirty;
+  const [externalChanged, setExternalChanged] = useState(false);
   const formRef = useRef({ activeId, apiUrl, apiKey }); formRef.current = { activeId, apiUrl, apiKey };
   const catalogRequest = useRef(0);
+  const modelAbort = useRef<AbortController | null>(null), testAbort = useRef<AbortController | null>(null);
+  const connectionTest = useRef(0);
 
   const [fetchingModels, setFetchingModels] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  const loadIntoForm = (p: ApiProfile) => {
+  const loadIntoForm = useCallback((p: ApiProfile) => {
+    ++catalogRequest.current; ++connectionTest.current;
+    modelAbort.current?.abort(); testAbort.current?.abort();
+    setFetchingModels(false); setTesting(false);
     setName(p.name);
     setApiKey(p.apiKey);
     setApiUrl(p.apiUrl || DEFAULT_API_URL);
     setModel(p.model || DEFAULT_MODEL);
-    setModelList(p.modelList ?? []);
+    setModelList(normalizeModelNames(p.modelList));
+    setFavoriteModels(normalizeModelNames(p.favoriteModels));
     setTestResult(null);
     setDirty(false);
-  };
+    setExternalChanged(false);
+  }, []);
 
   const reload = useCallback(() => {
     const { profiles: ps, activeId: aid } = loadApiProfiles();
@@ -46,9 +58,17 @@ export function useApiProfiles() {
     setActiveId(aid);
     const active = ps.find((p) => p.id === aid) ?? ps[0];
     if (active) loadIntoForm(active);
-  }, []);
+  }, [loadIntoForm]);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => subscribeApiProfileChanges(scopeChanged => {
+    if (scopeChanged || !dirtyRef.current) { reload(); return; }
+    const state = loadApiProfiles();
+    setProfiles(state.profiles);
+    if (state.activeId !== formRef.current.activeId) setExternalChanged(true);
+  }), [reload]);
+  useEffect(() => () => { ++catalogRequest.current; ++connectionTest.current; modelAbort.current?.abort(); testAbort.current?.abort(); }, []);
+  useEffect(() => { ++connectionTest.current; testAbort.current?.abort(); setTesting(false); setTestResult(null); }, [apiKey, apiUrl, model]);
 
   const savedActive = profiles.find((p) => p.id === activeId);
 
@@ -71,6 +91,7 @@ export function useApiProfiles() {
       apiUrl: DEFAULT_API_URL,
       model: DEFAULT_MODEL,
       modelList: [],
+      favoriteModels: [],
     };
     persistProfiles([...ps, fresh], fresh.id);
     reload();
@@ -86,6 +107,7 @@ export function useApiProfiles() {
       apiUrl: apiUrl.trim() || DEFAULT_API_URL,
       model: model.trim() || DEFAULT_MODEL,
       modelList,
+      favoriteModels,
     };
     persistProfiles([...ps, copy], copy.id);
     reload();
@@ -98,8 +120,9 @@ export function useApiProfiles() {
       toast({ title: '至少保留一个提供商', variant: 'destructive' });
       return false;
     }
-    const rest = ps.filter((p) => p.id !== aid);
-    persistProfiles(rest, rest[0].id);
+    const rest = ps.filter((p) => p.id !== activeId);
+    if (rest.length === ps.length) return false;
+    persistProfiles(rest, aid === activeId ? rest[0].id : aid);
     reload();
     toast({ title: '已删除提供商' });
     return true;
@@ -108,11 +131,11 @@ export function useApiProfiles() {
   const handleSave = () => {
     if (!apiKey.trim()) {
       toast({ title: '请输入 API Key', variant: 'destructive' });
-      return;
+      return false;
     }
     const { profiles: ps, activeId: aid } = loadApiProfiles();
-    const idx = ps.findIndex((p) => p.id === aid);
-    if (idx < 0) return;
+    const idx = ps.findIndex((p) => p.id === activeId);
+    if (idx < 0) { toast({ title: '当前服务已不存在，请重新选择', variant: 'destructive' }); return false; }
     ps[idx] = {
       ...ps[idx],
       name: name.trim() || ps[idx].name,
@@ -120,11 +143,14 @@ export function useApiProfiles() {
       apiUrl: apiUrl.trim() || DEFAULT_API_URL,
       model: model.trim() || DEFAULT_MODEL,
       modelList,
+      favoriteModels,
     };
     persistProfiles(ps, aid);
     setProfiles(ps);
     setDirty(false);
+    setExternalChanged(false);
     toast({ title: '配置已保存', description: ps[idx].name });
+    return true;
   };
 
   const handleFetchModels = async (): Promise<boolean> => {
@@ -136,9 +162,11 @@ export function useApiProfiles() {
     }
     setFetchingModels(true);
     const request = ++catalogRequest.current;
+    modelAbort.current?.abort();
+    const controller = new AbortController(); modelAbort.current = controller;
     const profileId = activeId;
     try {
-      const models = await fetchModels(url, key);
+      const models = await fetchModels(url, key, controller.signal);
       const form = formRef.current;
       if (request !== catalogRequest.current || form.activeId !== profileId || form.apiUrl.trim() !== url || form.apiKey.trim() !== key) return false;
       setModelList(models);
@@ -147,7 +175,8 @@ export function useApiProfiles() {
       toast({ title: `已获取 ${models.length} 个模型` });
       return true;
     } catch (e) {
-      toast({ title: '获取模型列表失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
+      if (request !== catalogRequest.current || controller.signal.aborted) return false;
+      toast({ title: '获取模型列表失败', description: safeError(e, key), variant: 'destructive' });
       return false;
     } finally {
       if (request === catalogRequest.current) setFetchingModels(false);
@@ -166,16 +195,20 @@ export function useApiProfiles() {
       return;
     }
     setTesting(true);
+    const request = ++connectionTest.current;
+    testAbort.current?.abort();
+    const controller = new AbortController(); testAbort.current = controller;
     setTestResult(null);
     const t0 = performance.now();
     try {
-      await callOpenAIMessages(cfg, [{ role: 'user', content: 'Hi' }], { params: { max_tokens: 5 } });
+      await callOpenAIMessages(cfg, [{ role: 'user', content: 'Hi' }], { params: { max_tokens: 5 }, signal: controller.signal });
+      if (request !== connectionTest.current || controller.signal.aborted) return;
       const ms = Math.round(performance.now() - t0);
       setTestResult({ ok: true, text: `连通正常 · ${ms}ms · ${cfg.model}` });
     } catch (e) {
-      setTestResult({ ok: false, text: e instanceof Error ? e.message : '连接失败，请检查地址/密钥/模型' });
+      if (request === connectionTest.current && !controller.signal.aborted) setTestResult({ ok: false, text: safeError(e, cfg.apiKey) });
     } finally {
-      setTesting(false);
+      if (request === connectionTest.current) setTesting(false);
     }
   };
 
@@ -185,12 +218,18 @@ export function useApiProfiles() {
     // 切换共享/本库作用域后由 ApiScopeToggle 调用：localStorage 已被换成另一套配置
     reload,
     // 表单字段
-    name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList,
+    name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList, favoriteModels, setFavoriteModels,
     dirty, setDirty,
+    externalChanged,
     // 异步态
     fetchingModels, testing, testResult,
     // 操作
     handleSwitch, handleAdd, handleDuplicate, handleDelete,
     handleSave, handleFetchModels, handleTest,
   };
+}
+
+function safeError(error: unknown, key: string): string {
+  const message = error instanceof Error ? error.message : '请检查接口地址、密钥和模型';
+  return key ? message.split(key).join('***') : message;
 }

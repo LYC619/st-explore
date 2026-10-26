@@ -8,6 +8,7 @@ import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault
 import { openDB } from '@/lib/idb';
 import type { ChatSession, ChatMessage, ChapterMarker } from '@/types/chat';
 import type { RoleplayPreferences } from '@/types/roleplay';
+import type { PresetTagPreferences } from '@/lib/preset-tags';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
 import { createRepo, getCurrentRepo, type Repo, type RemoveOptions } from '@/lib/repo';
@@ -32,6 +33,7 @@ export interface ArchiveMetaRecord {
   updatedAt: number;
   libraryTags?: LibraryTagPreferences;
   roleplay?: RoleplayPreferences;
+  presetTags?: PresetTagPreferences;
   [key: string]: unknown;
 }
 const archiveMetaRepo = createRepo<ArchiveMetaRecord>('archiveMeta');
@@ -287,6 +289,22 @@ export async function deleteArchiveStory(id: string, options?: RemoveOptions): P
 const ARCHIVE_SCHEMA_META_ID = 'archive-schema';
 /** 元信息记录是 read-modify-write，统一排队防止 schemaVersion 与标签偏好并发互相覆盖。 */
 const metaWrites = new KeyedSerialQueue();
+
+export async function readPresetTagPreferences(): Promise<PresetTagPreferences | undefined> {
+  return (await getCurrentRepo<ArchiveMetaRecord>('archiveMeta').get(ARCHIVE_SCHEMA_META_ID))?.presetTags;
+}
+
+export async function writePresetTagPreferences(preferences: PresetTagPreferences, expectedVersion: number): Promise<void> {
+  const epoch = getVaultEpoch(), repo = getCurrentRepo<ArchiveMetaRecord>('archiveMeta');
+  const snapshot = structuredClone(preferences);
+  return metaWrites.enqueue(ARCHIVE_SCHEMA_META_ID, async () => {
+    const current = await repo.get(ARCHIVE_SCHEMA_META_ID);
+    if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开标签管理');
+    if ((current?.presetTags?.updatedAt ?? 0) !== expectedVersion) throw new Error('标签已在其他位置修改，请关闭后重新打开');
+    await repo.put({ ...current, id: ARCHIVE_SCHEMA_META_ID, schemaVersion: current?.schemaVersion ?? 1,
+      presetTags: snapshot, updatedAt: Date.now() });
+  });
+}
 
 export async function getRoleplayPreferences(repo: Repo<ArchiveMetaRecord> = getCurrentRepo<ArchiveMetaRecord>('archiveMeta')): Promise<RoleplayPreferences> {
   return structuredClone((await repo.get(ARCHIVE_SCHEMA_META_ID))?.roleplay ?? {});

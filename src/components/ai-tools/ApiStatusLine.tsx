@@ -1,35 +1,23 @@
-import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { getActiveProfile } from './api-profiles';
+import { useApiProfileState } from './useApiProfileState';
+import { QuickModelSwitcher } from './QuickModelSwitcher';
+import { saveSettingsSection } from '@/lib/settings-navigation';
 
 /**
- * 轻量 API 配置状态条：只展示状态，不承载配置表单。
- * API 配置统一在「AI 配置」页维护（多提供商），其余页面用此状态条替代内嵌配置卡。
+ * 所有生成模块共用状态与快速模型切换；连接信息仍在设置维护。
  */
-export function ApiStatusLine() {
+export function ApiStatusLine({ busy = false }: { busy?: boolean }) {
   const navigate = useNavigate();
-  const [hasKey, setHasKey] = useState(true);
-  const [label, setLabel] = useState('');
-
-  useEffect(() => {
-    const p = getActiveProfile();
-    setHasKey(!!p?.apiKey);
-    setLabel(p ? `${p.name} · ${p.model}` : '');
-  }, []);
+  const { profiles, activeId } = useApiProfileState();
+  const hasKey = !!profiles.find(profile => profile.id === activeId)?.apiKey;
 
   if (hasKey) {
     return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <CheckCircle2 className="w-3.5 h-3.5 text-primary/70 shrink-0" />
-        <span>API 已配置{label ? ` · ${label}` : ''}</span>
-        <button
-          className="underline-offset-2 hover:underline hover:text-foreground"
-          onClick={() => navigate('/settings')}
-        >
-          修改
-        </button>
+        <span>API 已配置</span><QuickModelSwitcher busy={busy} />
       </div>
     );
   }
@@ -38,7 +26,8 @@ export function ApiStatusLine() {
     <div className="flex items-center gap-2 flex-wrap rounded-md border border-[var(--status-warn-bg)] bg-[var(--status-warn-bg)] px-3 py-2 text-sm">
       <AlertCircle className="w-4 h-4 text-[color:var(--status-warn)] shrink-0" />
       <span>尚未配置 API Key，生成功能不可用。</span>
-      <Button variant="outline" size="sm" className="ml-auto" onClick={() => navigate('/settings')}>
+      <QuickModelSwitcher busy={busy} />
+      <Button variant="outline" size="sm" className="ml-auto" onClick={() => { saveSettingsSection('ai'); navigate('/settings'); }}>
         去「AI 配置」页配置
       </Button>
     </div>

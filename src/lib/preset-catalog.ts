@@ -7,7 +7,7 @@ import { stableJson } from './roleplay/fingerprint';
 export const PRESET_STATUS_LABELS: Record<PresetStatus, string> = {
   unreviewed: '待整理', testing: '待试用', active: '使用中', reserve: '备用', retired: '已停用',
 };
-export const PRESET_MODELS = ['Claude', 'Gemini', 'DeepSeek', 'GPT', 'Qwen', 'Llama'];
+export const PRESET_MODELS = ['Claude', 'Gemini', 'DeepSeek', 'GPT'];
 export const PRESET_PURPOSES = ['游玩', '写卡', '总结', '文风'];
 export function splitCatalogLabels(value: string): string[] {
   return [...new Set(value.split(/[,，、;；\n]/).map(value => value.trim()).filter(Boolean))];
@@ -17,7 +17,7 @@ export function normalizeModel(value: string): string {
 }
 export function normalizePresetCatalog(catalog: PresetCatalog = {}): PresetCatalog {
   const next = { ...catalog };
-  for (const key of ['author', 'series', 'version', 'variant', 'sourceUrl', 'publishedAt', 'originId'] as const) {
+  for (const key of ['name', 'author', 'series', 'version', 'variant', 'sourceUrl', 'publishedAt', 'originId'] as const) {
     const value = next[key];
     next[key] = typeof value === 'string' ? value.trim() || undefined : undefined;
   }
@@ -63,19 +63,21 @@ export function suggestPresetModels(title: string, preset: NormalizedPreset): st
 
 export interface PresetCatalogSummary extends Omit<PresetCatalog, 'notes' | 'releaseNotes' | 'modelNotes'> {
   noteExcerpt?: string;
+  releaseExcerpt?: string;
 }
 export function summarizePresetCatalog(catalog?: PresetCatalog): PresetCatalogSummary | undefined {
   if (!catalog) return undefined;
   const fields = normalizePresetCatalog(catalog);
   return {
-    author: fields.author?.slice(0, 180), series: fields.series?.slice(0, 180), version: fields.version?.slice(0, 120), variant: fields.variant?.slice(0, 120),
+    name: fields.name?.slice(0, 180), author: fields.author?.slice(0, 180), series: fields.series?.slice(0, 180), version: fields.version?.slice(0, 120), variant: fields.variant?.slice(0, 120),
     status: fields.status, favorite: fields.favorite, modelBasis: fields.modelBasis, updatedAt: fields.updatedAt,
     sourceUrl: fields.sourceUrl?.slice(0, 2000), publishedAt: fields.publishedAt?.slice(0, 20), originId: fields.originId?.slice(0, 180),
-    models: fields.models?.slice(0, 30).map(value => value.slice(0, 120)),
+    models: fields.models?.slice(0, 30).map(value => value.slice(0, 120)), modelsConfirmed: fields.modelsConfirmed === true,
     purposes: fields.purposes?.slice(0, 30).map(value => value.slice(0, 80)),
     tags: fields.tags?.slice(0, 50).map(value => value.slice(0, 80)),
     representativeCards: fields.representativeCards?.slice(0, 20).map(value => value.slice(0, 120)),
-    noteExcerpt: fields.notes?.replace(/\s+/g, ' ').slice(0, 180) };
+    noteExcerpt: fields.notes?.replace(/\s+/g, ' ').slice(0, 180),
+    releaseExcerpt: fields.releaseNotes?.replace(/[#*_>`]/g, '').replace(/\s+/g, ' ').slice(0, 200) };
 }
 export function presetOptionLabel(item: Pick<PresetItem, 'title' | 'catalog'> & { preset?: PresetItem['preset']; presetIdentity?: PresetIdentity }): string {
   const p = getPresetPresentation(item), c = item.catalog;
@@ -83,6 +85,5 @@ export function presetOptionLabel(item: Pick<PresetItem, 'title' | 'catalog'> & 
   for (const value of [p.version, c?.variant, p.author, ...p.models]) {
     if (value && !parts.some(part => part.toLocaleLowerCase().includes(value.toLocaleLowerCase()))) parts.push(value);
   }
-  if (c?.status === 'retired') parts.push('已停用');
   return `${c?.favorite ? '★ ' : ''}${parts.join(' · ')}`;
 }

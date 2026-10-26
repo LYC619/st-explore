@@ -411,7 +411,7 @@ export default function Preset() {
   const [diyTarget, setDiyTarget] = useState<string | null>(null);
   useEffect(() => {
     if (!diyTarget || saving) return;
-    navigate(`/preset?assetId=${encodeURIComponent(diyTarget)}&from=${searchParams.get('from') === 'library' ? 'library' : 'catalog'}`);
+    navigate(`/preset?assetId=${encodeURIComponent(diyTarget)}&from=${searchParams.get('from') === 'detail' ? 'detail' : searchParams.get('from') === 'library' ? 'library' : 'catalog'}`);
     setDiyTarget(null);
   }, [diyTarget, saving, navigate, searchParams]);
 
@@ -495,7 +495,7 @@ export default function Preset() {
       </AlertDialog>
       <fieldset disabled={creatingDiy} className="contents">
       <div className="container mx-auto px-4 py-6">
-        <Button variant="ghost" className="mb-3" onClick={() => navigate(`/presets${currentItemId ? `?presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />返回预设库</Button>
+        <Button variant="ghost" className="mb-3" onClick={() => navigate(searchParams.get('from') === 'detail' && currentItemId ? `/presets/${encodeURIComponent(currentItemId)}` : `/presets${currentItemId ? `?presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />{searchParams.get('from') === 'detail' ? '返回系列详情' : '返回预设库'}</Button>
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card">
             <SlidersHorizontal className="w-5 h-5 text-primary-foreground" />

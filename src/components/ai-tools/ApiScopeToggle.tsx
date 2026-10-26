@@ -12,9 +12,10 @@ import { getCurrentVaultId } from '@/lib/vault/vault-scope';
 interface ApiScopeToggleProps {
   /** 切换成功后重载表单：localStorage 里已经换成另一套配置了。 */
   onChanged: () => void;
+  onRequestChange?: (apply: () => void) => void;
 }
 
-export function ApiScopeToggle({ onChanged }: ApiScopeToggleProps) {
+export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeToggleProps) {
   const { toast } = useToast();
   const [perVault, setPerVault] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -76,7 +77,7 @@ export function ApiScopeToggle({ onChanged }: ApiScopeToggleProps) {
           <Switch
             checked={perVault}
             disabled={!ready}
-            onCheckedChange={(checked) => { void handleChange(checked); }}
+            onCheckedChange={(checked) => { const apply = () => { void handleChange(checked); }; if (onRequestChange) onRequestChange(apply); else apply(); }}
             aria-label="本库单独配置"
           />
         )}

@@ -2,6 +2,7 @@
 // 全应用唯一的 AI 配置数据层：多提供商存 localStorage，客户端镜像到系统配置目录。
 // 拆自原 APIConfigCard.tsx（阶段8.1 codex P2.1：把 460 行 God 组件的持久化层独立、可单测）。
 import { mirrorApiProfilesToSystem } from '@/lib/vault/sensitive-config';
+import { notifyApiProfilesChanged } from './api-profile-events';
 
 // 旧单配置 keys（仅用于一次性迁移到多提供商）
 const LEGACY_KEY = 'st-beautifier-openai-key';
@@ -26,6 +27,18 @@ export interface ApiProfile extends APIConfig {
   id: string;
   name: string;
   modelList?: string[];
+  /** User choices survive refreshing a provider's advertised model catalogue. */
+  favoriteModels?: string[];
+}
+
+export interface ApiModelSelection { profileId: string; model: string }
+
+export function normalizeModelNames(values: unknown): string[] {
+  return Array.isArray(values) ? [...new Set(values.flatMap(value => typeof value === 'string' && value.trim() ? [value.trim()] : []))] : [];
+}
+
+export function profileModels(profile: ApiProfile): string[] {
+  return normalizeModelNames([profile.model, ...normalizeModelNames(profile.favoriteModels), ...normalizeModelNames(profile.modelList)]);
 }
 
 export function generateProfileId(): string {
@@ -38,6 +51,7 @@ export function persistProfiles(profiles: ApiProfile[], activeId: string): void 
   localStorage.setItem(ACTIVE_KEY, activeId);
   // 客户端同时镜像到系统配置目录（阶段7.6：Key 不进库、不怕 webview 数据被清）
   mirrorApiProfilesToSystem(json, activeId);
+  notifyApiProfilesChanged();
 }
 
 /** 读取全部提供商；首次调用时把旧的单配置 4 个 key 迁移成「默认」提供商并清掉旧 key。 */
@@ -79,8 +93,39 @@ export function storeProfileModelsIfCurrent(profile: Pick<ApiProfile, 'id' | 'ap
   const { profiles, activeId } = loadApiProfiles();
   const index = profiles.findIndex(item => item.id === profile.id && item.apiUrl === profile.apiUrl && item.apiKey === profile.apiKey);
   if (index < 0) return false;
-  profiles[index] = { ...profiles[index], modelList: models };
+  profiles[index] = { ...profiles[index], modelList: normalizeModelNames(models) };
   persistProfiles(profiles, activeId); return true;
+}
+
+export function getActiveModelSelection(): ApiModelSelection {
+  const profile = getActiveProfile();
+  return { profileId: profile.id, model: profile.model || DEFAULT_MODEL };
+}
+
+/** Fresh value for one request; subsequent switches never mutate this snapshot. */
+export function getAPIConfigForSelection(selection: ApiModelSelection): APIConfig | undefined {
+  const profile = loadApiProfiles().profiles.find(item => item.id === selection.profileId);
+  if (!profile || !selection.model.trim()) return undefined;
+  return { apiKey: profile.apiKey, apiUrl: profile.apiUrl || DEFAULT_API_URL, model: selection.model.trim() };
+}
+
+export function activateApiModel(selection: ApiModelSelection): boolean {
+  const { profiles } = loadApiProfiles();
+  const index = profiles.findIndex(profile => profile.id === selection.profileId);
+  if (index < 0 || !selection.model.trim()) return false;
+  profiles[index] = { ...profiles[index], model: selection.model.trim() };
+  persistProfiles(profiles, selection.profileId);
+  return true;
+}
+
+export function setProfileModelFavorite(profileId: string, model: string, favorite: boolean): boolean {
+  const { profiles, activeId } = loadApiProfiles();
+  const index = profiles.findIndex(profile => profile.id === profileId), name = model.trim();
+  if (index < 0 || !name) return false;
+  const current = normalizeModelNames(profiles[index].favoriteModels);
+  profiles[index] = { ...profiles[index], favoriteModels: favorite ? normalizeModelNames([...current, name]) : current.filter(value => value !== name) };
+  persistProfiles(profiles, activeId);
+  return true;
 }
 
 /** 兼容旧签名：返回活跃提供商的调用配置。全部 AI 调用点（总结/故事树/世界书/批量）继续用它。 */
