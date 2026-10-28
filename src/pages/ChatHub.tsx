@@ -70,6 +70,10 @@ export default function ChatHub() {
     } catch (reason) { if (mounted.current) setStartError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (mounted.current) setStarting(undefined); }
   };
+  const enterTavern = () => {
+    if (stories[0]) openChat(stories[0].id);
+    else newChat();
+  };
 
   return <AppLayout titleBarContent="聊天">
     <div className="mx-auto w-full max-w-5xl space-y-6 p-4 sm:p-6">
@@ -79,6 +83,7 @@ export default function ChatHub() {
           <p className="mt-1 text-sm text-muted-foreground">继续已有的对话，或选一个角色，开始新的故事。</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" disabled={loading || !!loadError} onClick={enterTavern}><MessageCircle className="mr-2 h-4 w-4" />进入酒馆</Button>
           <Button variant="outline" onClick={openModels}><Settings2 className="mr-2 h-4 w-4" />模型设置</Button>
           <Button onClick={newChat}><Plus className="mr-2 h-4 w-4" />新建聊天</Button>
         </div>

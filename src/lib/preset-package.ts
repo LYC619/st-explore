@@ -9,6 +9,8 @@ import { safeName } from './vault/naming';
 import { joinPath } from './vault/fs';
 import { savePackBytes } from './reading-pack/save';
 import { stableJson } from './roleplay/fingerprint';
+import { saveTextFile } from './roleplay/export-package-file';
+import { presetName } from './preset-presentation';
 
 export const PACKAGE_KIND_LABELS: Record<PresetPackageFile['kind'], string> = {
   regex: '正则', script: '脚本', notes: '说明', other: '其他文件',
@@ -37,13 +39,24 @@ function isRegex(value: unknown): boolean {
   return typeof object.findRegex === 'string' && typeof object.replaceString === 'string';
 }
 
+/** Standalone, community pack and extracted ST extension shapes. */
+export function presetAttachmentRegexEntries(value: unknown): unknown[] | undefined {
+  if (Array.isArray(value)) return value.length && value.every(isRegex) ? value : undefined;
+  if (isRegex(value)) return [value];
+  if (!value || typeof value !== 'object') return;
+  const entry = value as Record<string, unknown>;
+  for (const key of ['scripts', 'regex_scripts', 'extensions']) {
+    const entries = presetAttachmentRegexEntries(entry[key]);
+    if (entries) return entries;
+  }
+}
+
 export function classifyPresetAttachment(name: string, text: string): PresetPackageFile['kind'] {
   if (/\.(md|txt)$/i.test(name)) return 'notes';
   if (/\.(js|mjs)$/i.test(name)) return 'script';
   try {
     const value: unknown = JSON.parse(text);
-    const list = Array.isArray(value) ? value : value && typeof value === 'object' && 'scripts' in value ? value.scripts : null;
-    if (isRegex(value) || (Array.isArray(list) && list.length > 0 && list.every(isRegex))) return 'regex';
+    if (presetAttachmentRegexEntries(value)) return 'regex';
     if (inspectPresetScripts(value).length > 0) return 'script';
   } catch { /* Unknown or broken JSON is preserved as an attachment, not executed. */ }
   return 'other';
@@ -99,7 +112,7 @@ export async function readPresetPackage(files: File[]): Promise<PresetPackagePre
 export function buildImportedPreset(candidate: PresetImportCandidate, catalog: PresetCatalog, files: PresetPackageFile[]): PresetItem {
   const now = Date.now();
   return {
-    id: `preset_${candidate.key}`, title: candidate.name.trim() || '未命名预设',
+    id: `preset_${candidate.key}`, title: catalog.name?.trim() || candidate.name.trim() || '未命名预设',
     preset: structuredClone(candidate.preset), createdAt: now, updatedAt: now, autoSaved: false,
     catalog: normalizePresetCatalog({ ...catalog, updatedAt: now,
       releaseNotes: catalog.releaseNotes || files.filter(file => file.kind === 'notes').map(file => `【${file.name}】\n${file.text}`).join('\n\n') }),
@@ -117,10 +130,10 @@ export function buildPresetExportFiles(item: PresetItem): Record<string, string>
   const raw = JSON.parse(exportPreset(item.preset));
   delete raw.__ste;
   const files: Record<string, string> = Object.create(null);
-  files[`${safeName(item.title)}.json`] = JSON.stringify(raw, null, 2);
+  files[`${safeName(presetName(item))}.json`] = JSON.stringify(raw, null, 2);
   const c = item.catalog ?? {};
   files['STE-取用说明.txt'] = [
-    `预设：${item.title}`, `作者：${c.author || '未填写'}`, `系列：${c.series || '未填写'}`, `版本：${c.version || '未填写'}`,
+    `预设：${presetName(item)}`, `作者：${c.author || '未填写'}`, `系列：${c.series || '未填写'}`, `版本：${c.version || '未填写'}`,
     `变体：${c.variant || '未填写'}`, `适配模型（手动标记／作者声明）：${c.models?.join('、') || '未标记'}`,
     `来源：${c.sourceUrl || '未填写'}`, '',
     '根目录 JSON：在 SillyTavern 的聊天补全预设中导入。',
@@ -140,12 +153,28 @@ export function buildPresetExportFiles(item: PresetItem): Record<string, string>
   return files;
 }
 
-export async function exportPresetPackage(id: string, mode: 'folder' | 'zip'): Promise<string | null> {
+/** Locate the managed original. Never create an export copy just to open its folder. */
+export async function openPresetLocation(id: string): Promise<void> {
+  const epoch = getVaultEpoch(), vault = getActiveVault();
+  if (!vault?.fs.openPath) throw new Error('打开所在文件夹需要桌面文件库；浏览器中请使用导出预设');
+  const path = await vault.pathOf('presets', id);
+  if (!path) throw new Error('预设文件已不存在，请刷新列表');
+  if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新操作');
+  await vault.fs.openPath(path, true);
+}
+
+export async function exportPresetPackage(id: string, mode: 'folder' | 'zip' | 'json'): Promise<string | null> {
   const epoch = getVaultEpoch(), vault = getActiveVault();
   const item = await getCurrentRepo<PresetItem>('presets').get(id);
   if (!item) throw new Error('预设不存在，请刷新列表');
   const assertCurrent = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新操作'); };
   assertCurrent();
+  if (mode === 'json') {
+    const raw = JSON.parse(exportPreset(item.preset));
+    delete raw.__ste;
+    const result = await saveTextFile({ fileName: `${safeName(presetName(item))}.json`, text: JSON.stringify(raw, null, 2), label: '预设', extension: 'json' });
+    return result === 'cancelled' ? null : '预设 JSON 已导出';
+  }
   const files = buildPresetExportFiles(item);
   const c = item.catalog ?? {};
   const group = [safeName(c.author || '未分类作者'), safeName(c.series || item.title), safeName([c.version || '未标版本', c.variant].filter(Boolean).join(' · '))].join('/');
@@ -191,6 +220,6 @@ export async function exportPresetPackage(id: string, mode: 'folder' | 'zip'): P
   const archive = Object.fromEntries(Object.entries(files).map(([path, text]) => [`${group}/${path}`, strToU8(text)]));
   const bytes = zipSync(archive);
   assertCurrent();
-  const outcome = await savePackBytes(bytes, `${safeName(item.title)}-取用包.zip`, { label: '预设取用包', extension: 'zip' });
+  const outcome = await savePackBytes(bytes, `${safeName(presetName(item))}-取用包.zip`, { label: '预设取用包', extension: 'zip' });
   return outcome === 'cancelled' ? null : '预设取用包已导出';
 }

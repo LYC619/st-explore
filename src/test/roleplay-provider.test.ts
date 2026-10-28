@@ -30,6 +30,11 @@ beforeAll(async () => {
 afterAll(async () => { server?.closeAllConnections(); await new Promise<void>(resolve => server?.close(() => resolve())); });
 
 describe('shared profile completion transport', () => {
+  it('accepts a legacy empty exclusion object as no exclusions', async () => {
+    await sendCompletion({ apiUrl: url, apiKey: '', model: 'chosen' }, { messages: [], temperature: 0.7, custom_exclude_body: '{}' });
+    expect(received.body.temperature).toBe(0.7);
+    await expect(sendCompletion({ apiUrl: url, apiKey: '', model: 'chosen' }, { messages: [], custom_exclude_body: 'temperature: true' })).rejects.toThrow('字段名列表');
+  });
   it('uses the exact configured endpoint and profile identity while preserving ST messages and sampling', async () => {
     const messages = [{ role: 'system', content: '扮演' }, { role: 'user', content: '开门' }];
     const response = await sendCompletion({ apiUrl: `${url}/custom/completion?version=1`, apiKey: 'fixture-key', model: 'profile-model' }, {

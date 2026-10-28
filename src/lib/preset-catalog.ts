@@ -3,9 +3,10 @@ import type { PresetCatalog, PresetItem, PresetStatus, NormalizedPreset } from '
 import { exportPreset } from './preset-parser';
 import { getPresetPresentation, inferPresetIdentity, type PresetIdentity } from './preset-presentation';
 import { stableJson } from './roleplay/fingerprint';
+import { getPresetTags } from './preset-tag-values';
 
 export const PRESET_STATUS_LABELS: Record<PresetStatus, string> = {
-  unreviewed: '待整理', testing: '待试用', active: '使用中', reserve: '备用', retired: '已停用',
+  unreviewed: '待整理', testing: '待试用', active: '在用', reserve: '备用', retired: '过期',
 };
 export const PRESET_MODELS = ['Claude', 'Gemini', 'DeepSeek', 'GPT'];
 export const PRESET_PURPOSES = ['游玩', '写卡', '总结', '文风'];
@@ -27,6 +28,7 @@ export function normalizePresetCatalog(catalog: PresetCatalog = {}): PresetCatal
   }
   for (const key of ['notes', 'releaseNotes', 'modelNotes'] as const) next[key] = typeof next[key] === 'string' ? next[key] : '';
   next.status = next.status && Object.hasOwn(PRESET_STATUS_LABELS, next.status) ? next.status : 'unreviewed';
+  next.tags = getPresetTags(next);
   next.favorite = next.favorite === true;
   next.modelBasis = next.modelBasis === 'author' ? 'author' : 'manual';
   return next;

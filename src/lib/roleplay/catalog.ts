@@ -9,6 +9,7 @@ import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { normalizeCharacterCard, type STCharacterCard } from '@/lib/png-parser';
 import { decodeLiveChat, encodeLiveChat } from './live-chat';
 import { captureBranchRuntimeParent } from './branch-inheritance';
+import { characterFilterTags } from '@/lib/tag-taxonomy';
 
 export interface ChatLocator {
   storyId: string;
@@ -117,6 +118,12 @@ function withCatalogMetadata(session: ChatSession, locator: ChatLocator, aliases
 
 interface Person {
   id?: string;
+  synthetic?: boolean;
+  name?: string;
+  displayMeta?: ArchiveCharacter['displayMeta'];
+  tags?: string[];
+  type?: ArchiveCharacter['type'];
+  rating?: number;
   avatar: string;
   card: STCharacterCard;
   createdAt: number;
@@ -179,7 +186,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     for (const story of sortStoriesForDisplay(allStories)) {
       const avatar = storyAvatar(story);
       if (!people.has(avatar)) people.set(avatar, {
-        id: story.characterId, avatar, card: { name: story.session.character.name },
+        id: story.characterId, synthetic: true, name: story.title, avatar, card: { name: story.session.character.name },
         createdAt: story.createdAt, updatedAt: story.updatedAt,
       });
       for (const branchId of [null, ...(story.branches ?? []).map(branch => branch.id)]) {
@@ -289,14 +296,17 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     const normalized = normalizeCharacterCard(person.card);
     const original = structuredClone(person.card);
     const data = original.data ?? original;
+    const placeholder = !normalized.name.trim() || /^unused$/i.test(normalized.name.trim());
+    const name = person.synthetic && placeholder ? `未绑定角色 · ${person.name || '聊天'}` : person.displayMeta?.name || normalized.name || person.name || '未命名角色';
+    const tags = person.tags ? [...characterFilterTags({ tags: person.tags, rating: person.rating }), ...(person.type ? [`类型/${person.type}`] : [])] : normalized.tags;
     return {
       ...original,
-      name: normalized.name, description: normalized.description, personality: normalized.personality,
+      name, description: normalized.description, personality: normalized.personality,
       scenario: normalized.scenario, first_mes: normalized.firstMessage, mes_example: normalized.messageExample,
-      creatorcomment: normalized.creatorNotes, tags: normalized.tags,
+      creatorcomment: normalized.creatorNotes, tags,
       avatar: person.avatar, chat: chats[0]?.locator.fileName ?? `${normalized.name} - 新聊天`,
       create_date: person.createdAt, date_last_chat: Math.max(0, ...chats.map(entry => entry.updatedAt)),
-      data: { ...data, name: normalized.name, extensions: data.extensions ?? {} },
+      data: { ...data, name, tags, extensions: data.extensions ?? {} },
     };
   }
 
@@ -304,7 +314,8 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     initial,
     async characters() {
       const state = await snapshot();
-      return [...state.people.values()].map(person => characterDto(person, state.entries.filter(entry => entry.locator.avatar === person.avatar)));
+      return [...state.people.values()].filter(person => !person.synthetic || person.avatar === initial.avatar || !/^\s*(?:unused)?\s*$/i.test(normalizeCharacterCard(person.card).name))
+        .map(person => characterDto(person, state.entries.filter(entry => entry.locator.avatar === person.avatar)));
     },
     async character(avatar) {
       assertCurrent();
@@ -326,7 +337,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
       chats.sort((a, b) => Number(b.locator.key === initialKey) - Number(a.locator.key === initialKey));
       if (character) options.onCharacterRead?.(character);
       const story = currentStories[0];
-      const person = character ? { ...character, avatar } : story ? { avatar, card: { name: story.session.character.name },
+      const person = character ? { ...character, avatar } : story ? { avatar, synthetic: true, name: story.title, card: { name: story.session.character.name },
         createdAt: story.createdAt, updatedAt: story.updatedAt } : undefined;
       return person ? characterDto(person, chats) : undefined;
     },

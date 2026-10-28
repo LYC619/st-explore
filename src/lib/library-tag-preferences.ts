@@ -19,6 +19,8 @@ export interface LibraryTagPreferences {
   categoryOrder: string[];
   order: string[];
   hidden: string[];
+  deleted?: string[];
+  deletedCategories?: string[];
 }
 
 export interface ManagedTagOption extends ParsedTag {
@@ -100,12 +102,14 @@ export function normalizeLibraryTagPreferences(value: unknown): LibraryTagPrefer
     categoryOrder,
     order: uniqueStrings(source.order),
     hidden: uniqueStrings(source.hidden),
+    ...(source.deleted ? { deleted: uniqueStrings(uniqueStrings(source.deleted).map(normalizeRatingTag)) } : {}),
+    ...(source.deletedCategories ? { deletedCategories: uniqueStrings(source.deletedCategories) } : {}),
   };
 }
 
 export function getTagCategories(preferences: LibraryTagPreferences): TagCategory[] {
   const builtins = TAG_CATEGORIES.filter((category) => category !== '未分类');
-  const all = [...builtins, ...preferences.customCategories];
+  const all = [...builtins, ...preferences.customCategories].filter(category => !preferences.deletedCategories?.includes(category));
   const order = new Map(preferences.categoryOrder.map((category, index) => [category, index]));
   return all.sort((a, b) => {
     const ai = order.get(a);
@@ -132,6 +136,7 @@ export function buildManagedTagOptions(
   }
 
   const definitions = new Map<string, { parsed: ParsedTag; builtIn: boolean }>();
+  const knownCategories = [...preferences.customCategories, ...(preferences.deletedCategories ?? [])];
   for (const category of TAG_CATEGORIES) {
     for (const label of BUILTIN_TAGS[category]) {
       const raw = makeTag(category, label);
@@ -141,16 +146,18 @@ export function buildManagedTagOptions(
   for (const storedRaw of preferences.customTags) {
     const raw = normalizeRatingTag(storedRaw);
     if (!raw.startsWith('类型/') && !definitions.has(raw)) {
-      definitions.set(raw, { parsed: parseTag(raw, preferences.customCategories), builtIn: false });
+      definitions.set(raw, { parsed: parseTag(raw, knownCategories), builtIn: false });
     }
   }
   for (const raw of counts.keys()) {
-    if (!definitions.has(raw)) definitions.set(raw, { parsed: parseTag(raw, preferences.customCategories), builtIn: BUILTIN_RAWS.has(raw) });
+    if (!definitions.has(raw)) definitions.set(raw, { parsed: parseTag(raw, knownCategories), builtIn: BUILTIN_RAWS.has(raw) });
   }
 
   const order = new Map(preferences.order.map((raw, index) => [normalizeRatingTag(raw), index]));
   const categoryOrder = new Map(getTagCategories(preferences).map((category, index) => [category, index]));
   return [...definitions.entries()]
+    .filter(([raw, definition]) => !preferences.deleted?.some(tag => normalizeRatingTag(tag) === raw)
+      && !preferences.deletedCategories?.includes(definition.parsed.category))
     .map(([raw, definition]) => ({
       ...definition.parsed,
       raw,
@@ -194,6 +201,12 @@ export function addCustomCategory(
   const normalizedLabel = label.trim();
   if (!normalizedLabel) throw new Error('标签组名称不能为空');
   if (normalizedLabel.includes('/')) throw new Error('标签组名称不能包含“/”');
+  if (preferences.deletedCategories?.includes(normalizedLabel)) return {
+    ...preferences,
+    deletedCategories: preferences.deletedCategories.filter(category => category !== normalizedLabel),
+    customCategories: TAG_CATEGORIES.includes(normalizedLabel as BuiltinTagCategory) || normalizedLabel === '类型'
+      ? preferences.customCategories : uniqueStrings([...preferences.customCategories, normalizedLabel]),
+  };
   if (normalizedLabel === '类型') throw new Error('「类型」是内置分类，请在类型面板维护');
   if (normalizedLabel === '未分类' || (TAG_CATEGORIES as readonly string[]).includes(normalizedLabel)
     || preferences.customCategories.includes(normalizedLabel)) {
@@ -224,28 +237,40 @@ export function addCustomTagDefinition(
   const normalizedLabel = label.trim();
   if (!normalizedLabel) throw new Error('标签名称不能为空');
   if (category !== '未分类' && !TAG_CATEGORIES.includes(category as BuiltinTagCategory)
-    && !preferences.customCategories.includes(category)) {
+    && !preferences.customCategories.includes(category) || preferences.deletedCategories?.includes(category)) {
     throw new Error('标签组不存在');
   }
-  const raw = makeTag(category, normalizedLabel);
-  if (BUILTIN_RAWS.has(raw) || preferences.customTags.includes(raw)) throw new Error('标签已存在');
+  const raw = normalizeRatingTag(makeTag(category, normalizedLabel));
+  const restoring = preferences.deleted?.some(tag => normalizeRatingTag(tag) === raw);
+  if (!restoring && (BUILTIN_RAWS.has(raw) || preferences.customTags.includes(raw))) throw new Error('标签已存在');
   return {
     ...preferences,
-    customTags: [...preferences.customTags, raw],
+    customTags: BUILTIN_RAWS.has(raw) ? preferences.customTags : uniqueStrings([...preferences.customTags, raw]),
     order: preferences.order.includes(raw) ? preferences.order : [...preferences.order, raw],
-    hidden: preferences.hidden.filter((item) => item !== raw),
+    hidden: preferences.hidden.filter((item) => normalizeRatingTag(item) !== raw),
+    ...(preferences.deleted ? { deleted: preferences.deleted.filter(tag => normalizeRatingTag(tag) !== raw) } : {}),
   };
+}
+
+export function removeTagCategory(preferences: LibraryTagPreferences, category: string): LibraryTagPreferences {
+  const belongs = (raw: string) => parseTag(raw, preferences.customCategories).category === category;
+  return { ...preferences, customCategories: preferences.customCategories.filter(value => value !== category),
+    customTags: preferences.customTags.filter(raw => !belongs(raw)), order: preferences.order.filter(raw => !belongs(raw)),
+    hidden: preferences.hidden.filter(raw => !belongs(raw)), categoryOrder: preferences.categoryOrder.filter(value => value !== category),
+    deletedCategories: [...new Set([...(preferences.deletedCategories ?? []), category])] };
 }
 
 export function removeCustomTagDefinition(
   preferences: LibraryTagPreferences,
   raw: string,
 ): LibraryTagPreferences {
+  const normalizedRaw = normalizeRatingTag(raw);
   return {
     ...preferences,
-    customTags: preferences.customTags.filter((item) => item !== raw),
-    order: preferences.order.filter((item) => item !== raw),
-    hidden: preferences.hidden.filter((item) => item !== raw),
+    customTags: preferences.customTags.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
+    order: preferences.order.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
+    hidden: preferences.hidden.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
+    deleted: uniqueStrings([...(preferences.deleted ?? []).map(normalizeRatingTag), normalizedRaw]),
   };
 }
 

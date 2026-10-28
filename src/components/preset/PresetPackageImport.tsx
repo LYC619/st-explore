@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
-import type { PresetCatalog, PresetItem } from '@/types/preset';
+import type { PresetCatalog } from '@/types/preset';
 import { buildImportedPreset, PACKAGE_KIND_LABELS, readPresetPackage, type PresetPackagePreview } from '@/lib/preset-package';
 import { getVaultEpoch } from '@/lib/vault/active';
-import { getCurrentRepo } from '@/lib/repo';
+import { saveImportedPreset } from '@/lib/preset-db';
+import { getPresetTags } from '@/lib/preset-tag-values';
+import { stableJson } from '@/lib/roleplay/fingerprint';
 import { inspectPresetScripts } from '@/lib/preset-catalog';
 import { inferPresetIdentity } from '@/lib/preset-presentation';
 import { Download, FileText, Check } from 'lucide-react';
@@ -24,6 +26,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
 }) {
   const epoch = useRef(getVaultEpoch()).current;
   const [catalog, setCatalog] = useState<PresetCatalog>({ ...seed, name: '', version: '', variant: '', releaseNotes: '', status: 'unreviewed', favorite: false, notes: '', originId: undefined, publishedAt: '', updatedAt: undefined });
+  const initialTags = useRef(getPresetTags(catalog).sort()).current;
   const [preview, setPreview] = useState<PresetPackagePreview | null>(null);
   const [rows, setRows] = useState<Record<string, Row>>({});
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -61,7 +64,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
   const save = async () => {
     if (!preview) return;
     setBusy(true); setError('');
-    const target = getCurrentRepo<PresetItem>('presets');
+    const tagsExplicit = stableJson(getPresetTags(catalog).sort()) !== stableJson(initialTags);
     let failed = false;
     for (const candidate of preview.presets) {
       const row = rows[candidate.key];
@@ -73,7 +76,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
           models: row.modelsTouched ? row.models : touchedFields.current.has('models') ? catalog.models : row.models.length ? row.models : catalog.models,
           modelsConfirmed: row.modelsTouched || catalog.modelsConfirmed,
         }, preview.files.filter(file => row.files.includes(file.id)));
-        await target.put(item);
+        await saveImportedPreset(item, { tagsExplicit, epoch });
         pendingIds.current.push(item.id);
         changeRow(candidate.key, { savedId: item.id, error: undefined });
       } catch (e) { failed = true; changeRow(candidate.key, { error: e instanceof Error ? e.message : String(e) }); }
@@ -115,7 +118,7 @@ export function PresetPackageImport({ seed, onClose, onImported }: {
                 })}
                 {preview.files.length > 0 && <p className="text-xs text-muted-foreground leading-relaxed">所选说明原文随附件保留，脚本只归档。单份预设已自动选中全部附件。</p>}
               </div>
-              {!!preview.presets.length && <div className="space-y-3"><h3 className="text-sm font-medium">{preview.presets.length > 1 ? '共同资料（选填）' : '确认资料'}</h3><p className="text-xs text-muted-foreground leading-relaxed">模型与版本来自名称或当前配置，先帮你填好；无需填完所有项也能导入。</p><PresetCatalogFields compact multiple={preview.presets.length > 1} value={catalog} onChange={value => { for (const key of Object.keys(value) as (keyof PresetCatalog)[]) if (JSON.stringify(value[key]) !== JSON.stringify(catalog[key])) touchedFields.current.add(key); setCatalog(value); }} /></div>}
+              {!!preview.presets.length && <div className="space-y-3"><h3 className="text-sm font-medium">{preview.presets.length > 1 ? '共同资料（选填）' : '确认资料'}</h3><p className="text-xs text-muted-foreground leading-relaxed">模型与版本来自名称或当前配置，先帮你填好；无需填完所有项也能导入。已有系列默认沿用系列标签，在这里修改标签会同步到该系列全部版本。</p><PresetCatalogFields compact multiple={preview.presets.length > 1} value={catalog} onChange={value => { for (const key of Object.keys(value) as (keyof PresetCatalog)[]) if (JSON.stringify(value[key]) !== JSON.stringify(catalog[key])) touchedFields.current.add(key); setCatalog(value); }} /></div>}
             </div>
           </fieldset>}
           {error && <p role="alert" className="text-sm text-destructive mt-3">{error}</p>}

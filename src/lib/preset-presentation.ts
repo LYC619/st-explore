@@ -31,6 +31,12 @@ const modelWords = /\b(?:claude|gemini|deepseek|(?:chat)?gpt|qwen|llama)\b|哈�
 const modelsIn = (text: string) => modelMatchers.filter(([, pattern]) => pattern.test(text)).map(([model]) => model);
 const nonempty = (value?: string) => typeof value === 'string' ? value.trim() || undefined : undefined;
 const labels = (values?: string[]) => [...new Set((values ?? []).map(value => value.trim()).filter(Boolean))];
+
+/** The explicitly configured name is shared by file exports and the built-in ST. */
+export function presetName(item: { title: string; catalog?: Partial<PresetCatalog> }): string {
+  return nonempty(item.catalog?.name) ?? nonempty(item.title) ?? '未命名预设';
+}
+
 const tidy = (text: string) => text.replace(/[_]+/g, ' ').replace(/[【】[\]]/g, ' ')
   .replace(/\s+/g, ' ').replace(/^[\s.·,，:：/-]+|[\s.·,，:：/-]+$/g, '').trim();
 
@@ -58,6 +64,11 @@ function configuredModel(raw?: Record<string, unknown>): string {
 }
 
 function releaseToken(text: string): { value: string; index: number; length: number } | undefined {
+  // An edition named after a model belongs to the release only after an explicit preset name.
+  const edition = /(?:Gemini|Claude|DeepSeek|GPT|Qwen|Llama)\s+\d+(?:\.\d+)*(?:\s+[A-Z](?![a-z]))?\s*$/i.exec(text);
+  if (edition && /预设\s*[-_·]?\s*$/.test(text.slice(0, edition.index))) {
+    return { value: edition[0].trim(), index: edition.index, length: edition[0].length };
+  }
   const candidates: RegExp[] = [
     /(?:19|20)\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01])(?=$|[^\d])/g,
     /(?:0?[1-9]|1[0-2])月(?:0?[1-9]|[12]\d|3[01])日/g,
@@ -91,7 +102,7 @@ export function inferPresetIdentity(title: string, originalData?: Record<string,
   if (purposes.length) evidence.push({ field: 'purposes', source: 'filename', text: filename });
   const token = releaseToken(name);
   const version = token?.value;
-  const prefix = token ? tidy(name.slice(0, token.index).replace(modelWords, '')).replace(/预设\s*$/, '').trim() : '';
+  const prefix = token ? tidy(name.slice(0, token.index).replace(modelWords, '')) : '';
   const series = prefix.length >= 2 && /[a-z\u3400-\u9fff]/i.test(prefix) && !/^(?:preset|default|预设|配置|通用)$/i.test(prefix) ? prefix : undefined;
   if (version) evidence.push({ field: 'version', source: 'filename', text: filename });
   if (series) evidence.push({ field: 'series', source: 'filename', text: filename });

@@ -7,9 +7,10 @@ import PresetDetail from '@/pages/PresetDetail';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
-import { setActiveVault } from '@/lib/vault/active';
+import { getActiveVault, setActiveVault } from '@/lib/vault/active';
 import { getCurrentRepo } from '@/lib/repo';
 import { createPresetDiy, getPreset } from '@/lib/preset-db';
+import { scanVaultFiles } from '@/lib/vault/file-maintenance';
 import { parsePreset } from '@/lib/preset-parser';
 import type { PresetItem } from '@/types/preset';
 
@@ -50,6 +51,13 @@ async function input(node: HTMLInputElement | HTMLTextAreaElement, text: string)
   await act(async () => {
     Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(node, text);
     node.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+async function select(name: string, value: string) {
+  await act(async () => {
+    const node = document.querySelector<HTMLSelectElement>(`select[aria-label="${name}"]`)!;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(node, value);
+    node.dispatchEvent(new Event('change', { bubbles: true }));
   });
 }
 function preset(id: string, version: string, series = '星海叙事'): PresetItem {
@@ -94,7 +102,7 @@ it('opens the series page in normal mode, protects version changes, saves its in
   expect(button('预览')).toHaveAttribute('aria-pressed', 'false');
 });
 
-it('selects the entire series by clicking the card and changes only the four supported bulk fields', async () => {
+it('selects the entire series by clicking the card and preserves untouched per-version fields', async () => {
   await mount([preset('v1', 'v1'), preset('v2', 'v2')], false);
   await click(button('批量管理'));
   await click(namedButton('选择 星海叙事'));
@@ -120,7 +128,7 @@ it('manages independent preset tags through the dialog and persists them when re
   await click(namedButton('管理预设标签'));
   const row = [...document.querySelectorAll('[role="dialog"] div')].find(el => el.className.includes('rounded-lg border') && el.textContent?.startsWith('常用'))!;
   await click(button('改名', row));
-  await input(document.querySelector<HTMLInputElement>('[aria-label="重命名 类型/常用"]')!, '常用新版');
+  await input(document.querySelector<HTMLInputElement>('[aria-label="重命名 状态/常用"]')!, '常用新版');
   await click(button('保存名称'));
   await settle(() => expect(document.querySelector('[role="dialog"]')?.textContent).toContain('常用新版'));
   const updated = [...document.querySelectorAll('[role="dialog"] div')].find(el => el.className.includes('rounded-lg border') && el.textContent?.startsWith('常用新版'))!;
@@ -137,7 +145,7 @@ it('groups versions into one readable card, keeps a singleton title once, and op
   const single = cards.find(card => card.querySelector('h2')?.textContent === longTitle)!;
   expect(single.querySelectorAll('h2')).toHaveLength(1);
   expect(single.querySelector('h2')?.textContent).toBe(longTitle);
-  expect(single.querySelector(`[aria-label="${longTitle}的版本"]`)).toBeNull();
+  expect(button('v3', single)).toBeEnabled();
   const series = cards.find(card => card.querySelector('h2')?.textContent === '星海叙事')!;
   expect(series.textContent).toContain('2 个版本');
 
@@ -146,11 +154,10 @@ it('groups versions into one readable card, keeps a singleton title once, and op
     await settle(() => expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', version));
     const details = document.querySelector('[data-preset-details]')!;
     expect(details.querySelector('input,textarea,select')).toBeNull();
-    expect(details.textContent).toContain(`${version} 说明`);
+    await settle(() => expect(details.textContent).toContain('v2 说明'));
     await click(button('内容', details));
     await click(button('+开场', details));
     expect(details.textContent).toContain(`${version} 的完整正文`);
-    await click(button('附件 · 1', details));
     await click(button('+说明 · README.md', details));
     expect(details.textContent).toContain(`${version} 的附件原文`);
     expect(details.querySelector('input,textarea,select')).toBeNull();
@@ -192,7 +199,7 @@ it('keeps an uncatalogued legacy preset and its DIY copy in one series with a si
   expect(await getPreset(original.id)).toEqual(original);
 });
 
-it('applies batch changes only to checked versions and clears selection when leaving batch management', async () => {
+it('shares status tags across the series and clears selection when leaving batch management', async () => {
   const first = preset('v1', 'v1'), second = preset('v2', 'v2');
   await mount([first, second]);
   expect(document.querySelector('[role="checkbox"]')).toBeNull();
@@ -202,12 +209,13 @@ it('applies batch changes only to checked versions and clears selection when lea
   expect(button('整理所选')).toBeEnabled();
   expect(document.body.textContent).toContain('已选 1 份');
   await click(button('整理所选'));
-  const tag = [...document.querySelectorAll('label')].find(label => label.textContent === '类型/通用')!;
+  const tag = [...document.querySelectorAll('label')].find(label => label.textContent === '状态/在用')!;
   await click(tag.querySelector('button')!);
   await click(button('保存到所选预设'));
   await settle(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
-  expect((await getPreset(first.id))?.catalog?.tags).toEqual(['类型/通用']);
-  expect(await getPreset(second.id)).toEqual(second);
+  expect((await getPreset(first.id))?.catalog?.tags).toEqual(['状态/在用']);
+  expect((await getPreset(second.id))?.catalog?.tags).toEqual(['状态/在用']);
+  expect((await getPreset(second.id))?.preset).toEqual(second.preset);
   expect((await getPreset(first.id))?.preset).toEqual(first.preset);
   expect((await getPreset(first.id))?.packageFiles).toEqual(first.packageFiles);
 
@@ -280,4 +288,140 @@ it('follows presetId links within the library and protects an unsaved draft with
   expect(document.querySelector('[role="alertdialog"]')).toBeNull();
   expect(document.querySelector('[data-preset-details] input,[data-preset-details] textarea')).toBeNull();
   expect(await getPreset(first.id)).toEqual(first);
+});
+
+it('keeps the series title and the matching version visible after filtering, and toggles the preview off on a second click', async () => {
+  const first = preset('v1', 'v1'), second = preset('v2', 'v2');
+  second.catalog!.models = ['Gemini'];
+  await mount([first, second]);
+  await select('筛选模型', 'Claude');
+  const card = document.querySelector('[data-preset-series]')!;
+  expect(card.querySelector('h2')?.textContent).toBe('星海叙事');
+  expect(card.textContent!.match(/星海叙事/g)).toHaveLength(1);
+  expect(button('v1', card)).toBeEnabled();
+  expect([...card.querySelectorAll('button')].some(node => node.textContent === 'v2')).toBe(false);
+  await click(button('v1', card));
+  await settle(() => expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', 'v1'));
+  await settle(() => expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v2 说明'));
+  await click(button('v1', card));
+  await settle(() => expect(document.querySelector('[data-preset-details]')).toBeNull());
+  expect(new URLSearchParams(router!.state.location.search).has('presetId')).toBe(false);
+});
+
+it.each(['隐藏', '删除'])('clears a tag filter after the selected label is removed from the sidebar by %s', async action => {
+  const first = preset('v1', 'v1'), second = preset('other', 'v1', '其他系列');
+  first.catalog!.tags = ['状态/在用'];
+  await mount([first, second]); await select('筛选标签', '状态/在用');
+  expect(document.querySelectorAll('[data-preset-series]')).toHaveLength(1);
+  await click(namedButton('管理预设标签'));
+  const row = document.querySelector('[aria-label="删除预设标签 状态/在用"]')!.parentElement!;
+  await click(button(action, row));
+  if (action === '删除') await click(button('确认删除标签'));
+  await settle(() => expect(document.querySelector<HTMLSelectElement>('[aria-label="筛选标签"]')?.value).toBe(''));
+  await click(button('完成', document.querySelector('[role="dialog"]')!));
+  expect(document.querySelector('[aria-label="预设筛选"] button[title="状态/在用"]')).toBeNull();
+  expect(document.querySelector('[aria-label="筛选标签"] option[value="状态/在用"]')).toBeNull();
+  expect(document.querySelectorAll('[data-preset-series]')).toHaveLength(2);
+  if (action === '隐藏') expect((await getPreset(first.id))?.catalog?.tags).toEqual(['状态/在用']);
+  else expect((await getPreset(first.id))?.catalog?.tags).toEqual([]);
+});
+
+it('groups by series with each matching version separately and restores the grouping after returning from details', async () => {
+  await mount([preset('v1', 'v1'), preset('v2', 'v2')]);
+  await select('预设分组', 'series');
+  const group = document.querySelector('section[aria-label="星海叙事"]')!;
+  expect(group.querySelectorAll('[data-preset-series]')).toHaveLength(2);
+  expect(button('v1', group)).toBeEnabled(); expect(button('v2', group)).toBeEnabled();
+  await click(button('v2', group));
+  await settle(() => expect(button('查看详情')).toBeEnabled());
+  await click(button('查看详情'));
+  await settle(() => expect(router!.state.location.pathname).toBe('/presets/v2'));
+  await click(button('返回预设库'));
+  await settle(() => expect(document.querySelector<HTMLSelectElement>('[aria-label="预设分组"]')?.value).toBe('series'));
+});
+
+it('preprocesses the series name and individual version values without changing preset bodies', async () => {
+  const first = preset('v1', 'v1'), second = preset('v2', 'v2');
+  await mount([first, second]);
+  await click(button('批量管理')); await click(namedButton('选择 星海叙事')); await click(button('整理所选'));
+  const label = [...document.querySelectorAll('[role="dialog"] label')].find(node => node.textContent === '统一系列')!;
+  await click(label.querySelector('button')!);
+  await input(document.querySelector<HTMLInputElement>('[aria-label="批量系列"]')!, '重新整理系列');
+  await input(document.querySelector<HTMLInputElement>(`[aria-label="版本号 ${first.title}"]`)!, '1.0');
+  await input(document.querySelector<HTMLInputElement>(`[aria-label="版本号 ${second.title}"]`)!, '2.1');
+  await click(button('保存到所选预设'));
+  await settle(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+  expect((await getPreset(first.id))?.catalog).toMatchObject({ series: '重新整理系列', version: '1.0' });
+  expect((await getPreset(second.id))?.catalog).toMatchObject({ series: '重新整理系列', version: '2.1' });
+  expect((await getPreset(first.id))?.preset).toEqual(first.preset); expect((await getPreset(second.id))?.preset).toEqual(second.preset);
+  expect(document.querySelector('[data-preset-series] h2')?.textContent).toBe('重新整理系列');
+});
+
+it('edits and previews Markdown notes, preserves the draft when organizing, and persists it when reopening', async () => {
+  await mount([preset('v1', 'v1')]); await click(button('v1'));
+  await settle(() => expect(button('笔记')).toBeEnabled());
+  expect([...document.querySelectorAll('[data-preset-details] [role="tab"]')].map(node => node.textContent)).toEqual(['作者说明', '笔记', '内容']);
+  await click(button('笔记')); await click(button('编辑笔记'));
+  await input(document.querySelector<HTMLTextAreaElement>('[aria-label="预设笔记正文"]')!, '# 用法\n\n先挂载角色。\n\n## 感受\n\n记录测试结果。');
+  expect(namedButton('收藏预设')).toBeDisabled();
+  await click(button('预览笔记'));
+  const heading = document.querySelector<HTMLElement>('[aria-label="预设笔记"] h2')!;
+  const scroll = vi.fn(); heading.scrollIntoView = scroll;
+  await click(button('感受', document.querySelector('nav[aria-label="笔记目录"]')!));
+  expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' });
+  await click(button('整理资料'));
+  expect(document.querySelector<HTMLTextAreaElement>('[aria-label="我的使用笔记"]')?.value).toContain('记录测试结果');
+  await click(button('保存资料'));
+  await settle(() => expect(button('整理资料')).toBeEnabled());
+  expect((await getPreset('v1'))?.catalog?.notes).toContain('先挂载角色');
+  await click(namedButton('关闭预设资料')); await click(button('v1'));
+  await settle(() => expect(button('笔记')).toBeEnabled()); await click(button('笔记'));
+  expect(document.querySelector('[aria-label="预设笔记"]')?.textContent).toContain('记录测试结果');
+});
+
+it('protects unsaved full-page notes before importing and uses one final deletion confirmation', async () => {
+  await mount([preset('v1', 'v1')], false); await click(button('v1'));
+  await settle(() => expect(router!.state.location.pathname).toBe('/presets/v1'));
+  await click(button('笔记')); await click(button('编辑笔记'));
+  await input(document.querySelector<HTMLTextAreaElement>('[aria-label="预设笔记正文"]')!, '保留当前草稿');
+  await click(button('导入同系列'));
+  expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+  await click(button('返回继续整理'));
+  expect(document.querySelector<HTMLTextAreaElement>('[aria-label="预设笔记正文"]')?.value).toBe('保留当前草稿');
+  await click(namedButton('删除预设'));
+  expect(document.querySelectorAll('[role="alertdialog"]')).toHaveLength(1);
+  expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('尚未保存的笔记');
+  await settle(() => expect(button('确认删除')).toBeEnabled()); await click(button('确认删除'));
+  await settle(() => expect(router!.state.location.pathname).toBe('/presets'));
+  expect(await getPreset('v1')).toBeUndefined();
+});
+
+it('opens temporary trial from a separate action and keeps its draft while returning to the three detail tabs', async () => {
+  await mount([preset('v1', 'v1')], false); await click(button('v1'));
+  await settle(() => expect(button('临时试用')).toBeEnabled());
+  expect([...document.querySelectorAll('[data-preset-details] [role="tab"]')].map(node => node.textContent)).toEqual(['作者说明', '笔记', '内容']);
+  await click(button('临时试用'));
+  await settle(() => expect(document.querySelector<HTMLTextAreaElement>('[aria-label="试用消息"]')).not.toBeNull());
+  await input(document.querySelector<HTMLTextAreaElement>('[aria-label="试用消息"]')!, '保留试用草稿');
+  await click(button('返回预设资料')); await click(button('临时试用'));
+  expect(document.querySelector<HTMLTextAreaElement>('[aria-label="试用消息"]')?.value).toBe('保留试用草稿');
+  await click(button('返回预设资料'));
+  expect(document.querySelector('[role="tablist"]')?.closest('.hidden')).toBeNull();
+});
+
+it.each([{ bulk: false, deleteFiles: false }, { bulk: false, deleteFiles: true }, { bulk: true, deleteFiles: false }, { bulk: true, deleteFiles: true }])('deletes versions through retention (batch: $bulk, recycle after 30 days: $deleteFiles)', async ({ bulk, deleteFiles }) => {
+  await mount([preset('v1', 'v1'), preset('v2', 'v2')]);
+  if (bulk) { await click(button('批量管理')); await click(namedButton('选择 星海叙事')); await click(button('删除所选')); }
+  else { await click(button('v1')); await settle(() => expect(namedButton('删除预设')).toBeEnabled()); await click(namedButton('删除预设')); }
+  await settle(() => expect(button('确认删除')).toBeEnabled());
+  const dialog = document.querySelector('[role="alertdialog"]')!;
+  expect(dialog.textContent).toContain('同时删除 STE 库内文件');
+  if (deleteFiles) await click(dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!);
+  await click(button('确认删除'));
+  await settle(() => expect(document.querySelector('[role="alertdialog"]')).toBeNull());
+  expect(await getPreset('v1')).toBeUndefined();
+  if (bulk) expect(await getPreset('v2')).toBeUndefined(); else expect(await getPreset('v2')).toBeDefined();
+  const retained = (await scanVaultFiles(getActiveVault()!)).entries.filter(entry => entry.category === 'retained');
+  expect(retained.length).toBeGreaterThan(0);
+  expect(retained.every(entry => deleteFiles ? typeof entry.recycleAfter === 'number' : entry.recycleAfter === undefined)).toBe(true);
 });

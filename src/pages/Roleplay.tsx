@@ -79,13 +79,26 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   }, [navigate, saveBeforeExit]);
 
   const wasActive = useRef(active);
+  const libraryRefreshPending = useRef(false);
   useEffect(() => {
     const parked = wasActive.current && !active;
     wasActive.current = active;
+    if (parked) libraryRefreshPending.current = true;
     // Browser Back can park the page without using our toolbar. Commit idle edits
     // while retaining the document; an in-progress generation must keep running.
     if (parked && !generating.current) void saveBeforeExit().catch(() => {});
   }, [active, saveBeforeExit]);
+
+  useEffect(() => {
+    if (!active || !ready || generating.current || !libraryRefreshPending.current) return;
+    const child = frame.current?.contentWindow as TavernFrameWindow | null;
+    if (!child?.__STE_TAVERN_REFRESH_LIBRARY__) return;
+    libraryRefreshPending.current = false;
+    void child.__STE_TAVERN_REFRESH_LIBRARY__().catch(reason => {
+      libraryRefreshPending.current = true;
+      setError('资料库列表刷新未完成：' + errorMessage(reason));
+    });
+  }, [active, ready, status]);
 
   useEffect(() => {
     // A list entry omits branch to resume the already selected line. Guard the actual

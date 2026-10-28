@@ -70,6 +70,7 @@ export function ManagedTagRow({
       />
       <button
         type="button"
+        disabled={busy}
         aria-label={`选择标签 ${option.raw}`}
         aria-pressed={selected}
         onClick={() => onSelect(option.raw)}
@@ -107,8 +108,7 @@ export function ManagedTagRow({
         >
           <ArrowDown className="h-3.5 w-3.5" />
         </button>
-        {!option.builtIn && (
-          <button
+        <button
             type="button"
             disabled={busy}
             onClick={() => onDelete(option)}
@@ -116,8 +116,7 @@ export function ManagedTagRow({
             className="flex h-8 w-8 items-center justify-center rounded-md text-[color:var(--text-faint)] hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40"
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        )}
+        </button>
       </div>
     </div>
   );

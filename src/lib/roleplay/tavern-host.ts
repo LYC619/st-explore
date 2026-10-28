@@ -36,6 +36,8 @@ import { ensureBranchRuntime } from './branch-inheritance';
 import { readUserAvatar, userAvatarName } from './user-avatars';
 import { HELPER_PIN, readTavernHelperZip, validateTavernHelper } from './tavern-helper-package';
 import { openExternalUrl } from './external-url';
+import { getLibraryTagPreferences } from '@/lib/archive-db';
+import { roleplayLibraryTags } from './library-tags';
 
 export interface TavernDefaults {
   settings: Record<string, unknown>;
@@ -90,11 +92,12 @@ export async function createTavernHost(options: TavernHostOptions) {
     })(), createRoleplayAssets({ ...repos, isCurrent }), getRoleplayPreferences(repos.meta),
   ]);
   let preferences = initialPreferences;
-  const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64'> & { cardRevision: string }>();
+  let libraryTags = await getLibraryTagPreferences();
+  const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64' | 'tags' | 'type' | 'rating'> & { cardRevision: string }>();
   const cardEditorVersions = new Map<string, string>();
   function rememberCharacter(character: ArchiveCharacter) {
     const cardRevision = digest(stableJson(character.card));
-    characters.set(avatarKey(character.id), { id: character.id, assets: character.assets, pngBase64: character.pngBase64, cardRevision });
+    characters.set(avatarKey(character.id), { id: character.id, assets: character.assets, pngBase64: character.pngBase64, tags: character.tags, type: character.type, rating: character.rating, cardRevision });
     if (!cardEditorVersions.has(character.id)) cardEditorVersions.set(character.id, cardRevision);
   }
   let settingsWrite = Promise.resolve();
@@ -311,6 +314,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     const presetSettings = presetName ? assets.presetData().get(presetName) : undefined;
     const settings = {
       ...base, firstRun: false, username: typeof preferences.tavern?.username === 'string' && preferences.tavern.username.trim() ? preferences.tavern.username : startup.userName,
+      ...roleplayLibraryTags([...characters.values()], libraryTags, base),
       main_api: 'openai', active_character: selected.avatar, active_group: null,
       amount_gen: base.amount_gen ?? 600, max_context: base.max_context ?? 32768,
       power_user: { ...object(defaults.settings.power_user), ...object(base.power_user), auto_load_chat: true, auto_connect: true },
@@ -342,6 +346,8 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
 
   return {
+    presetRevisions: () => assets.presetRevisions(),
+    selectPreset: (name: string, revision: string) => assets.selectPreset(name, revision),
     ready() {
       if (isCurrent()) {
         options.onReady?.();
@@ -629,10 +635,22 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/api/extensions/discover') return json([{ name: 'regex', type: 'system' },
           ...(preferences.installedTavernHelper ? [{ name: 'third-party/JS-Slash-Runner', type: 'local' }] : []),
           ...(preferences.installedBaiBai ? [{ name: 'third-party/ST-BaiBai-Book', type: 'local' }] : [])]);
-        if (pathname === '/api/bootstrap') return json({
-          settings: settingsSnapshot(), characters: await characterDtos(), groups: [], avatars: avatarNames(),
-          secret_state: {}, ios_policy: null,
-        });
+        if (pathname === '/api/bootstrap') {
+          const cards = await characterDtos();
+          return json({ settings: settingsSnapshot(), characters: cards, groups: [], avatars: avatarNames(), secret_state: {}, ios_policy: null });
+        }
+        if (pathname === '/ste/library/refresh') {
+          const presetRenames = await assets.refreshPresets();
+          libraryTags = await getLibraryTagPreferences();
+          const cards = await characterDtos();
+          const avatars = new Set(cards.map(card => card.avatar));
+          for (const avatar of characters.keys()) if (!avatars.has(avatar)) characters.delete(avatar);
+          if (!isCurrent()) throw new Error('文件库已切换');
+          const snapshot = settingsSnapshot();
+          const settings = JSON.parse(snapshot.settings);
+          return json({ tags: settings.tags, tag_map: settings.tag_map, openai_settings: snapshot.openai_settings,
+            openai_setting_names: snapshot.openai_setting_names, presetRenames, presetRevisions: assets.presetRevisions() });
+        }
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
         if (pathname === '/api/settings/save') {
           const tavern = structuredClone(body);

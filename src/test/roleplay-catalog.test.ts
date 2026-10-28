@@ -7,6 +7,20 @@ import { avatarKey, chatKey, createRoleplayCatalog } from '@/lib/roleplay/catalo
 import { encodeLiveChat } from '@/lib/roleplay/live-chat';
 import { sourceRefs } from '@/lib/roleplay/fingerprint';
 
+it('hides unbound unused placeholders while preserving their stories and direct chat entry', async () => {
+  const source = (id: string, name: string) => ({ ...buildStoryFromSession({ ...session(id), character: { name } }), id });
+  const records = [source('active', 'unused'), source('other', 'unused'), source('named', '真实角色')];
+  const stories = memoryRepo(records), characters = memoryRepo<ArchiveCharacter>([]);
+  const catalog = await createRoleplayCatalog({ stories: stories.repo, characters: characters.repo, storyId: 'active' });
+  const list = await catalog.characters();
+  expect(list.map(item => item.name)).toEqual(expect.arrayContaining(['未绑定角色 · 雨夜', '真实角色']));
+  expect(list).toHaveLength(2);
+  const other = await createRoleplayCatalog({ stories: stories.repo, characters: characters.repo, storyId: 'other' });
+  expect((await other.characters()).find(item => item.avatar === other.initial.avatar)?.name).toBe('未绑定角色 · 雨夜');
+  expect(stories.items.size).toBe(3);
+  expect(stories.writes()).toBe(0);
+});
+
 function memoryRepo<T extends { id: string; updatedAt: number }>(initial: T[]) {
   const items = new Map(initial.map(item => [item.id, structuredClone(item)]));
   let writes = 0;

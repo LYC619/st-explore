@@ -55,7 +55,9 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
     }
   }
   const exclude = yaml(request.custom_exclude_body);
-  if (exclude != null) {
+  // Some older preset exports use {} for an empty list. Nonempty maps are still invalid.
+  const emptyExclusion = exclude && typeof exclude === 'object' && !Array.isArray(exclude) && !Object.keys(exclude).length;
+  if (exclude != null && !emptyExclusion) {
     if (!Array.isArray(exclude) || exclude.some(key => typeof key !== 'string')) throw new Error('排除字段 YAML 必须是字段名列表');
     for (const key of exclude) delete body[key];
   }

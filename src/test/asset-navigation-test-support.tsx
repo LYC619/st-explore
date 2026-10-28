@@ -171,7 +171,7 @@ export async function dirty(kind: EditorKind) {
   expect(input.value).toBe('unsaved A');
   return input;
 }
-export async function save(kind: EditorKind) { await click(button(kind === 'regex' ? '存入资产库' : '保存')); }
+export async function save(kind: EditorKind) { await click(button(kind === 'regex' ? '存入资产库' : kind === 'preset' ? '覆盖保存' : '保存') ?? button('保存')); }
 export function savedContent(kind: EditorKind, item: Item) {
   if (kind === 'worldbook') return (item as WorldBookItem).worldbook.entries['1'].content;
   if (kind === 'preset') return (item as PresetItem).preset.prompts[0].content;

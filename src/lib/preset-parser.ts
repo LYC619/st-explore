@@ -9,7 +9,6 @@ import { DEFAULT_CHARACTER_ID } from '@/types/preset';
 import {
   parseSTRegexImport,
   ruleToSTScript,
-  type STRegexScript,
 } from '@/lib/st-regex-interop';
 
 /**
@@ -23,6 +22,16 @@ export function isValidPreset(json: unknown): json is Record<string, unknown> {
   if (!json || typeof json !== 'object') return false;
   const o = json as Record<string, unknown>;
   return Array.isArray(o.prompts) && Array.isArray(o.prompt_order);
+}
+
+/** Unknown extension entries remain raw data; one future/invalid entry must not erase its neighbours. */
+function editableRegex(value: unknown): RegexRule | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.findRegex !== 'string' || entry.replaceString !== undefined && typeof entry.replaceString !== 'string'
+    || entry.id !== undefined && typeof entry.id !== 'string'
+    || entry.placement !== undefined && (!Array.isArray(entry.placement) || entry.placement.some(place => typeof place !== 'number'))) return;
+  try { return parseSTRegexImport(value)[0]; } catch { return; }
 }
 
 /** 解析导入的预设 JSON → 应用内 NormalizedPreset。无效时抛错。 */
@@ -44,14 +53,10 @@ export function parsePreset(json: unknown): NormalizedPreset {
   const extensions = raw.extensions as Record<string, unknown> | undefined;
   const rawScripts = extensions?.regex_scripts;
   const hasRegexExtension = Array.isArray(rawScripts);
-  let regexRules: RegexRule[] = [];
-  if (hasRegexExtension && (rawScripts as unknown[]).length > 0) {
-    try {
-      regexRules = parseSTRegexImport(rawScripts);
-    } catch {
-      regexRules = [];
-    }
-  }
+  const regexRules: RegexRule[] = hasRegexExtension ? (rawScripts as unknown[]).flatMap(entry => {
+    const rule = editableRegex(entry);
+    return rule ? [rule] : [];
+  }) : [];
 
   // originalData = 全部原始字段，剔除已规范建模的三项（导出时重新拼回）
   const originalData: Record<string, unknown> = { ...raw };
@@ -63,11 +68,21 @@ export function parsePreset(json: unknown): NormalizedPreset {
 }
 
 /** 把应用内规则拼回 extensions（保留 extensions 里的其它字段） */
-function buildExtensions(np: NormalizedPreset): Record<string, unknown> | undefined {
+function buildExtensions(np: NormalizedPreset): unknown {
   const origExt = (np.originalData.extensions as Record<string, unknown>) ?? undefined;
   // 没有原 extensions 且应用内也无正则 → 不写出 extensions
   if (!origExt && np.regexRules.length === 0 && !np.hasRegexExtension) return undefined;
-  const scripts: STRegexScript[] = np.regexRules.map(ruleToSTScript);
+  if (origExt && (typeof origExt !== 'object' || Array.isArray(origExt))) {
+    if (np.regexRules.length || np.hasRegexExtension) throw new Error('原预设扩展格式无法安全合并，请先检查原始数据');
+    return origExt;
+  }
+  const originalScripts = origExt?.regex_scripts;
+  if (!np.hasRegexExtension && np.regexRules.length === 0) return { ...origExt };
+  if (originalScripts !== undefined && !Array.isArray(originalScripts)) throw new Error('原预设正则格式无法安全合并，请先检查原始数据');
+  const scripts: unknown[] = np.regexRules.map(ruleToSTScript);
+  if (Array.isArray(originalScripts)) originalScripts.forEach((entry, index) => {
+    if (!editableRegex(entry)) scripts.splice(Math.min(index, scripts.length), 0, entry);
+  });
   return {
     ...(origExt ?? {}),
     regex_scripts: scripts,

@@ -85,8 +85,8 @@ export default function Preset() {
     loadedEpoch.current = getVaultEpoch();
     setPreset(item?.preset ?? null);
     setOriginalPreset(item?.preset ?? null);
-    setFileName(item?.title ?? 'preset');
-    setOriginalFileName(item?.title ?? 'preset');
+    setFileName(item?.catalog?.name || item?.title || 'preset');
+    setOriginalFileName(item?.catalog?.name || item?.title || 'preset');
     setCurrentItemId(item?.id ?? null);
     const firstId = item?.preset.promptOrder[0]?.character_id ?? DEFAULT_CHARACTER_ID;
     setActiveCharacterId(firstId);
@@ -363,7 +363,7 @@ export default function Preset() {
       return;
     }
       const id = currentItemId || generatePresetId();
-      if (base) await saveEditedPreset(id, fileName, preset, originalPreset ?? undefined);
+      if (base) await saveEditedPreset(id, fileName, preset, originalPreset ?? undefined, originalFileName);
       else await savePreset(buildPresetSaveItem({ base, id, title: fileName, preset, now }));
       assertCurrent();
       // 角色上下文里保存全新预设：入库并直接挂到该角色名下
@@ -389,7 +389,7 @@ export default function Preset() {
         variant: 'destructive',
       });
     } finally { saveInFlight.current = false; setSaving(false); }
-  }, [preset, originalPreset, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast, captureCurrent, acceptLocalAsset, ownsLocation]);
+  }, [preset, originalPreset, originalFileName, fileName, currentItemId, savedItems, cowCharacterId, cowCharacterName, refreshSaved, toast, captureCurrent, acceptLocalAsset, ownsLocation]);
 
   const handleDiy = async () => {
     if (!currentItemId || !preset || saveInFlight.current) return;
@@ -465,9 +465,9 @@ export default function Preset() {
         </PopoverContent>
       </Popover>
       <Button variant="outline" size="sm" disabled={saving} onClick={handleSaveLocal}>
-        <Save className="w-4 h-4 mr-1.5" /> 保存
+        <Save className="w-4 h-4 mr-1.5" /> {currentItemId ? '覆盖保存' : '保存'}
       </Button>
-      <Button variant="outline" size="sm" disabled={saving || !currentItemId} onClick={() => void handleDiy()}><Copy className="w-4 h-4 mr-1.5" />另存 DIY</Button>
+      <Button variant="outline" size="sm" disabled={saving || !currentItemId} onClick={() => void handleDiy()}><Copy className="w-4 h-4 mr-1.5" />另存为新版</Button>
       <label>
         <Button variant="outline" size="sm" asChild>
           <span><Download className="w-4 h-4 mr-1.5" /> 导入</span>

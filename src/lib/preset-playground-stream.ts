@@ -4,7 +4,19 @@ import { monitorCompletion, type CompletionOutcome } from './roleplay/completion
 import { waitForAbort } from './roleplay/abort';
 
 /** Uses the roleplay transport (including native HTTP) and validates terminal SSE using its shared monitor. */
-export async function streamPresetPlayground(config: APIConfig, request: Record<string, unknown>, signal: AbortSignal, onText: (text: string) => void): Promise<string> {
+export async function streamPresetPlayground(config: APIConfig, request: Record<string, unknown>, parentSignal: AbortSignal, onText: (text: string) => void, options: { idleTimeoutMs?: number; onReasoning?: () => void } = {}): Promise<string> {
+  const controller = new AbortController(), signal = controller.signal;
+  const abort = () => controller.abort(parentSignal.reason);
+  parentSignal.addEventListener('abort', abort, { once: true });
+  if (parentSignal.aborted) abort();
+  let timer: ReturnType<typeof setTimeout>;
+  const touch = () => { clearTimeout(timer); timer = setTimeout(() => controller.abort(new Error('模型连接连续两分钟未返回数据，请检查连接或重试本轮。')), options.idleTimeoutMs ?? 120_000); };
+  touch();
+  try { return await consumePresetStream(config, request, signal, onText, touch, options.onReasoning); }
+  finally { clearTimeout(timer!); parentSignal.removeEventListener('abort', abort); }
+}
+
+async function consumePresetStream(config: APIConfig, request: Record<string, unknown>, signal: AbortSignal, onText: (text: string) => void, touch: () => void, onReasoning?: () => void): Promise<string> {
   const pending = sendCompletion(config, { ...request, stream: true }, signal).then(response => {
     if (signal.aborted) {
       // Some transports resolve after cancellation. Release their otherwise unconsumed response body.
@@ -27,6 +39,7 @@ export async function streamPresetPlayground(config: APIConfig, request: Record<
     for (;;) {
       const chunk = await waitForAbort(reader.read(), signal);
       if (chunk.done) break;
+      touch();
       buffer += decoder.decode(chunk.value, { stream: true });
       if (!streaming) continue;
       let boundary: RegExpExecArray | null;
@@ -36,9 +49,13 @@ export async function streamPresetPlayground(config: APIConfig, request: Record<
         if (!data || data.trim() === '[DONE]') continue;
         try {
           const parsed = JSON.parse(data), delta = parsed.choices?.[0]?.delta?.content;
+          if (parsed.choices?.[0]?.delta?.reasoning_content || parsed.choices?.[0]?.delta?.reasoning) onReasoning?.();
           if (typeof delta === 'string') { content += delta; signal.throwIfAborted(); onText(content); }
         } catch (error) { if (signal.aborted) throw error; }
       }
+      // The shared monitor validates [DONE] before releasing its bytes. A
+      // terminal response is complete even when the provider keeps SSE open.
+      if (outcome) break;
     }
     signal.throwIfAborted();
     if (!outcome || outcome.status !== 'succeeded') throw new Error('回复未完整结束或模型返回空内容，可重试本轮。');

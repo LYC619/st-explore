@@ -441,6 +441,9 @@ const Library = () => {
 
   useEffect(() => {
     if (loading || loadFailed) return;
+    setTypeFilter(current => current !== 'all' && current !== 'none'
+      && (tagPreferences.deletedCategories?.includes('类型') || tagPreferences.deleted?.includes(`类型/${current}`))
+      ? 'all' : current);
     const visible = new Set(
       managedTagOptions
         .filter((option) => option.visible)
@@ -456,7 +459,7 @@ const Library = () => {
       }
       return changed ? next : current;
     });
-  }, [managedTagOptions, loading, loadFailed]);
+  }, [managedTagOptions, tagPreferences, loading, loadFailed]);
 
   /** 筛选栏计数：类型按 type 字段，标签按 raw 出现次数 */
   const typeCounts = useMemo(() => {
@@ -555,7 +558,7 @@ const Library = () => {
   const filterRail = (embedded: boolean) => (
     <LibraryFilterRail
       embedded={embedded}
-      typeOptions={CHARACTER_TYPES.map((type) => ({
+      typeOptions={CHARACTER_TYPES.filter(type => !tagPreferences.deletedCategories?.includes('类型') && !tagPreferences.deleted?.includes(`类型/${type}`)).map((type) => ({
         value: type,
         label: type,
         count: typeCounts[type] ?? 0,

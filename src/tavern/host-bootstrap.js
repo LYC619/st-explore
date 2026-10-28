@@ -146,6 +146,7 @@ window.fetch = async (input, options = {}) => {
             chat: [{ chat_metadata: structuredClone(stModule.chat_metadata) }, ...structuredClone(stModule.chat)] };
     }
     const response = await host.request(path, body, options.signal ?? input?.signal);
+    if (path === '/api/presets/save' && response.ok) menuPresetRevisions[body.name] = host.presetRevisions()[body.name];
     if (path === '/api/backends/chat-completions/status' && response.ok) {
         const status = await response.clone().json();
         if (status.ste_warning) toastr.warning(status.ste_warning);
@@ -250,6 +251,30 @@ window.__STE_BEFORE_CHAT_SWITCH__ = async () => {
     await window.__STE_DRAFT_CAPTURE__?.();
 };
 let stModule;
+let menuPresetRevisions = host.presetRevisions();
+// Refresh menus after returning from STE, preserving the live prompt draft and chat.
+window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
+    const response = await host.request('/ste/library/refresh');
+    if (!response.ok) throw new Error((await response.json()).error?.message ?? '资料库列表无法读取');
+    const data = await response.json();
+    menuPresetRevisions = data.presetRevisions;
+    const tags = await import('./scripts/tags.js');
+    tags.loadTagsSettings(data);
+    const openai = await import('./scripts/openai.js');
+    const selected = data.presetRenames[openai.oai_settings.preset_settings_openai] ?? openai.oai_settings.preset_settings_openai;
+    openai.openai_settings.splice(0, openai.openai_settings.length, ...data.openai_settings.map(value => JSON.parse(value)));
+    for (const key of Object.keys(openai.openai_setting_names)) delete openai.openai_setting_names[key];
+    const picker = document.querySelector('#settings_preset_openai');
+    picker.replaceChildren();
+    data.openai_setting_names.forEach((name, index) => {
+        openai.openai_setting_names[name] = index;
+        picker.add(new Option(name, String(index)));
+    });
+    openai.oai_settings.preset_settings_openai = selected in openai.openai_setting_names ? selected : '';
+    picker.value = selected in openai.openai_setting_names ? String(openai.openai_setting_names[selected]) : '';
+    tags.printTagFilters();
+    await (stModule ?? await import('./script.js')).printCharacters(true);
+};
 window.__STE_TAVERN_SNAPSHOT__ = async () => captureRecoveryFile(stModule ?? await import('./script.js'));
 window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
     if (section === 'chat') {
@@ -553,6 +578,9 @@ function installManagementControls() {
 }
 
 window.__STE_TAVERN_READY__ = () => { void import('./script.js').then(async st => {
+    st.eventSource.makeFirst(st.event_types.OAI_PRESET_CHANGED_BEFORE, ({ presetName }) => {
+        if (menuPresetRevisions[presetName]) host.selectPreset(presetName, menuPresetRevisions[presetName]);
+    });
     stModule = st; await installConnectionControls(); await installRuntimeControls(st);
     if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
     await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();

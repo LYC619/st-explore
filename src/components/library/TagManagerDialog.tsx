@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GripVertical, Plus } from 'lucide-react';
+import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { HelpHint } from '@/components/HelpHint';
 import {
   Dialog,
@@ -10,7 +10,6 @@ import {
 } from '@/components/ui/dialog';
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -29,6 +28,8 @@ import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character
 import { getVaultEpoch } from '@/lib/vault/active';
 import {
   CATEGORY_HELP,
+  normalizeRatingTag,
+  parseTag,
   validateUserTagInput,
   type TagCategory,
 } from '@/lib/tag-taxonomy';
@@ -39,6 +40,7 @@ import {
   getTagCategories,
   moveTag,
   removeCustomTagDefinition,
+  removeTagCategory,
   setTagVisibility,
   type LibraryTagPreferences,
   type ManagedTagOption,
@@ -99,6 +101,8 @@ export function TagManagerDialog({
   const [pointerDropTarget, setPointerDropTarget] = useState<PointerTarget | null>(null);
   const [assignmentRaw, setAssignmentRaw] = useState<string | null>(null);
   const [assignmentType, setAssignmentType] = useState<CharacterType | null>(null);
+  const [categoryDelete, setCategoryDelete] = useState<string | null>(null);
+  const [typeDelete, setTypeDelete] = useState<CharacterType | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ManagedTagOption | null>(null);
   useEffect(() => {
     if (open) { setActiveCategory(initialCategory); setAssignmentType(null); setAssignmentRaw(null); }
@@ -112,7 +116,11 @@ export function TagManagerDialog({
     () => options.filter((option) => option.category === activeCategory),
     [activeCategory, options],
   );
-  const categories = useMemo(() => [...getTagCategories(preferences), '未分类' as TagCategory], [preferences]);
+  const categories = useMemo(() => [...getTagCategories(preferences), '未分类' as TagCategory].filter(c => !preferences.deletedCategories?.includes(c)), [preferences]);
+  useEffect(() => {
+    if (activeCategory === '类型' && !preferences.deletedCategories?.includes('类型') || categories.includes(activeCategory)) return;
+    setActiveCategory(categories[0] ?? (preferences.deletedCategories?.includes('类型') ? '' : '类型'));
+  }, [activeCategory, categories, preferences.deletedCategories]);
   const assignmentOption = options.find((option) => option.raw === assignmentRaw) ?? null;
   const typeCounts = useMemo(() => {
     const counts = new Map<CharacterType, number>(CHARACTER_TYPES.map((type) => [type, 0]));
@@ -135,31 +143,34 @@ export function TagManagerDialog({
     try {
       await onPreferencesChange(next);
       if (message) toast({ title: message });
+      return true;
     } catch {
       toast({ title: '标签设置保存失败', variant: 'destructive' });
+      return false;
     } finally {
       setBusy(false);
     }
   }, [onPreferencesChange, toast]);
 
   const handleAdd = async () => {
-    if (activeCategory === '类型') return;
+    if (busy || !activeCategory || activeCategory === '类型') return;
     try {
       const next = addCustomTagDefinition(preferences, activeCategory, newLabel);
-      await savePreferences(next, `已新增「${newLabel.trim()}」`);
-      setNewLabel('');
+      if (await savePreferences(next, `已新增「${newLabel.trim()}」`)) setNewLabel('');
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : '无法新增标签', variant: 'destructive' });
     }
   };
 
   const handleAddCategory = async () => {
+    if (busy) return;
     try {
       const label = newCategory.trim();
       const next = addCustomCategory(preferences, label);
-      await savePreferences(next, `已新增标签组「${label}」`);
-      setNewCategory('');
-      setActiveCategory(label);
+      if (await savePreferences(next, `已新增标签组「${label}」`)) {
+        setNewCategory('');
+        setActiveCategory(label);
+      }
     } catch (error) {
       toast({ title: error instanceof Error ? error.message : '无法新增标签组', variant: 'destructive' });
     }
@@ -347,29 +358,63 @@ export function TagManagerDialog({
   };
 
   const deleteCustomTag = async (option: ManagedTagOption) => {
+    if (busy) return;
+    const epoch = getVaultEpoch();
+    const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，删除已停止'); };
+    const matches = (tag: string) => normalizeRatingTag(tag) === option.raw;
     setBusy(true);
     try {
-      const owners = characters.filter((character) => character.tags.includes(option.raw));
+      const owners = characters.filter((character) => character.tags.some(matches));
       for (const owner of owners) {
-        applyCharacterTagPatch(owner, { tags: owner.tags.filter((tag) => tag !== option.raw) });
+        applyCharacterTagPatch(owner, { tags: owner.tags.filter((tag) => !matches(tag)) });
       }
       for (const owner of owners) {
-        await updateCharacter(owner.id, (current) => ({
-          ...applyCharacterTagPatch(current, { tags: current.tags.filter((tag) => tag !== option.raw) }),
-          updatedAt: Date.now(),
-        }));
+        check();
+        await updateCharacter(owner.id, (current) => {
+          check();
+          return { ...applyCharacterTagPatch(current, { tags: current.tags.filter((tag) => !matches(tag)) }), updatedAt: Date.now() };
+        });
       }
+      check();
       await onPreferencesChange(removeCustomTagDefinition(preferences, option.raw));
       await onChanged();
       setPendingDelete(null);
+      setAssignmentRaw(null);
       toast({ title: owners.length > 0
         ? `已删除标签，并从 ${owners.length} 张角色卡上移除`
-        : '已删除自定义标签' });
+        : '已删除标签' });
     } catch {
       toast({ title: '删除标签失败', variant: 'destructive' });
     } finally {
       setBusy(false);
     }
+  };
+
+  const deleteGroupOrType = async () => {
+    if (busy) return;
+    const epoch = getVaultEpoch(); setBusy(true);
+    const category = categoryDelete;
+    const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，删除已停止'); };
+    const matches = (tag: string) => typeDelete ? tag === `类型/${typeDelete}`
+      : category === '类型' ? tag.startsWith('类型/') : parseTag(tag, preferences.customCategories).category === category;
+    try {
+      for (const owner of characters) {
+        check();
+        const removesType = (typeDelete || category === '类型') && owner.type && (!typeDelete || owner.type === typeDelete);
+        if (!removesType && !owner.tags.some(matches)) continue;
+        await updateCharacter(owner.id, current => {
+          check();
+          const clearType = (typeDelete || category === '类型') && current.type && (!typeDelete || current.type === typeDelete);
+          return { ...applyCharacterTagPatch(current, { tags: current.tags.filter(tag => !matches(tag)) }),
+            ...(clearType ? { type: undefined } : {}), updatedAt: Date.now() };
+        });
+      }
+      if (epoch !== getVaultEpoch()) throw new Error('资料库已切换');
+      await onPreferencesChange(typeDelete ? removeCustomTagDefinition(preferences, `类型/${typeDelete}`) : removeTagCategory(preferences, category!));
+      await onChanged(); setCategoryDelete(null); setTypeDelete(null); setAssignmentType(null); setAssignmentRaw(null);
+      if (category) setActiveCategory(categories.find(value => value !== category) ?? (preferences.deletedCategories?.includes('类型') || category === '类型' ? '' : '类型'));
+    } catch (error) { toast({ title: '删除标签失败', description: String(error), variant: 'destructive' }); }
+    finally { setBusy(false); }
   };
 
   const requestDelete = (option: ManagedTagOption) => {
@@ -379,7 +424,7 @@ export function TagManagerDialog({
 
   return (
     <>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next); }}>
         <DialogContent className="max-h-[calc(100vh-2rem)] max-w-4xl overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>标签管理</DialogTitle>
@@ -391,7 +436,7 @@ export function TagManagerDialog({
           <div className="grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-xl border border-[color:var(--border-normal)]">
             <aside className="flex min-h-0 flex-col overflow-hidden border-r border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-2">
               <div className="min-h-0 flex-1 overflow-y-auto">
-              <button
+              {!preferences.deletedCategories?.includes('类型') && <button
                 type="button"
                 onClick={() => {
                   setActiveCategory('类型');
@@ -406,7 +451,7 @@ export function TagManagerDialog({
               >
                 <span>类型</span>
                 <span className="text-[11px] font-normal opacity-70">互斥</span>
-              </button>
+              </button>}
               {previewCategories.map((category) => {
                 const count = options.filter((option) => option.category === category).length;
                 return (
@@ -495,7 +540,8 @@ export function TagManagerDialog({
             </aside>
 
             <section className="flex min-h-0 min-w-0 flex-col bg-[var(--bg-canvas)]">
-              {activeCategory !== '类型' && (
+              <div className="flex items-center justify-between px-3 py-2 border-b"><h3 className="text-sm font-medium">{activeCategory || '标签分组'}</h3>{activeCategory && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setCategoryDelete(activeCategory)}><Trash2 className="w-3.5 h-3.5 mr-1" />删除一级标签</Button>}</div>
+              {activeCategory && activeCategory !== '类型' && (
               <div className="shrink-0 border-b border-[color:var(--border-normal)] p-3">
                 <p className="mb-2 text-xs text-[color:var(--text-muted)]">
                   新增到“{activeCategory}”分类；新标签创建后可稍后批量分配给角色。
@@ -527,10 +573,9 @@ export function TagManagerDialog({
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
                 {activeCategory === '类型' ? (
                   <div className="grid grid-cols-2 gap-2.5" data-managed-type-grid>
-                    {CHARACTER_TYPES.map((type) => (
-                      <button
+                    {CHARACTER_TYPES.filter(type => !preferences.deleted?.includes(`类型/${type}`)).map((type) => (
+                      <div key={type} className="flex items-center gap-1"><button
                         type="button"
-                        key={type}
                         aria-label={`选择类型 ${type}`}
                         aria-pressed={assignmentType === type}
                         onClick={() => {
@@ -538,7 +583,7 @@ export function TagManagerDialog({
                           setAssignmentRaw(null);
                         }}
                         className={cn(
-                          'flex min-h-14 items-center justify-between rounded-lg border px-3 text-left transition-colors',
+                          'flex-1 min-h-14 flex items-center justify-between rounded-lg border px-3 text-left transition-colors',
                           assignmentType === type
                             ? 'border-[color:var(--brand)] bg-[var(--brand-active-bg)] text-brand'
                             : 'border-[color:var(--border-normal)] bg-[var(--bg-elevated)] text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]',
@@ -546,7 +591,7 @@ export function TagManagerDialog({
                       >
                         <span className="font-medium">{type}</span>
                         <span className="text-xs opacity-65">{typeCounts.get(type) ?? 0} 张</span>
-                      </button>
+                      </button><Button variant="ghost" size="icon" aria-label={`删除标签 类型/${type}`} disabled={busy} onClick={() => setTypeDelete(type)}><Trash2 className="w-3.5 h-3.5" /></Button></div>
                     ))}
                   </div>
                 ) : (
@@ -577,7 +622,7 @@ export function TagManagerDialog({
                 </div>
                 )}
                 {activeCategory !== '类型' && activeOptions.length === 0 && (
-                  <p className="py-12 text-center text-sm text-[color:var(--text-muted)]">这个分类还没有标签</p>
+                  <p className="py-12 text-center text-sm text-[color:var(--text-muted)]">{activeCategory ? '这个分类还没有标签' : '请先新建一级标签'}</p>
                 )}
               </div>
               <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-3 py-2.5">
@@ -613,22 +658,23 @@ export function TagManagerDialog({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={pendingDelete !== null} onOpenChange={(next) => !next && setPendingDelete(null)}>
+      <AlertDialog open={!!categoryDelete || !!typeDelete} onOpenChange={open => { if (!open && !busy) { setCategoryDelete(null); setTypeDelete(null); } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除“{typeDelete || categoryDelete}”？</AlertDialogTitle><AlertDialogDescription>删除所选标签{categoryDelete ? '及其全部二级标签' : ''}，并清除角色上的相应整理标签。数字评分保留；已删除的评价标签不再出现在筛选栏。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={busy}>取消</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void deleteGroupOrType()}>确认删除</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(next) => !next && !busy && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>删除“{pendingDelete?.label}”？</AlertDialogTitle>
             <AlertDialogDescription>
-              这将从 {pendingDelete?.count ?? 0} 张角色卡上移除该标签。角色卡和故事不会被删除，此操作只影响 STE 的本地整理标签。
+              这将从 {pendingDelete?.count ?? 0} 张角色卡上移除该整理标签。数字评分保留；删除的评价标签不再出现在筛选栏。角色卡和故事不会被删除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
-            <AlertDialogAction
+            <Button variant="destructive"
               disabled={busy}
               onClick={() => pendingDelete && void deleteCustomTag(pendingDelete)}
             >
               确认删除
-            </AlertDialogAction>
+            </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

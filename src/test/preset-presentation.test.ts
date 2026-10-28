@@ -10,6 +10,11 @@ it('keeps an explicitly cleared model empty across the list summary', () => {
 });
 
 describe('preset identity hints from real filename patterns', () => {
+  it('keeps the named model edition and letter suffix as a version after a series name', () => {
+    expect(inferPresetIdentity('斯拉预设 Gemini 3.1 B.json')).toMatchObject({
+      displayName: '斯拉预设', series: '斯拉预设', version: 'Gemini 3.1 B', models: ['Gemini'],
+    });
+  });
   it('separates a bracketed model version from the preset version', () => {
     expect(inferPresetIdentity('[哈基米2.5]World_Builder_1.4.json')).toMatchObject({
       displayName: 'World Builder', series: 'World Builder', version: '1.4', models: ['Gemini'],

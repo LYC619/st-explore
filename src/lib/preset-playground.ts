@@ -143,6 +143,17 @@ export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
   if (unsupportedMacros.size) warnings.add(`未支持的宏保持原文：${[...unsupportedMacros].slice(0, 8).join('、')}。`);
   const settings = preset.originalData;
   const request: Record<string, unknown> = { ...settings, messages, stream: true, user_name: userName, char_name: charName };
+  // Match ST's additional-parameter migration. Old top-level values can be dormant,
+  // including a stale stream:false or invalid exclusion text for another source.
+  const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const source = text(settings.chat_completion_source) || 'openai';
+  const format = text(settings.custom_api_format);
+  const sourceKey = source === 'custom' && ['openai_responses', 'claude_messages', 'gemini_interactions'].includes(format) ? `custom_${format}` : source;
+  const entry = object(object(settings.additional_parameters_by_source)[sourceKey]);
+  for (const key of ['include_body', 'exclude_body', 'include_headers']) {
+    const current = text(entry[key]);
+    request[`custom_${key}`] = current || (Number(settings.additional_parameters_migration_version || 0) < 1 ? text(settings[`custom_${key}`]) : '');
+  }
   if (typeof settings.openai_max_tokens === 'number') request.max_tokens = settings.openai_max_tokens;
   // Dynamic tools supplied by ST extensions have no executor in this temporary conversation.
   for (const key of ['tools', 'tool_choice', 'parallel_tool_calls']) delete request[key];

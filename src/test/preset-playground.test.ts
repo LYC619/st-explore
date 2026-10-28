@@ -25,6 +25,28 @@ const worldbook: WorldBook = { entries: {
 } };
 
 describe('temporary preset prompt pipeline', () => {
+  it.each(['openai_responses', 'claude_messages', 'gemini_interactions'])('uses the matching custom %s source entry and preserves inactive source YAML', format => {
+    const raw = { prompts: [], prompt_order: [], chat_completion_source: 'custom', custom_api_format: format, additional_parameters_migration_version: 1,
+      custom_exclude_body: 'invalid legacy scalar', additional_parameters_by_source: { custom: { include_body: 'stream: false' }, [`custom_${format}`]: { include_body: 'top_k: 17', exclude_body: '', include_headers: 'X-Request: fixture' } } };
+    const preset = parsePreset(raw), before = structuredClone(preset);
+    const built = buildPresetPlaygroundRequest({ preset, messages: [{ role: 'user', content: 'hello' }] });
+    const prepared = prepareCompletion({ apiUrl: 'https://example.invalid/v1/chat/completions', model: 'test', apiKey: '' }, built.request);
+    expect(prepared.body).toMatchObject({ top_k: 17, stream: true });
+    expect(prepared.headers).toMatchObject({ 'X-Request': 'fixture' });
+    expect(preset).toEqual(before);
+  });
+  it('uses ST source parameters instead of dormant legacy YAML after migration', () => {
+    const input = parsePreset({ ...JSON.parse(JSON.stringify(preset.originalData)), prompts: [], prompt_order: [],
+      chat_completion_source: 'custom', additional_parameters_migration_version: 1,
+      custom_exclude_body: '{}', custom_include_body: 'stream: false',
+      additional_parameters_by_source: { custom: { include_body: 'top_k: 24', exclude_body: '- temperature', include_headers: '' } },
+    });
+    const built = buildPresetPlaygroundRequest({ preset: input, messages: [{ role: 'user', content: 'hello' }] });
+    const result = prepareCompletion({ apiUrl: 'https://example.invalid/v1/chat/completions', model: 'test', apiKey: '' }, built.request);
+    expect(result.body.top_k).toBe(24);
+    expect(result.body.temperature).toBeUndefined();
+    expect(result.body.stream).toBe(true);
+  });
   it('uses enabled order, card markers, local variables, keyword world info and depth without changing assets', () => {
     const before = structuredClone({ preset, character, worldbook });
     const built = buildPresetPlaygroundRequest({ preset, character, worldbook, userName: '旅人', messages: [{ role: 'user', content: '去港城码头' }] });

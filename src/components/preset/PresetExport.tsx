@@ -9,6 +9,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import type { NormalizedPreset } from '@/types/preset';
+import { saveTextFile } from '@/lib/roleplay/export-package-file';
 import { exportPreset, exportPresetMarkdown } from '@/lib/preset-parser';
 
 /** 文件名清洗（与 ExportButton 一致，去非法字符/开头点，限长） */
@@ -30,21 +31,16 @@ interface PresetExportProps {
   fileName: string;
 }
 
-function download(content: string, filename: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
 export function PresetExport({ preset, originalPreset, activeCharacterId, fileName }: PresetExportProps) {
   const [mode, setMode] = useState<'full' | 'group' | 'smart'>('full');
   const [showDiff, setShowDiff] = useState(false);
+  const [saving, setSaving] = useState(false), [error, setError] = useState('');
+  const save = async (text: string, fileName: string, extension: string) => {
+    setSaving(true); setError('');
+    try { await saveTextFile({ text, fileName, extension, label: '预设' }); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  };
   const groups = preset.promptOrder;
   const hasMultiGroups = groups.length > 1;
   // 按下标选组（character_id 可能重复，下标才能唯一定位），默认当前编辑中的分组
@@ -111,10 +107,10 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
-        <Button onClick={() => download(exportedJson, `${base}${suffix}.json`, 'application/json;charset=utf-8')}>
+        <Button disabled={saving} onClick={() => void save(exportedJson, `${base}${suffix}.json`, 'json')}>
           <Upload className="w-4 h-4 mr-1.5" /> 导出 JSON
         </Button>
-        <Button variant="outline" onClick={() => download(exportPresetMarkdown(preset, fileName), `${base}.md`, 'text/markdown;charset=utf-8')}>
+        <Button variant="outline" disabled={saving} onClick={() => void save(exportPresetMarkdown(preset, fileName), `${base}.md`, 'md')}>
           <FileText className="w-4 h-4 mr-1.5" /> 导出 Markdown
         </Button>
         {originalPreset && (
@@ -124,6 +120,7 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
         )}
       </div>
 
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {showDiff && originalPreset && (
         <div>
           <h3 className="text-sm font-medium mb-1">变更对比（导入时 ↔ 当前{mode === 'smart' ? '智能' : mode === 'group' ? '分组' : '完整'}导出）</h3>

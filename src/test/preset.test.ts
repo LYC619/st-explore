@@ -107,6 +107,17 @@ describe('parsePreset', () => {
 });
 
 describe('exportPreset (round-trip)', () => {
+  it('preserves unrecognized regex entries while keeping supported rules editable', () => {
+    const valid = makePreset().extensions.regex_scripts[0];
+    const unknown = { futureFormat: { pattern: 'future' }, placement: 'unsupported' };
+    const raw = { prompts: [], prompt_order: [], extensions: { regex_scripts: [valid, unknown, null] } };
+    const np = parsePreset(raw);
+    expect(np.regexRules).toHaveLength(1);
+    np.regexRules[0].replaceString = 'edited';
+    expect(JSON.parse(exportPreset(np)).extensions.regex_scripts).toEqual([expect.objectContaining({ id: 'rx-1', replaceString: 'edited' }), unknown, null]);
+    const wrapped = { extensions: { regex_scripts: { future: 'must retain' }, tavern_helper: { scripts: [] } }, prompts: [], prompt_order: [] };
+    expect(JSON.parse(exportPreset(parsePreset(wrapped))).extensions).toEqual(wrapped.extensions);
+  });
   it('full export preserves unknown fields + structure', () => {
     const np = parsePreset(makePreset());
     const out = JSON.parse(exportPreset(np, { mode: 'full' }));

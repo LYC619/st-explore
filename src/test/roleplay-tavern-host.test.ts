@@ -43,6 +43,46 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('keeps character edits writable during an asynchronous library refresh', async () => {
+    const f = await fixture();
+    let release!: () => void;
+    const characters = getCurrentRepo<import('@/types/archive').ArchiveCharacter>('characters');
+    const original = characters.list.bind(characters);
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const list = vi.spyOn(characters, 'list').mockImplementationOnce(async () => { await gate; return original(); });
+    const refreshing = f.host.request('/ste/library/refresh');
+    try {
+      await vi.waitFor(() => expect(list).toHaveBeenCalled());
+      expect((await f.host.request('/api/characters/edit', { avatar_url: (await import('@/lib/roleplay/catalog')).avatarKey(f.character.id),
+        chat: '实测聊天', description: '刷新期间保存' })).ok).toBe(true);
+      expect((await getCharacter(f.character.id))!.card.data!.description).toBe('刷新期间保存');
+    } finally { release(); await refreshing; list.mockRestore(); f.host.close(); }
+  });
+  it('projects library tags on first bootstrap and refreshes library edits without reopening the chat', async () => {
+    const f = await fixture();
+    try {
+      await updateCharacter(f.character.id, () => ({ tags: ['题材/悬疑'], type: '人物', rating: 9 }));
+      const bootstrap = await (await f.host.request('/api/bootstrap')).json();
+      const first = JSON.parse(bootstrap.settings.settings);
+      expect(first.tags).toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/悬疑' }), expect.objectContaining({ name: '类型/人物' })]));
+      const avatar = bootstrap.characters[0].avatar;
+      expect(first.tag_map[avatar]).toHaveLength(3);
+      const { parsePreset } = await import('@/lib/preset-parser');
+      const presets = getCurrentRepo<import('@/types/preset').PresetItem>('presets');
+      await presets.put({ id: 'refresh-preset', title: '旧文件名', catalog: { name: '自用名', version: 'v2' },
+        preset: parsePreset({ prompts: [], prompt_order: [] }), createdAt: 1, updatedAt: 1 });
+      await updateCharacter(f.character.id, () => ({ tags: ['题材/日常'], rating: 6 }));
+      const response = await f.host.request('/ste/library/refresh');
+      expect(response.ok).toBe(true);
+      const refreshed = await response.json();
+      expect(refreshed.openai_setting_names).toContain('自用名 · v2');
+      expect(refreshed.tags).toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/日常' })]));
+      expect(refreshed.tags).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/悬疑' })]));
+      await presets.put({ ...(await presets.get('refresh-preset'))!, catalog: { name: '自用名', version: 'v2', tags: ['状态/过期'] } });
+      expect((await (await f.host.request('/ste/library/refresh')).json()).openai_setting_names).not.toContain('自用名 · v2');
+      expect((await getArchiveStory(f.story.id))!.session.messages).toHaveLength(1);
+    } finally { f.host.close(); }
+  });
   it('refreshes the provider model catalog on each explicit connection request and preserves the last list on failure', async () => {
     const f = await fixture();
     const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'M1' }] })))

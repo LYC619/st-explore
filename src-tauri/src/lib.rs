@@ -720,8 +720,8 @@ fn vault_open_path(
 ) -> Result<(), String> {
     use tauri_plugin_opener::OpenerExt;
     let target = authorized_rooted_path(&roots, &root, &path)?;
-    if !target.is_file() {
-        return Err(format!("文件不存在: {}", target.display()));
+    if !target.is_file() && !target.is_dir() {
+        return Err(format!("文件或文件夹不存在: {}", target.display()));
     }
     if reveal {
         app.opener()

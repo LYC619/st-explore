@@ -4,17 +4,20 @@ import { closeDB } from '@/lib/idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
-import { setActiveVault } from '@/lib/vault/active';
+import { getVaultEpoch, setActiveVault } from '@/lib/vault/active';
 import { getCurrentRepo } from '@/lib/repo';
 import { listAssetIndex } from '@/lib/asset-index';
 import { parsePreset, exportPreset } from '@/lib/preset-parser';
-import { createPresetDiy, getPreset, saveEditedPreset, savePresetDetails, updatePresetCatalog } from '@/lib/preset-db';
-import { buildImportedPreset, buildPresetExportFiles, classifyPresetAttachment, exportPresetPackage, readPresetPackage } from '@/lib/preset-package';
+import { createPresetDiy, getPreset, saveEditedPreset, saveImportedPreset, savePresetDetails, updatePresetCatalog } from '@/lib/preset-db';
+import { buildImportedPreset, buildPresetExportFiles, classifyPresetAttachment, exportPresetPackage, openPresetLocation, readPresetPackage } from '@/lib/preset-package';
 import { inspectPresetScripts } from '@/lib/preset-catalog';
 import { getPresetPresentation } from '@/lib/preset-presentation';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import type { PresetItem } from '@/types/preset';
 import type { ArchiveCharacter } from '@/types/archive';
+import { saveTextFile } from '@/lib/roleplay/export-package-file';
+
+vi.mock('@/lib/roleplay/export-package-file', () => ({ saveTextFile: vi.fn(async () => 'saved') }));
 
 const raw = {
   prompts: [{ identifier: 'p', name: 'Opening', role: 'system', content: 'original prompt' }],
@@ -37,6 +40,54 @@ beforeEach(() => { closeDB(); vi.stubGlobal('indexedDB', new IDBFactory()); setA
 afterEach(() => { setActiveVault(null); closeDB(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe.each(['vault', 'idb'] as const)('%s preset management persistence', backend => {
+  it('inherits the latest series tags during import and retries without overwriting later metadata', async () => {
+    if (backend === 'idb') setActiveVault(null);
+    const repo = getCurrentRepo<PresetItem>('presets'), original = item(); await repo.put(original);
+    const added = { ...item(), id: 'imported-v2', catalog: { ...item().catalog, version: 'v2', tags: ['状态/在用'] } };
+    await Promise.all([updatePresetCatalog(original.id, { tags: ['状态/过期', '评价/良好'] }), saveImportedPreset(added)]);
+    expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired', version: 'v2' });
+    await updatePresetCatalog(added.id, { notes: 'edited after import' });
+    expect((await saveImportedPreset(added)).catalog?.notes).toBe('edited after import');
+    expect((await repo.list()).filter(entry => entry.id === added.id)).toHaveLength(1);
+    const outsider = { ...item(), id: 'different-author', catalog: { ...item().catalog, author: 'another author', tags: ['状态/在用'] } };
+    expect((await saveImportedPreset(outsider)).catalog?.tags).toEqual(['状态/在用']);
+  });
+  it('shares tags only with the same author and series and keeps per-version fields intact', async () => {
+    if (backend === 'idb') setActiveVault(null);
+    const repo = getCurrentRepo<PresetItem>('presets');
+    const a = item(), b = { ...item(), id: 'preset-b', title: 'second', catalog: { ...item().catalog, version: 'v2', notes: 'second note' } },
+      outsider = { ...item(), id: 'outsider', catalog: { ...item().catalog, author: 'other author' } };
+    await repo.put(a); await repo.put(b); await repo.put(outsider);
+    await updatePresetCatalog(a.id, { tags: ['状态/在用', '评价/优秀'] });
+    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['状态/在用', '评价/优秀'], version: 'v2', notes: 'second note', status: 'active' });
+    expect(await repo.get(outsider.id)).toEqual(outsider);
+    await updatePresetCatalog(a.id, { status: 'retired' });
+    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['评价/优秀', '状态/过期'], status: 'retired' });
+    await updatePresetCatalog(a.id, { tags: ['评价/良好'] });
+    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['评价/良好'], status: 'unreviewed' });
+    expect((await repo.get(b.id))?.preset).toEqual(b.preset);
+  });
+  it('saves an explicit editor name into catalog metadata and subsequent exports', async () => {
+    if (backend === 'idb') setActiveVault(null);
+    const repo = getCurrentRepo<PresetItem>('presets'), original = item();
+    original.catalog!.name = 'old configured name'; await repo.put(original);
+    const saved = await saveEditedPreset(original.id, 'new configured name', original.preset, original.preset);
+    expect(saved).toMatchObject({ title: 'new configured name', catalog: { name: 'new configured name' } });
+    expect(getPresetPresentation(saved).displayName).toBe('new configured name');
+    expect(buildPresetExportFiles(saved)).toHaveProperty('new configured name.json');
+    await expect(saveEditedPreset(original.id, 'stale editor name', original.preset, original.preset, 'old configured name')).rejects.toThrow('名称已在其他位置修改');
+    expect((await repo.get(original.id))?.catalog?.name).toBe('new configured name');
+  });
+  it('inherits destination-series tags when regrouping a legacy status-only version', async () => {
+    if (backend === 'idb') setActiveVault(null);
+    const repo = getCurrentRepo<PresetItem>('presets'), original = item();
+    original.catalog = { ...original.catalog, status: 'active' };
+    const destination = { ...item(), id: 'destination', catalog: { ...item().catalog, series: 'destination', tags: ['状态/过期', '评价/良好'], status: 'retired' as const } };
+    await repo.put(original); await repo.put(destination);
+    await updatePresetCatalog(original.id, { series: 'destination' });
+    expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired' });
+    expect((await repo.get(destination.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired' });
+  });
   it('keeps catalog edits while saving a previously opened prompt and preserves them after reload', async () => {
     if (backend === 'idb') setActiveVault(null);
     const repo = getCurrentRepo<PresetItem>('presets');
@@ -152,4 +203,57 @@ it('generates safe ST exports, reuses intact folders, and preserves user-edited 
   expect(await disk.readText(`${path}/作者预设.json`)).toBe('user edited this copy');
   expect(opened).toHaveLength(3);
   expect(await getPreset(original.id)).toEqual(original);
+});
+
+it('reveals the managed preset file without creating an export copy or opening the external source', async () => {
+  const fs = createMemFs(), opened = vi.fn(async () => {}), vault = createVault({ ...fs, openPath: opened });
+  setActiveVault(vault);
+  const original = { ...item(), sourcePath: 'Z:/external-ST/OpenAI Settings/author.json' };
+  await getCurrentRepo<PresetItem>('presets').put(original);
+  const managedPath = await vault.pathOf('presets', original.id), before = await fs.list('');
+  await openPresetLocation(original.id);
+  expect(opened).toHaveBeenCalledWith(managedPath, true);
+  expect(await fs.list('')).toEqual(before);
+  expect(await getPreset(original.id)).toEqual(original);
+});
+
+it('saves a single configured-name JSON with embedded resources, no STE metadata and truthful cancellation', async () => {
+  const original = item(); original.catalog!.name = 'Configured name';
+  await getCurrentRepo<PresetItem>('presets').put(original);
+  expect(await exportPresetPackage(original.id, 'json')).toBe('预设 JSON 已导出');
+  const saved = vi.mocked(saveTextFile).mock.calls.at(-1)![0];
+  expect(saved).toMatchObject({ fileName: 'Configured name.json', extension: 'json' });
+  const exported = JSON.parse(saved.text);
+  expect(exported).toMatchObject({ futureField: raw.futureField, extensions: { tavern_helper: raw.extensions.tavern_helper, regex_scripts: [expect.objectContaining(raw.extensions.regex_scripts[0])] } });
+  expect(exported).not.toHaveProperty('__ste'); expect(exported).not.toHaveProperty('catalog'); expect(exported).not.toHaveProperty('packageFiles');
+  vi.mocked(saveTextFile).mockResolvedValueOnce('cancelled');
+  expect(await exportPresetPackage(original.id, 'json')).toBeNull();
+  expect(await getPreset(original.id)).toEqual(original);
+});
+
+it('serializes import against a concurrent series change rather than leaving the new version behind', async () => {
+  const repo = getCurrentRepo<PresetItem>('presets'), original = item(); await repo.put(original);
+  let entered!: () => void, resume!: () => void;
+  const listed = new Promise<void>(resolve => { entered = resolve; }), gate = new Promise<void>(resolve => { resume = resolve; });
+  const list = repo.listLight.bind(repo);
+  vi.spyOn(repo, 'listLight').mockImplementationOnce(async () => { const items = await list(); entered(); await gate; return items; });
+  const added = { ...item(), id: 'concurrent-import' }, importing = saveImportedPreset(added);
+  await listed;
+  const editing = updatePresetCatalog(original.id, { tags: ['状态/过期'] });
+  resume(); await Promise.all([importing, editing]);
+  expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['状态/过期'], status: 'retired' });
+  expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/过期'], status: 'retired' });
+});
+
+it('stops an import after the vault changes while reading peers, without writing either vault', async () => {
+  const repo = getCurrentRepo<PresetItem>('presets'), original = item(); await repo.put(original);
+  let entered!: () => void, resume!: () => void;
+  const listed = new Promise<void>(resolve => { entered = resolve; }), gate = new Promise<void>(resolve => { resume = resolve; });
+  const list = repo.listLight.bind(repo);
+  vi.spyOn(repo, 'listLight').mockImplementationOnce(async () => { const items = await list(); entered(); await gate; return items; });
+  const epoch = getVaultEpoch(), added = { ...item(), id: 'stale-import' }, importing = saveImportedPreset(added, { epoch, tagsExplicit: true });
+  const rejected = expect(importing).rejects.toThrow('资料库已切换');
+  await listed; setActiveVault(createVault(createMemFs())); resume(); await rejected;
+  expect(await repo.get(added.id)).toBeUndefined(); expect(await repo.get(original.id)).toEqual(original);
+  expect(await getCurrentRepo<PresetItem>('presets').list()).toEqual([]);
 });

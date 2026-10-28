@@ -1,4 +1,7 @@
 import type { PresetCatalog } from '@/types/preset';
+import { useEffect, useState } from 'react';
+import { defaultPresetTags, getPresetTagOptions, loadPresetTags } from '@/lib/preset-tags';
+import { catalogWithTags, getPresetTags } from '@/lib/preset-tag-values';
 import { PRESET_MODELS } from '@/lib/preset-catalog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +14,9 @@ export function PresetCatalogFields({ value, onChange, compact = false, multiple
   value: PresetCatalog; onChange: (value: PresetCatalog) => void; compact?: boolean; multiple?: boolean;
 }) {
   const set = (patch: Partial<PresetCatalog>) => onChange({ ...value, ...patch });
+  const [preferences, setPreferences] = useState(defaultPresetTags);
+  const tags = getPresetTagOptions(preferences, getPresetTags(value));
+  useEffect(() => { let live = true; void loadPresetTags().then(prefs => { if (live) setPreferences(prefs); }); return () => { live = false; }; }, []);
   const choose = (key: 'models', label: string) => {
     const previous = value[key] ?? [];
     set({ [key]: previous.includes(label) ? previous.filter(item => item !== label) : [...previous, label], modelsConfirmed: true });
@@ -22,6 +28,10 @@ export function PresetCatalogFields({ value, onChange, compact = false, multiple
       <label className="space-y-1 text-xs min-w-0"><span>系列</span><Input aria-label="系列" value={value.series ?? ''} placeholder={value.author || "默认与作者相同，可自定义"} onChange={e => set({ series: e.target.value })} /></label>
       <label className="space-y-1 text-xs min-w-0"><span>版本号</span><Input aria-label="版本号" value={value.version ?? ''} placeholder="如 v2.1" onChange={e => set({ version: e.target.value })} /></label>
     </div>
+    <section className="space-y-2"><p className="text-xs text-muted-foreground">同系列共享标签；过期系列不显示在内置 SillyTavern。</p>{preferences.categories.map(category => <div key={category} className="flex gap-1.5 flex-wrap items-center"><span className="text-xs mr-1">{category}</span>{tags.filter(tag => tag.startsWith(`${category}/`)).map(tag => <Button key={tag} size="sm" variant={getPresetTags(value).includes(tag) ? 'secondary' : 'outline'} aria-pressed={getPresetTags(value).includes(tag)} onClick={() => {
+      const current = getPresetTags(value), selected = current.includes(tag);
+      onChange(catalogWithTags(value, selected ? current.filter(t => t !== tag) : [...current.filter(t => !['状态', '评价'].includes(category) || !t.startsWith(`${category}/`)), tag]));
+    }}>{tag.split('/').slice(1).join('/')}</Button>)}</div>)}</section>
     <div className="space-y-2"><p className="text-xs">适配模型</p><div className="flex gap-1.5 flex-wrap">{PRESET_MODELS.map(model => <Button key={model} size="sm" variant={value.models?.includes(model) ? 'secondary' : 'outline'} aria-pressed={!!value.models?.includes(model)} onClick={() => choose('models', model)}>{model}</Button>)}</div>
       <Input aria-label="适配模型" className="text-xs" value={(value.models ?? []).join('，')} placeholder="也可补充具体型号，以逗号分隔" onChange={e => set({ models: e.target.value.split(/[,，\n]/), modelsConfirmed: true })} /></div>
     <label className="block space-y-1.5 text-xs">作者发布说明<Textarea aria-label="作者发布说明" className="min-h-32 leading-relaxed" value={value.releaseNotes ?? ''} placeholder="粘贴作者说明，也可以补充 MD / TXT 附件自动读取" onChange={e => set({ releaseNotes: e.target.value })} /></label>

@@ -10,10 +10,30 @@ import {
   moveTag,
   normalizeLibraryTagPreferences,
   removeCustomTagDefinition,
+  removeTagCategory,
   setTagVisibility,
 } from '@/lib/library-tag-preferences';
 
 describe('library tag preferences', () => {
+  it('shows new tags and remembers deletion of default, legacy and custom tags after normalization', () => {
+    const added = addCustomTagDefinition(normalizeLibraryTagPreferences(undefined), '人物', '机械生命');
+    expect(buildManagedTagOptions([], added).some(tag => tag.raw === '人物/机械生命')).toBe(true);
+    const deleted = normalizeLibraryTagPreferences(removeCustomTagDefinition(added, '人物/少女'));
+    expect(buildManagedTagOptions(['人物/少女'], deleted).some(tag => tag.raw === '人物/少女')).toBe(false);
+    const legacyDeleted = removeCustomTagDefinition(deleted, '评价/低创');
+    expect(buildManagedTagOptions(['评价/低创'], legacyDeleted).some(tag => tag.raw === '评价/6分以下')).toBe(false);
+    const restored = addCustomTagDefinition(deleted, '人物', '少女');
+    expect(buildManagedTagOptions([], restored).some(tag => tag.raw === '人物/少女')).toBe(true);
+  });
+
+  it('does not reclassify deleted custom groups or revive deleted builtin groups from assigned tags', () => {
+    const added = addCustomTagDefinition(addCustomCategory(normalizeLibraryTagPreferences(undefined), '历史'), '历史', '三国');
+    const deleted = normalizeLibraryTagPreferences(removeTagCategory(added, '历史'));
+    expect(buildManagedTagOptions(['历史/三国'], deleted).some(tag => tag.raw === '历史/三国')).toBe(false);
+    const noRating = removeTagCategory(deleted, '评价');
+    expect(buildManagedTagOptions([], noRating, [{ tags: [], rating: 8 }] as unknown as ArchiveCharacter[]).some(tag => tag.category === '评价')).toBe(false);
+    expect(getTagCategories(noRating)).not.toContain('评价');
+  });
   it('counts evaluation filters from actual ratings and keeps old low-tier tags readable', () => {
     const characters = [
       { tags: [] }, { tags: ['评价/低创'] },

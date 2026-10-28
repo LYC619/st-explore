@@ -37,6 +37,13 @@ function PlaygroundSession({ presetId, epoch }: { presetId: string; epoch: numbe
   const [messages, setMessages] = useState<TrialMessage[]>([]), [input, setInput] = useState('');
   const [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [loadError, setLoadError] = useState('');
   const [error, setError] = useState(''), [warnings, setWarnings] = useState<string[]>([]);
+  const [elapsed, setElapsed] = useState(0), [phase, setPhase] = useState('等待模型响应');
+  useEffect(() => {
+    if (!busy) return;
+    const start = Date.now(); setElapsed(0);
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [busy]);
   const [preview, setPreview] = useState<{ messages: ChatCompletionMessage[]; tokens: number; worldCount: number } | null>(null);
   const [retryMessages, setRetryMessages] = useState<TrialMessage[] | null>(null), [loadVersion, setLoadVersion] = useState(0);
   const live = useRef(true), ticket = useRef(0), active = useRef<AbortController | null>(null);
@@ -70,6 +77,7 @@ function PlaygroundSession({ presetId, epoch }: { presetId: string; epoch: numbe
     if (active.current) return;
     const controller = new AbortController(), current = ++ticket.current;
     active.current = controller; setBusy(true); setError(''); setWarnings([]); setRetryMessages(turn); follow.current = true;
+    setPhase('等待模型响应');
     const answerId = crypto.randomUUID();
     setMessages([...turn, { id: answerId, role: 'assistant', content: '', state: 'pending', model: selection.model }]);
     const owns = () => live.current && current === ticket.current && epoch === getVaultEpoch() && !controller.signal.aborted;
@@ -87,8 +95,8 @@ function PlaygroundSession({ presetId, epoch }: { presetId: string; epoch: numbe
         worldMode, userName, persona, messages: turn.map(({ role, content }) => ({ role, content })) });
       setWarnings(built.warnings); setPreview({ messages: built.messages, tokens: built.tokenEstimate, worldCount: built.worldEntryCount });
       const content = await streamPresetPlayground(config, built.request, controller.signal, text => {
-        if (owns()) setMessages(rows => rows.map(row => row.id === answerId ? { ...row, content: text } : row));
-      });
+        if (owns()) { setPhase('正在接收回复'); setMessages(rows => rows.map(row => row.id === answerId ? { ...row, content: text } : row)); }
+      }, { onReasoning: () => { if (owns()) setPhase('模型正在思考'); } });
       if (owns()) { setMessages(rows => rows.map(row => row.id === answerId ? { ...row, content, state: 'done' } : row)); setRetryMessages(null); }
     } catch (e) {
       if (!live.current || current !== ticket.current || epoch !== getVaultEpoch()) return;
@@ -136,6 +144,7 @@ function PlaygroundSession({ presetId, epoch }: { presetId: string; epoch: numbe
       {messages.map(message => <article key={message.id} className={`rounded-lg p-3 ${message.role === 'user' ? 'bg-[var(--brand-active-bg)] ml-5' : 'bg-[var(--hover-overlay)] mr-5'}`}><div className="text-xs text-muted-foreground mb-1">{message.role === 'user' ? userName || 'User' : message.model || '角色开场白'}{message.state === 'pending' ? ' · 生成中' : message.state === 'stopped' ? ' · 已停止' : message.state === 'error' ? ' · 未完成' : ''}</div><div className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.content || (message.state === 'pending' ? '…' : '未收到回复')}</div></article>)}
     </div>
     {error && <p role="alert" className="text-sm text-destructive break-words">{error}</p>}
+    {busy && <p role="status" className="text-xs text-muted-foreground">{phase} · {elapsed} 秒 · 可随时停止</p>}
     {!!warnings.length && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">本轮试用提示 · {warnings.length}</summary><ul className="list-disc pl-4 space-y-1 mt-2">{warnings.map(warning => <li key={warning}>{warning}</li>)}</ul></details>}
     {preview && <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">查看预设组装内容 · 约 {preview.tokens} tokens · {preview.worldCount} 条世界书</summary><p className="mt-2">以下为组装后的提示词；连接设置的后处理和自定义请求参数可能继续调整发送内容。</p><div className="mt-2 space-y-2 max-h-72 overflow-y-auto">{preview.messages.map((message,index) => <pre key={index} className="whitespace-pre-wrap break-words p-2 rounded bg-[var(--hover-overlay)]">{`${message.role}\n${message.content}`}</pre>)}</div></details>}
     <div className="space-y-2"><Textarea aria-label="试用消息" placeholder="输入测试消息；Enter 发送，Shift+Enter 换行" rows={3} value={input} disabled={busy} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }} />

@@ -6,6 +6,7 @@ import { getCurrentRepo } from '@/lib/repo';
 import { parseWorldBook, type WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 import { createRoleplayAssets } from '@/lib/roleplay/assets';
+import { parsePreset } from '@/lib/preset-parser';
 
 afterEach(() => setActiveVault(null));
 async function fixture() {
@@ -80,4 +81,28 @@ it('maps duplicate titles to distinct names and maps STE references without gues
   expect(new Set(names).size).toBe(2);
   expect(assets.worldName('north')).not.toBe(assets.worldName('south'));
   expect(assets.worldName('missing')).toBeUndefined();
+});
+it('refreshes preset aliases and expiry while keeping stale editor writes protected', async () => {
+  const f = await fixture();
+  const preset = { id: 'preset-1', title: '原始文件名', catalog: { name: '自用名', version: 'v1' },
+    preset: parsePreset({ prompts: [], prompt_order: [], temperature: 0.5 }), createdAt: 1, updatedAt: 1 };
+  await f.presets.put(preset);
+  await f.assets.refreshPresets();
+  expect(f.assets.presetName(preset.id)).toBe('自用名 · v1');
+  const stale = f.assets.presetData().get('自用名 · v1');
+  const oldRevision = f.assets.presetRevisions()['自用名 · v1'];
+  await f.presets.put({ ...preset, preset: parsePreset({ prompts: [], prompt_order: [], temperature: 0.8 }) });
+  await f.assets.refreshPresets();
+  await expect(f.assets.savePreset('自用名 · v1', stale)).rejects.toThrow('其他编辑修改');
+  expect(() => f.assets.selectPreset('自用名 · v1', oldRevision)).toThrow('列表已变化');
+  const fresh = f.assets.presetData().get('自用名 · v1');
+  f.assets.selectPreset('自用名 · v1', f.assets.presetRevisions()['自用名 · v1']);
+  await expect(f.assets.savePreset('自用名 · v1', fresh)).resolves.toBeUndefined();
+  await f.presets.put({ ...preset, catalog: { name: '改名', version: 'v1' } });
+  expect(await f.assets.refreshPresets()).toEqual({ '自用名 · v1': '改名 · v1' });
+  await expect(f.assets.savePreset('自用名 · v1', stale)).rejects.toThrow('名称已变化');
+  await f.presets.put({ ...preset, catalog: { ...preset.catalog, tags: ['状态/过期'] } });
+  await f.assets.refreshPresets();
+  expect(f.assets.presetData().size).toBe(0);
+  expect(await f.presets.get(preset.id)).toBeDefined();
 });
