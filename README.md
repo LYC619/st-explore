@@ -6,7 +6,7 @@
 
 > SillyTavern 角色卡与聊天记录的**归档 · 编辑**工具。
 
-[![version](https://img.shields.io/badge/version-v0.9.3-orange)](https://github.com/LYC619/st-explore/releases)
+[![version](https://img.shields.io/badge/version-v0.9.5-orange)](https://github.com/LYC619/st-explore/releases)
 [![platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows-blue)](https://github.com/LYC619/st-explore)
 [![stack](https://img.shields.io/badge/stack-React%2018%20%2B%20Tauri%202-4FC08D)](https://github.com/LYC619/st-explore)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
