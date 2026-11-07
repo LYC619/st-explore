@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ST Explorer",
   "mainBinaryName": "STE",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "identifier": "com.ste.explorer",
   "build": {
     "frontendDist": "../dist",
