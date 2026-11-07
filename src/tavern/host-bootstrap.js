@@ -1,6 +1,7 @@
 // Served as /tauri-main.js inside the original ST document. All persistence stays in the parent STE app.
 import { lodash } from './lib.js';
 import { installDraftRecovery } from '/ste/draft-recovery.js';
+import { installProcessEvents } from '/ste/process-events.js';
 import { captureRecoveryFile } from '/ste/recovery-export.js';
 import { installRegexAssets } from '/ste/regex-assets.js';
 import { installHelperHost } from '/ste/helper-host.js';
@@ -100,6 +101,7 @@ function parseBody(body) {
 }
 const originalFetch = window.fetch.bind(window);
 let generationType = 'normal';
+let processEvents;
 let responseTurn;
 let worldEntries = [];
 let worldHandled = false;
@@ -142,10 +144,14 @@ window.fetch = async (input, options = {}) => {
         if (worldPreparationError && !['quiet', 'impersonate'].includes(type)) throw worldPreparationError;
         const { oai_settings } = await import('./scripts/openai.js');
         window.__STE_STAMP_CHAT__(stModule.chat);
-        body.ste_context = { type, userName: stModule.name1, ...(window.__STE_HELPER_GENERATING__ ? { source: 'helper' } : {}), worldHandled, worldEntries, maxContext: oai_settings.openai_max_context,
+        const card = stModule.characters?.[stModule.this_chid];
+        body.ste_context = { type, processId: type === 'quiet' ? undefined : processEvents?.current(),
+            preset: oai_settings.preset_settings_openai, character: card?.name, world: card?.data?.extensions?.world,
+            userName: stModule.name1, ...(window.__STE_HELPER_GENERATING__ ? { source: 'helper' } : {}), worldHandled, worldEntries, maxContext: oai_settings.openai_max_context,
             chat: [{ chat_metadata: structuredClone(stModule.chat_metadata) }, ...structuredClone(stModule.chat)] };
     }
     const response = await host.request(path, body, options.signal ?? input?.signal);
+    if (path === '/api/backends/chat-completions/generate') processEvents?.response(response.headers.get('x-ste-process-id'), body.ste_context?.type);
     if (path === '/api/presets/save' && response.ok) menuPresetRevisions[body.name] = host.presetRevisions()[body.name];
     if (path === '/api/backends/chat-completions/status' && response.ok) {
         const status = await response.clone().json();
@@ -274,6 +280,9 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     picker.value = selected in openai.openai_setting_names ? String(openai.openai_setting_names[selected]) : '';
     tags.printTagFilters();
     await (stModule ?? await import('./script.js')).printCharacters(true);
+    if (await window.__STE_REFRESH_REGEX__?.() && !host.isGenerating() && !document.querySelector('#chat .edit_textarea')) {
+        await (stModule ?? await import('./script.js')).printMessages();
+    }
 };
 window.__STE_TAVERN_SNAPSHOT__ = async () => captureRecoveryFile(stModule ?? await import('./script.js'));
 window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
@@ -383,8 +392,11 @@ async function installConnectionControls() {
 async function installRuntimeControls(st) {
     const drafts = installDraftRecovery(st, host);
     const refreshRegex = installRegexAssets(host);
+    window.__STE_REFRESH_REGEX__ = refreshRegex;
     st.eventSource.makeFirst(st.event_types.CHAT_CHANGED, refreshRegex);
-    await refreshRegex();
+    // APP_READY may follow the initial chat paint. Redraw only if loading the
+    // linked/applied rules changed what that already visible chat should show.
+    if (await refreshRegex() && st.chat.length) await st.printMessages();
     const panel = document.createElement('div');
     panel.className = 'extension_container';
     panel.id = 'ste_runtime_settings';
@@ -582,6 +594,7 @@ window.__STE_TAVERN_READY__ = () => { void import('./script.js').then(async st =
         if (menuPresetRevisions[presetName]) host.selectPreset(presetName, menuPresetRevisions[presetName]);
     });
     stModule = st; await installConnectionControls(); await installRuntimeControls(st);
+    processEvents = installProcessEvents(host, st);
     if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
     await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();
 }).catch(error => { toastr.error(error.message); console.error(error); }); };

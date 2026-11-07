@@ -464,7 +464,7 @@ describe('importSelected', () => {
     expect(files).toContain('角色/赫敏/故事/主线/聊天.jsonl');
     expect(files).toContain('临时/遗留聊天/故事.json');
     expect(files).toContain('资产/世界书/魔法界.json');
-    expect(files).toContain('资产/预设/我的预设.json');
+    expect(files.some(path => path.startsWith('资产/预设/') && path.endsWith('/我的预设.json'))).toBe(true);
     expect(files).toContain('资产/正则/ST 全局正则.json');
   });
 

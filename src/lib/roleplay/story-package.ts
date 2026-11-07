@@ -214,7 +214,7 @@ function portablePng(base64: string, card: unknown): string {
   return bytesToBase64(embedCharaInPng(clean.buffer, JSON.parse(stableJson(card))));
 }
 
-const executableRuntime = (path: string) => executable.test(path) || /^\.ste-control\/roleplay\/[^/]+\/helpers\.json$/i.test(path);
+const executableRuntime = (path: string) => executable.test(path) || /^\.ste-control\/roleplay\/[^/]+\/(?:helpers|frontend)\.json$/i.test(path);
 const dataPath = (path: string) => isRuntimePath(path) && !executableRuntime(path) && /\.(?:md|txt|json|jsonl|ya?ml|toml|csv|tsv|log|ini)$/i.test(path)
   && path.split('/').every(part => part.length <= 255 && !/^(?:node_modules|plugins|extensions|\.git)$/i.test(part)
     && !/^(?:%2e){1,2}$/i.test(part));

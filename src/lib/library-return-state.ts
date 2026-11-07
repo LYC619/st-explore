@@ -8,6 +8,7 @@ export interface LibraryReturnState {
   typeFilter: LibraryTypeFilter;
   sortKey: LibrarySortKey;
   sortAsc: boolean;
+  browse?: { page: number; scrollTop: number; expandedGroups: string[]; layout: string };
 }
 
 // Only navigation context, never archive contents. A new app session starts fresh.

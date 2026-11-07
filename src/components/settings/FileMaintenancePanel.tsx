@@ -59,10 +59,15 @@ export function FileMaintenancePanel() {
         else setError('当前库尚无回收或保留文件。');
       })().catch(error => setError(message(error)))}><FolderOpen className="mr-1 h-3.5 w-3.5" />打开文件夹</Button>}
     </div>
-    {error && <p role="alert" className="break-words text-sm text-destructive">{error}</p>}
+    {error && <p role="alert" className="max-h-40 overflow-y-auto break-words text-sm text-destructive">{error}</p>}
     {current && <>
       <p className="text-xs text-muted-foreground">检查结果共 {scan.entries.length} 项，占用 {formatBytes(scan.bytes)}。有效的未绑定记录、独立资产和备份不会自动清理。</p>
-      {!scan.complete && <div role="alert" className="space-y-1 rounded-md border border-destructive/30 p-3 text-xs text-destructive"><p>检查未完成，已禁用清理。请处理以下问题后重新检查：</p>{scan.errors.map((text, index) => <p key={index} className="break-all">{text}</p>)}</div>}
+      {!scan.complete && <div role="alert" className="space-y-2 rounded-md border border-destructive/30 p-3 text-xs text-destructive">
+        <p>检查未完成，已禁用清理。请查看问题详情，处理后重新检查。</p>
+        <details><summary className="cursor-pointer py-1">查看 {scan.errors.length} 项问题</summary>
+          <div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain">{scan.errors.map((text, index) => <p key={index} className="break-all">{text}</p>)}</div>
+        </details>
+      </div>}
       {(Object.keys(labels) as MaintenanceCategory[]).map(category => {
         const entries = scan.entries.filter(entry => entry.category === category);
         if (!entries.length) return null;
@@ -80,7 +85,7 @@ export function FileMaintenancePanel() {
         <Button size="sm" variant="destructive" disabled={busy || !scan.complete || !selectedEntries.length} onClick={() => setConfirm(true)}><Trash2 className="mr-1.5 h-4 w-4" />清理已选 {selectedEntries.length} 项（{formatBytes(selectedBytes)}）</Button>
       </div>
     </>}
-    {result && <div className="space-y-1 text-xs" role="status"><p>成功 {result.removed.length} 项，跳过 {result.skipped.length} 项，失败 {result.failed.length} 项；已移出库内 {formatBytes(result.bytes)}。</p>{result.usesTrash && result.removed.length > 0 && <p className="text-muted-foreground">文件已送入系统回收站；清空回收站后才会释放磁盘空间。</p>}{[...result.skipped, ...result.failed].map(item => <p key={item.path} className="break-all text-muted-foreground">{item.path}：{item.reason}</p>)}</div>}
+    {result && <div className="space-y-1 text-xs" role="status"><p>成功 {result.removed.length} 项，跳过 {result.skipped.length} 项，失败 {result.failed.length} 项；已移出库内 {formatBytes(result.bytes)}。</p>{result.usesTrash && result.removed.length > 0 && <p className="text-muted-foreground">文件已送入系统回收站；清空回收站后才会释放磁盘空间。</p>}{(result.skipped.length > 0 || result.failed.length > 0) && <details><summary className="cursor-pointer py-1">查看跳过与失败详情</summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain">{[...result.skipped, ...result.failed].map(item => <p key={item.path} className="break-all text-muted-foreground">{item.path}：{item.reason}</p>)}</div></details>}</div>}
     <AlertDialog open={confirm} onOpenChange={setConfirm}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清理所选文件？</AlertDialogTitle><AlertDialogDescription>将清理 {selectedEntries.length} 项，共 {formatBytes(selectedBytes)}。{vault.fs.trashFile ? '文件会移入系统回收站。' : '当前平台不支持系统回收站，文件将永久删除，无法撤销。'}执行前会重新检查文件与引用；发生变化的项目会跳过。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void clean()}>确认清理</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </section>;
 }

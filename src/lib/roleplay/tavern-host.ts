@@ -1,5 +1,6 @@
 import { getCurrentRepo } from '@/lib/repo';
 import { beginStoryGeneration } from '@/lib/story-activity';
+import { createProcessLog, type ProcessStage } from './process-log';
 import { getRoleplayPreferences, saveRoleplayPreferences, type ArchiveMetaRecord, getBranchLine, resolveInitialBranchId, updateCharacter, updateArchiveStory } from '@/lib/archive-db';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
@@ -37,7 +38,9 @@ import { readUserAvatar, userAvatarName } from './user-avatars';
 import { HELPER_PIN, readTavernHelperZip, validateTavernHelper } from './tavern-helper-package';
 import { openExternalUrl } from './external-url';
 import { getLibraryTagPreferences } from '@/lib/archive-db';
-import { roleplayLibraryTags } from './library-tags';
+import { roleplayLibraryTags, preserveHiddenTavernTags } from './library-tags';
+import { readFrontendState, persistFrontendScriptData } from '@/lib/frontend-workbench-store';
+import { frontendScripts, withoutFrontendScripts } from './frontend-scripts';
 
 export interface TavernDefaults {
   settings: Record<string, unknown>;
@@ -93,11 +96,11 @@ export async function createTavernHost(options: TavernHostOptions) {
   ]);
   let preferences = initialPreferences;
   let libraryTags = await getLibraryTagPreferences();
-  const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64' | 'tags' | 'type' | 'rating'> & { cardRevision: string }>();
+  const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64' | 'tags' | 'type' | 'rating' | 'roleplayWorldbookDisabled'> & { cardRevision: string }>();
   const cardEditorVersions = new Map<string, string>();
   function rememberCharacter(character: ArchiveCharacter) {
     const cardRevision = digest(stableJson(character.card));
-    characters.set(avatarKey(character.id), { id: character.id, assets: character.assets, pngBase64: character.pngBase64, tags: character.tags, type: character.type, rating: character.rating, cardRevision });
+    characters.set(avatarKey(character.id), { id: character.id, assets: character.assets, pngBase64: character.pngBase64, tags: character.tags, type: character.type, rating: character.rating, roleplayWorldbookDisabled: character.roleplayWorldbookDisabled, cardRevision });
     if (!cardEditorVersions.has(character.id)) cardEditorVersions.set(character.id, cardRevision);
   }
   let settingsWrite = Promise.resolve();
@@ -111,6 +114,19 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
   await inheritRuntime(catalog.initial);
   let selected = catalog.initial;
+  let selectedFrontend = (await readFrontendState(createRuntimeStore(selected.storyId), selected.branchId)).state.applied;
+  const processLog = createProcessLog(() => loadApiProfiles().profiles.map(profile => profile.apiKey));
+  // A continuation can share its candidate with an earlier turn. Attribute new
+  // saves only to the latest generation of that candidate.
+  const processesFor = (key: string) => {
+    const seen = new Set<string>();
+    return [...processLog.snapshot()].reverse().filter(record => {
+      if (record.key !== key || !record.messageId || !record.candidateId) return false;
+      const identity = JSON.stringify([record.messageId, record.candidateId]);
+      if (seen.has(identity)) return false;
+      seen.add(identity); return true;
+    }).reverse();
+  };
   const session = await openStorySession(startup.storyId, startup.branchId, { repo: repos.stories, isCurrent });
   const sessions = new Map<string, RoleplayStorySession>([[selected.key, session]]);
   const selectedChats = new Map<string, string>([[selected.avatar, selected.fileName]]);
@@ -135,7 +151,10 @@ export async function createTavernHost(options: TavernHostOptions) {
     const story = await repos.stories.get(locator.storyId);
     const character = story?.characterId ? await repos.characters.get(story.characterId) : undefined;
     const { suppressedEmbeddedIds, suppressedEmbeddedScripts } = await embeddedRegexState(character, repos.regexes);
-    return { ...snapshot, chatKey: locator.key, suppressedEmbeddedIds, suppressedEmbeddedScripts };
+    const { state } = await readFrontendState(createRuntimeStore(locator.storyId), locator.branchId);
+    if (selected.key === locator.key) selectedFrontend = state.applied;
+    return { ...snapshot, chatKey: locator.key, suppressedEmbeddedIds, suppressedEmbeddedScripts, frontend: state.applied,
+      frontendScripts: frontendScripts(state.applied, locator.key) };
   }
   function versionsFor(locator: ChatLocator) {
     let versions = worldVersions.get(locator.key);
@@ -171,7 +190,12 @@ export async function createTavernHost(options: TavernHostOptions) {
     if (runtime) return runtime;
     runtime = createAgentRuntime({ storyId: locator.storyId, branchId: locator.branchId, store: createRuntimeStore(locator.storyId),
       stories: repos.stories, isCurrent, toolProfile,
-      onStatus: status => { if (selected.key === locator.key) options.onAgentStatus?.(status); },
+      onStatus: status => {
+        if (selected.key === locator.key) options.onAgentStatus?.(status);
+        const record = status.turnId ? processLog.snapshot().find(item => item.key === locator.key && item.agentTurnId === status.turnId)
+          : [...processLog.snapshot()].reverse().find(item => item.key === locator.key && item.status === 'pending');
+        if (record && record.events.at(-1)?.label !== status.message) processLog.event(record.id, 'memory', status.message);
+      },
       worldResources: async (scope: WorldScopeEntry[], sourceSession, phase) => {
         const result: AgentResource[] = [];
         const seen = new Set<string>();
@@ -210,6 +234,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   const unsubscribeVault = subscribeActiveVault(() => {
     for (const controller of controllers.keys()) controller.abort();
     for (const runtime of runtimes.values()) runtime.close();
+    processLog.clear();
   });
   const version = { agent: 'SillyTavern:1.18.0:STE', pkgVersion: '1.18.0', tauriVersion: 'STE', gitRevision: null, gitBranch: null };
 
@@ -238,8 +263,17 @@ export async function createTavernHost(options: TavernHostOptions) {
     const locator = { ...selected };
     const runtime = runtimeFor(locator);
     let turnId: string | undefined;
+    const context = object(body.ste_context);
+    const priorProcess = typeof context.processId === 'string' ? processLog.get(context.processId) : undefined;
+    const processId = priorProcess?.key === locator.key && priorProcess.status === 'pending' && !priorProcess.events.some(e => e.stage === 'request')
+      ? priorProcess.id : processLog.start(locator, String(context.type ?? 'normal'));
     try {
-      const context = object(body.ste_context);
+      processLog.request(processId, 'incoming', { messages: body.messages,
+        custom_prompt_post_processing: body.custom_prompt_post_processing });
+      processLog.event(processId, 'prepare', '组装模型请求', {
+        preset: context.preset, character: context.character, world: context.world,
+        messages: body.messages, postProcessing: body.custom_prompt_post_processing,
+      });
       // Capture before the first await: saves can change the live history while preparation is running.
       const capturedChat = structuredClone(context.chat ?? sessions.get(locator.key)!.payload());
       const current = await catalog.existingLine(locator.avatar, locator.fileName);
@@ -266,7 +300,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (!current) throw new Error('生成目标不存在');
         const scope = Array.isArray(context.worldEntries) ? context.worldEntries as WorldScopeEntry[] : [];
         const result = await runtime.prepare(prepared, source, scope, controller.signal);
-        prepared = result.prepared; turnId = result.turnId;
+        prepared = result.prepared; turnId = result.turnId; processLog.agent(processId, turnId);
         if (typeof context.maxContext === 'number') {
           const estimate = Number(tokenizeTavern('/api/tokenizers/openai/count?model=' + encodeURIComponent(mainProfile().model), prepared.body.messages).token_count);
           const completion = Number(prepared.body.max_completion_tokens ?? prepared.body.max_tokens ?? 0);
@@ -275,18 +309,31 @@ export async function createTavernHost(options: TavernHostOptions) {
       }
       if (!isCurrent() || selected.key !== locator.key) throw new Error('生成期间已切换故事');
       controller.signal.throwIfAborted();
+      const parameters = Object.fromEntries(['model', 'stream', 'temperature', 'top_p', 'max_tokens', 'max_completion_tokens', 'reasoning_effort', 'stop']
+        .filter(key => prepared.body[key] !== undefined).map(key => [key, prepared.body[key]]));
+      processLog.event(processId, 'request', '发送最终请求', { parameters, messages: prepared.body.messages });
+      processLog.request(processId, 'final', prepared.body);
       const response = await sendPreparedCompletion(prepared, controller.signal);
+      processLog.event(processId, 'response', `收到响应 · HTTP ${response.status}`);
       const headers = new Headers(response.headers);
       if (turnId) headers.set('x-ste-turn-id', turnId);
+      headers.set('x-ste-process-id', processId);
       return monitorCompletion(new Response(response.body, { status: response.status, statusText: response.statusText, headers }), {
         signal: controller.signal, stream: !!prepared.body.stream, onRelease: release,
+        onFirstChunk: () => processLog.event(processId, 'response', '收到首段数据'),
         onFinish: async outcome => {
+          processLog.response(processId, outcome);
+          processLog.event(processId, 'response', outcome.status === 'succeeded' ? (outcome.toolCalls?.length && !outcome.content ? '模型工具调用接收完成' : '模型回复完成') : outcome.status === 'cancelled' ? '接收已停止' : '模型回复未完成',
+            { content: outcome.content, toolCalls: outcome.toolCalls, finishReason: outcome.finishReason, usage: outcome.usage });
+          processLog.finish(processId, outcome.status);
           if (turnId) {
             try { await runtime.finish(turnId, outcome); } catch (error) { runtime.fail(error); }
           }
         },
       });
     } catch (error) {
+      processLog.event(processId, 'error', controller.signal.aborted ? '请求已停止' : '请求失败', error instanceof Error ? error.message : String(error));
+      processLog.finish(processId, controller.signal.aborted ? 'cancelled' : 'failed');
       if (turnId) await runtime.finish(turnId, { status: controller.signal.aborted ? 'cancelled' : 'failed', content: '' }).catch(() => {});
       runtime.fail(error); release(); throw error;
     }
@@ -294,10 +341,13 @@ export async function createTavernHost(options: TavernHostOptions) {
 
   function decorateCharacter(dto: CatalogCharacterDto) {
     const character = characters.get(dto.avatar);
-    const primary = character?.assets?.find(ref => ref.kind === 'worldbook' && (!ref.relations || ref.relations.includes('primary') || ref.relations.includes('embedded')));
+    const books = character?.assets?.filter(ref => ref.kind === 'worldbook') ?? [];
+    const primary = books.find(ref => ref.relations?.includes('primary'))
+      ?? (character?.roleplayWorldbookDisabled ? undefined : books.find(ref => !ref.relations?.length)
+        ?? books.find(ref => ref.relations?.includes('embedded')));
     const world = primary ? assets.worldName(primary.assetId) : undefined;
     return { ...dto, ...(character ? { _ste_revision: character.cardRevision } : {}), ...(selectedChats.has(dto.avatar) ? { chat: selectedChats.get(dto.avatar)! } : {}),
-      data: { ...dto.data, extensions: { ...object(dto.data.extensions), ...(world ? { world } : {}) } } };
+      data: { ...dto.data, extensions: { ...object(dto.data.extensions), ...(primary || character?.roleplayWorldbookDisabled ? { world: world ?? '' } : {}) } } };
   }
   async function characterDtos() {
     return (await catalog.characters()).map(decorateCharacter);
@@ -305,7 +355,12 @@ export async function createTavernHost(options: TavernHostOptions) {
 
   function settingsSnapshot() {
     const profile = mainProfile();
-    const base = { ...defaults.settings, ...preferences.tavern };
+    const base = structuredClone({ ...defaults.settings, ...preferences.tavern });
+    if (preferences.installedTavernHelper && selectedFrontend?.scripts.some(script => script.enabled)) {
+      const extensions = object(base.extension_settings), helper = object(extensions.tavern_helper), script = object(helper.script);
+      script.scripts = [...withoutFrontendScripts(Array.isArray(script.scripts) ? script.scripts : []), ...frontendScripts(selectedFrontend, selected.key)];
+      helper.script = script; extensions.tavern_helper = helper; base.extension_settings = extensions;
+    }
     const worldSettings = object(base.world_info_settings);
     const worldInfo = object(worldSettings.world_info);
     const savedWorldInfo = object(object(preferences.tavern?.world_info_settings).world_info);
@@ -325,7 +380,8 @@ export async function createTavernHost(options: TavernHostOptions) {
       } },
       oai_settings: { ...object(defaults.settings.oai_settings), ...presetSettings, ...object(preferences.tavern?.oai_settings),
         openai_max_context: object(preferences.tavern?.oai_settings).openai_max_context ?? presetSettings?.openai_max_context ?? 32768,
-        ...(presetName && !object(base.oai_settings).preset_settings_openai ? { preset_settings_openai: presetName } : {}),
+        // Factory Default is not a user selection; use the linked preset on first entry.
+        ...(presetName && !object(preferences.tavern?.oai_settings).preset_settings_openai ? { preset_settings_openai: presetName } : {}),
         chat_completion_source: 'custom', custom_url: profile.apiUrl, custom_model: profile.model, stream_openai: true },
     };
     const group = (type: string) => defaults.presets?.[type] ?? [];
@@ -346,6 +402,29 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
 
   return {
+    processLog,
+    processEvent(kind: string, data: JsonObject = {}) {
+      if (!isCurrent()) return undefined;
+      if (kind === 'start') {
+        const id = processLog.start(selected, String(data.type ?? 'normal'));
+        processLog.event(id, 'prepare', '开始本轮生成'); return id;
+      }
+      const record = typeof data.id === 'string' ? processLog.get(data.id) : undefined;
+      if (!record || record.key !== selected.key) return undefined;
+      if (kind === 'bind' && typeof data.messageId === 'string' && typeof data.candidateId === 'string') {
+        processLog.bind(record.id, data.messageId, data.candidateId, Number(data.floor));
+      } else if (kind === 'stop') {
+        processLog.event(record.id, 'response', '用户停止生成'); processLog.finish(record.id, 'cancelled');
+      } else if (kind === 'end') {
+        if (record.status === 'pending') {
+          processLog.event(record.id, 'error', '生成结束，未观察到完整模型回复'); processLog.finish(record.id, 'failed');
+        }
+      } else if (['world', 'processed', 'variables', 'error'].includes(kind)) {
+        const labels: Record<string, string> = { world: '世界书触发条目', processed: '回复进入聊天', variables: '变量更新事件', error: '聊天处理错误' };
+        processLog.event(record.id, kind as ProcessStage, labels[kind], data.detail);
+      }
+      return record.id;
+    },
     presetRevisions: () => assets.presetRevisions(),
     selectPreset: (name: string, revision: string) => assets.selectPreset(name, revision),
     ready() {
@@ -358,6 +437,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     isRequestActive: () => controllers.size > 0,
     setWorldTransformer(transformer: (text: string) => string) { worldTransformer = transformer; },
     async request(path: string, value?: unknown, signal?: AbortSignal): Promise<Response> {
+      let saveProcessIds: string[] = [];
       try {
         signal?.throwIfAborted();
         if (!isCurrent()) throw new Error('游玩会话已关闭或文件库已切换');
@@ -507,6 +587,8 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/ste/regex-assets/save') {
           const locator = { ...selected };
           if (body.chatKey !== locator.key) throw new Error('正则编辑器所属聊天已切换');
+          const { state } = await readFrontendState(createRuntimeStore(locator.storyId), locator.branchId);
+          if (state.applied?.rules.length) throw new Error('此故事已应用成品前端，请在“美化 → 成品前端”编辑，或先撤下应用再修改共用正则');
           const result = await (await regexFor(locator)).save(body as unknown as RegexAssetSaveInput);
           return json({ ...result, snapshot: await regexSnapshot(locator) });
         }
@@ -653,12 +735,19 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
         if (pathname === '/api/settings/save') {
-          const tavern = structuredClone(body);
+          const tavern: Record<string, unknown> = { ...structuredClone(body), ...preserveHiddenTavernTags({ ...defaults.settings, ...preferences.tavern }, body) };
           const oai = object(tavern.oai_settings);
           customHeaders(oai.custom_include_headers);
           for (const key of ['api_key', 'api_key_openai', 'api_key_custom', 'proxy_password', 'secret_id', 'custom_url', 'custom_model']) delete oai[key];
           tavern.oai_settings = oai;
           delete tavern.api_key;
+          const helperScript = object(object(object(tavern.extension_settings).tavern_helper).script);
+          if (Array.isArray(helperScript.scripts)) {
+            const locator = { ...selected };
+            await persistFrontendScriptData(locator.storyId, locator.branchId, locator.key, helperScript.scripts);
+            if (selected.key === locator.key) selectedFrontend = (await readFrontendState(createRuntimeStore(locator.storyId), locator.branchId)).state.applied;
+            helperScript.scripts = withoutFrontendScripts(helperScript.scripts);
+          }
           await persistPreferences({ tavern });
           return json({ result: 'ok' });
         }
@@ -739,18 +828,34 @@ export async function createTavernHost(options: TavernHostOptions) {
               if (typeof body.ch_name === 'string' && body.ch_name.trim()) data.name = body.ch_name;
               if (body.alternate_greetings !== undefined) data.alternate_greetings = Array.isArray(body.alternate_greetings) ? body.alternate_greetings : [body.alternate_greetings];
               if (typeof body.world === 'string') extensions.world = body.world;
-              if (body.fav !== undefined) extensions.fav = body.fav === true || body.fav === 'true';
               if (typeof body.talkativeness === 'string' && Number.isFinite(Number(body.talkativeness))) extensions.talkativeness = Number(body.talkativeness);
+            }
+            if (body.fav !== undefined) extensions.fav = body.fav === true || body.fav === 'true';
+            // ST's picker reads top-level fav; card editors use data.extensions.fav.
+            if (extensions.fav !== undefined) {
+              extensions.fav = extensions.fav === true || extensions.fav === 'true';
+              if (card.data) card.fav = extensions.fav;
+              else data.fav = extensions.fav;
             }
             data.extensions = extensions;
             const worldId = typeof extensions.world === 'string' ? assets.worldId(extensions.world) : undefined;
-            const refs = typeof body.world === 'string' ? (current.assets ?? []).filter(ref => ref.kind !== 'worldbook' || ref.relations?.includes('extra')) : current.assets;
+            const refs = typeof body.world === 'string' ? (current.assets ?? []).flatMap(ref => {
+              if (ref.kind !== 'worldbook') return [ref];
+              // Change only the primary binding; embedded snapshots and extra links are independent.
+              const relations = ref.relations?.filter(relation => relation !== 'primary') ?? [];
+              return relations.length ? [{ ...ref, relations }] : [];
+            }) : current.assets;
+            if (typeof body.world === 'string' && worldId) {
+              const existing = refs!.find(ref => ref.kind === 'worldbook' && ref.assetId === worldId);
+              if (existing) existing.relations = [...new Set([...existing.relations ?? [], 'primary' as const])];
+              else refs!.push({ kind: 'worldbook', assetId: worldId, relations: ['primary'] });
+            }
             const nextCard = card.data ? { ...card, data } : data;
             if (stableJson(nextCard) === stableJson(current.card) && typeof body.world !== 'string') return undefined;
             const pngBase64 = current.pngBase64 && stableJson(nextCard) !== stableJson(current.card)
               ? bytesToBase64(embedCharaInPng(base64ToBytes(current.pngBase64).buffer as ArrayBuffer, nextCard)) : current.pngBase64;
             return { card: nextCard, name: String(data.name ?? current.name), updatedAt: Date.now(), pngBase64,
-              ...(typeof body.world === 'string' ? { assets: [...refs ?? [], ...(worldId ? [{ kind: 'worldbook' as const, assetId: worldId, relations: ['primary' as const] }] : [])] } : {}) };
+              ...(typeof body.world === 'string' ? { assets: refs, roleplayWorldbookDisabled: !body.world } : {}) };
           });
           if (updated) rememberCharacter(updated);
           if (updated && pathname.endsWith('/edit')) cardEditorVersions.set(character.id, digest(stableJson(updated.card)));
@@ -777,11 +882,38 @@ export async function createTavernHost(options: TavernHostOptions) {
           }
           await inheritRuntime(target);
           const live = await liveSession(target);
+          const incoming = Array.isArray(body.chat) ? body.chat.slice(1).map(object) : [];
+          const prior = live.payload().slice(1).map(object);
+          saveProcessIds = processesFor(target.key).filter(record => {
+            const message = incoming.find(item => object(object(item.extra).ste_runtime).messageId === record.messageId
+              && object(object(item.extra).ste_runtime).candidateId === record.candidateId);
+            const before = prior.find(item => object(object(item.extra).ste_runtime).messageId === record.messageId);
+            return message && stableJson(message) !== stableJson(before);
+          }).map(record => record.id);
           let commit: StoryCommit;
           if (target.created) {
             const current = (await catalog.existingLine(avatar, name))!.line.session;
             commit = { storyId: target.storyId, branchId: target.branchId, previous: { ...current, messages: [] }, session: current };
           } else commit = await live.save(body.chat, typeof body.ste_persona_name === 'string' ? body.ste_persona_name : undefined);
+          for (const record of processesFor(target.key)) {
+            const message = commit.session.messages.find(item => item.id === record.messageId);
+            if (!message || message.rawData?.extra?.ste_runtime?.candidateId !== record.candidateId) continue;
+            const previous = commit.previous.messages.find(item => item.id === record.messageId);
+            if (!record.events.some(event => event.stage === 'saved') || previous?.content !== message.content) {
+              processLog.event(record.id, 'saved', '正文已保存到故事', { content: message.content, floor: commit.session.messages.indexOf(message) });
+            }
+            const rawBefore = previous?.rawData, rawAfter = message.rawData;
+            const beforeIndex = rawBefore?.swipe_info?.findIndex(info => info?.extra?.ste_runtime?.candidateId === record.candidateId) ?? -1;
+            const before = rawBefore?.variables?.[beforeIndex >= 0 ? beforeIndex : rawBefore?.swipe_id ?? 0];
+            const after = rawAfter?.variables?.[rawAfter?.swipe_id ?? 0];
+            if (JSON.stringify(before) !== JSON.stringify(after)) processLog.event(record.id, 'variables', '楼层变量已保存', { before, after });
+          }
+          const beforeVariables = commit.previous.rawMetadata?.chat_metadata?.variables;
+          const afterVariables = commit.session.rawMetadata?.chat_metadata?.variables;
+          const latest = processesFor(target.key).at(-1);
+          if (latest && JSON.stringify(beforeVariables) !== JSON.stringify(afterVariables)) {
+            processLog.event(latest.id, 'variables', '聊天变量已保存（关联最近一轮）', { before: beforeVariables, after: afterVariables });
+          }
           // Checkpoint saves target a new branch without necessarily navigating to it.
           if (!object((body.chat as unknown[])?.[0]).chat_metadata || !object(object((body.chat as unknown[])?.[0]).chat_metadata).main_chat) {
             selected = target; options.onSelect?.(target);
@@ -836,6 +968,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : String(error);
         if (path.split('?')[0] === '/api/chats/save') {
+          for (const id of saveProcessIds) processLog.event(id, 'error', '故事保存失败', message);
           try { options.onSaveError?.(message); } catch { /* Reporting must not hide the write failure. */ }
         }
         return json({ error: { message } }, 409);
@@ -863,6 +996,7 @@ export async function createTavernHost(options: TavernHostOptions) {
       for (const runtime of runtimes.values()) runtime.close();
       sessions.clear(); runtimes.clear(); worldVersions.clear(); regexBindings.clear();
       characters.clear(); cardEditorVersions.clear(); packagePreviews.clear();
+      processLog.clear();
     },
   };
 }

@@ -510,7 +510,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
               <motion.div
                 key={location.pathname}
                 initial={enterDirection === 0 ? { opacity: 0, y: 4 } : { opacity: 0, x: enterDirection * 24 }}
-                animate={enterDirection === 0 ? { opacity: 1, y: 0 } : { opacity: 1, x: 0 }}
+                animate={{ opacity: 1, x: 0, y: 0 }}
                 transition={{ duration: 0.12, ease: 'easeOut' }}
                 className="h-full"
               >

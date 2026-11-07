@@ -44,6 +44,7 @@ export function DeleteConfirmDialog({
   const openedEpoch = useRef<number | null>(null);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<{ count: number; bytes: number; usesTrash: boolean } | null>(null);
+  const [previewError, setPreviewError] = useState('');
   const targetsKey = JSON.stringify(fileTargets ?? (fileTarget ? [fileTarget] : []));
   const hasFiles = !!getActiveVault() && targetsKey !== '[]';
   const scopeChanged = open && openedEpoch.current !== null && openedEpoch.current !== epoch;
@@ -52,7 +53,7 @@ export function DeleteConfirmDialog({
     if (!open) { openedEpoch.current = null; return; }
     if (openedEpoch.current !== null && openedEpoch.current !== epoch) return;
     openedEpoch.current = epoch;
-    setDeleteFiles(false); setError(''); setPreview(null);
+    setDeleteFiles(false); setError(''); setPreview(null); setPreviewError('');
     const vault = getActiveVault();
     if (!vault || targetsKey === '[]') return;
     let cancelled = false;
@@ -60,12 +61,12 @@ export function DeleteConfirmDialog({
     void prepareFileRemovals(vault, targets)
       .then(results => {
         if (!cancelled) setPreview({ count: results.reduce((n, r) => n + r.count, 0), bytes: results.reduce((n, r) => n + r.bytes, 0), usesTrash: results.every(r => r.usesTrash) });
-      }).catch(e => { if (!cancelled) setError(`无法检查文件，已停止删除：${e instanceof Error ? e.message : String(e)}`); });
+      }).catch(e => { if (!cancelled) setPreviewError(`暂未读取到文件信息：${e instanceof Error ? e.message : String(e)}。确认时将重新读取目标。`); });
     return () => { cancelled = true; };
   }, [open, epoch, targetsKey]);
 
   const confirm = async () => {
-    if (pendingRef.current || scopeChanged || (hasFiles && !preview)) return;
+    if (pendingRef.current || scopeChanged) return;
     pendingRef.current = true; setPending(true); setError('');
     try {
       const result = await onConfirm({ deleteFiles: hasFiles && deleteFiles });
@@ -76,7 +77,7 @@ export function DeleteConfirmDialog({
 
   return (
     <AlertDialog open={open} onOpenChange={value => { if (!pendingRef.current) onOpenChange(value); }}>
-      <AlertDialogContent>
+      <AlertDialogContent className="max-h-[85dvh] overflow-y-auto">
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
@@ -87,16 +88,21 @@ export function DeleteConfirmDialog({
             同时删除 STE 库内文件
           </label>
           <p className="text-xs text-muted-foreground">
-            {preview ? `涉及 ${preview.count} 个文件 · ${(preview.bytes / 1024).toFixed(1)} KB。` : '正在检查文件…'}
+            {preview ? `预计涉及 ${preview.count} 个文件 · ${(preview.bytes / 1024).toFixed(1)} KB。` : '正在读取目标文件信息，可直接确认删除。'}
             {deleteFiles
               ? '文件先移入库内回收站，每个文件保留满 30 天后移入系统回收站；不支持或失败时继续保留。'
               : '文件会长期保留在库内保留区，可在设置的文件检查中查看和清理，不参与 30 天自动回收。'}
           </p>
         </div>}
-        {(error || scopeChanged) && <p role="alert" className="text-sm text-destructive">{scopeChanged ? '文件库已切换，请关闭后重新选择删除目标。' : error}</p>}
+        {previewError && <p className="text-xs text-muted-foreground">{previewError}</p>}
+        {(error || scopeChanged) && <div role="alert" className="text-sm text-destructive">
+          {scopeChanged ? '文件库已切换，请关闭后重新选择删除目标。' : error.length > 300 ? <>
+            <p>删除未完成，请查看具体原因。</p><details className="mt-2"><summary className="cursor-pointer">查看问题详情</summary><p className="mt-2 max-h-40 overflow-y-auto break-all text-xs">{error}</p></details>
+          </> : <p className="break-words">{error}</p>}
+        </div>}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
-          <Button variant="destructive" disabled={pending || scopeChanged || (hasFiles && !preview)} onClick={() => void confirm()}>{pending ? '正在删除…' : confirmLabel}</Button>
+          <Button variant="destructive" disabled={pending || scopeChanged} onClick={() => void confirm()}>{pending ? '正在删除…' : confirmLabel}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

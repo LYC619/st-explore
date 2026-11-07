@@ -6,6 +6,7 @@ import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, 
 import { avatarKey, chatKey, createRoleplayCatalog } from '@/lib/roleplay/catalog';
 import { encodeLiveChat } from '@/lib/roleplay/live-chat';
 import { sourceRefs } from '@/lib/roleplay/fingerprint';
+import { toStoryIndex } from '@/lib/story-index';
 
 it('hides unbound unused placeholders while preserving their stories and direct chat entry', async () => {
   const source = (id: string, name: string) => ({ ...buildStoryFromSession({ ...session(id), character: { name } }), id });
@@ -32,7 +33,7 @@ function memoryRepo<T extends { id: string; updatedAt: number }>(initial: T[]) {
     list: async () => { listReads++; return [...items.values()].map(item => structuredClone(item)); },
     listLight: async () => {
       lightReads++;
-      return [...items.values()].map(({ id, updatedAt }) => ({ id, updatedAt } as T));
+      return [...items.values()].map(item => 'session' in item ? toStoryIndex(item as unknown as ArchiveStory) as unknown as T : structuredClone(item));
     },
     get: async id => { getReads++; return structuredClone(items.get(id)); },
     put: async item => {
@@ -133,7 +134,8 @@ describe('roleplay character/chat catalog', () => {
     expect(chats[0]).toMatchObject({ chat_items: 3, mes: '外面有雨' });
     for (const chat of chats) expect((await catalog.locate(avatarKey('character-a'), chat.file_name))?.key).toBe(chat.key);
     expect(await catalog.chats(avatarKey('character-b'))).toHaveLength(1);
-    expect(f.stories.lightReads()).toBe(0);
+    expect(f.stories.lightReads()).toBeGreaterThan(0);
+    expect(f.stories.listReads()).toBe(0);
     expect(f.stories.writes()).toBe(0);
   });
 
@@ -206,9 +208,9 @@ describe('roleplay character/chat catalog', () => {
       let started!: () => void;
       const gate = new Promise<void>(resolve => { release = resolve; });
       const entered = new Promise<void>(resolve => { started = resolve; });
-      const queuedRepo: Repo<ArchiveStory> = { ...f.stories.repo, list: async () => {
+      const queuedRepo: Repo<ArchiveStory> = { ...f.stories.repo, listLight: async () => {
         if (blockList) { blockList = false; started(); await gate; }
-        return f.stories.repo.list();
+        return f.stories.repo.listLight();
       } };
       const catalog = await createRoleplayCatalog({ ...f.options, stories: queuedRepo, branchId: null });
       blockList = true;
@@ -451,17 +453,18 @@ describe('roleplay character/chat catalog', () => {
   it('checks isCurrent inside the existing story queue before a delayed rename can write', async () => {
     const f = fixture();
     let current = true;
+    let blockGet = false;
     let release!: () => void;
     let started!: () => void;
     const entered = new Promise<void>(resolve => { started = resolve; });
     const gate = new Promise<void>(resolve => { release = resolve; });
     const queuedRepo: Repo<ArchiveStory> = { ...f.stories.repo, get: async id => {
       const story = await f.stories.repo.get(id);
-      started();
-      await gate;
+      if (blockGet) { started(); await gate; }
       return story;
     } };
     const catalog = await createRoleplayCatalog({ ...f.options, stories: queuedRepo, branchId: null, isCurrent: () => current });
+    blockGet = true;
     const rename = catalog.rename(catalog.initial.avatar, catalog.initial.fileName, '迟到的名字');
     const rejected = expect(rename).rejects.toThrow(/切换|关闭|失效/);
     await entered;

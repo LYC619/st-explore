@@ -30,6 +30,7 @@ vi.mock('@/components/chat/RegexSidebar', () => ({ RegexSidebar: () => null }));
 vi.mock('@/components/chat/SettingsPanel', () => ({ SettingsPanel: () => null }));
 
 import { InlineStoryReader } from '@/components/character/InlineStoryReader';
+import { updateArchiveStory } from '@/lib/archive-db';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -117,6 +118,20 @@ afterEach(() => {
 });
 
 describe('内嵌阅读器的置顶层叠', () => {
+  it('shows the readable story while its view stamp is still awaiting disk, and flushes before leaving', async () => {
+    let finish!: (value: ArchiveStory) => void;
+    vi.mocked(updateArchiveStory).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const back = vi.fn();
+    try {
+      await act(async () => { root.render(<InlineStoryReader storyId="story-1" stories={[stored.story!]} onSwitchStory={vi.fn()} onBack={back} onOpenEditor={vi.fn()} />); });
+      expect(container.querySelector('[data-chat-preview-shell]')).not.toBeNull();
+      await act(async () => { container.querySelector<HTMLButtonElement>('[aria-label="返回故事列表"]')!.click(); });
+      expect(back).not.toHaveBeenCalled();
+      await act(async () => { finish(stored.story!); });
+      expect(back).toHaveBeenCalledOnce();
+    } finally { await act(async () => { finish?.(stored.story!); }); }
+  });
+
   it('跳转条落在阅读顶栏与工具栏之下，用的都是实测高度', async () => {
     await render();
 

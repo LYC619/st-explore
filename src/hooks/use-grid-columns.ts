@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 
 /**
  * 实测容器宽度，算出 `repeat(auto-fill, minmax(cardWidth, 1fr))` 实际排了几列。
@@ -9,12 +9,14 @@ import { useLayoutEffect, useRef, useState } from 'react';
  * 返回 0 表示还没量到（首帧、jsdom 里 clientWidth 恒为 0），调用方据此退回不折叠。
  */
 export function useGridColumns(cardWidth: number, gap = 14) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  // The grid mounts only after the asynchronous library load (and remounts
+  // after leaving list/review view). Observe the actual mounted element.
+  const [element, ref] = useState<HTMLDivElement | null>(null);
   const [cols, setCols] = useState(0);
 
   // useLayoutEffect：量完在同一帧内改完 state，避免先画满再折叠的闪动
   useLayoutEffect(() => {
-    const el = ref.current;
+    const el = element;
     if (!el) return;
     const measure = () => {
       const width = el.clientWidth;
@@ -25,7 +27,7 @@ export function useGridColumns(cardWidth: number, gap = 14) {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [cardWidth, gap]);
+  }, [element, cardWidth, gap]);
 
   return { ref, cols };
 }

@@ -1,6 +1,28 @@
 import { expect, it, vi } from 'vitest';
 import { monitorCompletion } from '@/lib/roleplay/completion-monitor';
 
+it('observes complete streamed tool output without changing bytes consumed by preset extensions', async () => {
+  const events = [
+    { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call-1', type: 'function', function: { name: 'game_content', arguments: '{"content":' } }] } }] },
+    { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"完成"}' } }] } }] },
+    { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+  ];
+  const text = events.map(e => 'data: ' + JSON.stringify(e) + '\n\n').join('') + 'data: [DONE]\n\n';
+  const finished = vi.fn();
+  expect(await monitorCompletion(new Response(text), { stream: true, onFinish: finished }).text()).toBe(text);
+  expect(finished).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'succeeded', content: '', finishReason: 'tool_calls',
+    toolCalls: [{ name: 'game_content', arguments: '{"content":"完成"}' }] }));
+});
+
+it('accepts nonstreaming tool results but rejects incomplete tool arguments or missing terminal status', async () => {
+  for (const [args, finishReason, status] of [['{}', 'tool_calls', 'succeeded'], ['{', 'tool_calls', 'failed'], ['{}', null, 'failed'], ['{}', 'content_filter', 'failed']] as const) {
+    const finished = vi.fn();
+    const text = JSON.stringify({ choices: [{ message: { tool_calls: [{ function: { name: 'example', arguments: args } }] }, finish_reason: finishReason }] });
+    expect(await monitorCompletion(new Response(text), { stream: false, onFinish: finished }).text()).toBe(text);
+    expect(finished).toHaveBeenCalledWith(expect.objectContaining({ status }));
+  }
+});
+
 it('passes exact SSE bytes and reports success/actual cache usage before releasing the completion marker', async () => {
   const text = 'data: {"choices":[{"delta":{"content":"屋内"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":40,"prompt_tokens_details":{"cached_tokens":32}}}\n\ndata: [DONE]\n\n';
   const onFinish = vi.fn();

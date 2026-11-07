@@ -299,7 +299,7 @@ const RegexTool = () => {
                 复用；在右侧预览里贴一段文本或取某楼，能直观看到每条规则改了哪里、哪条没命中。
               </HelpCard>
             </div>
-            <p className="text-xs text-muted-foreground">规则管理 · 规则集资产 · 可视化生效预览</p>
+            <p className="text-xs text-muted-foreground">编辑规则 · 预览结果 · 保存规则集</p>
           </div>
           {cowCharacterId && cowCharacterName && (
             <Badge variant="secondary" className="ml-2">
@@ -308,69 +308,27 @@ const RegexTool = () => {
           )}
         </div>
 
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <Input
+            value={collectionName}
+            onChange={(e) => setCollectionName(e.target.value)}
+            placeholder="规则集名称（如：清理思维链套装）"
+            className="basis-64 grow"
+          />
+          <Button size="sm" onClick={handleSaveAsCollection}>
+            <Save className="w-4 h-4 mr-1.5" />
+            存入资产库
+          </Button>
+        </div>
         <div className="flex items-start gap-4 flex-wrap">
           {/* 左栏：现有规则管理组件（常驻模式） */}
-          <RegexSidebar rules={rules} onRulesChange={setRules} isOpen />
+          <section aria-label="正则编辑" className="min-w-0 basis-[28rem] grow-[3] [&>aside]:w-full">
+            <h2 className="mb-2 text-sm font-medium">编辑当前规则集</h2>
+            <RegexSidebar rules={rules} onRulesChange={setRules} isOpen />
+          </section>
 
           {/* 右栏 */}
-          <div className="flex-1 min-w-[24rem] space-y-4">
-            {/* 规则集资产库 */}
-            <Card className="p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Archive className="w-4 h-4 text-primary" />
-                <h2 className="font-display font-medium">规则集资产库</h2>
-                <HelpCard>
-                  把当前整套规则存成命名资产，可在角色间共享引用；在角色上下文里修改共享规则集时，
-                  自动生成「规则集名_角色名」的派生副本，原规则集与其他角色不受影响。
-                </HelpCard>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap mb-3">
-                <Input
-                  value={collectionName}
-                  onChange={(e) => setCollectionName(e.target.value)}
-                  placeholder="规则集名称（如：清理思维链套装）"
-                  className="basis-64 grow"
-                />
-                <Button size="sm" onClick={handleSaveAsCollection}>
-                  <Save className="w-4 h-4 mr-1.5" />
-                  存入资产库
-                </Button>
-              </div>
-              {collections.length === 0 ? (
-                <p className="text-xs text-muted-foreground">还没有规则集资产。命名后点「存入资产库」即可收藏当前规则。</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {collections.map((item) => (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm',
-                        activeCollectionId === item.id ? 'border-primary/50 bg-primary/5' : 'border-border',
-                      )}
-                    >
-                      <span className="flex-1 min-w-0 truncate" title={item.title}>{item.title}</span>
-                      {item.derived && (
-                        <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground shrink-0">派生</Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground shrink-0">{item.rules.length} 条</span>
-                      <Button variant="ghost" size="icon" title="载入为当前规则集" onClick={() => handleLoadCollection(item)}>
-                        <FolderOpen className="w-3.5 h-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-destructive"
-                        title="删除"
-                        onClick={() => setDeleteTarget(item)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
-
+          <div className="min-w-0 basis-[22rem] grow-[2] space-y-4">
             {/* 可视化生效预览 */}
             <Card className="p-4" data-tour="regex-preview">
               <div className="flex items-center gap-2 mb-3">
@@ -488,6 +446,45 @@ const RegexTool = () => {
                 </div>
               )}
             </Card>
+            <details data-regex-library className="rounded-lg border border-border bg-card p-4">
+              <summary className="cursor-pointer flex items-center gap-2 text-sm font-medium"><Archive className="w-4 h-4" />从正则库载入<span className="ml-auto text-xs font-normal text-muted-foreground">{collections.length} 份规则集</span></summary>
+              <div className="mt-3">
+              {collections.length === 0 ? (
+                <p className="text-xs text-muted-foreground">还没有规则集资产。命名后点「存入资产库」即可收藏当前规则。</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {collections.map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        'flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm',
+                        activeCollectionId === item.id ? 'border-primary/50 bg-primary/5' : 'border-border',
+                      )}
+                    >
+                      <span className="flex-1 min-w-0 truncate" title={item.title}>{item.title}</span>
+                      {item.derived && (
+                        <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground shrink-0">派生</Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground shrink-0">{item.rules.length} 条</span>
+                      <Button variant="ghost" size="icon" title="载入为当前规则集" onClick={() => handleLoadCollection(item)}>
+                        <FolderOpen className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive"
+                        title="删除"
+                        onClick={() => setDeleteTarget(item)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              </div>
+            </details>
+
           </div>
         </div>
       </div>

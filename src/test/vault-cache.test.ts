@@ -240,13 +240,14 @@ describe('file vault bounded record reads', () => {
     expect((await disk.stat(`角色/c0/.ste-control/portrait-journal/${operationId}.json`)).exists).toBe(false);
   });
 
-  it('checks newly added maintenance journals even after a schema read succeeded', async () => {
+  it('checks newly added maintenance journals on the next vault session rather than every ordinary read', async () => {
     const { disk, fs, storyReads } = await fixture(1);
     await disk.writeText('库信息.json', JSON.stringify({ id: 'archive-schema', updatedAt: 1, version: 3 }));
     const repo = createVault(fs).repo('archiveMeta');
     await repo.get('archive-schema');
     await disk.writeText('.ste/retained/00000000-0000-0000-0000-000000000000/manifest.json', '{}');
-    await expect(repo.get('archive-schema')).rejects.toThrow('恢复清单损坏');
+    expect(await repo.get('archive-schema')).toMatchObject({ id: 'archive-schema' });
+    await expect(createVault(fs).repo('archiveMeta').get('archive-schema')).rejects.toThrow('恢复清单损坏');
     expect(storyReads()).toHaveLength(0);
   });
 

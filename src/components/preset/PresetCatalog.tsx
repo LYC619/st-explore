@@ -5,10 +5,11 @@ import type { PresetCatalog as Catalog } from '@/types/preset';
 import { listAssetIndex } from '@/lib/asset-index';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
 import { listCharacterIndex } from '@/lib/archive-index';
-import { deletePreset, updatePreset } from '@/lib/preset-db';
+import { deletePreset, updatePreset, refreshPresetFiles } from '@/lib/preset-db';
 import { getPresetTags } from '@/lib/preset-tag-values';
 import { normalizePresetCatalog, PRESET_MODELS } from '@/lib/preset-catalog';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { setPendingToolFile } from '@/lib/tool-handoff';
 import { scopedKey } from '@/lib/vault/vault-scope';
 import { subscribeRecordChanges } from '@/lib/repo/changes';
 import { Button } from '@/components/ui/button';
@@ -76,7 +77,9 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null), restored = useRef(false), sequence = useRef(0);
-  const mounted = useRef(true);
+  const refreshing = useRef<Promise<void> | null>(null);
+  const mounted = useRef(true), dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { try { sessionStorage.setItem(storageKey, JSON.stringify(view)); } catch { /* Optional UI preference. */ } }, [storageKey, view]);
   useEffect(() => {
@@ -91,15 +94,22 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     seenRequestedId.current = id;
     setParams(current => { const next = new URLSearchParams(current); if (id) next.set('presetId', id); else next.delete('presetId'); return next; }, { replace: true });
   };
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     const ticket = ++sequence.current;
     try {
+      let migrationError = '';
+      if (refresh && !refreshing.current) refreshing.current = refreshPresetFiles({ migrateLegacy: true });
+      const refreshTask = refreshing.current;
+      if (refreshTask) try { await refreshTask; }
+      catch (error) { migrationError = error instanceof Error ? error.message : String(error); }
+      finally { if (refreshing.current === refreshTask) refreshing.current = null; }
+      if (!mounted.current || ticket !== sequence.current || epoch !== getVaultEpoch()) return;
       const [assets, characters, tags] = await Promise.all([listAssetIndex('presets'), listCharacterIndex().catch(() => null), loadPresetTags()]);
       if (!mounted.current || ticket !== sequence.current || epoch !== getVaultEpoch()) return;
-      setItems(assets); setTagPreferences(tags); setError('');
+      setItems(assets); setTagPreferences(tags); setError(migrationError);
       const visibleTags = getPresetTagOptions(tags, assets.flatMap(item => getPresetTags(item.catalog))).filter(tag => !tags.hidden.includes(tag));
       setView(view => ({ ...view, ...(view.tag && !visibleTags.includes(view.tag) ? { tag: '', scroll: 0 } : {}),
-        ...(view.selected && !assets.some(item => item.id === view.selected) ? { selected: '' } : {}) }));
+        ...(view.selected && !dirtyRef.current && !assets.some(item => item.id === view.selected) ? { selected: '' } : {}) }));
       const refs: Record<string, string[]> = {};
       for (const character of characters ?? []) for (const ref of character.assets ?? []) (refs[ref.assetId] ??= []).push(character.name);
       setReferences(characters ? refs : null);
@@ -107,13 +117,18 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     finally { if (mounted.current && ticket === sequence.current) setLoading(false); }
   }, [epoch]);
   useEffect(() => {
-    void load();
-    return subscribeRecordChanges(change => { if (change.store === 'presets' || change.store === 'characters' || change.store === 'archiveMeta') void load(); });
+    void load(true);
+    const focus = () => { if (document.visibilityState !== 'hidden') void load(true); };
+    window.addEventListener('focus', focus);
+    const off = subscribeRecordChanges(change => { if (change.store === 'presets' || change.store === 'characters' || change.store === 'archiveMeta') void load(); });
+    return () => { off(); window.removeEventListener('focus', focus); };
   }, [load]);
   useEffect(() => {
     if (!loading && scrollRef.current && !restored.current) { scrollRef.current.scrollTop = view.scroll; restored.current = true; }
   }, [loading, view.scroll]);
   const changeView = (patch: Partial<ViewState>) => { setView(value => ({ ...value, ...patch, scroll: 0 })); setChecked([]); if (scrollRef.current) scrollRef.current.scrollTop = 0; };
+  const [confirmedAction, setConfirmedAction] = useState<(() => void) | null>(null);
+  useEffect(() => { if (confirmedAction && !dirty) { setConfirmedAction(null); confirmedAction(); } }, [confirmedAction, dirty]);
   const request = (action: () => void) => { if (dirty) setPending(() => action); else action(); };
   const select = (id: string) => { if (id && !view.preview && mode !== 'select') { request(() => navigate(`/presets/${encodeURIComponent(id)}`)); return; } if (id === view.selected) id = ''; request(() => { setDirty(false); setView(value => ({ ...value, selected: id })); syncSelectionUrl(id); }); };
   const edit = (id: string) => navigate(`/preset?assetId=${encodeURIComponent(id)}&from=${mode === 'manage' ? 'library' : 'catalog'}`);
@@ -205,13 +220,13 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
         <PresetCollection items={filtered} selected={view.selected} onSelect={select} batch={batchMode} checked={checked} onCheck={id => setChecked(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} layout={view.layout} groupBy={view.groupBy} />
       </div>
       {view.selected && <aside className="min-h-0 flex flex-col rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] overflow-hidden" aria-label="预设资料">
-        {!loading && !selected ? <p className="p-4 text-sm">当前预设已不存在，请选择其他预设。</p> : <PresetCatalogDetails key={`${view.selected}:${detailRevision}`} id={view.selected} versions={items.filter(item => selected && presetSeriesKey(item) === presetSeriesKey(selected))} onOpenFull={() => request(() => navigate(`/presets/${encodeURIComponent(view.selected)}`))} onClose={() => select('')} onDirty={setDirty} onEdit={id => request(() => edit(id))} onImport={seed => request(() => setImportSeed(seed))} onSaved={() => void load()} onDelete={() => request(() => setDeleteId(view.selected))} />}
+        {!loading && !selected && !dirty ? <p className="p-4 text-sm">当前预设已不存在，请选择其他预设。</p> : <PresetCatalogDetails key={`${view.selected}:${detailRevision}`} id={view.selected} versions={items.filter(item => selected && presetSeriesKey(item) === presetSeriesKey(selected))} onOpenFull={() => request(() => navigate(`/presets/${encodeURIComponent(view.selected)}`))} onClose={() => select('')} onDirty={setDirty} onEdit={id => request(() => edit(id))} onOpenRegex={(name, text) => request(() => { setPendingToolFile('regex', new File([text], name, { type: 'application/json' })); navigate('/regex'); })} onOpenRegexAsset={assetId => request(() => navigate(`/regex?assetId=${encodeURIComponent(assetId)}`))} onImport={seed => request(() => setImportSeed(seed))} onSaved={() => void load()} onDelete={() => request(() => setDeleteId(view.selected))} />}
       </aside>}
     </div>
       </main>
     </div>
     {importSeed && <PresetPackageImport seed={importSeed} onClose={() => setImportSeed(null)} onImported={ids => { void load(); if (ids[0]) { setView(value => ({ ...value, preview: true, selected: ids[0] })); syncSelectionUrl(ids[0]); } }} />}
-    <PresetDiscardDialog open={!!pending} cancel={() => { setPending(null); if (requestedId !== view.selected) syncSelectionUrl(view.selected); }} discard={() => { const action = pending; setPending(null); setDirty(false); setDetailRevision(n => n + 1); action?.(); }} />
+    <PresetDiscardDialog open={!!pending} cancel={() => { setPending(null); if (requestedId !== view.selected) syncSelectionUrl(view.selected); }} discard={() => { const action = pending; setPending(null); setDirty(false); setDetailRevision(n => n + 1); setConfirmedAction(() => action); }} />
     {bulkOpen && <PresetBulkEdit items={items.filter(item => checked.includes(item.id))} allItems={items} tags={options.tags} busy={busy} errors={bulkErrors} onClose={() => setBulkOpen(false)} onApply={patch => void applyBulk(patch)} />}
     {tagsOpen && <PresetTagManager preferences={tagPreferences} items={items} onClose={() => setTagsOpen(false)} onChanged={() => void load()} />}
     <DeleteConfirmDialog open={!!deleteIds.length} title={`删除 ${deleteIds.length} 份预设？`} description="所选版本会从预设库移除，已有引用会显示失效。可同时删除 STE 库内文件。" fileTargets={deleteIds.map(id => ({ store: 'presets', id }))} onOpenChange={open => { if (!open) setDeleteIds([]); }} onConfirm={async options => {

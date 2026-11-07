@@ -150,16 +150,16 @@ it('skips changed and newly referenced recycled files', async () => {
   expect(trashFile).not.toHaveBeenCalled();
 });
 
-it('previews a batch with one shared record inventory', async () => {
+it('previews selected targets without reading other characters', async () => {
   const mem = createMemFs();
   const readText = vi.fn((path: string) => mem.readText(path));
   const fs = { ...mem, readText }, vault = createVault(fs);
   for (const id of ['a', 'b', 'c']) await vault.repo('characters').put({ ...buildCharacterFromCard({ name: id }), id });
   readText.mockClear();
   await Promise.all(['a', 'b'].map(id => maintenance.prepareFileRemoval(vault, 'characters', id)));
-  expect(readText.mock.calls.filter(([path]) => path === '角色/c/档案.json')).toHaveLength(2);
+  expect(readText.mock.calls.filter(([path]) => path === '角色/c/档案.json')).toHaveLength(0);
   readText.mockClear();
   const previews = await maintenance.prepareFileRemovals(vault, ['a', 'b'].map(id => ({ store: 'characters', id })));
   expect(previews.map(preview => preview.count)).toEqual([1, 1]);
-  expect(readText.mock.calls.filter(([path]) => path === '角色/c/档案.json')).toHaveLength(1);
+  expect(readText.mock.calls.filter(([path]) => path === '角色/c/档案.json')).toHaveLength(0);
 });

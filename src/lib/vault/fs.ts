@@ -20,6 +20,9 @@ export interface VaultEntry {
 export interface VaultStat {
   exists: boolean;
   isDir: boolean;
+  /** Optional validation metadata. Absent on backends without stable file stamps. */
+  size?: number;
+  modifiedAt?: number;
 }
 
 export interface VaultFs {

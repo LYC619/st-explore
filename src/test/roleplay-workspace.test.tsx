@@ -4,7 +4,10 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { setActiveVault } from '@/lib/vault/active';
 
-const host = vi.hoisted(() => ({ close: vi.fn(), flush: vi.fn().mockResolvedValue(undefined) }));
+const host = vi.hoisted(() => {
+  const records: never[] = [];
+  return { close: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), processLog: { snapshot: () => records, subscribe: () => () => {} } };
+});
 const createHost = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/roleplay/tavern-host', () => ({ createTavernHost: createHost }));
 vi.mock('@/components/roleplay/RoleplayGuide', () => ({ RoleplayGuide: () => null }));

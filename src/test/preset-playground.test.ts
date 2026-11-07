@@ -15,6 +15,19 @@ const preset = parsePreset({
   ],
   prompt_order: [{ character_id: 100000, order: ['main','worldInfoBefore','charDescription','charPersonality','scenario','dialogueExamples','worldInfoAfter','chatHistory','depth','off-depth','post'].map(identifier => ({ identifier, enabled: identifier !== 'off-depth' })) }],
 });
+
+it('uses the native ST completion group 100001 even when legacy group 100000 is empty', () => {
+  const preset = parsePreset({ prompts: [
+    { identifier: 'main', role: 'system', content: 'NATIVE_COMPLETION_PROMPT' },
+    { identifier: 'chatHistory', marker: true },
+  ], prompt_order: [
+    { character_id: 100000, order: [] },
+    { character_id: 100001, order: [{ identifier: 'main', enabled: true }, { identifier: 'chatHistory', enabled: true }] },
+  ] });
+  const built = buildPresetPlaygroundRequest({ preset, messages: [{ role: 'user', content: '继续' }] });
+  expect(JSON.stringify(built.messages)).toContain('NATIVE_COMPLETION_PROMPT');
+  expect(built.messages.at(-1)?.content).toBe('继续');
+});
 const character = { name: '林', description: '住在港城', personality: '直率', scenario: '正在码头', mes_example: '{{char}}: 范例应答' };
 const worldbook: WorldBook = { entries: {
   '1': { ...DEFAULT_ENTRY, uid: 1, constant: true, position: 0, content: '世界常驻信息' },

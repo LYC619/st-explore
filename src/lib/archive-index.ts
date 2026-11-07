@@ -17,21 +17,12 @@
  * 要完整记录请照旧用 archive-db 的 getAllCharacters / getArchiveStory。
  */
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
-import { computeStoryTimeRange } from '@/lib/story-meta';
 import { createRepo } from '@/lib/repo';
+import { toStoryIndex, type StoryIndexEntry } from './story-index';
+export { toStoryIndex, type StoryIndexEntry } from './story-index';
 
 /** 角色列表项：整份档案减去卡面原图与立绘（后者在网页版是内联 base64，同样是大块） */
 export type CharacterIndexEntry = Omit<ArchiveCharacter, 'pngBase64' | 'portraitRows'>;
-
-/** 故事列表项：整条故事减去主线正文与分支，正文只留一个楼数 */
-export type StoryIndexEntry = Omit<ArchiveStory, 'session' | 'branches'> & {
-  /** 主线楼数（= 原 session.messages.length）；正文已剥离，列表显示「N 楼」用这个 */
-  floorCount: number;
-  /** 消息时间范围，在剥离正文前计算，不写入持久格式。 */
-  storyTimeRange?: { startedAt?: number; endedAt?: number };
-  /** 分支目录，不包含分支正文；用于回顾时标明总结来源。 */
-  branchIndex?: { id: string; name: string }[];
-};
 
 const characterRepo = createRepo<ArchiveCharacter>('characters');
 const storyRepo = createRepo<ArchiveStory>('archiveStories');
@@ -43,16 +34,6 @@ const storyRepo = createRepo<ArchiveStory>('archiveStories');
 export function toCharacterIndex(c: ArchiveCharacter): CharacterIndexEntry {
   const { pngBase64, portraitRows, ...rest } = c;
   return rest;
-}
-
-export function toStoryIndex(s: ArchiveStory): StoryIndexEntry {
-  const { session, branches, ...rest } = s as ArchiveStory & Pick<StoryIndexEntry, 'floorCount' | 'branchIndex' | 'storyTimeRange'>;
-  return {
-    ...rest,
-    storyTimeRange: rest.storyTimeRange ?? computeStoryTimeRange(session?.messages ?? []),
-    floorCount: rest.floorCount ?? session?.messages?.length ?? 0,
-    branchIndex: (Array.isArray(branches) ? branches.map(({ id, name }) => ({ id, name })) : undefined) ?? rest.branchIndex ?? [],
-  };
 }
 
 /** 角色库列表项，按 updatedAt 降序（同 getAllCharacters） */

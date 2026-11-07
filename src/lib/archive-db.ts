@@ -531,7 +531,7 @@ export function updateBranchLine(story: ArchiveStory, branchId: string | null, p
  * 故事列表排序：有查看记录的按最近查看在前；都没看过的按创建时间升序（≈故事编号）排在后面。
  * （初次导入全部无记录 → 全按创建序；开始翻看后，看过的浮到前面。）
  */
-export function sortStoriesForDisplay(stories: ArchiveStory[]): ArchiveStory[] {
+export function sortStoriesForDisplay<T extends Pick<ArchiveStory, 'createdAt' | 'lastViewedAt'>>(stories: T[]): T[] {
   const viewed = stories.filter((s) => s.lastViewedAt !== undefined).sort((a, b) => b.lastViewedAt! - a.lastViewedAt!);
   const fresh = stories.filter((s) => s.lastViewedAt === undefined).sort((a, b) => a.createdAt - b.createdAt);
   return [...viewed, ...fresh];

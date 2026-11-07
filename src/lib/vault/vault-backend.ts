@@ -1,4 +1,3 @@
-import { computeStoryTimeRange } from '@/lib/story-meta';
 /**
  * 文件库后端（2.0 阶段7.2b）：store → 明文文件 的映射策略层，实现 Repo 契约。
  *
@@ -28,6 +27,7 @@ import type { PresetItem } from '@/types/preset';
 import type { CardItem } from '@/types/character-card';
 import type { RatingTemplateItem } from '@/types/rating';
 import type { RegexCollectionItem } from '@/types/regex';
+import { getPresetPresentation } from '@/lib/preset-presentation';
 import { parsePreset, exportPreset } from '@/lib/preset-parser';
 import { serializeChatJsonl } from '@/lib/adapters/st/chat-jsonl';
 import type { VaultFs } from './fs';
@@ -39,8 +39,10 @@ import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { sha256 } from 'js-sha256';
 import { executeFileRemoval, recoverFileMaintenance, moveRecordFile } from './file-maintenance';
 import { BoundedRecordCache, type FullCacheOptions } from './bounded-record-cache';
+import { toStoryIndex } from '@/lib/story-index';
 import { notifyRecordChanged } from '@/lib/repo/changes';
 import { toAssetIndex, type IndexedAsset } from '@/lib/asset-index-entry';
+import { StorySummaryIndex, fileStamp } from './story-summary-index';
 
 type PackageDependencyStore = 'characters' | 'worldbooks' | 'presets' | 'regexes';
 
@@ -52,6 +54,8 @@ export interface VaultBackend {
   pathOf(store: StoreName, id: string): Promise<string | undefined>;
   /** Retry recovery and reject new mutations while any journal remains unresolved. */
   assertCharacterWritable(id: string): Promise<void>;
+  /** Explicit refresh of just the asset subtree after external file changes. */
+  refreshAssets?(store: 'presets'): Promise<void>;
   /** Publish a complete staged story with one directory rename. Caller holds the story queue. */
   publishStoryDirectory?(storyId: string, stagedDirectory: string, isCurrent?: () => boolean): Promise<string>;
   /** A full, uncached read with no journal recovery; import previews must not mutate disk. */
@@ -151,14 +155,7 @@ function serializeMd(rec: BaseRecord): string {
  * 楼数必须在这里算——正文一旦剥掉，调用方就没法再数了（列表要显示「N 楼」）。
  */
 function stripStoryBody(rec: BaseRecord | null): BaseRecord | null {
-  if (!rec) return null;
-  const { session, branches, ...rest } = rec as unknown as ArchiveStory;
-  return {
-    ...rest,
-    storyTimeRange: computeStoryTimeRange(session?.messages ?? []),
-    floorCount: session?.messages?.length ?? 0,
-    branchIndex: (Array.isArray(branches) ? branches.map(({ id, name }) => ({ id, name })) : undefined) ?? [],
-  } as unknown as BaseRecord;
+  return rec ? toStoryIndex(rec as ArchiveStory) : null;
 }
 
 export interface VaultOptions {
@@ -174,18 +171,21 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
   let indexReady: Promise<void> | null = null;
   const ensureIndex = () => (indexReady ??= buildIndex());
   let maintenanceRecovery: Promise<void> | null = null;
+  let maintenanceRecovered = false;
+  let presetRevision = 0;
+  let presetRefresh: Promise<void> | null = null;
 
   async function recoverMaintenance(): Promise<void> {
-    // Overlapping entry points share recovery, but never remember a settled
-    // success or failure: a later call must discover new journals and retry.
+    // Recover once per vault session; failed mutations reopen this gate.
+    if (maintenanceRecovered) return;
     const pending = maintenanceRecovery ??= recoverFileMaintenance(fs);
-    try { await pending; }
+    try { await pending; maintenanceRecovered = true; }
     finally { if (maintenanceRecovery === pending) maintenanceRecovery = null; }
   }
 
   // ---- 记录读缓存（阶段9.1 性能）：id → 记录本体 ----
   // 读时填充；put/remove 只失效不回填（下次读回盘，序列化往返保持真实，测试不被缓存遮蔽）。
-  // 代价：应用运行中用户手改库文件不被感知，重启可见——本地单用户可接受。
+  // 故事在读取前校验磁盘大小与修改时间；其他类型仍沿用各自刷新／恢复入口。
   //
   // 两池分开（阶段 D1）：light 池装的是剥掉大字段的投影，绝不能回填 full 池——
   // 否则后续 get() 会拿到缺 pngBase64 / session 的记录，保存时把卡面与正文一起写没。
@@ -194,6 +194,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
   const cacheVersions = new Map<VaultStore, Map<string, number>>(VAULT_STORES.map((s) => [s, new Map()]));
   const pendingReads = new Map<string, { version: number; promise: Promise<BaseRecord | null> }>();
   const cacheKey = (store: VaultStore, id: string) => `${store}:${id}`;
+  const storyStamps = new Map<string, string>();
 
   async function recoverCharacter(id: string, dir: string, requireClean = false): Promise<void> {
     const reports = await recoverCharacterJournals(dir, id, fs);
@@ -215,6 +216,19 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
     // full payloads and must share the bounded pool instead of bypassing its cap.
     light = light && (store === 'characters' || store === 'archiveStories' || store === 'worldbooks' || store === 'presets' || store === 'regexes');
     if (store === 'characters') await recoverCharacter(id, path);
+    if (store === 'archiveStories') {
+      const stat = await fs.stat(joinPath(path, FILE_STORY));
+      if (!stat.exists) { invalidate(store, id, false); return null; }
+      const stamp = fileStamp(stat);
+      if (stamp) {
+        if (storyStamps.get(id) !== stamp) invalidate(store, id, false);
+        storyStamps.set(id, stamp);
+      }
+    }
+    if (store === 'presets' && !(await fs.stat(path)).exists) {
+      if (of(store).get(id) === path) { of(store).delete(id); invalidate(store, id, false); }
+      return null;
+    }
     const key = cacheKey(store, id);
     const hit = light ? lightCache.get(store)!.get(id) : recCache.get(key);
     if (hit) return light ? structuredClone(hit) : hit;
@@ -224,6 +238,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
     if (!pending || pending.version !== version) {
       const promise = (async () => {
         const rec = light ? await readRecordLight(store, path) : await readRecord(store, path);
+        if (store === 'archiveStories' && rec?.id !== id) return null;
         // An old read may finish after a mutation; its callers keep that snapshot,
         // but it cannot repopulate either cache or be joined by a newer version.
         if (rec && version === (cacheVersions.get(store)!.get(id) ?? 0)) {
@@ -247,6 +262,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
 
   /** 记录变更后两池一起失效，避免 light 池留着旧标题/旧楼数 */
   function invalidate(store: VaultStore, id: string, notify = true): void {
+    if (store === 'presets') presetRevision++;
     const versions = cacheVersions.get(store)!;
     versions.set(id, (versions.get(id) ?? 0) + 1);
     recCache.delete(cacheKey(store, id));
@@ -297,9 +313,11 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
 
   // ---- 全量扫描（惰性建索引） ----
 
-  async function scanSteJsonDir(dir: string, store: VaultStore): Promise<void> {
-    const m = of(store);
-    const files = (await fs.list(dir)).filter((e) => !e.isDir && e.name.endsWith('.json'));
+  async function scanSteJsonDir(dir: string, store: VaultStore, depth = 0, m = of(store), cache = lightCache.get(store)!): Promise<void> {
+    if (depth > 12) throw new Error('预设目录过深，请整理后重新读取');
+    const entries = (await fs.list(dir)).filter(entry => !entry.isSymlink);
+    if (store === 'presets') for (const entry of entries) if (entry.isDir) await scanSteJsonDir(joinPath(dir, entry.name), store, depth + 1, m, cache);
+    const files = entries.filter((e) => !e.isDir && e.name.endsWith('.json'));
     await mapLimit(files, IO_LIMIT, async (e) => {
       const path = joinPath(dir, e.name);
       const rec = await readJson(path);
@@ -310,7 +328,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         try {
           const item = store === 'worldbooks' ? decodeWorldbook(rec!)
             : store === 'presets' ? decodePreset(rec!, path) : decodeRegexes(rec!);
-          if (item) lightCache.get(store)!.set(ste.id, toAssetIndex(item as IndexedAsset));
+          if (item) cache.set(ste.id, toAssetIndex(item as IndexedAsset));
         } catch (error) { warnSkip(path, error); }
       }
     });
@@ -372,14 +390,25 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       if (e.isDir && !TEMP_RESERVED.includes(e.name)) storyDirs.push(joinPath(DIR_TEMP, e.name));
     }
     const storyIdx = of('archiveStories');
+    const summaries = new StorySummaryIndex(fs);
+    await summaries.load();
     await mapLimit(storyDirs, IO_LIMIT, async (dir) => {
-      if (!(await fs.stat(joinPath(dir, FILE_STORY))).exists) return;
-      const rec = await readJson(joinPath(dir, FILE_STORY));
+      const path = joinPath(dir, FILE_STORY);
+      const stat = await fs.stat(path);
+      if (!stat.exists) return;
+      const stamp = fileStamp(stat);
+      const cached = summaries.get(path, stamp);
+      const rec = cached ?? await readJson(path);
       if (rec && typeof rec.id === 'string') {
         storyIdx.set(rec.id, dir);
+        if (stamp) storyStamps.set(rec.id, stamp);
         // The scan already paid for parsing the body. Retain only its projection;
         // full reads still go to disk when explicitly requested.
-        try { lightCache.get('archiveStories')!.set(rec.id, stripStoryBody(rec as unknown as BaseRecord)!); }
+        try {
+          const summary = cached ?? stripStoryBody(rec as unknown as BaseRecord)!;
+          lightCache.get('archiveStories')!.set(rec.id, summary);
+          if (!cached && stamp && fileStamp(await fs.stat(path)) === stamp) summaries.retain(path, stamp, summary);
+        }
         catch (error) {
           // A malformed optional field must not make an otherwise readable JSON
           // record disappear or block every other store's index.
@@ -387,6 +416,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         }
       }
     });
+    await summaries.save();
     // 3. 记录文件（总结 md + 故事树 json）：全部故事候选目录 + 临时/记录
     //    故事被删后遗留在原文件夹里的记录也要扫到，所以扫候选目录而非仅已索引的故事目录
     const summaryLabels = Object.values(SUMMARY_KIND_LABELS);
@@ -556,14 +586,17 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
    */
   async function putSingleFile(store: VaultStore, id: string, parent: string, stem: string, ext: string, content: string): Promise<void> {
     const m = of(store);
-    const cur = m.get(id);
+    if (store === 'presets') await packageDirectories(parent, false);
+    let cur = m.get(id);
+    if (store === 'presets' && cur && !(await fs.stat(cur)).exists) { m.delete(id); cur = undefined; }
     const sameParent = cur !== undefined && parentDir(cur) === parent;
-    const name = await uniqueStem(parent, stem, [ext], sameParent ? [baseName(cur)] : []);
+    const name = await uniqueStem(parent, stem, [ext], sameParent && cur ? [baseName(cur)] : []);
     const target = joinPath(parent, name + ext);
     if (cur && cur !== target) {
       await moveRecordFile(fs, cur, target, content);
       if (!sameParent) await fs.removeEmptyDir(parentDir(cur)).catch(() => false);
     } else {
+      await fs.mkdir(parent);
       await fs.writeText(target, content);
     }
     m.set(id, target);
@@ -614,7 +647,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       await fs.mkdir(dir);
     } else {
       const sameParent = parentDir(cur) === parent;
-      dir = joinPath(parent, await uniqueStem(parent, stem, [''], sameParent ? [baseName(cur)] : [], reserve));
+      dir = joinPath(parent, await uniqueStem(parent, stem, [''], sameParent && cur ? [baseName(cur)] : [], reserve));
       if (dir !== cur) {
         await fs.mkdir(parent);
         await fs.rename(cur, dir);
@@ -740,7 +773,8 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       }
       case 'presets': {
         const r = rec as PresetItem;
-        return putSingleFile(store, r.id, DIR_ASSET_PRESET, safeName(r.title), '.json', serializePresetFile(r));
+        const series = getPresetPresentation(r).series || r.catalog?.author || '未分系列';
+        return putSingleFile(store, r.id, joinPath(DIR_ASSET_PRESET, safeName(series, '未分系列')), safeName(r.title), '.json', serializePresetFile(r));
       }
       case 'regexes': {
         const r = rec as RegexCollectionItem;
@@ -817,8 +851,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       listLight: () => listWith(true),
       async get(id) {
         if (store === 'archiveMeta') {
-          // Metadata lives at a fixed path, but the recovery gate still runs on
-          // every request, even when an earlier schema read succeeded.
+          // Metadata lives at a fixed path. Session recovery is retried after failures.
           await recoverMaintenance();
           if (!(await fs.stat(FILE_ARCHIVE_META)).exists) return undefined;
           const rec = await readRecord('archiveMeta', FILE_ARCHIVE_META);
@@ -838,6 +871,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         }
         invalidate(store, item.id);
         try { await putRecord(store, item, opts); }
+        catch (error) { maintenanceRecovered = false; throw error; }
         finally {
           // Catalog reads can overlap the asynchronous write and observe the old
           // file. The next get after put resolves must read the committed record.
@@ -845,10 +879,15 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         }
       },
       async remove(id, options) {
+        await recoverMaintenance();
         await ensureIndex();
         if (store === 'characters') {
           const path = of(store).get(id);
           if (path) await recoverCharacter(id, path, true);
+        }
+        if (store === 'presets') {
+          const path = of(store).get(id);
+          if (path && !(await fs.stat(path)).exists) of(store).delete(id);
         }
         invalidate(store, id);
         try {
@@ -858,6 +897,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
           } else await removeRecord(store, id);
         }
         catch (error) {
+          maintenanceRecovered = false;
           if (error && typeof error === 'object' && 'committed' in error && error.committed) of(store).delete(id);
           throw error;
         }
@@ -929,7 +969,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
           if (pngBase64) binaries.set(source + '/' + FILE_CARD_PNG, pngBase64);
         } else {
           source = prefix + '.json'; extension = '.json'; stem = safeName((item as WorldBookItem).title);
-          parent = store === 'worldbooks' ? DIR_ASSET_WB : store === 'presets' ? DIR_ASSET_PRESET : DIR_ASSET_REGEX;
+          parent = store === 'worldbooks' ? DIR_ASSET_WB : store === 'presets' ? joinPath(DIR_ASSET_PRESET, safeName(getPresetPresentation(item as PresetItem).series || (item as PresetItem).catalog?.author || '未分系列')) : DIR_ASSET_REGEX;
           texts.set(source, store === 'worldbooks' ? serializeWorldbook(item as WorldBookItem)
             : store === 'presets' ? serializePresetFile(item as PresetItem) : toJson({ __ste: steMeta(item), rules: (item as RegexCollectionItem).rules }));
         }
@@ -1004,10 +1044,25 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       const path = of('characters').get(id);
       if (path) await recoverCharacter(id, path, true);
     },
+    async refreshAssets(store: 'presets'): Promise<void> {
+      await ensureIndex();
+      if (presetRefresh) return presetRefresh;
+      const run = async () => {
+        const revision = presetRevision, scanned = new Map<string, string>(), cache = new Map<string, BaseRecord>();
+        await scanSteJsonDir(DIR_ASSET_PRESET, store, 0, scanned, cache);
+        // Do not overwrite an index/cache updated by a concurrent user save.
+        if (revision !== presetRevision) return;
+        for (const id of new Set([...of(store).keys(), ...scanned.keys()])) invalidate(store, id, false);
+        idx.set(store, scanned); lightCache.set(store, cache);
+      };
+      const pending = presetRefresh = run();
+      try { await pending; } finally { if (presetRefresh === pending) presetRefresh = null; }
+    },
     async pathOf(store: StoreName, id: string): Promise<string | undefined> {
       if (!(VAULT_STORES as readonly string[]).includes(store)) return undefined;
       await ensureIndex();
       const path = of(store as VaultStore).get(id);
+      if (store === 'presets' && path && !(await fs.stat(path)).exists) { of('presets').delete(id); invalidate('presets', id, false); return undefined; }
       if (store === 'characters' && path) await recoverCharacter(id, path);
       return path;
     },

@@ -12,6 +12,7 @@ import Tools from '@/pages/Tools';
 import PresetLibrary from '@/pages/PresetLibrary';
 import { listAssetIndex } from '@/lib/asset-index';
 import { getCurrentRepo } from '@/lib/repo';
+import { refreshPresetFiles } from '@/lib/preset-db';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 
@@ -86,6 +87,9 @@ it.each(['vault', 'idb'] as const)('%s summaries track writes/removal without ch
 it.each(['home', 'search', 'worldbook', 'preset'] as const)('%s reads only asset summaries and keeps display/navigation intact', async scene => {
   const { vault } = await fixture();
   await vault.pathOf('worldbooks', 'w');
+  // The one-time legacy migration must read the payload to preserve it on relocation.
+  // Normal listing after that migration continues to use only summary projections.
+  if (scene === 'preset') await refreshPresetFiles({ migrateLegacy: true });
   const clonedPayloads: string[] = [];
   const clone = globalThis.structuredClone;
   vi.spyOn(globalThis, 'structuredClone').mockImplementation(value => {

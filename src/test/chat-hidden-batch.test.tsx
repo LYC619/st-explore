@@ -41,7 +41,9 @@ it('clears all manual hiding in one workbench update', async () => {
   }
   const host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   await act(async () => root!.render(<Fixture />));
-  const button = [...host.querySelectorAll('button')].find(button => button.textContent === '取消全部手动隐藏');
+  const menu = [...host.querySelectorAll('button')].find(button => button.textContent?.includes('楼层处理'));
+  await act(async () => menu!.click());
+  const button = [...document.querySelectorAll('button')].find(button => button.textContent === '取消全部手动隐藏');
   expect(button).toBeTruthy(); await act(async () => button!.click());
   expect(changed).toHaveBeenCalledTimes(1);
   expect(changed.mock.calls[0][0].messages.map((message: { hidden: boolean }) => message.hidden)).toEqual([false, false, true, true, true, false]);

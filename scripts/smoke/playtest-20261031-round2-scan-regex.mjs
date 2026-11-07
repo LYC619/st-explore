@@ -1,0 +1,40 @@
+import { chromium, expect } from '@playwright/test';
+import {mkdir,writeFile} from 'node:fs/promises';
+const base=process.env.STE_SMOKE_URL||'http://127.0.0.1:4211',out='.cache/playtest-round2';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,channel:'msedge'}),page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[],passed=[];page.on('pageerror',e=>errors.push(e.message));await page.route(/https:\/\//,r=>r.abort());
+const nav=path=>page.evaluate(path=>{history.pushState(null,'',path);dispatchEvent(new PopStateEvent('popstate'));},path);
+try {
+ await page.goto(base+'/settings');await page.getByRole('button',{name:'显示',exact:true}).waitFor();
+ await page.evaluate(async()=>{
+  const {performanceFixture}=await import('/src/test/performance-fixture.ts'),{createVault}=await import('/src/lib/vault/vault-backend.ts'),{setActiveVault}=await import('/src/lib/vault/active.ts');
+  const {setTourCompleted}=await import('/src/lib/tour-steps.ts');for(const tour of ['home','library','regex'])setTourCompleted(tour);
+  const f=await performanceFixture(2,1),vault=createVault(f.fs);
+  const files={'资产/其他/SillyTavern/extensions/st-stage/docs/maintenance/CURRENT.md':'# 用户普通源码文档','资产/其他/SillyTavern/extensions/st-stage/docs/maintenance/history/2026-08-06.md':'# 普通历史文档','资产/其他/SillyTavern/extensions/st-stage/turns/broken.json':'{不是JSON'};
+  for(const [path,text]of Object.entries(files))await f.fs.writeText(path,text);await f.fs.mkdir('待清理空目录');window.round2={vault,fs:f.fs,files};setActiveVault(vault);
+ });
+ await page.getByRole('button',{name:'数据与备份',exact:true}).click();const panel=page.getByRole('region',{name:'文件检查与清理'});
+ await panel.getByRole('button',{name:'检查文件',exact:true}).click();await expect(panel.getByRole('alert')).toHaveCount(0);
+ await expect(panel.getByRole('button',{name:'选择可清理项',exact:true})).toBeEnabled();
+ await panel.getByRole('button',{name:'选择可清理项',exact:true}).click();await panel.getByRole('button',{name:/清理已选 1 项/}).click();await page.getByRole('button',{name:'确认清理',exact:true}).click();
+ await expect(panel.getByRole('status')).toContainText('成功 1 项');expect(await page.evaluate(()=>window.round2.fs.stat('待清理空目录'))).toMatchObject({exists:false});
+ for(const [path,text]of Object.entries(await page.evaluate(()=>window.round2.files)))expect(await page.evaluate(path=>window.round2.fs.readText(path),path)).toBe(text);
+ passed.push('真实设置入口检查源码包Markdown和坏JSON不误报，实际清理空目录且保留未知文件');
+ await page.evaluate(async()=>{const {vault,fs}=window.round2,dir=await vault.pathOf('archiveStories','perf-s1-0');window.round2.bad=[];for(let i=0;i<20;i++){const path=`${dir}/.ste-control/roleplay/main/maintenance/${i.toString(16).padStart(64,'0')}.json`;await fs.writeText(path,'{bad journal');window.round2.bad.push(path);}});
+ await panel.getByRole('button',{name:'检查文件',exact:true}).click();await expect(panel.getByRole('alert')).toBeVisible();
+ const problem=panel.getByRole('alert').locator('details');await expect(problem).not.toHaveAttribute('open','');await problem.locator('summary').click();
+ expect(await problem.locator('div').evaluate(n=>getComputedStyle(n).maxHeight)).toBe('192px');await page.screenshot({path:out+'/settings-real-journal-errors.png'});
+ await expect(panel.getByRole('button',{name:'选择可清理项',exact:true})).toBeDisabled();await expect(panel.getByRole('button',{name:'检查文件',exact:true})).toBeEnabled();
+ await page.evaluate(async()=>{for(const p of window.round2.bad)await window.round2.fs.removeFile(p);});await panel.getByRole('button',{name:'检查文件',exact:true}).click();await expect(panel.getByRole('alert')).toHaveCount(0);
+ passed.push('真正坏恢复日志仍阻止清理，长错误默认折叠并限高，修复后可重新检查');
+ await nav('/character/perf-c0');await page.getByRole('button',{name:'操作',exact:true}).click();await page.getByRole('button',{name:'删除角色卡',exact:true}).click();
+ await page.getByRole('alertdialog').getByRole('button',{name:'确认删除',exact:true}).click();await expect(page.getByRole('alertdialog')).toHaveCount(0);
+ expect(await page.evaluate(()=>window.round2.vault.repo('characters').get('perf-c0'))).toBeUndefined();expect((await page.evaluate(()=>window.round2.vault.repo('archiveStories').get('perf-s0-0'))).characterId).toBeUndefined();
+ for(const [path,text]of Object.entries(await page.evaluate(()=>window.round2.files)))expect(await page.evaluate(path=>window.round2.fs.readText(path),path)).toBe(text);
+ passed.push('真实角色页操作→删除成功，名下故事转未绑定，陌生源码附件保持原文');
+ await nav('/chat?storyId=perf-s1-0');await page.getByRole('button',{name:'收录第 0 楼',exact:true}).waitFor();
+ await page.getByRole('navigation',{name:'编辑区工具'}).getByRole('button',{name:'正则',exact:true}).click();await expect(page).toHaveURL(/\/regex$/);
+ await expect(page.getByRole('heading',{name:'编辑当前规则集',exact:true})).toBeVisible();await expect(page.locator('[data-regex-library]')).not.toHaveAttribute('open','');
+ await page.screenshot({path:out+'/regex-editor-entry.png'});passed.push('编辑区真实导航进入/regex编辑器，正则库为默认收起的次级载入入口');
+ expect(errors).toEqual([]);console.log(JSON.stringify({passed,errors}));await writeFile(out+'/scan-regex-results.json',JSON.stringify({passed,errors},null,2));
+}catch(e){await page.screenshot({path:out+'/scan-regex-failure.png',fullPage:true});await writeFile(out+'/scan-regex-failure.txt',(await page.locator('body').innerText()).slice(0,12000));throw e;}finally{await browser.close();}

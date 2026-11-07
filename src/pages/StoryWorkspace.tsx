@@ -53,6 +53,7 @@ import {
 import { isOrganizeWorkspaceView } from '@/lib/story-workspace-layout';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 import { useViewport } from '@/hooks/use-viewport';
+import { getVaultEpoch } from '@/lib/vault/active';
 
 /** 阶段9.6：整理与记录拆成四个子页面（参照 2.0 前 /summary /story-tree 独立页的架构） */
 type WorkspaceView = EditorStoryView;
@@ -154,10 +155,12 @@ const StoryWorkspace = () => {
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+    const epoch = getVaultEpoch();
+    let loadedSaver: StoryDraftSaver | undefined;
     (async () => {
       try {
         const s = await getArchiveStory(id);
-        if (cancelled) return;
+        if (cancelled || epoch !== getVaultEpoch()) return;
         if (!s) {
           setStory(null);
           return;
@@ -167,15 +170,21 @@ const StoryWorkspace = () => {
         const restoredBranchId = resolveInitialBranchId(s, requestedBranchId);
         setBranchId(restoredBranchId);
         const viewedAt = Date.now();
-        const withView = await updateArchiveStory(s.id, (current) => ({
+        const viewPatch = (current: ArchiveStory) => ({
           settings: current.settings ?? getDefaultExportSettings(),
           lastViewedAt: viewedAt,
           lastViewedBranchId: restoredBranchId ?? undefined,
-        }));
-        if (cancelled || !withView) return;
-        saverRef.current = new StoryDraftSaver(updateArchiveStory);
+        });
+        loadedSaver = new StoryDraftSaver((storyId, mutation) => {
+          if (epoch !== getVaultEpoch()) return Promise.reject(new Error('文件库已切换，已停止保存原故事'));
+          return updateArchiveStory(storyId, mutation);
+        });
+        saverRef.current = loadedSaver;
+        saverRef.current.queueMutation(s.id, viewPatch);
+        const withView = { ...s, ...viewPatch(s) };
         storyRef.current = withView;
         setStory(withView);
+        setLoading(false);
         if (withView.characterId) {
           const c = await getCharacter(withView.characterId);
           if (!cancelled) setCharacter(c ?? null);
@@ -184,7 +193,7 @@ const StoryWorkspace = () => {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; void loadedSaver?.flush().catch(() => {}); };
   }, [id, location.state]);
 
   // 当前脉络（主线或分支）的数据切片

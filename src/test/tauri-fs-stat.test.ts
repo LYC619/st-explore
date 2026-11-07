@@ -57,4 +57,9 @@ describe('Tauri 文件系统状态转换', () => {
       persistent: false,
     });
   });
+
+  it('passes file size and modification time through stat for summary validation', async () => {
+    tauriMocks.invoke.mockResolvedValue({ exists: true, is_dir: false, size: 123, modified_at: 123456 });
+    expect(await createTauriFs('D:/vault').stat('临时/故事/故事.json')).toEqual({ exists: true, isDir: false, size: 123, modifiedAt: 123456 });
+  });
 });

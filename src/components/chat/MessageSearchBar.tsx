@@ -20,7 +20,7 @@ export function MessageSearchBar({ query, onQueryChange, total, current, onNext,
   const hasQuery = query.trim().length > 0;
   const { isCompact } = useViewport();
   return (
-    <div className="flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
+    <div className="flex max-w-full min-w-0 items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
       <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <Input size="sm"
         value={query}
@@ -33,7 +33,7 @@ export function MessageSearchBar({ query, onQueryChange, total, current, onNext,
            而它前后还有外观、小说视图、导出。搜关键词一般就几个字，
            w-24 够看；桌面档保留 w-40。 */
         className={cn(
-          'border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
+          'min-w-0 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
           isCompact ? 'w-24' : 'w-40',
         )}
         aria-label="搜索消息正文"

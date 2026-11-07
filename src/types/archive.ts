@@ -146,6 +146,8 @@ export interface ArchiveCharacter {
   lastViewedAt?: number;
   /** 关联的独立资产引用（世界书/预设/正则；只记引用，写时复制见定稿第七章） */
   assets?: AssetRef[];
+  /** Explicitly cleared in the chat editor; keep embedded assets without auto-binding them again. */
+  roleplayWorldbookDisabled?: boolean;
   /** ST 中存在但本次未能解析到库内资产的引用。 */
   unresolvedAssets?: UnresolvedAssetRef[];
   /** 客户端：来源文件路径（网页版为空） */

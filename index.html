@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ST Explorer</title>
+    <!-- Paint before the theme stylesheet and app bundle arrive. -->
+    <style>
+      html { color-scheme: dark; }
+      html, body { background-color: var(--bg-canvas, #121212); }
+    </style>
     <script>
       (() => {
         const themes = ['cocoa', 'ink', 'midnight', 'cream'];

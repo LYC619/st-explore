@@ -36,22 +36,7 @@ describe('就地阅读顶栏', () => {
   });
 });
 
-describe('工作台工具条', () => {
-  const src = read('src/components/chat/ChatWorkbench.tsx');
-
-  /**
-   * 三个调用方传的 toolbarExtras 第一项都是「小说视图」——这条通道的终点。
-   * 排在外观+搜索后面它会被挤出屏幕，得横滑才找得到。
-   */
-  it('窄屏把父页追加项提到最前，桌面档仍留在右组末尾', () => {
-    expect(src).toContain('{isCompact && toolbarExtras}');
-    expect(src).toContain('{!isCompact && toolbarExtras}');
-  });
-
-  it('窄屏单行横向滚动，不换行', () => {
-    expect(src).toMatch(/isCompact\s*\n?\s*\? 'flex-nowrap overflow-x-auto/);
-  });
-});
+// 工作台居中标题与手机操作行由实际组件/浏览器回归验证。
 
 describe('小说视图滚动模式', () => {
   const src = read('src/components/reader/NovelView.tsx');

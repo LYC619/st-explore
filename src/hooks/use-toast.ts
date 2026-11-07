@@ -163,6 +163,14 @@ function toast({ ...props }: Toast) {
   };
 }
 
+/** Remove immediately when a modal opens; closed toast animations must not cover it. */
+export function clearToastsForModal() {
+  if (!memoryState.toasts.length) return;
+  for (const timer of toastTimeouts.values()) clearTimeout(timer);
+  toastTimeouts.clear();
+  dispatch({ type: 'REMOVE_TOAST' });
+}
+
 function useToast() {
   const [state, setState] = React.useState<State>(memoryState);
 

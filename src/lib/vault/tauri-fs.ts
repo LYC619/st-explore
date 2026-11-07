@@ -28,6 +28,8 @@ interface RawEntry {
 interface RawStat {
   exists: boolean;
   is_dir: boolean;
+  size?: number;
+  modified_at?: number | null;
 }
 
 function safeRelativePath(path: string): string {
@@ -76,7 +78,8 @@ export function createTauriFs(root: string): VaultFs {
     mkdir: (path) => invoke('vault_mkdir', args(path)),
     async stat(path): Promise<VaultStat> {
       const value = await invoke<RawStat>('vault_stat', args(path));
-      return { exists: value.exists, isDir: value.is_dir };
+      return { exists: value.exists, isDir: value.is_dir, ...(value.size === undefined ? {} : { size: value.size }),
+        ...(value.modified_at == null ? {} : { modifiedAt: value.modified_at }) };
     },
   };
 }

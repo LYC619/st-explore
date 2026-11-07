@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ST Explorer",
   "mainBinaryName": "STE",
-  "version": "0.9.5",
+  "version": "0.9.8",
   "identifier": "com.ste.explorer",
   "build": {
     "frontendDist": "../dist",
@@ -19,6 +19,7 @@
         "height": 900,
         "minWidth": 1024,
         "minHeight": 700,
+        "backgroundColor": "#121212",
         "decorations": false,
         "resizable": true,
         "fullscreen": false

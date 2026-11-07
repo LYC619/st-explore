@@ -8,7 +8,7 @@
  * 本组件只持 UI 态。父页切换数据源（如切分支）时应换 key 重挂，内部 UI 态随之复位。
  */
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { Eye, EyeOff, Pencil, MessageSquareDashed } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ChatPreview, type ChatPreviewHandle } from '@/components/chat/ChatPreview';
 import { MessageNavBar, type FavoriteItem } from '@/components/chat/MessageNavBar';
@@ -20,7 +20,7 @@ import { RegexSidebar } from '@/components/chat/RegexSidebar';
 import { SettingsPanel } from '@/components/chat/SettingsPanel';
 import { applyRegexRules } from '@/lib/regex-processor';
 import { selectSwipe, syncEditedMessage, isOOCMessage, isManagedHidden, hideMessage, unhideMessage, setManualHiddenRange } from '@/lib/chat-edit';
-import { HiddenRangeControls } from './HiddenRangeControls';
+import { FloorProcessingMenu } from './FloorProcessingMenu';
 import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
 import { useViewport } from '@/hooks/use-viewport';
 import { cn } from '@/lib/utils';
@@ -73,7 +73,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
 ) {
   const { toast } = useToast();
   const [capture, setCapture] = useState<{ messageId: string; content: string } | null>(null);
-  const { isCompact } = useViewport();
+  const { isCompact, isMobile } = useViewport();
   // 撤销闭包/连续操作要读「最新」数据，props 在闭包里会过期，走 ref 中转
   const sessionRef = useRef(session);
   const markersRef = useRef(markers);
@@ -458,23 +458,13 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
         className={`sticky z-40 border-b border-border bg-card/60 backdrop-blur-sm ${readerMode ? '' : 'top-0'}`}
         style={readerMode ? { top: readerStickyTop } : undefined}
       >
-        {/* 窄屏：整条工具栏单行横向滚动，不换行。换行的代价是把正文往下推出屏幕，
-            而这些控件里手机上真正常用的只有前两三个。EditorToolbar 自己会把
-            低频项收进「更多」菜单；toolbarExtras 是父页传进来的任意节点，
-            这里拆不开它，所以外层用滚动兜住。 */}
+        {/* 标题占独立中栏，左右等宽；手机先显示居中标题，操作共用下一行横向滚动。 */}
         <div className={cn(
-          'px-4 py-2.5 flex items-center gap-2',
-          isCompact
-            ? 'flex-nowrap overflow-x-auto scrollbar-thin [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
-            : 'justify-between flex-wrap',
+          'px-4 py-2.5 grid items-center gap-2',
+          isMobile ? 'grid-cols-1' : 'grid-cols-[minmax(0,1fr)_12rem_minmax(0,1fr)]',
         )}>
-          {/* 窄屏把父页追加项提到最前面。三个调用方（工作区/聊天处理页/就地阅读）传的
-              第一项都是「小说视图」，那是手机上这条通道的终点；排在外观+搜索后面的话
-              它会被挤到屏幕外，要横滑才能找到。桌面档不动：那边靠 justify-between
-              左右分组，extras 仍跟在右组末尾。 */}
-          {isCompact && toolbarExtras}
-          {/* 左侧常驻：外观 + 搜索（popover 从左展开不遮正文） */}
-          <div className={cn('flex items-center gap-2 min-w-0', isCompact ? 'flex-nowrap' : 'flex-wrap')}>
+          <div className={isMobile ? 'order-2 flex items-center gap-2 overflow-x-auto scrollbar-thin' : 'contents'} data-chat-controls>
+          <div className={cn("flex items-center gap-2 min-w-0", isMobile ? "flex-nowrap shrink-0" : "flex-wrap col-start-1 row-start-1")}>
             <SettingsPanel settings={settings} onSettingsChange={onSettingsChange} />
             {!editMode && (
               <MessageSearchBar
@@ -486,11 +476,18 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                 onPrev={() => previewRef.current?.prevMatch()}
               />
             )}
+            <FloorProcessingMenu key={session.id} count={session.messages.length} hiddenCount={hiddenCount} oocCount={oocCount}
+              showHidden={showHidden} showOOC={showOOC} onShowHidden={setShowHidden} onShowOOC={setShowOOC}
+              onApply={!readerMode && onSessionChange ? (start, end, hidden) => {
+                mutateSession(current => setManualHiddenRange(current, start, end, hidden));
+                toast({ title: hidden ? '已设置范围手动隐藏' : '已取消范围手动隐藏', description: '系统、OOC 和记忆插件管理的隐藏保持不变。' });
+              } : undefined} />
+
           </div>
           {/* 右侧操作：处理 + 输入输出 + 父页追加 */}
           <div className={cn(
             'flex items-center gap-2',
-            isCompact ? 'flex-nowrap' : 'flex-wrap justify-end',
+            isMobile ? 'flex-nowrap shrink-0' : 'flex-wrap justify-end col-start-3 row-start-1',
           )}>
             <EditorToolbar
               session={session}
@@ -503,78 +500,37 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
               onToggleRegex={() => setRegexSidebarOpen(!regexSidebarOpen)}
               hideChapterMark={readerMode}
             />
-            {!isCompact && toolbarExtras}
+            {toolbarExtras}
           </div>
+          </div>
+            <div className={cn("w-48 shrink-0 min-w-0 self-center justify-self-center", isMobile ? "order-1" : "col-start-2 row-start-1")} data-chat-story-name>
+              {titleEditing && !readerMode ? <Input autoFocus aria-label="故事名称" value={titleDraft}
+                onChange={e => setTitleDraft(e.target.value)} onBlur={commitTitleEdit}
+                onKeyDown={e => { if (e.key === 'Enter') commitTitleEdit(); if (e.key === 'Escape') setTitleEditing(false); }} className="w-full text-center" />
+                : <button className="flex w-full min-w-0 items-center gap-1 text-sm font-medium text-center justify-center" onClick={startTitleEdit} disabled={readerMode}
+                  title={session.title || '未命名作品'} aria-label={`故事名称：${session.title || '未命名作品'}`}>
+                  <span className="truncate min-w-0 flex-1">{session.title || '未命名作品'}</span>{!readerMode && <Pencil className="w-3 h-3 shrink-0 text-muted-foreground" />}
+                </button>}
+            </div>
         </div>
       </div>
 
       {capture && recordContext && <CaptureRecordDialog storyId={recordContext.storyId} branchId={recordContext.branchId}
         messageId={capture.messageId} initialContent={capture.content} beforeSave={recordContext.flush}
-        onClose={() => setCapture(null)} onSaved={() => toast({ title: '已收录到当前故事的总结/日记', description: '可在编辑区「总结」中查看；已绑定角色的故事也可从角色详情查看。' })} />}
+        onClose={() => setCapture(null)} onSaved={destination => toast({ title: destination === 'note' ? '已收录到角色备注' : '已收录到当前故事的总结/日记', description: destination === 'note' ? '可从角色详情的「备注」查看。' : '可在编辑区「总结」中查看；已绑定角色的故事也可从角色详情查看。' })} />}
       <div className={cn('py-6', isCompact ? 'px-3' : 'px-4')}>
         {/* Preview + Sidebars Row */}
         {/* 窄屏改成上下叠：正则侧栏是固定 320px，390px 视口里横着放会把正文挤成一条。
             它在手机上本来也是低频（调试用），叠到正文下面即可。 */}
-        <div className={cn('flex gap-4 items-start', isCompact && 'flex-col')}>
+        <div className={cn('flex gap-4', isCompact ? 'flex-col items-stretch' : 'items-start')}>
           {/* Preview Area */}
           <div className="flex-1 min-w-0">
-            {!readerMode && onSessionChange && <HiddenRangeControls key={session.id} count={session.messages.length} onApply={(start, end, hidden) => {
-              mutateSession(current => setManualHiddenRange(current, start, end, hidden));
-              toast({ title: hidden ? '已设置范围手动隐藏' : '已取消范围手动隐藏', description: '系统、OOC 和记忆插件管理的隐藏保持不变。' });
-            }} />}
             {!readerMode && <div className="mb-3 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0 flex-wrap">
                 {titleBadge}
-                {!readerMode && titleEditing ? (
-                  <Input size="sm"
-                    autoFocus
-                    value={titleDraft}
-                    onChange={(e) => setTitleDraft(e.target.value)}
-                    onBlur={commitTitleEdit}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitTitleEdit();
-                      if (e.key === 'Escape') setTitleEditing(false);
-                    }}
-                    className="w-64 max-w-full"
-                    placeholder="作品标题"
-                  />
-                ) : readerMode ? (
-                  <span className="truncate max-w-[16rem] font-medium text-foreground" title={session.title || '未命名作品'}>
-                    {session.title || '未命名作品'}
-                  </span>
-                ) : (
-                  <button
-                    onClick={startTitleEdit}
-                    className="group flex items-center gap-1 min-w-0"
-                    title="点击重命名（标题会自动保存，并用于导出文件名）"
-                  >
-                    <span className="truncate max-w-[16rem] font-medium text-foreground" title={session.title || '未命名作品'}>{session.title || '未命名作品'}</span>
-                    <Pencil className="w-3 h-3 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity" />
-                  </button>
-                )}
                 <span className="shrink-0">共 {session.messages.length} 楼</span>
                 {markers.length > 0 && (
                   <span className="text-primary shrink-0">· {markers.length} 个章节标记</span>
-                )}
-                {hiddenCount > 0 && (
-                  <button
-                    onClick={() => setShowHidden(v => !v)}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0"
-                    title="这些楼层在 SillyTavern 里被 Hide，仍会正常导入；点击切换是否展示"
-                  >
-                    {showHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    {showHidden ? '隐藏' : '显示'} {hiddenCount} 个隐藏楼层
-                  </button>
-                )}
-                {oocCount > 0 && (
-                  <button
-                    onClick={() => setShowOOC(v => !v)}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors shrink-0"
-                    title="OOC/注释楼（ST 的 /comment），与隐藏楼层独立开关"
-                  >
-                    <MessageSquareDashed className="w-3.5 h-3.5" />
-                    {showOOC ? '隐藏' : '显示'} {oocCount} 条 OOC
-                  </button>
                 )}
               </div>
               {!readerMode && editMode && (

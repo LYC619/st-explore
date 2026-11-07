@@ -132,6 +132,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   // 加载 + 记 lastViewedAt（切换故事 id 时重挂）
   useEffect(() => {
     let cancelled = false;
+    let loadedSaver: StoryDraftSaver | undefined;
     const epoch = getVaultEpoch();
     const isCurrent = () => !cancelled && epoch === getVaultEpoch();
     setLoading(true);
@@ -154,13 +155,15 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
             : null);
         setBranchId(restoredBranchId);
         const viewedAt = Date.now();
-        const withView = await updateArchiveStory(s.id, (current) => ({
+        const viewPatch = (current: ArchiveStory) => ({
           settings: current.settings ?? getDefaultExportSettings(),
           lastViewedAt: viewedAt,
           lastViewedBranchId: restoredBranchId ?? undefined,
-        }));
-        if (!isCurrent() || !withView) return;
-        saverRef.current = createReaderSaver();
+        });
+        loadedSaver = createReaderSaver();
+        saverRef.current = loadedSaver;
+        saverRef.current.queueMutation(s.id, viewPatch);
+        const withView = { ...s, ...viewPatch(s) };
         storyRef.current = withView;
         setStory(withView);
       } catch (error) {
@@ -176,7 +179,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         if (isCurrent()) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; void loadedSaver?.flush().catch(() => {}); };
   }, [storyId, initialBranchId, toast, retry]);
 
   const transitionAfterFlush = useCallback(async (transition: () => void) => {

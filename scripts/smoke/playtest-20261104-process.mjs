@@ -1,0 +1,100 @@
+import { chromium, expect } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+const base=process.env.STE_SMOKE_URL || 'http://127.0.0.1:4214';
+const out='.cache/1104-goal';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,channel:'msedge'});
+const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const errors=[], results=[]; page.on('pageerror',e=>errors.push(e.message));
+await page.route(/https:\/\//,r=>r.abort());
+let mode='success', pendingRelease, waiting=false, requests=0;
+await page.route('**/fixture-process',async route=>{
+ const headers={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'*','Access-Control-Allow-Methods':'POST, OPTIONS, GET'};
+ if(route.request().method()==='OPTIONS')return route.fulfill({status:204,headers});
+ if(route.request().method()==='GET')return route.fulfill({headers,json:{data:[{id:'fixture-model'}]}});
+ requests++;
+ if(mode==='error')return route.fulfill({status:503,headers,json:{error:{message:'模拟服务暂不可用'}}});
+ if(mode==='wait'){waiting=true;await new Promise(resolve=>pendingRelease=resolve);waiting=false;}
+ const body=route.request().postDataJSON();
+ const content='回复'+requests+'：门外传来敲门声。';
+ try {if(body.stream)await route.fulfill({headers,contentType:'text/event-stream',body:`data: ${JSON.stringify({choices:[{delta:{content}}]})}\n\ndata: [DONE]\n\n`});
+ else await route.fulfill({headers,json:{choices:[{message:{content},finish_reason:'stop'}]}});} catch {}
+});
+const navigate=p=>page.evaluate(p=>{history.pushState(null,'',p);dispatchEvent(new PopStateEvent('popstate'));},p);
+const records=()=>page.evaluate(()=>[...window.__STE_TAVERN_HOSTS__.values()][0].processLog.snapshot());
+try {
+ await page.goto(base+'/settings');await page.getByRole('button',{name:'显示',exact:true}).waitFor();
+ const ids=await page.evaluate(async base=>{
+  const db=await import('/src/lib/archive-db.ts');
+  const {persistProfiles}=await import('/src/components/ai-tools/api-profiles.ts');
+  const {getCurrentRepo}=await import('/src/lib/repo/index.ts');
+  const {parseWorldBook}=await import('/src/types/worldbook.ts');
+  localStorage.setItem('ste-play-guide-seen','1');
+  persistProfiles([{id:'fixture',name:'测试连接',model:'fixture-model',apiUrl:base+'/fixture-process',apiKey:'fixture-secret-must-not-leak'}],'fixture');
+  const card=db.buildCharacterFromCard({spec:'chara_card_v3',data:{name:'过程测试角色',description:'书店的守门人',first_mes:'请进',extensions:{}}});
+  card.assets=[{kind:'worldbook',assetId:'world',relations:['primary']}];await db.saveCharacter(card);
+  await getCurrentRepo('worldbooks').put({id:'world',title:'过程测试世界书',createdAt:1,updatedAt:1,worldbook:parseWorldBook({entries:{1:{uid:1,constant:true,content:'测试世界书门向北开',comment:'店门',position:0}}})});
+  const story=db.buildStoryFromSession({id:'process-session',title:'过程测试故事',createdAt:1,character:{name:card.name},user:{name:'旅人'},messages:[{id:'first',role:'assistant',content:'请进'}]},card.id);
+  await db.saveArchiveStory(story);return {story:story.id,card:card.id};
+ },base);
+ await navigate('/play/'+ids.story);
+ const tavern=page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+ await expect(tavern.locator('#send_textarea')).toBeVisible({timeout:60000});
+ await expect(page.getByRole('button',{name:'过程',exact:true})).toBeEnabled({timeout:60000});
+ await tavern.locator('#send_textarea').fill('请继续。');await tavern.locator('#send_but').click();
+ await expect(tavern.locator('#chat')).toContainText('回复1：',{timeout:30000});
+ await expect.poll(async()=>(await records()).some(r=>r.events.some(e=>e.stage==='saved'))).toBe(true);
+ await page.getByRole('button',{name:'过程',exact:true}).click();
+ const panel=page.getByRole('dialog',{name:'聊天过程'});
+ await expect(panel).toContainText('发送最终请求');await expect(panel).toContainText('正文已保存到故事');
+ const first=await records();expect(first).toHaveLength(1);expect(first[0].status).toBe('succeeded');expect(first[0].candidateId).toBeTruthy();
+ expect(first[0].events.map(e=>e.stage)).toContain('world');
+ expect(JSON.stringify(first)).not.toContain('fixture-secret-must-not-leak');
+ await panel.locator('[data-process-stage="request"] summary').click();
+ await expect(panel).toContainText('fixture-model');await expect(panel).toContainText('测试世界书门向北开');
+ await page.screenshot({path:out+'/process-success.png'});results.push('真实 ST 发送、世界书、最终请求、响应、候选及保存进入过程面板');
+ await panel.getByRole('button',{name:'Close',exact:true}).click();
+ const frame=page.frames().find(f=>f.url().includes('tavern.html'));
+ await frame.evaluate(async()=>{const st=await import('/script.js');st.chat.at(-1).variables=[{stat_data:{trust:3}}];await st.saveChatConditional();});
+ await expect.poll(async()=>(await records())[0].events.some(e=>e.stage==='variables'&&e.detail?.includes('trust'))).toBe(true);
+ results.push('楼层变量实际保存可见');
+ await tavern.locator('#options_button').click(); await tavern.locator('#option_continue').click();
+ await expect.poll(async()=>(await records()).filter(r=>r.type==='continue'&&r.events.some(e=>e.stage==='saved')).length).toBe(1);
+ const continued=(await records()).at(-1);expect(continued.messageId).toBe(first[0].messageId);
+ await tavern.locator('#chat .last_mes .swipe_right').click();
+ await expect.poll(async()=>(await records()).filter(r=>r.type==='swipe'&&r.events.some(e=>e.stage==='saved')).length).toBe(1);
+ const swiped=(await records()).at(-1);expect(swiped.messageId).toBe(first[0].messageId);expect(swiped.candidateId).not.toBe(continued.candidateId);
+ results.push('续写与新候选各自关联楼层和保存');
+ mode='error';await tavern.locator('#send_textarea').fill('测试失败');await tavern.locator('#send_but').click();
+ await expect.poll(async()=>(await records()).at(-1)?.status).toBe('failed');
+ expect((await records()).at(-1).events.some(e=>e.label.includes('503'))).toBe(true);results.push('服务错误有失败记录');
+ mode='wait';await tavern.locator('#send_textarea').fill('测试停止');await tavern.locator('#send_but').click();
+ await expect.poll(()=>waiting).toBe(true);
+ await tavern.locator('#mes_stop').click();pendingRelease?.();
+ await expect.poll(async()=>(await records()).at(-1)?.status).toBe('cancelled');results.push('停止请求有取消记录');
+ mode='success';await page.getByRole('button',{name:'过程',exact:true}).click();
+ await expect(panel).toContainText('已停止');await panel.getByRole('button',{name:'Close',exact:true}).click();
+ await navigate('/library');await expect(page.locator('[data-character-id]')).toHaveCount(1);
+ await navigate('/play/'+ids.story);await expect(page.getByRole('button',{name:'过程',exact:true})).toBeEnabled();
+ await page.getByRole('button',{name:'过程',exact:true}).click();await expect(panel.locator('[data-process-turn]')).toHaveCount(5);
+ await page.setViewportSize({width:390,height:844});await expect(panel).toBeVisible();
+ await expect.poll(()=>panel.evaluate(e=>{const r=e.getBoundingClientRect();return r.left>=-1&&r.right<=391;})).toBe(true);
+ await page.screenshot({path:out+'/process-mobile.png'});results.push('切页返回保留记录，窄屏可查看');
+ await panel.getByRole('button',{name:'Close',exact:true}).click();await page.setViewportSize({width:1440,height:1000});
+ await page.getByRole('button',{name:'分支',exact:true}).click();
+ await tavern.getByRole('button',{name:'从最后一楼新建分支',exact:true}).click();
+ await expect(page).toHaveURL(/branch=.+/);
+ await page.getByRole('button',{name:'过程',exact:true}).click();await expect(panel).toContainText('还没有过程记录');
+ await panel.getByRole('button',{name:'Close',exact:true}).click();
+ await tavern.locator('#send_textarea').fill('分支回复');await tavern.locator('#send_but').click();
+ await expect.poll(async()=>(await records()).filter(r=>r.branchId&&r.events.some(e=>e.stage==='saved')).length).toBe(1);
+ await page.getByRole('button',{name:'过程',exact:true}).click();await expect(panel.locator('[data-process-turn]')).toHaveCount(1);
+ await panel.getByRole('button',{name:'Close',exact:true}).click();await page.getByRole('button',{name:'分支',exact:true}).click();
+ await tavern.locator('#ste_branch_select').selectOption({index:0});await tavern.getByRole('button',{name:'切换分支',exact:true}).click();
+ await expect(page).toHaveURL(/branch=$/);await page.getByRole('button',{name:'过程',exact:true}).click();
+ await expect(panel.locator('[data-process-turn]')).toHaveCount(5);results.push('真实分支创建、发送及返回主线时过程记录隔离');
+ // ST exposes its intentionally rejected provider/abort promises as page errors.
+ // Keep the exact expected failures visible; any unrelated error fails the run.
+ expect(errors.filter(message => !['Got response status 503', 'signal is aborted without reason'].includes(message))).toEqual([]);
+ console.log(JSON.stringify({passed:results,errors}));
+} catch(error){await page.screenshot({path:out+'/process-failure.png'});console.log(JSON.stringify({records:await records().catch(()=>[]),errors}));throw error;}
+finally {pendingRelease?.();await writeFile(out+'/process-browser.json',JSON.stringify({results,errors},null,2));await browser.close();}

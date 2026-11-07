@@ -12,7 +12,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
  * 阶段 C2 拆分：卡面/列表行/操作菜单/工具条/分页条已抽到 components/library/，
  * 外观偏好与批量选择抽到 hooks/，本文件只留数据装载、导入导出删除与组装。
  */
-import { useState, useEffect, useMemo, useCallback, useRef, lazy, Suspense, useSyncExternalStore } from 'react';
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
 import { Plus, BookOpen, ListFilter } from 'lucide-react';
@@ -149,15 +149,21 @@ const Library = () => {
   const [pendingDelete, setPendingDelete] = useState<ArchiveCharacter[] | null>(null);
   /** 网页版一次选太多要先确认（只下前 WEB_BATCH_DOWNLOAD_LIMIT 张） */
   const [pendingWebExport, setPendingWebExport] = useState<ArchiveCharacter[] | null>(null);
-  const [page, setPage] = useState(1);
   const [hideUnusedTags, setHideUnusedTags] = useState(() => getHideUnusedLibraryTags());
   const prefs = useLibraryViewPrefs();
+  const browseLayout = JSON.stringify([prefs.viewMode, prefs.pageSize, prefs.groupBy, prefs.groupTagCategory]);
+  const savedBrowse = returnState?.browse?.layout === browseLayout ? returnState.browse : undefined;
+  const [page, setPage] = useState(savedBrowse?.page ?? 1);
+  const browseScroll = useRef(savedBrowse?.scrollTop ?? 0);
+  const browseElement = useRef<HTMLDivElement>(null);
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(() => new Set(savedBrowse?.expandedGroups));
 
   useEffect(() => {
     if (getVaultEpoch() === scopeEpoch) {
-      writeLibraryReturnState({ searchQuery, tagFilters, typeFilter, sortKey, sortAsc });
+      writeLibraryReturnState({ searchQuery, tagFilters, typeFilter, sortKey, sortAsc,
+        browse: { page, scrollTop: browseScroll.current, expandedGroups: [...expandedGroups], layout: browseLayout } });
     }
-  }, [prefs.viewMode, searchQuery, tagFilters, typeFilter, sortKey, sortAsc, scopeEpoch]);
+  }, [searchQuery, tagFilters, typeFilter, sortKey, sortAsc, page, expandedGroups, browseLayout, scopeEpoch]);
 
   useEffect(() => {
     const syncDisplaySettings = () => setHideUnusedTags(getHideUnusedLibraryTags());
@@ -472,10 +478,16 @@ const Library = () => {
     return sortCharacters(list, sortKey, sortAsc, lastPlayed);
   }, [characters, searchQuery, tagFilters, typeFilter, sortKey, sortAsc, lastPlayed]);
 
-  // 筛选/搜索/排序/每页数变化时回到第 1 页
+  // Initial mounting restores the previous page; only an actual query/layout change resets it.
+  const queryKey = JSON.stringify([searchQuery, tagFilters, typeFilter, sortKey, sortAsc, browseLayout]);
+  const previousQuery = useRef(queryKey);
   useEffect(() => {
+    if (previousQuery.current === queryKey) return;
+    previousQuery.current = queryKey;
+    browseScroll.current = 0;
     setPage(1);
-  }, [searchQuery, tagFilters, typeFilter, sortKey, sortAsc, prefs.pageSize]);
+    setExpandedGroups(new Set());
+  }, [queryKey]);
 
   const selection = useLibrarySelection(filtered, page);
 
@@ -496,8 +508,8 @@ const Library = () => {
   const pageCount = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(filtered.length / Number(pageSize)));
   // 删除等操作使总页数缩小时收敛到最后一页
   useEffect(() => {
-    if (page > pageCount) setPage(pageCount);
-  }, [page, pageCount]);
+    if (!loading && !loadFailed && page > pageCount) setPage(pageCount);
+  }, [page, pageCount, loading, loadFailed]);
   const pageItems = useMemo(() => {
     if (pageSize === 'all') return filtered;
     const n = Number(pageSize);
@@ -515,15 +527,17 @@ const Library = () => {
    * 一屏看一张卡等于把库页变成一条队列。分组折叠的「每组两行」也按这个列数算。
    */
   const cols = isMobile ? 2 : measuredCols;
+  const restoredBrowse = useRef<string>();
+  const browsePosition = JSON.stringify([page, queryKey]);
+  useLayoutEffect(() => {
+    if (loading || loadFailed || !browseElement.current || grouping && cols === 0) return;
+    if (restoredBrowse.current === browsePosition) return;
+    browseElement.current.scrollTop = restoredBrowse.current ? 0 : browseScroll.current;
+    restoredBrowse.current = browsePosition;
+  }, [loading, loadFailed, grouping, cols, browsePosition]);
   const gridTemplateColumns = isMobile
     ? 'repeat(2, minmax(0, 1fr))'
     : `repeat(auto-fill, minmax(${prefs.cardWidth}px, 1fr))`;
-  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
-  // 换筛选/换分组维度后旧的展开状态没有意义
-  useEffect(() => {
-    setExpandedGroups(new Set());
-  }, [searchQuery, tagFilters, typeFilter, prefs.groupBy, prefs.groupTagCategory]);
-
   const displayGroups = useMemo(() => {
     const groups = buildLibraryGroups(grouping ? filtered : pageItems, prefs.groupBy, {
       tagCategory: prefs.groupTagCategory,
@@ -634,7 +648,11 @@ const Library = () => {
               </Suspense>
             </div>
           ) : (
-          <div className={cn(
+          <div ref={browseElement} data-library-scroll onScroll={event => {
+            browseScroll.current = event.currentTarget.scrollTop;
+            if (!loading && getVaultEpoch() === scopeEpoch) writeLibraryReturnState({ searchQuery, tagFilters, typeFilter, sortKey, sortAsc,
+              browse: { page, scrollTop: browseScroll.current, expandedGroups: [...expandedGroups], layout: browseLayout } });
+          }} className={cn(
             'flex-1 min-w-0 overflow-y-auto scrollbar-thin py-3',
             isMobile ? 'px-3' : 'px-6',
           )}>

@@ -11,6 +11,16 @@ const original = sourceAssetEntries(source);
 const { additions, overlays } = await createHostAssets(source, 'host-test');
 const assets = composeAssets(original, additions, overlays);
 
+test('literal HTML preserves JavaScript dollar tokens while ordinary regex capture replacement remains active', async () => {
+  const engine = (await readAsset(assets.get('/scripts/extensions/regex/engine.js'))).toString();
+  const run = new Function('canRunRegexScript', 'resolveRegexString', 'RegexProvider', 'substituteParams',
+    engine.slice(engine.indexOf('export function runRegexScript')).replace('export function', 'function') + ';return runRegexScript;')
+    (() => true, s => s.findRegex, { instance: { get: s => new RegExp(s) } }, s => s);
+  const script = { findRegex: '(hello)', replaceString: '<script>const text = "$1/$2";</script>', trimStrings: [], steLiteralReplacement: true };
+  assert.equal(run(script, 'hello'), script.replaceString);
+  assert.equal(run({ ...script, steLiteralReplacement: false, replaceString: '<div>$1</div>' }, 'hello'), '<div>hello</div>');
+});
+
 test('host bootstrap replaces only a hash-verified upstream URL, leaving pinned originals unchanged', async () => {
   const entry = overlays.find(entry => entry.asset.url === '/tauri-main.js');
   assert.ok(entry, 'STE host bootstrap is present');

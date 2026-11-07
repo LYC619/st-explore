@@ -284,7 +284,7 @@ describe('vault 资产映射（__ste 往返）', () => {
     };
     await presets.put(item);
     expect(await presets.get('p1')).toEqual(item);
-    const file = JSON.parse(await fs.readText('资产/预设/默认预设.json'));
+    const file = JSON.parse(await fs.readText((await vault.pathOf('presets', 'p1'))!));
     expect(file.temperature).toBe(0.7); // originalData 拼回顶层
     expect(file.prompts[0].自定义字段).toBe(1);
     expect(file.__ste.title).toBe('默认预设');

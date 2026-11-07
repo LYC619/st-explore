@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Activity, ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ClientTitleBar } from '@/components/ClientTitleBar';
 import { RoleplayGuide } from '@/components/roleplay/RoleplayGuide';
+import { ChatProcessPanel } from '@/components/roleplay/ChatProcessPanel';
 import { createTavernHost } from '@/lib/roleplay/tavern-host';
-import { registerTavernHost, type TavernFrameWindow } from '@/lib/roleplay/frame';
+import { registerTavernHost, type TavernFrameWindow, type TavernHost } from '@/lib/roleplay/frame';
 import { saveTextFile } from '@/lib/roleplay/export-package-file';
 import { saveSettingsSection } from '@/lib/settings-navigation';
 import { isTauri } from '@/lib/runtime';
@@ -32,6 +33,8 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   const [status, setStatus] = useState('正在打开酒馆…');
   const [ready, setReady] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [processOpen, setProcessOpen] = useState(false);
+  const [processHost, setProcessHost] = useState<TavernHost>();
   const [error, setError] = useState<string>();
   const [saveFailed, setSaveFailed] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -145,6 +148,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     let remove: (() => void) | undefined;
     const epoch = getVaultEpoch();
     setReady(false);
+    setProcessHost(undefined);
     setSrc(undefined);
     const open = async () => {
       allowExit.current = false;
@@ -190,6 +194,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
         },
       });
       if (disposed) { host.close(); return; }
+      setProcessHost(host);
       const registration = registerTavernHost(host);
       remove = registration.remove;
       flushRef.current = async () => {
@@ -262,7 +267,8 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
         {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-1 h-4 w-4" />}{fromChats ? '返回聊天列表' : '返回聊天处理'}
       </Button>
       <span role="status" title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground sm:order-none sm:flex-1 sm:basis-auto">{status}</span>
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
+        <Button variant="ghost" size="sm" disabled={!ready} onClick={() => setProcessOpen(true)}><Activity className="mr-1 h-4 w-4" />过程</Button>
         <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('branches')}><GitBranch className="mr-1 h-4 w-4" />分支</Button>
         <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('scripts')}><Code className="mr-1 h-4 w-4" />脚本</Button>
         <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('chat')}><Menu className="mr-1 h-4 w-4" />聊天工具</Button>
@@ -287,6 +293,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     </div>}
     {src ? <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
       : !error && <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}
+    <ChatProcessPanel host={processHost} storyId={returnTarget.current.storyId} branchId={returnTarget.current.branchId} open={processOpen && active} onOpenChange={setProcessOpen} />
     <RoleplayGuide open={guideOpen && active} onOpenChange={changeGuide} runtimeReady={ready} onModels={() => {
       if (ready) openSettings('models'); else { saveSettingsSection('ai'); navigate('/settings'); }
     }} onRuntime={() => { if (ready) openSettings('runtime'); }} />

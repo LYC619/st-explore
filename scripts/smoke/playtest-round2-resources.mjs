@@ -1,0 +1,42 @@
+import { chromium, expect } from '@playwright/test';
+import { mkdir, writeFile } from 'node:fs/promises';
+const base=process.env.STE_SMOKE_URL||'http://127.0.0.1:4211',out='.cache/playtest-round2-resources';await mkdir(out,{recursive:true});
+const browser=await chromium.launch({headless:true,channel:'msedge'});const page=await browser.newPage({viewport:{width:1440,height:1000}});const errors=[],passed=[];page.on('pageerror',error=>errors.push(error.message));
+await page.route(/https:\/\//,route=>route.abort());
+const navigate=path=>page.evaluate(path=>{history.pushState(null,'',path);window.dispatchEvent(new PopStateEvent('popstate'));},path);
+try{
+ await page.goto(base+'/settings');await page.getByRole('button',{name:'显示',exact:true}).waitFor();
+ await page.evaluate(async()=>{
+  const{createMemFs}=await import('/src/lib/vault/fs.ts');const{createVault}=await import('/src/lib/vault/vault-backend.ts');const{setActiveVault}=await import('/src/lib/vault/active.ts');const{parsePreset}=await import('/src/lib/preset-parser.ts');const{setTourCompleted}=await import('/src/lib/tour-steps.ts');
+  for(const tour of ['home','chat','library'])setTourCompleted(tour);
+  const fs=createMemFs(),vault=createVault(fs);window.resourceTest={fs,vault};setActiveVault(vault);
+  await vault.repo('presets').put({id:'resource-test',title:'内嵌资源回归',catalog:{name:'内嵌资源回归',series:'资源系列',version:'v1'},createdAt:1,updatedAt:1,preset:parsePreset({prompts:[{identifier:'p',name:'提示词',content:'保留原有内容'}],prompt_order:[],extensions:{regex_scripts:[{id:'embedded-rule',scriptName:'内嵌测试规则',findRegex:'hello',replaceString:'world',placement:[2],custom:'keep'}],tavern_helper:{scripts:[{type:'script',id:'embedded-script',name:'内嵌测试脚本',content:'throw new Error("script must stay inert")',info:'作者说明',enabled:true,unknown:{keep:true}}]}}})});
+ });
+ await navigate('/chat');
+ await page.getByRole('navigation',{name:'编辑区工具',exact:true}).getByRole('button',{name:'正则',exact:true}).click();
+ await expect(page).toHaveURL(/\/regex$/);await expect(page.getByRole('region',{name:'正则编辑',exact:true})).toBeVisible();
+ await expect(page.locator('[data-regex-library]')).not.toHaveAttribute('open');
+ const box=await page.getByRole('region',{name:'正则编辑',exact:true}).boundingBox();expect(box.width).toBeGreaterThan(400);
+ await page.screenshot({path:out+'/regex-editor.png'});passed.push('真实编辑区正则点击链停在/regex，规则编辑主体前置，正则库默认折叠');
+ await navigate('/presets/resource-test');await page.getByRole('tab',{name:'正则与脚本',exact:true}).click();
+ await page.getByRole('region',{name:'预设内嵌资源',exact:true}).waitFor();
+ await page.getByText('内嵌测试脚本',{exact:true}).click();
+ await page.getByRole('button',{name:'管理脚本 · 内嵌测试脚本',exact:true}).click();
+ await page.getByLabel('内嵌脚本源码',{exact:true}).fill('export const managed = true;');
+ await page.getByRole('dialog').getByRole('button',{name:'关闭',exact:true}).click();
+ await expect(page.getByRole('alertdialog')).toBeVisible();await page.getByRole('button',{name:'返回继续整理',exact:true}).click();
+ await expect(page.getByLabel('内嵌脚本源码',{exact:true})).toHaveValue('export const managed = true;');
+ await page.getByRole('button',{name:'保存内嵌脚本',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ const source=await page.evaluate(async()=>{const{createVault}=await import('/src/lib/vault/vault-backend.ts');return(await createVault(window.resourceTest.fs).repo('presets').get('resource-test')).preset.originalData.extensions.tavern_helper.scripts[0];});
+ expect(source).toMatchObject({id:'embedded-script',content:'export const managed = true;',unknown:{keep:true},enabled:true});
+ await page.screenshot({path:out+'/preset-embedded-resources.png'});passed.push('预设详情实际正则与脚本tab管理内嵌脚本、取消放弃保留草稿、显式保存并重开库核对未知字段和ID');
+ await page.getByRole('button',{name:'读取到正则库并管理',exact:true}).click();
+ await expect(page).toHaveURL(/\/regex\?assetId=preset-regex-/);await expect(page.getByRole('region',{name:'正则编辑',exact:true})).toContainText('内嵌测试规则');
+ const assetId=new URL(page.url()).searchParams.get('assetId');
+ await page.evaluate(async id=>{const collection=await window.resourceTest.vault.repo('regexes').get(id);await window.resourceTest.vault.repo('regexes').put({...collection,rules:collection.rules.map(rule=>({...rule,replaceString:'my-edited-copy'}))});},assetId);
+ await navigate('/presets/resource-test');await page.getByRole('tab',{name:'正则与脚本',exact:true}).click();await page.getByRole('button',{name:'读取到正则库并管理',exact:true}).click();
+ await expect(page).toHaveURL(new RegExp(assetId));
+ const copy=await page.evaluate(async id=>({rules:(await window.resourceTest.vault.repo('regexes').get(id)).rules,count:(await window.resourceTest.vault.repo('regexes').list()).length}),assetId);
+ expect(copy.count).toBe(1);expect(copy.rules[0].replaceString).toBe('my-edited-copy');passed.push('从预设读取内嵌正则入库并打开管理、重复读取去重且保留已编辑副本');
+ expect(errors).toEqual([]);await writeFile(out+'/results.json',JSON.stringify({passed,errors},null,2));console.log(JSON.stringify({passed,errors}));
+}catch(error){await page.screenshot({path:out+'/failure.png',fullPage:true});await writeFile(out+'/failure.txt',(await page.locator('body').innerText()).slice(0,18000));throw error;}finally{await browser.close();}

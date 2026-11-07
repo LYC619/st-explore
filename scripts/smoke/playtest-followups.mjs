@@ -136,7 +136,7 @@ try {
     const edited = `${scenario.title}：刚编辑的原文`;
     await page.getByRole('dialog').locator('#content').fill(edited);
     await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
-    await page.getByRole('button', { name: '收录第 0 楼为总结或日记', exact: true }).click();
+    await page.getByRole('button', { name: '收录第 0 楼', exact: true }).click();
     await expect(page.getByLabel('记录正文', { exact: true })).toHaveValue(edited);
     await page.getByLabel('记录类型', { exact: true }).selectOption(scenario.kind);
     await page.getByLabel('记录标题', { exact: true }).fill(scenario.title);

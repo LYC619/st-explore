@@ -1,4 +1,4 @@
-import { withArchiveStoryLock, getBranchLine } from '@/lib/archive-db';
+import { withArchiveStoryLock, getBranchLine, updateCharacter } from '@/lib/archive-db';
 import { withSummaryLock } from '@/lib/summary-db';
 import { buildManualSummaryItem } from '@/lib/summary-factory';
 import { getCurrentRepo } from '@/lib/repo';
@@ -38,4 +38,31 @@ export async function captureRecord(input: CaptureRecordInput): Promise<SummaryI
       source: floor >= 0 ? { messageId: input.messageId!, floor, capturedAt: Date.now() } : undefined }), id: input.recordId, rangeDetached: floor >= 0 && !input.range };
     check(); await records.put(item); return item;
   }));
+}
+
+/** Only notes are written. Re-read the source inside the character updater without
+ * holding both queues: story-package export may already hold the story queue. */
+export async function captureCharacterNote(input: Omit<CaptureRecordInput, 'kind'>): Promise<void> {
+  const epoch = getVaultEpoch(), stories = getCurrentRepo<ArchiveStory>('archiveStories');
+  const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，收录已停止'); };
+  if (!input.content.trim()) throw new Error('请填写正文');
+  check();
+  const initial = await stories.get(input.storyId);
+  if (!initial?.characterId) throw new Error('请先为故事绑定角色，再收录到角色备注');
+  check();
+  const saved = await updateCharacter(initial.characterId, async current => {
+    check();
+    const story = await stories.get(input.storyId);
+    if (!story || story.characterId !== current.id) throw new Error('故事的绑定角色已变化，请重新打开收录');
+    const line = getBranchLine(story, input.branchId);
+    if (!line) throw new Error('来源分支不存在');
+    const message = input.messageId ? line.session.messages.find(message => message.id === input.messageId) : undefined;
+    if (input.messageId && !message) throw new Error('来源消息不存在，请重新选择');
+    if (message && input.expectedSource !== undefined && message.content !== input.expectedSource) throw new Error('来源消息已修改，请重新选择');
+    if (current.notes?.some(note => note.id === input.recordId)) return undefined;
+    const body = [input.title?.trim() ? `## ${input.title.trim()}` : '', input.content.trim()].filter(Boolean).join('\n\n');
+    check();
+    return { notes: [...(current.notes ?? []), { id: input.recordId, body, at: Date.now() }], updatedAt: Date.now() };
+  });
+  if (!saved) throw new Error('绑定角色已不存在');
 }

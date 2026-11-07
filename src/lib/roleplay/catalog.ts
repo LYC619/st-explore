@@ -10,6 +10,7 @@ import { normalizeCharacterCard, type STCharacterCard } from '@/lib/png-parser';
 import { decodeLiveChat, encodeLiveChat } from './live-chat';
 import { captureBranchRuntimeParent } from './branch-inheritance';
 import { characterFilterTags } from '@/lib/tag-taxonomy';
+import { toStoryIndex, type StoryIndexEntry } from '@/lib/story-index';
 
 export interface ChatLocator {
   storyId: string;
@@ -130,7 +131,10 @@ interface Person {
   updatedAt: number;
 }
 
-interface Entry extends CatalogLine {
+interface Entry {
+  locator: ChatLocator;
+  story: StoryIndexEntry;
+  aliases: string[];
   displayName: string;
   updatedAt: number;
 }
@@ -175,7 +179,10 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
 
   async function snapshot(): Promise<Snapshot> {
     assertCurrent();
-    const [allStories, allCharacters] = await Promise.all([stories.list(), characters.list()]);
+    const [records, allCharacters] = await Promise.all([stories.listLight(), characters.list()]);
+    // Full bodies remain behind get(). The persistent vault projection includes
+    // only names/aliases needed to disambiguate every mainline and branch.
+    const allStories = records.map(toStoryIndex);
     assertCurrent();
     const people = new Map(allCharacters.map(character => {
       const avatar = avatarKey(character.id);
@@ -184,18 +191,20 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     }));
     const entries: Entry[] = [];
     for (const story of sortStoriesForDisplay(allStories)) {
-      const avatar = storyAvatar(story);
+      const info = story.chatIndex;
+      if (!info) throw new Error('故事目录摘要缺失，请重新打开文件库');
+      const avatar = story.characterId ? avatarKey(story.characterId)
+        : info.avatar?.startsWith('ste~story~') ? info.avatar : orphanAvatar(story.id);
       if (!people.has(avatar)) people.set(avatar, {
-        id: story.characterId, synthetic: true, name: story.title, avatar, card: { name: story.session.character.name },
+        id: story.characterId, synthetic: true, name: story.title, avatar, card: { name: info.characterName },
         createdAt: story.createdAt, updatedAt: story.updatedAt,
       });
-      for (const branchId of [null, ...(story.branches ?? []).map(branch => branch.id)]) {
-        const branch = story.branches?.find(item => item.id === branchId);
-        const line = getBranchLine(story, branchId)!;
-        const key = chatKey(story.id, branchId);
-        const displayName = branch ? `${story.title} · ${branch.name}` : story.title;
-        const fileName = optionalName(catalogMetadata(line.session).fileName) ?? optionalName(displayName) ?? key;
-        entries.push({ locator: { storyId: story.id, branchId, avatar, fileName, key }, story, line, displayName, updatedAt: branch?.updatedAt ?? story.updatedAt });
+      for (const line of info.lines) {
+        const key = chatKey(story.id, line.branchId);
+        const displayName = line.branchId !== null ? `${story.title} · ${line.name}` : story.title;
+        const fileName = optionalName(line.fileName) ?? optionalName(displayName) ?? key;
+        const aliases = [line.fileName, ...line.aliases].map(optionalName).filter((name): name is string => name !== undefined);
+        entries.push({ locator: { storyId: story.id, branchId: line.branchId, avatar, fileName, key }, story, aliases, displayName, updatedAt: line.updatedAt });
       }
     }
     const byKey = new Map(entries.map(entry => [entry.locator.key, entry]));
@@ -208,7 +217,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
       aliases.set(entry.locator.avatar, names);
     }
     for (const entry of entries) {
-      for (const name of [entry.locator.key, entry.locator.fileName, ...storedAliases(entry.line.session)]) add(entry, name);
+      for (const name of [entry.locator.key, entry.locator.fileName, ...entry.aliases]) add(entry, name);
     }
     // Equal display titles remain readable, but never select an arbitrary story.
     for (const entry of [...entries].sort((a, b) => a.locator.key.localeCompare(b.locator.key))) {
@@ -259,7 +268,7 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
   }
 
   /** Cache only identities. Every known lookup still reads its current story and line. */
-  async function knownEntry(avatar: string, fileName: string): Promise<Entry | undefined> {
+  async function knownEntry(avatar: string, fileName: string): Promise<CatalogLine | undefined> {
     assertCurrent();
     const name = chatName(fileName);
     let locator = knownLocators.get(name);
@@ -276,37 +285,41 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     if (storyAvatar(story) !== avatar) throw new Error('聊天角色与故事不匹配');
     const line = getBranchLine(story, locator.branchId);
     if (!line) throw new Error('故事分支已删除，聊天不存在');
-    const branch = story.branches?.find(item => item.id === locator.branchId);
     // Refresh the body, retaining the catalog's already disambiguated filename.
-    return { locator, story, line,
-      displayName: branch ? `${story.title} · ${branch.name}` : story.title, updatedAt: branch?.updatedAt ?? story.updatedAt };
+    return { locator, story, line };
   }
 
   const first = await snapshot();
-  const initialStory = first.entries.find(entry => entry.story.id === options.storyId)?.story;
+  const initialStory = await stories.get(options.storyId);
+  assertCurrent();
   if (!initialStory) throw new Error('故事不存在');
   if (options.branchId !== undefined && options.branchId !== null && !getBranchLine(initialStory, options.branchId)) throw new Error('故事分支不存在');
   const initialBranch = resolveInitialBranchId(initialStory, options.branchId);
   initialKey = chatKey(initialStory.id, initialBranch);
-  const initialEntry = first.byKey.get(initialKey)!;
+  const initialEntry = first.byKey.get(initialKey);
+  if (!initialEntry) throw new Error('故事或分支不存在');
   const initial = Object.freeze({ ...initialEntry.locator });
-  const initialUser = structuredClone(initialEntry.line.session.user);
+  const initialUser = structuredClone(getBranchLine(initialStory, initialBranch)!.session.user);
 
   function characterDto(person: Person, chats: Pick<Entry, 'locator' | 'updatedAt'>[]): CatalogCharacterDto {
     const normalized = normalizeCharacterCard(person.card);
     const original = structuredClone(person.card);
     const data = original.data ?? original;
+    const extensions = object(data.extensions);
+    const rawFavorite = extensions.fav ?? original.fav;
+    const favorite = rawFavorite === true || rawFavorite === 'true';
     const placeholder = !normalized.name.trim() || /^unused$/i.test(normalized.name.trim());
     const name = person.synthetic && placeholder ? `未绑定角色 · ${person.name || '聊天'}` : person.displayMeta?.name || normalized.name || person.name || '未命名角色';
     const tags = person.tags ? [...characterFilterTags({ tags: person.tags, rating: person.rating }), ...(person.type ? [`类型/${person.type}`] : [])] : normalized.tags;
     return {
       ...original,
+      fav: favorite,
       name, description: normalized.description, personality: normalized.personality,
       scenario: normalized.scenario, first_mes: normalized.firstMessage, mes_example: normalized.messageExample,
       creatorcomment: normalized.creatorNotes, tags,
       avatar: person.avatar, chat: chats[0]?.locator.fileName ?? `${normalized.name} - 新聊天`,
       create_date: person.createdAt, date_last_chat: Math.max(0, ...chats.map(entry => entry.updatedAt)),
-      data: { ...data, name, tags, extensions: data.extensions ?? {} },
+      data: { ...data, name, tags, extensions: { ...extensions, fav: favorite } },
     };
   }
 
@@ -344,20 +357,35 @@ export async function createRoleplayCatalog(options: RoleplayCatalogOptions): Pr
     async chats(avatar) {
       const state = await snapshot();
       if (!state.people.has(avatar)) throw new Error('角色不存在');
-      return state.entries.filter(entry => entry.locator.avatar === avatar).map(({ locator, line, displayName, updatedAt }) => ({
+      const selectedEntries = state.entries.filter(entry => entry.locator.avatar === avatar);
+      // ST's list exposes exact serialized size, latest content and extension
+      // metadata. Read just this character's stories to preserve that contract.
+      const current = new Map(await Promise.all([...new Set(selectedEntries.map(entry => entry.story.id))]
+        .map(async id => [id, await stories.get(id)] as const)));
+      assertCurrent();
+      return selectedEntries.flatMap(({ locator, displayName, updatedAt }) => {
+        const story = current.get(locator.storyId);
+        const line = story && storyAvatar(story) === avatar ? getBranchLine(story, locator.branchId) : undefined;
+        if (!line) return [];
+        return [{
         key: locator.key, file_name: `${locator.fileName}.jsonl`, display_name: displayName,
         file_size: new TextEncoder().encode(JSON.stringify(encodeLiveChat(line.session))).byteLength,
         chat_items: line.session.messages.length, mes: line.session.messages.at(-1)?.content ?? '',
         last_mes: line.session.messages.at(-1)?.timestamp ?? updatedAt,
         metadata: structuredClone(line.session.rawMetadata?.chat_metadata ?? {}),
-      }));
+        }];
+      });
     },
     async locate(avatar, fileName) {
       const entry = await knownEntry(avatar, fileName) ?? find(await snapshot(), avatar, fileName);
       return entry ? { ...entry.locator } : undefined;
     },
     async existingLine(avatar, fileName) {
-      const entry = await knownEntry(avatar, fileName) ?? find(await snapshot(), avatar, fileName);
+      let entry = await knownEntry(avatar, fileName);
+      if (!entry) {
+        const summary = find(await snapshot(), avatar, fileName);
+        if (summary) entry = await knownEntry(avatar, summary.locator.key);
+      }
       return entry ? structuredClone({ locator: entry.locator, story: entry.story, line: entry.line }) : undefined;
     },
     async resolveForSave(avatar, fileName, payload) {

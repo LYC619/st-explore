@@ -1,0 +1,23 @@
+import { act } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { afterEach, expect, it } from 'vitest';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription } from '@/components/ui/alert-dialog';
+import { Toaster } from '@/components/ui/toaster';
+import { toast } from '@/hooks/use-toast';
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root;
+afterEach(async () => { await act(async () => root.unmount()); document.body.innerHTML = ''; });
+it('dismisses existing notifications for dialogs and does not bring them back after closing', async () => {
+  const host=document.createElement('div'); document.body.append(host); root=createRoot(host);
+  const render = async (open:boolean, alert=false) => act(async () => root.render(<><Toaster />{alert ? <AlertDialog open={open}><AlertDialogContent><AlertDialogTitle>确认</AlertDialogTitle><AlertDialogDescription>说明</AlertDialogDescription></AlertDialogContent></AlertDialog> : <Dialog open={open}><DialogContent><DialogTitle>编辑</DialogTitle><DialogDescription>说明</DialogDescription></DialogContent></Dialog>}</>));
+  await render(false); await act(async () => { toast({title:'旧操作提示'}); });
+  expect(document.body.textContent).toContain('旧操作提示');
+  await render(true);
+  expect(document.body.textContent).not.toContain('旧操作提示');
+  await render(false);
+  expect(document.body.textContent).not.toContain('旧操作提示');
+  await act(async () => { toast({title:'另一条提示'}); });
+  await render(true,true);
+  expect(document.body.textContent).not.toContain('另一条提示');
+});

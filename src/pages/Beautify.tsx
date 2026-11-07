@@ -14,6 +14,7 @@ import { subscribeActiveVault, getVaultEpoch } from '@/lib/vault/active';
 import { DEFAULT_BEAUTIFY, buildStatusPreview, normalizeBeautifyConfig, type BeautifyConfig } from '@/lib/beautify';
 import { loadBeautify, saveBeautify } from '@/lib/beautify-store';
 import { importHelperScripts, type HelperScript } from '@/lib/roleplay/helper-settings';
+import { FrontendWorkbench, type FrontendWorkbenchHandle } from '@/components/FrontendWorkbench';
 import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 
 const fieldsText = (config: BeautifyConfig) => config.fields.map(field => field.label + ' | ' + field.path).join('\n');
@@ -34,13 +35,19 @@ export default function Beautify() {
   const [baseline, setBaseline] = useState<string | null>(null);
   const [savedSignature, setSavedSignature] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [templateSaving, setSaving] = useState(false);
+  const [mode, setMode] = useState<'frontend' | 'template'>('frontend');
+  const [frontendDirty, setFrontendDirty] = useState(false);
+  const [frontendBusy, setFrontendBusy] = useState(false);
+  const frontendRef = useRef<FrontendWorkbenchHandle>(null);
+  const saving = templateSaving || frontendBusy;
   const [loadError, setLoadError] = useState('');
   const [reload, setReload] = useState(0);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const saveInFlight = useRef(false);
   const allowNavigationRef = useRef(false);
-  const dirty = !loading && !loadError && !!savedSignature && signature(config, fields, variables, imports) !== savedSignature;
+  const templateDirty = !loading && !loadError && !!savedSignature && signature(config, fields, variables, imports) !== savedSignature;
+  const dirty = templateDirty || frontendDirty;
   const blocker = useBlocker(() => (dirty || saving) && !allowNavigationRef.current);
   const currentStory = stories.find(story => story.id === storyId);
   const showError = (error: unknown) => toast({ title: '操作未完成', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
@@ -102,6 +109,7 @@ export default function Beautify() {
     else action();
   };
   const save = async (): Promise<boolean> => {
+    if (mode === 'frontend') return frontendRef.current?.save() ?? false;
     if (!parsed.config || !storyId || loading || loadError || saveInFlight.current) return false;
     saveInFlight.current = true; setSaving(true);
     const epoch = getVaultEpoch();
@@ -142,10 +150,10 @@ export default function Beautify() {
     <div className="mx-auto max-w-6xl p-4 md:p-8 space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4 border-b pb-5">
         <div><h1 className="text-2xl font-semibold flex items-center gap-2"><Palette className="h-6 w-6 text-primary" />美化</h1>
-          <p className="mt-2 text-sm text-muted-foreground">为故事配置状态栏与变量更新，边编辑边预览。</p></div>
+          <p className="mt-2 text-sm text-muted-foreground">编辑成品前端，读取楼层变量预览，并应用到当前故事。</p></div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" disabled={!storyId || loading || !!loadError || saving} onClick={openChat}><MessageSquare className="h-4 w-4 mr-2" />进入聊天</Button>
-          <Button disabled={!storyId || loading || !!loadError || !parsed.config || saving} onClick={() => { void save(); }}><Save className="h-4 w-4 mr-2" />{saving ? '保存中…' : '保存配置'}</Button>
+          <Button disabled={!storyId || loading || !!loadError || !parsed.config || saving} onClick={() => { void save(); }}><Save className="h-4 w-4 mr-2" />{saving ? '保存中…' : mode === 'frontend' ? '保存草稿' : '保存配置'}</Button>
         </div>
       </header>
       <div className="flex flex-wrap gap-3 items-end">
@@ -161,9 +169,10 @@ export default function Beautify() {
           </select></div>
         <Button variant="ghost" disabled={saving} onClick={() => changeContext(() => setReload(value => value + 1))}>重新载入</Button>
       </div>
+      <div className="flex gap-2 border-b pb-3"><Button variant={mode === 'frontend' ? 'secondary' : 'ghost'} disabled={saving} onClick={() => changeContext(() => { setMode('frontend'); setReload(value => value + 1); })}>成品前端</Button><Button variant={mode === 'template' ? 'secondary' : 'ghost'} disabled={saving} onClick={() => changeContext(() => { setMode('template'); setReload(value => value + 1); })}>字段模板</Button></div>
       {loadError && <p role="alert" className="text-destructive">{loadError}</p>}
       {!storyId ? <div className="rounded-lg border border-dashed p-10 text-center text-muted-foreground">选择已归档的故事开始配置。每条分支独立保存美化设置。</div> : loading ? <p>正在读取配置…</p> : !loadError && <>
-        <div className="grid gap-6 lg:grid-cols-2">
+        {mode === 'frontend' ? <FrontendWorkbench key={storyId + ':' + branchId + ':' + reload} ref={frontendRef} storyId={storyId} branchId={branchId} onDirty={setFrontendDirty} onBusy={setFrontendBusy} /> : <div className="grid gap-6 lg:grid-cols-2">
           <fieldset disabled={saving} className="min-w-0 space-y-5">
             <section className="rounded-xl border p-5 space-y-4">
               <div className="flex items-center justify-between"><h2 className="font-medium">状态栏</h2><Switch aria-label="启用状态栏" checked={config.statusEnabled} onCheckedChange={statusEnabled => setConfig(c => ({ ...c, statusEnabled }))} /></div>
@@ -205,10 +214,10 @@ export default function Beautify() {
               {!!imports.length && <Button variant="ghost" size="sm" disabled={saving} onClick={() => setImports([])}>撤销本次导入</Button>}
             </section>
           </div>
-        </div>
+        </div>}
       </>}
       <AlertDialog open={pendingAction !== null || blocker.state === 'blocked'}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>保存美化修改？</AlertDialogTitle><AlertDialogDescription>离开前可以保存当前配置，或放弃这次未保存的修改。</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>保存当前修改？</AlertDialogTitle><AlertDialogDescription>离开前可以保存草稿或配置，或放弃这次未保存的修改。</AlertDialogDescription></AlertDialogHeader>
           <AlertDialogFooter><Button variant="ghost" disabled={saving} onClick={() => { setPendingAction(null); if (blocker.state === 'blocked') blocker.reset(); }}>留在此页</Button>
             <Button variant="outline" disabled={saving} onClick={finishTransition}>放弃修改</Button>
             <Button disabled={saving || !parsed.config} onClick={() => { void save().then(saved => { if (saved) finishTransition(); }); }}>保存并继续</Button></AlertDialogFooter></AlertDialogContent>

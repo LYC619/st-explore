@@ -1,5 +1,11 @@
 import * as cl100k from 'gpt-tokenizer/encoding/cl100k_base';
 import * as o200k from 'gpt-tokenizer/encoding/o200k_base';
+import { subscribeActiveVault } from '@/lib/vault/active';
+import { createTokenCountCache } from './token-count-cache';
+
+const classicCounts = createTokenCountCache(text => cl100k.encode(text, { disallowedSpecial: new Set() }).length);
+const modernCounts = createTokenCountCache(text => o200k.encode(text, { disallowedSpecial: new Set() }).length);
+subscribeActiveVault(() => { classicCounts.clear(); modernCounts.clear(); });
 
 type ObjectValue = Record<string, unknown>;
 const asObject = (value: unknown): ObjectValue => value && typeof value === 'object' && !Array.isArray(value) ? value as ObjectValue : {};
@@ -12,6 +18,7 @@ export function tokenizeTavern(path: string, value: unknown): Record<string, unk
   const model = url.searchParams.get('model') ?? '';
   const classic = /^gpt-(?:3\.5|4(?:-|$))/.test(model) && !/^gpt-4(?:o|\.1)/.test(model);
   const codec = classic ? cl100k : o200k;
+  const counts = classic ? classicCounts : modernCounts;
   const encode = (text: string) => codec.encode(text, { disallowedSpecial: new Set() });
   const body = asObject(value);
   const metadata = { estimated: true, encoding: classic ? 'cl100k_base' : 'o200k_base' };
@@ -22,10 +29,10 @@ export function tokenizeTavern(path: string, value: unknown): Record<string, unk
       total += legacy ? 4 : 3;
       if (message && typeof message === 'object' && !Array.isArray(message)) {
         for (const [key, field] of Object.entries(message)) {
-          total += encode(textValue(field)).length;
+          total += counts.count(textValue(field));
           if (key === 'name') total += legacy ? -1 : 1;
         }
-      } else total += encode(textValue(message)).length;
+      } else total += counts.count(textValue(message));
     }
     return total;
   }

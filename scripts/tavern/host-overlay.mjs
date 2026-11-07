@@ -31,7 +31,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     overlays.push({ asset: await generated(url, await transform(text)), expectedSha256: original.sha256 });
   }
   await override('/tauri-main.js', () => readFile(path.join(source.projectRoot, 'src/tavern/host-bootstrap.js')));
-  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js', 'extension-controls.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
+  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js', 'extension-controls.js', 'process-events.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
   additions.push(await generated('/ste/helper-lodash.js', await readFile(path.join(source.projectRoot, 'node_modules/lodash/lodash.min.js'))));
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'
@@ -61,17 +61,23 @@ export async function createHostAssets(source, cacheRelative = 'host') {
   await override('/scripts/extensions/runtime/resource-paths.js', text => replaceOnce(text,
     'return `/scripts/extensions/${name}/${normalizedPath}`;',
     'return globalThis.__STE_EXTENSION_RESOURCE__?.(name, normalizedPath) ?? `/scripts/extensions/${name}/${normalizedPath}`;'));
-  await override('/scripts/extensions/regex/engine.js', text => replaceOnce(replaceOnce(replaceOnce(text,
+  await override('/scripts/extensions/regex/engine.js', text => replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(text,
+    'if (allowedOnly && !extension_settings?.character_allowed_regex?.includes(characters?.[this_chid]?.avatar)) {\n                return [];',
+    'if (allowedOnly && !extension_settings?.character_allowed_regex?.includes(characters?.[this_chid]?.avatar)) {\n                return globalThis.__STE_ALLOWED_FRONTEND_REGEX__?.() ?? [];'),
     'return extension_settings.regex ?? [];',
     'return globalThis.__STE_REGEX_LANE__?.("globalScripts", extension_settings.regex ?? []) ?? extension_settings.regex ?? [];'),
     'return Array.isArray(scopedScripts) ? scopedScripts : [];',
     'return globalThis.__STE_REGEX_LANE__?.("embeddedScripts", Array.isArray(scopedScripts) ? scopedScripts : []) ?? (Array.isArray(scopedScripts) ? scopedScripts : []);'),
     'export async function saveScriptsByType(scripts, scriptType) {',
-    'export async function saveScriptsByType(scripts, scriptType) {\n    if (globalThis.__STE_SAVE_REGEX_LANE__) scripts = await globalThis.__STE_SAVE_REGEX_LANE__(scripts, scriptType);'));
+    'export async function saveScriptsByType(scripts, scriptType) {\n    if (globalThis.__STE_SAVE_REGEX_LANE__) scripts = await globalThis.__STE_SAVE_REGEX_LANE__(scripts, scriptType);'),
+    'const args = [...arguments];',
+    'const args = [...arguments];\n        if (regexScript.steLiteralReplacement === true) return regexScript.replaceString;'));
   await override('/scripts/tauri/regex/native-regex-transform.js', text => replaceOnce(text,
     'export function isNativeRegexBackendAvailable() {\n    return isTauri();\n}',
     'export function isNativeRegexBackendAvailable() {\n    return false; // STE uses the original JavaScript regex engine on all supported shells.\n}'));
   await override('/scripts/extensions/regex/index.js', text => {
+    text = replaceOnce(text, 'const scripts = getScriptsByType(SCRIPT_TYPES.SCOPED);',
+      'const allScripts = getScriptsByType(SCRIPT_TYPES.SCOPED);\n        const scripts = globalThis.__STE_REGEX_REQUIRING_CONSENT__?.(allScripts) ?? allScripts;');
     text = replaceOnce(text, 'async function loadRegexScripts() {', 'export async function loadRegexScripts() {');
     text = replaceOnce(text, '    if (scriptType === SCRIPT_TYPES.SCOPED) {',
       '    if (scriptType === SCRIPT_TYPES.GLOBAL) await saveScriptsByType(array, SCRIPT_TYPES.GLOBAL);\n\n    if (scriptType === SCRIPT_TYPES.SCOPED) {');
@@ -90,6 +96,8 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     'if (getCurrentChatId() !== undefined) return;\n    await unshallowPermanentAssistant();\n    if (getCurrentChatId() !== undefined) return;\n    sendAssistantMessage();'));
   await override('/script.js', input => {
     let text = input;
+    text = replaceOnce(text, 'await loadItemizedPrompts(getCurrentChatId());',
+      'await globalThis.__STE_REFRESH_REGEX__?.();\n    await loadItemizedPrompts(getCurrentChatId());');
     text = replaceOnce(text, 'throw new Error(result.statusText);',
       'throw new Error(errorData?.error?.message || result.statusText || "聊天保存失败");');
     text = replaceOnce(text,

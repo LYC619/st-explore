@@ -143,7 +143,7 @@ function getThemeClasses(theme: ThemeStyle) {
   switch (theme) {
     case 'novel':
       return {
-        container: 'paper-bg p-8 font-serif',
+        container: 'paper-bg p-4 md:p-8 font-serif',
         title: 'text-center mb-8 pb-4 border-b-2 border-primary/30',
         message: 'mb-5',
         userBubble: '',
@@ -165,7 +165,7 @@ function getThemeClasses(theme: ThemeStyle) {
       };
     case 'minimal':
       return {
-        container: 'bg-background p-8',
+        container: 'bg-background p-4 md:p-8',
         title: 'mb-8 pb-2 border-b border-border',
         message: 'mb-4 py-2',
         userBubble: 'border-l-2 border-primary pl-4',
@@ -177,7 +177,7 @@ function getThemeClasses(theme: ThemeStyle) {
     case 'elegant':
     default:
       return {
-        container: 'paper-bg p-10 decorative-border',
+        container: 'paper-bg p-4 md:p-10 decorative-border',
         title: 'text-center mb-10 space-y-2',
         message: 'mb-5',
         userBubble: '',
@@ -227,10 +227,10 @@ const MessageRow = memo(function MessageRow({
 }: MessageRowProps) {
   const captureText = useRef('');
   const isUser = message.role === 'user';
-  const isNewSpeaker = message.isNewSpeaker;
   const hasMarker = !!marker;
   const rawData = message.rawData as STRawMessage | undefined;
   const model = !isUser && showModel ? formatMessageModelLabel(rawData) : undefined;
+  const displayTimestamp = message.timestamp ?? parseSTDate(rawData?.send_date);
   const generationHint = rawData?.gen_started || rawData?.gen_finished
     ? `生成：${rawData.gen_started ?? '未记录'} → ${rawData.gen_finished ?? '未记录'}`
     : undefined;
@@ -257,7 +257,7 @@ const MessageRow = memo(function MessageRow({
       )}
 
       <div
-        className={`${classes.message} ${isUser ? classes.userBubble : classes.charBubble} animate-fade-in group relative w-full ${
+        className={`${theme === 'social' ? 'mb-4' : classes.message} ${theme === 'social' ? '' : isUser ? classes.userBubble : classes.charBubble} animate-fade-in group relative w-full ${
           editMode ? 'cursor-pointer hover:bg-primary/5 rounded-lg transition-colors pt-9 px-2' : ''
         } ${isActiveMatch ? 'rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''}`}
         onClick={() => editMode && onMessageClick?.(message.id, index)}
@@ -316,51 +316,28 @@ const MessageRow = memo(function MessageRow({
             {index}
           </span>
         )}
-        {/* 非编辑模式：每楼右上角常驻铅笔，点击直接打开本楼编辑窗口（所见即点，不必先切「编辑模式」）。
-            常驻显示而非 hover 才出现——避免用户不知道哪里能编辑。章节标记模式下让位给整行点击设章节。
-            右对齐用「全宽覆盖层 + flex justify-end」而非 right 偏移：翻译插件等注入式样式
-            即使干掉 right 属性也不会把按钮挤到左侧压住正文。 */}
-        {!editMode && onEditMessage && (
-          <div className="pointer-events-none absolute top-1 z-10 flex w-full justify-end gap-1 pr-1">
-            {/* 隐藏入口和隐藏楼上的「取消隐藏」对称：不隐藏的楼在这里能设隐藏（0826 反馈 6）。
-                OOC/注释楼本来就是靠 is_system 存在的，不给这个开关，免得把注释楼改成普通隐藏楼。 */}
-            {onHideMessage && !message.hidden && !message.ooc && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onHideMessage(message.id, index); }}
-                    className="tap-target pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md bg-background/70 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-primary/10 hover:text-primary"
-                    aria-label={`隐藏第 ${index} 楼`}
-                  >
-                    <EyeOff className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="left">隐藏本楼（导出写回 ST 的 Hide）</TooltipContent>
-              </Tooltip>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  data-tour="msg-edit-pencil"
-                  onClick={(e) => { e.stopPropagation(); onEditMessage(message.id, index); }}
-                  className="tap-target pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md bg-background/70 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-primary/10 hover:text-primary"
-                  aria-label={`编辑第 ${index} 楼`}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="left">编辑本楼</TooltipContent>
-            </Tooltip>
+        <div className="mb-2 flex items-start justify-between gap-3" data-message-header>
+          <div className={`${classes.name} min-w-0 flex-1 break-words`}>
+            {message.name || (isUser ? userName : charName)}
+            {model && <span className="ml-2 text-[11px] text-muted-foreground/80" title={generationHint}>{model}</span>}
+            {showTimestamp && displayTimestamp !== undefined &&
+              <span className="ml-2 text-xs font-normal text-muted-foreground">{formatTime(displayTimestamp)}</span>}
           </div>
-        )}
-        {onCaptureMessage && <button type="button" className="tap-target mb-2 rounded border border-border px-2 text-xs text-muted-foreground hover:text-foreground"
-          aria-label={`收录第 ${index} 楼为总结或日记`}
-          onMouseDown={event => { const selection = window.getSelection(); captureText.current = selection?.anchorNode && event.currentTarget.parentElement?.contains(selection.anchorNode) ? selection.toString().trim() : ''; event.preventDefault(); }}
-          onClick={event => { event.stopPropagation(); onCaptureMessage(message.id, captureText.current || message.content); captureText.current = ''; }}>收录为总结/日记</button>}
+          {!editMode && <div className="flex shrink-0 items-center gap-1" data-message-actions>
+            {onCaptureMessage && <button type="button" className="tap-target h-7 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              aria-label={`收录第 ${index} 楼`}
+              onMouseDown={event => { const selection = window.getSelection(); captureText.current = selection?.anchorNode && event.currentTarget.closest('[data-message-header]')?.parentElement?.contains(selection.anchorNode) ? selection.toString().trim() : ''; event.preventDefault(); }}
+              onClick={event => { event.stopPropagation(); onCaptureMessage(message.id, captureText.current || message.content); captureText.current = ''; }}>收录</button>}
+            {onHideMessage && !message.hidden && !message.ooc && <Tooltip><TooltipTrigger asChild><button type="button"
+              className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              aria-label={`隐藏第 ${index} 楼`} onClick={e => { e.stopPropagation(); onHideMessage(message.id, index); }}><EyeOff className="h-3.5 w-3.5" /></button></TooltipTrigger><TooltipContent>隐藏本楼</TooltipContent></Tooltip>}
+            {onEditMessage && <Tooltip><TooltipTrigger asChild><button type="button" data-tour="msg-edit-pencil"
+              className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
+              aria-label={`编辑第 ${index} 楼`} onClick={e => { e.stopPropagation(); onEditMessage(message.id, index); }}><Pencil className="h-3.5 w-3.5" /></button></TooltipTrigger><TooltipContent>编辑本楼</TooltipContent></Tooltip>}
+          </div>}
+        </div>
         {theme === 'social' ? (
-          <>
+          <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
             {showAvatar && (
               <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
                 isUser ? 'bubble-user' : 'bubble-char'
@@ -369,10 +346,6 @@ const MessageRow = memo(function MessageRow({
               </div>
             )}
             <div className={isUser ? 'text-right' : 'text-left'}>
-              <div className={classes.name}>
-                {message.name || (isUser ? userName : charName)}
-                {model && <span className="ml-2 text-[11px] text-muted-foreground/80" title={generationHint}>{model}</span>}
-              </div>
               <div className={`inline-block ${classes.content} ${
                 isUser ? 'bubble-user' : 'bubble-char'
               } whitespace-pre-wrap`}>
@@ -380,33 +353,10 @@ const MessageRow = memo(function MessageRow({
                   ? renderPreviewHighlight(message.content, previewRule)
                   : <ChatMarkdown text={message.content} search={searchQuery} />}
               </div>
-              {showTimestamp && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  {formatTime(message.timestamp)}
-                </div>
-              )}
             </div>
-          </>
+          </div>
         ) : (
           <div>
-            {/* novel 主题下同一说话人连续发言时省略重复名字，贴近小说阅读体验；
-                elegant(典雅)与 minimal 每楼都标名——多说话人 TXT 导入时省略名字会分不清谁在说话 */}
-            {(theme === 'minimal' || theme === 'elegant' || isNewSpeaker) && (
-              <div className={classes.name}>
-                {message.name || (isUser ? userName : charName)}
-                {model && <span className="ml-2 text-[11px] text-muted-foreground/80" title={generationHint}>{model}</span>}
-                {(() => {
-                  // 优先用导入时解析好的 timestamp；旧数据(timestamp 为空)则从 rawData.send_date 兜底实时解析，
-                  // 这样无需重新导入也能显示时间戳。
-                  const ts = message.timestamp ?? parseSTDate((message.rawData as { send_date?: unknown } | undefined)?.send_date);
-                  return showTimestamp && ts ? (
-                    <span className="text-muted-foreground font-normal ml-2 text-xs">
-                      {formatTime(ts)}
-                    </span>
-                  ) : null;
-                })()}
-              </div>
-            )}
             <div className={`${classes.content} whitespace-pre-wrap`}>
               {previewRule
                 ? renderPreviewHighlight(message.content, previewRule)

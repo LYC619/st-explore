@@ -2,7 +2,7 @@ import type { RemoveOptions } from '@/lib/repo';
 import { generatePresetId, type PresetCatalog, type PresetItem } from '@/types/preset';
 import { createRepo, getCurrentRepo } from '@/lib/repo';
 import { KeyedSerialQueue } from './keyed-serial-queue';
-import { getVaultEpoch } from './vault/active';
+import { getActiveVault, getVaultEpoch } from './vault/active';
 import { normalizePresetCatalog, presetContentFingerprint } from './preset-catalog';
 import { stableJson } from './roleplay/fingerprint';
 import { getPresetPresentation, presetName, presetSeriesKey } from './preset-presentation';
@@ -163,4 +163,49 @@ export async function pruneAutoSavedPresets(keep = 5): Promise<string[]> {
     removed.push(item.id);
   });
   return removed;
+}
+
+/** Refresh only preset files, including external edits, additions, moves and deletions. */
+export async function refreshPresetFiles(options: { migrateLegacy?: boolean } = {}): Promise<void> {
+  if (options.migrateLegacy && getActiveVault()) {
+    const result = await organizePresetFolders({ legacyOnly: true });
+    if (result.failed.length) throw new Error(`旧预设结构更新未完成，原文件已保留；下次进入会重试。\n${result.failed.join('\n')}`);
+    return;
+  }
+  await getActiveVault()?.refreshAssets?.('presets');
+}
+
+/** Migrate flat legacy files on catalog entry; explicit callers may organize all versions. */
+export async function organizePresetFolders(options: { legacyOnly?: boolean } = {}): Promise<{ moved: number; unchanged: number; failed: string[] }> {
+  const epoch = getVaultEpoch(), vault = getActiveVault(), target = getCurrentRepo<PresetItem>('presets');
+  if (!vault) throw new Error('系列文件夹整理需要使用文件库');
+  const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，系列文件夹整理已停止'); };
+  return seriesQueue.enqueue(`${epoch}:series`, async () => {
+    check();
+    await vault.refreshAssets?.('presets');
+    check();
+    const items = await target.listLight();
+    const result = { moved: 0, unchanged: 0, failed: [] as string[] };
+    for (const item of items) await queue.enqueue(`${epoch}:${item.id}`, async () => {
+      check();
+      try {
+        const before = await vault.pathOf('presets', item.id);
+        check();
+        if (options.legacyOnly && (!before || before.replace(/\\/g, '/').split('/').length !== 3)) {
+          result.unchanged++; return;
+        }
+        const current = await target.get(item.id);
+        if (!current) { result.unchanged++; return; }
+        check();
+        await target.put(current);
+        check();
+        if (before !== await vault.pathOf('presets', item.id)) result.moved++;
+        else result.unchanged++;
+      } catch (error) {
+        check();
+        result.failed.push(`${item.title}：${error instanceof Error ? error.message : String(error)}`);
+      }
+    });
+    return result;
+  });
 }

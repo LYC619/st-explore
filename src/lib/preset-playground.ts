@@ -91,7 +91,9 @@ export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
     }
     return value;
   };
-  const group = preset.promptOrder.find(group => group.character_id === DEFAULT_CHARACTER_ID) ?? preset.promptOrder[0];
+  // ST's OpenAI PromptManager uses 100001; older STE-authored presets use 100000.
+  const group = preset.promptOrder.find(group => group.character_id === 100001)
+    ?? preset.promptOrder.find(group => group.character_id === DEFAULT_CHARACTER_ID) ?? preset.promptOrder[0];
   const order = group ? getActiveOrder(preset, group.character_id) : preset.prompts.map(block => ({ identifier: block.identifier, enabled: block.enabled !== false }));
   if (!group) warnings.add('预设没有激活顺序，按提示词条目顺序试用。');
   const blocks = new Map(preset.prompts.map(block => [block.identifier, block]));

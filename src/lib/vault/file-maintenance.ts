@@ -15,7 +15,7 @@ import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 
 export interface ManagedFile { path: string; size: number; version: string }
 export interface FileRemovalPreview {
-  store: StoreName; id: string; files: ManagedFile[]; count: number; bytes: number; usesTrash: boolean;
+  store: StoreName; id: string; files: Omit<ManagedFile, 'version'>[]; count: number; bytes: number; usesTrash: boolean;
 }
 export type MaintenanceCategory = 'retained' | 'unreferenced' | 'unknown' | 'empty-directory';
 export interface FileMaintenanceEntry extends ManagedFile {
@@ -61,7 +61,11 @@ async function assertSafePath(fs: VaultFs, path: string, allowMissing = false): 
   for (let index = 0; index < parts.length; index++) {
     const entry = (await fs.list(parent)).find(item => item.name === parts[index]);
     if (entry?.isSymlink || entry && index < parts.length - 1 && !entry.isDir) throw new Error(`路径含链接或非目录：${path}`);
-    if (!entry && !allowMissing) throw new Error(`文件已不存在：${path}`);
+    if (!entry) {
+      if (!allowMissing) throw new Error(`文件已不存在：${path}`);
+      // A missing ancestor has no children to inspect; validate the whole spelling above.
+      return;
+    }
     parent = joinPath(parent, parts[index]);
   }
 }
@@ -77,7 +81,7 @@ function recordStore(path: string): StoreName | undefined {
   if (/^(?:角色\/[^/]+\/故事\/[^/]+|临时\/(?!记录\/|卡片\/)[^/]+)\/故事\.json$/.test(path)) return 'archiveStories';
   if (/^临时\/卡片\/[^/]+\.json$/.test(path)) return 'cards';
   if (/^资产\/世界书\/[^/]+\.json$/.test(path)) return 'worldbooks';
-  if (/^资产\/预设\/[^/]+\.json$/.test(path)) return 'presets';
+  if (/^资产\/预设\/(?:[^/]+\/)*[^/]+\.json$/.test(path)) return 'presets';
   if (/^资产\/正则\/[^/]+\.json$/.test(path)) return 'regexes';
   if (/^资产\/模板\/总结模板·[^/]+\.md$/.test(path)) return 'summaryTemplates';
   if (/^资产\/模板\/评分模板·[^/]+\.json$/.test(path)) return 'ratingTemplates';
@@ -98,6 +102,17 @@ function runtimeOwned(relative: string, story: ArchiveStory): boolean {
   return /^(?:settings|context|draft|helpers|inheritance)\.json$/.test(rest)
     || /^(?:turns|memory-journal|memory-updates|maintenance|receipts|inputs)\/[a-f0-9]{64}\.json$/.test(rest)
     || /^worldbook-versions\/[a-f0-9]{64}\/[a-f0-9]{64}\.json$/.test(rest);
+}
+
+/** Recovery records belong to STE control directories below real story-layout roots.
+ * A user attachment may itself be a source tree containing maintenance/, turns/, etc.
+ * Those names alone never make its contents STE journals, even if they end in .json.
+ */
+function storyRecoveryPath(path: string): string | undefined {
+  const match = /^(?:角色\/[^/]+\/故事\/[^/]+|临时\/(?!记录\/|卡片\/)[^/]+)\/(\.ste-control\/roleplay\/.+)$/.exec(path);
+  const relative = match?.[1];
+  if (!relative || !isRuntimePath(relative)) return undefined;
+  return /^\.ste-control\/roleplay\/[^/]+\/(?:inheritance\.json|(?:memory-journal|memory-updates|maintenance|turns)\/[^/]+\.json)$/.test(relative) ? relative : undefined;
 }
 
 function ownedPaths(item: DiskRecord, files: Map<string, VaultEntry>): Set<string> {
@@ -136,7 +151,7 @@ function collectStringReferences(value: unknown, add: (path: string) => void): v
   }
 }
 
-async function inventory(fs: VaultFs, ignoredJournal?: string): Promise<Inventory> {
+async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained = true): Promise<Inventory> {
   const result: Inventory = { files: new Map(), directories: new Set(), records: [], errors: [], known: new Set(), references: new Map() };
   let visited = 0;
   async function walk(dir: string, depth: number) {
@@ -146,6 +161,7 @@ async function inventory(fs: VaultFs, ignoredJournal?: string): Promise<Inventor
     for (const entry of entries) {
       if (!isSafeFileSegment(entry.name) || entry.isSymlink) { result.errors.push(`${joinPath(dir, entry.name)}: 已跳过链接或非法路径`); continue; }
       const path = joinPath(dir, entry.name);
+      if (!includeRetained && path === RETAINED) continue;
       if (entry.isDir) { result.directories.add(path); await walk(path, depth + 1); }
       else result.files.set(path, entry);
     }
@@ -188,12 +204,13 @@ async function inventory(fs: VaultFs, ignoredJournal?: string): Promise<Inventor
     if (path.startsWith(RETAINED + '/')) continue;
     if (path === ignoredJournal) continue;
     if (path.startsWith('.ste/moves/') && path.endsWith('/manifest.json')) { result.errors.push(`${path}: 记录移动需要先完成恢复`); continue; }
-    if (path.includes('/portrait-journal/')) { result.errors.push(`${path}: 立绘操作需要先完成恢复`); continue; }
-    if (/\/(?:memory-journal|memory-updates|maintenance)\/|\/inheritance\.json$|\/turns\//.test(path)) {
+    if (/^角色\/[^/]+\/\.ste-control\/portrait-journal\/[^/]+\.json$/.test(path)) { result.errors.push(`${path}: 立绘操作需要先完成恢复`); continue; }
+    const recovery = storyRecoveryPath(path);
+    if (recovery) {
       try {
         const value = JSON.parse(await fs.readText(path));
         if (value?.schema !== 1 || !['committed', 'rolled-back', 'resolved', 'complete', 'succeeded', 'failed', 'cancelled', 'adopted'].includes(value.status)) throw new Error('存在未完成或无效的恢复记录');
-        if (path.includes('/memory-journal/') && (typeof value.operationId !== 'string'
+        if (recovery.includes('/memory-journal/') && (typeof value.operationId !== 'string'
           || !/^[a-f0-9]{64}$/.test(value.proposalDigest) || typeof value.manual !== 'boolean'
           || !Array.isArray(value.sourceRefs) || !Array.isArray(value.changes) || !value.changes.length
           || value.changes.some((change: { path?: unknown; before?: unknown; after?: unknown }) => !change
@@ -209,34 +226,78 @@ export async function prepareFileRemoval(vault: VaultBackend, store: StoreName, 
   return (await prepareFileRemovals(vault, [{ store, id }]))[0];
 }
 
-/** One fresh inventory for the whole confirmation dialog; execution still revalidates each removal. */
+/** Confirmation is advisory: read only selected records and their own files, never hash their bodies. */
 export async function prepareFileRemovals(vault: VaultBackend, targets: { store: StoreName; id: string }[]): Promise<FileRemovalPreview[]> {
-  const paths = await Promise.all(targets.map(target => vault.pathOf(target.store, target.id)));
-  const disk = paths.some(Boolean) ? await inventory(vault.fs) : undefined;
-  if (disk?.errors.length) throw new Error(`文件检查未完成，已停止删除：${disk.errors.join('；')}`);
   const previews: FileRemovalPreview[] = [];
-  for (let index = 0; index < targets.length; index++) {
-    const { store, id } = targets[index];
-    previews.push(await buildRemovalPreview(vault, store, id, paths[index] ? disk : undefined));
-  }
+  for (const { store, id } of targets) previews.push(await targetRemovalPreview(vault, store, id));
   return previews;
 }
 
-async function buildRemovalPreview(vault: VaultBackend, store: StoreName, id: string, disk?: Inventory): Promise<FileRemovalPreview> {
+async function targetRemovalPreview(vault: VaultBackend, store: StoreName, id: string): Promise<FileRemovalPreview> {
   const preview: FileRemovalPreview = { store, id, files: [], count: 0, bytes: 0, usesTrash: !!vault.fs.trashFile };
-  if (!disk) return preview;
-  const item = disk.records.find(record => record.store === store && record.record.id === id);
-  if (!item) throw new Error('记录已改变或无法读取，请重新检查');
-  for (const file of ownedPaths(item, disk.files)) {
-    const owners = disk.references.get(pathKey(file));
-    if (owners && [...owners].some(owner => owner !== recordKey(item))) continue;
-    const entry = disk.files.get(file)!;
-    preview.files.push({ path: file, size: entry.size, version: await fileVersion(vault.fs, file) });
+  const indexed = await vault.pathOf(store, id);
+  if (!indexed) return preview;
+  const path = store === 'characters' ? `${indexed}/档案.json` : store === 'archiveStories' ? `${indexed}/故事.json` : indexed;
+  const fs = vault.fs;
+  await assertSafePath(fs, path, true);
+  if (!(await fs.stat(path)).exists) return preview;
+  const raw = path.endsWith('.md') ? parseFrontmatter(await fs.readText(path)).fields : JSON.parse(await fs.readText(path));
+  const record = ['worldbooks', 'presets', 'regexes'].includes(store) ? raw.__ste : raw;
+  if (record?.id !== id) throw new Error('记录已改变，请重新打开删除目标');
+  const item: DiskRecord = { store, path, record };
+  const files = new Map<string, VaultEntry>();
+  const dir = parentDir(path);
+  // A record's immediate neighbors contain its profile, JSONL working copies and card PNG.
+  for (const entry of await fs.list(dir)) {
+    if (!entry.isDir && !entry.isSymlink) files.set(joinPath(dir, entry.name), entry);
   }
-  if (!preview.files.some(file => file.path === item.path)) throw new Error('记录文件仍被其他条目引用，已停止删除');
+  if (store === 'characters') {
+    const character = record as ArchiveCharacter;
+    const directories = new Set([`${dir}/立绘`]);
+    for (const row of character.portraitRows ?? []) directories.add(`${dir}/立绘/${safeName(row.title, '未命名行')}`);
+    if (character.attachments?.length) directories.add(`${dir}/附件`);
+    for (const directory of directories) {
+      await assertSafePath(fs, directory, true);
+      for (const entry of await fs.list(directory)) if (!entry.isDir && !entry.isSymlink) files.set(joinPath(directory, entry.name), entry);
+    }
+  } else if (store === 'archiveStories') {
+    const story = record as ArchiveStory;
+    const branches = ['main', ...(story.branches ?? []).map(branch => branchKey(branch.id))];
+    const walkRuntime = async (directory: string, depth = 0): Promise<void> => {
+      if (depth > 8) return; // Leave unexpected deep user directories in place.
+      for (const entry of await fs.list(directory)) {
+        if (!isSafeFileSegment(entry.name) || entry.isSymlink) continue;
+        const child = joinPath(directory, entry.name);
+        if (entry.isDir) await walkRuntime(child, depth + 1);
+        else if (runtimeOwned(child.slice(dir.length + 1), story)) files.set(child, entry);
+      }
+    };
+    for (const branch of branches) for (const root of [`${dir}/memory/${branch}`, `${dir}/.ste-control/roleplay/${branch}`]) {
+      await assertSafePath(fs, root, true);
+      await walkRuntime(root);
+    }
+  }
+  for (const file of ownedPaths(item, files)) {
+    const entry = files.get(file)!;
+    preview.files.push({ path: file, size: entry.size });
+  }
   preview.count = preview.files.length;
   preview.bytes = preview.files.reduce((total, file) => total + file.size, 0);
   return preview;
+}
+
+/** Shared character media can be referenced by other records; retain that protection at execution. */
+async function characterRemovalPreview(vault: VaultBackend, id: string): Promise<FileRemovalPreview> {
+  if (!await vault.pathOf('characters', id)) return { store: 'characters', id, files: [], count: 0, bytes: 0, usesTrash: !!vault.fs.trashFile };
+  const disk = await inventory(vault.fs, undefined, false);
+  if (disk.errors.length) throw new Error(`文件检查未完成，已停止删除：${disk.errors.join('；')}`);
+  const item = disk.records.find(record => record.store === 'characters' && record.record.id === id);
+  if (!item) throw new Error('记录已改变或无法读取，请重新检查');
+  const files = [...ownedPaths(item, disk.files)]
+    .filter(file => ![...(disk.references.get(pathKey(file)) ?? [])].some(owner => owner !== recordKey(item)))
+    .map(path => ({ path, size: disk.files.get(path)!.size }));
+  if (!files.some(file => file.path === item.path)) throw new Error('记录文件仍被其他条目引用，已停止删除');
+  return { store: 'characters', id, files, count: files.length, bytes: files.reduce((total, file) => total + file.size, 0), usesTrash: !!vault.fs.trashFile };
 }
 
 async function readManifest(fs: VaultFs, operationId: string): Promise<Manifest> {
@@ -301,13 +362,17 @@ export async function recoverFileMaintenance(fs: VaultFs): Promise<void> {
 export async function executeFileRemoval(vault: VaultBackend, store: StoreName, id: string, options: RemoveOptions): Promise<void> {
   const epoch = getVaultEpoch();
   const fs = vault.fs;
-  await recoverFileMaintenance(fs);
-  const preview = await prepareFileRemoval(vault, store, id);
+  // Startup/index recovery already restores interrupted operations. Daily deletion does not
+  // reopen every historical manifest, and execution refreshes only the selected target.
+  const preview = store === 'characters' ? await characterRemovalPreview(vault, id) : await targetRemovalPreview(vault, store, id);
   if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止');
   if (!preview.count) return;
   const operationId = crypto.randomUUID();
-  const manifest: Manifest = { schema: 1, operationId, store, id, createdAt: Date.now(), deleteFiles: options.deleteFiles, files: preview.files };
-  await movePreparedFiles(fs, manifest);
+  const files: ManagedFile[] = [];
+  for (const file of preview.files) files.push({ ...file, version: await fileVersion(fs, file.path) });
+  if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止');
+  const manifest: Manifest = { schema: 1, operationId, store, id, createdAt: Date.now(), deleteFiles: options.deleteFiles, files };
+  await movePreparedFiles(fs, manifest, true);
 }
 
 /** Finish a portrait deletion after its own metadata journal has committed. */
@@ -341,7 +406,7 @@ export async function finalizeRetainedFiles(fs: VaultFs, options: {
   await movePreparedFiles(fs, { schema: 1, operationId: options.operationId, store: options.store, id: options.id, createdAt: Date.now(), deleteFiles: options.deleteFiles, files });
 }
 
-async function movePreparedFiles(fs: VaultFs, manifest: Manifest): Promise<void> {
+async function movePreparedFiles(fs: VaultFs, manifest: Manifest, versionsFresh = false): Promise<void> {
   if (manifest.deleteFiles) manifest = { ...manifest, recycleAfter: manifest.createdAt + RECYCLE_RETENTION_MS };
   const { operationId } = manifest;
   const epoch = getVaultEpoch();
@@ -359,7 +424,8 @@ async function movePreparedFiles(fs: VaultFs, manifest: Manifest): Promise<void>
     await readManifest(fs, operationId);
     for (const file of manifest.files) {
       check();
-      if (await fileVersion(fs, file.path) !== file.version) throw new Error(`文件已改变，请重新确认：${file.path}`);
+      if (versionsFresh) await assertSafePath(fs, file.path);
+      else if (await fileVersion(fs, file.path) !== file.version) throw new Error(`文件已改变，请重新确认：${file.path}`);
       const target = stagedPath(manifest, file.path);
       await assertSafePath(fs, target, true);
       await fs.mkdir(parentDir(target));

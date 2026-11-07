@@ -311,6 +311,8 @@ fn rename_impl(from: &Path, to: &Path) -> Result<(), String> {
 pub struct StatInfo {
     pub exists: bool,
     pub is_dir: bool,
+    pub size: u64,
+    pub modified_at: Option<u64>,
 }
 
 fn stat_impl(path: &Path) -> StatInfo {
@@ -318,10 +320,14 @@ fn stat_impl(path: &Path) -> StatInfo {
         Ok(m) => StatInfo {
             exists: true,
             is_dir: m.is_dir(),
+            size: m.len(),
+            modified_at: m.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|duration| duration.as_millis() as u64),
         },
         Err(_) => StatInfo {
             exists: false,
             is_dir: false,
+            size: 0,
+            modified_at: None,
         },
     }
 }

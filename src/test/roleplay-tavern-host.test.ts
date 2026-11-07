@@ -43,6 +43,132 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('observes the effective request, response and committed candidate without retaining connection secrets', async () => {
+    const f = await fixture();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: '模型原文' }, finish_reason: 'stop' }], usage: { total_tokens: 12 } })));
+    try {
+      const card = (await (await f.host.request('/api/bootstrap')).json()).characters[0];
+      const chat = await (await f.host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json();
+      const id = f.host.processEvent('start', { type: 'normal' })!;
+      const response = await f.host.request('/api/backends/chat-completions/generate', { messages: [{ role: 'user', content: 'do-not-return-this-key' }], model: 'wrong', stream: false, ste_context: { processId: id, type: 'normal', chat } });
+      expect(response.headers.get('x-ste-process-id')).toBe(id);
+      expect(await response.json()).toMatchObject({ choices: [{ message: { content: '模型原文' } }] });
+      expect(f.host.processLog.snapshot()).toHaveLength(1);
+      expect(f.host.processLog.get(id)).toMatchObject({ status: 'succeeded', storyId: f.story.id });
+      expect(f.host.processLog.get(id)!.events.find(e => e.stage === 'request')!.detail).toContain('story-model');
+      expect(JSON.stringify(f.host.processLog.snapshot())).not.toContain('do-not-return-this-key');
+      chat.push({ name: '林', is_user: false, mes: '处理后的正文', extra: { ste_runtime: { messageId: 'reply', candidateId: 'candidate' } }, variables: [{ stat_data: { trust: 1 } }] });
+      f.host.processEvent('bind', { id, messageId: 'reply', candidateId: 'candidate', floor: 2 });
+      expect(f.host.processLog.get(id)!.events.some(e => e.stage === 'saved')).toBe(false);
+      const save = () => f.host.request('/api/chats/save', { avatar_url: card.avatar, file_name: card.chat, chat });
+      expect((await save()).ok).toBe(true);
+      expect(f.host.processLog.get(id)!.events.find(e => e.stage === 'saved')!.detail).toContain('处理后的正文');
+      expect((await getArchiveStory(f.story.id))!.session.messages.at(-1)!.content).toBe('处理后的正文');
+      const priorCount = f.host.processLog.get(id)!.events.length;
+      const continuation = f.host.processEvent('start', { type: 'continue' })!;
+      f.host.processEvent('bind', { id: continuation, messageId: 'reply', candidateId: 'candidate', floor: 2 });
+      chat.at(-1).mes += '续写'; chat.at(-1).variables[0].stat_data.trust = 2;
+      chat[0].chat_metadata.variables = { weather: 'rain' };
+      expect((await save()).ok).toBe(true);
+      expect(f.host.processLog.get(id)!.events).toHaveLength(priorCount);
+      expect(f.host.processLog.get(continuation)!.events.filter(e => e.stage === 'variables')).toHaveLength(2);
+      // An archive conflict must not produce a successful save diagnostic.
+      await updateArchiveStory(f.story.id, current => ({ session: { ...current.session, messages: current.session.messages.slice(0, 1) } }));
+      const saves = f.host.processLog.get(continuation)!.events.filter(e => e.stage === 'saved').length;
+      chat.at(-1).mes += '未保存'; expect((await save()).ok).toBe(false);
+      expect(f.host.processLog.get(continuation)!.events.filter(e => e.stage === 'saved')).toHaveLength(saves);
+      expect(f.host.processLog.get(continuation)!.events.at(-1)!.label).toBe('故事保存失败');
+      setActiveVault(null); expect(f.host.processLog.snapshot()).toEqual([]);
+    } finally { f.host.close(); }
+  });
+
+  it('keeps auxiliary requests separate and records HTTP errors and cancelled bodies', async () => {
+    const f = await fixture();
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ error: { message: 'unavailable' } }, { status: 503 }))
+      .mockResolvedValueOnce(new Response(new ReadableStream(), { headers: { 'Content-Type': 'text/event-stream' } })));
+    try {
+      const normal = f.host.processEvent('start', { type: 'normal' })!;
+      const response = await f.host.request('/api/backends/chat-completions/generate', { messages: [], stream: false, ste_context: { processId: normal, type: 'normal' } });
+      await response.text(); expect(f.host.processLog.get(normal)!.status).toBe('failed');
+      const quiet = await f.host.request('/api/backends/chat-completions/generate', { messages: [], stream: true, ste_context: { type: 'quiet' } });
+      const quietId = quiet.headers.get('x-ste-process-id')!;
+      expect(quietId).not.toBe(normal); await quiet.body!.cancel();
+      expect(f.host.processLog.get(quietId)).toMatchObject({ type: 'quiet', status: 'cancelled' });
+      expect(f.host.processLog.get(normal)!.status).toBe('failed');
+    } finally { f.host.close(); }
+  });
+
+  it('starts with the linked preset instead of the factory Default and retains an explicitly saved selection', async () => {
+    const f = await fixture(); f.host.close();
+    const { parsePreset } = await import('@/lib/preset-parser');
+    await getCurrentRepo<import('@/types/preset').PresetItem>('presets').put({ id: 'linked', title: 'Reborn2.3',
+      preset: parsePreset({ prompts: [{ identifier: 'main', content: 'LINKED_PRESET_CONTENT' }], prompt_order: [{ character_id: 100001, order: [{ identifier: 'main', enabled: true }] }] }), createdAt: 1, updatedAt: 1 });
+    await updateArchiveStory(f.story.id, () => ({ assets: [{ kind: 'preset', assetId: 'linked' }] }));
+    const defaults = { settings: { oai_settings: { preset_settings_openai: 'Default', prompts: [{ identifier: 'main', content: 'FACTORY_DEFAULT' }] } } };
+    const host = await createTavernHost({ storyId: f.story.id, defaults });
+    try {
+      const settings = JSON.parse((await (await host.request('/api/settings/get')).json()).settings).oai_settings;
+      expect(settings.preset_settings_openai).toContain('Reborn');
+      expect(settings.prompts).toEqual([{ identifier: 'main', content: 'LINKED_PRESET_CONTENT' }]);
+      expect((await host.request('/api/settings/save', { oai_settings: { preset_settings_openai: 'Default', prompts: [{ identifier: 'main', content: 'EXPLICIT_USER_DRAFT' }] } })).ok).toBe(true);
+    } finally { host.close(); }
+    const reopened = await createTavernHost({ storyId: f.story.id, defaults });
+    try {
+      const settings = JSON.parse((await (await reopened.request('/api/settings/get')).json()).settings).oai_settings;
+      expect(settings.preset_settings_openai).toBe('Default');
+      expect(settings.prompts[0].content).toBe('EXPLICIT_USER_DRAFT');
+    } finally { reopened.close(); }
+  });
+  it.each(['edit', 'merge-attributes'])('persists unfavoriting through %s and a fresh host, including stale top-level fav', async route => {
+    const f = await fixture(); f.host.close();
+    await updateCharacter(f.character.id, current => ({ card: { ...current.card, fav: true,
+      data: { ...current.card.data!, extensions: { ...current.card.data!.extensions, fav: true } } } }));
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try {
+      const card = (await (await host.request('/api/bootstrap')).json()).characters[0];
+      expect(card.fav).toBe(true);
+      expect((await host.request(`/api/characters/${route}`, { avatar_url: card.avatar, avatar: card.avatar,
+        fav: route === 'edit' ? 'false' : false, ...(route === 'merge-attributes' ? { data: { extensions: { fav: false } } } : {}) })).ok).toBe(true);
+      const read = await (await host.request('/api/characters/get', { avatar_url: card.avatar })).json();
+      expect(read).toMatchObject({ fav: false, data: { extensions: { fav: false } } });
+    } finally { host.close(); }
+    const reopened = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try { expect((await (await reopened.request('/api/bootstrap')).json()).characters[0]).toMatchObject({ fav: false, data: { extensions: { fav: false } } }); }
+    finally { reopened.close(); }
+  });
+  it('prefers the main bound worldbook over the embedded snapshot regardless of asset order', async () => {
+    const f = await fixture(); f.host.close();
+    await getCurrentRepo<WorldBookItem>('worldbooks').put({ id: 'embedded', title: '旧卡内世界书', createdAt: 1, updatedAt: 1,
+      worldbook: parseWorldBook({ entries: {} }) });
+    await updateCharacter(f.character.id, () => ({ assets: [
+      { kind: 'worldbook', assetId: 'embedded', relations: ['embedded'] },
+      { kind: 'worldbook', assetId: 'wb', relations: ['primary'] },
+    ] }));
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try {
+      const card = (await (await host.request('/api/bootstrap')).json()).characters[0];
+      expect(card.data.extensions.world).toBe('书店');
+      expect((await (await host.request('/api/characters/get', { avatar_url: card.avatar })).json()).data.extensions.world).toBe('书店');
+      expect((await getCharacter(f.character.id))!.assets).toHaveLength(2);
+      // The native editor sends world along with unrelated edits such as favorite.
+      expect((await host.request('/api/characters/edit', { avatar_url: card.avatar, world: card.data.extensions.world, fav: 'false' })).ok).toBe(true);
+      expect((await getCharacter(f.character.id))!.assets).toEqual([
+        { kind: 'worldbook', assetId: 'embedded', relations: ['embedded'] },
+        { kind: 'worldbook', assetId: 'wb', relations: ['primary'] },
+      ]);
+      expect((await host.request('/api/characters/edit', { avatar_url: card.avatar, world: '' })).ok).toBe(true);
+      expect((await (await host.request('/api/characters/get', { avatar_url: card.avatar })).json()).data.extensions.world).toBe('');
+      expect((await getCharacter(f.character.id))!.assets).toEqual([{ kind: 'worldbook', assetId: 'embedded', relations: ['embedded'] }]);
+    } finally { host.close(); }
+    const reopened = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    try {
+      const card = (await (await reopened.request('/api/bootstrap')).json()).characters[0];
+      expect(card.data.extensions.world).toBe('');
+      expect((await reopened.request('/api/characters/edit', { avatar_url: card.avatar, world: '书店' })).ok).toBe(true);
+      expect((await (await reopened.request('/api/characters/get', { avatar_url: card.avatar })).json()).data.extensions.world).toBe('书店');
+    } finally { reopened.close(); }
+  });
   it('keeps character edits writable during an asynchronous library refresh', async () => {
     const f = await fixture();
     let release!: () => void;
@@ -64,9 +190,9 @@ describe('real Tavern host contracts', () => {
       await updateCharacter(f.character.id, () => ({ tags: ['题材/悬疑'], type: '人物', rating: 9 }));
       const bootstrap = await (await f.host.request('/api/bootstrap')).json();
       const first = JSON.parse(bootstrap.settings.settings);
-      expect(first.tags).toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/悬疑' }), expect.objectContaining({ name: '类型/人物' })]));
+      expect(first.tags).toEqual(expect.arrayContaining([expect.objectContaining({ name: '神作' }), expect.objectContaining({ name: '人物' })]));
       const avatar = bootstrap.characters[0].avatar;
-      expect(first.tag_map[avatar]).toHaveLength(3);
+      expect(first.tag_map[avatar]).toHaveLength(2);
       const { parsePreset } = await import('@/lib/preset-parser');
       const presets = getCurrentRepo<import('@/types/preset').PresetItem>('presets');
       await presets.put({ id: 'refresh-preset', title: '旧文件名', catalog: { name: '自用名', version: 'v2' },
@@ -76,7 +202,9 @@ describe('real Tavern host contracts', () => {
       expect(response.ok).toBe(true);
       const refreshed = await response.json();
       expect(refreshed.openai_setting_names).toContain('自用名 · v2');
-      expect(refreshed.tags).toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/日常' })]));
+      expect(refreshed.tags.map((tag: {name: string}) => tag.name)).toEqual(['人物','剧情','玩法','综合','同人','神作','精品','及格']);
+      expect(refreshed.tag_map[avatar]).toHaveLength(2);
+      expect(refreshed.tag_map[avatar]).not.toEqual(first.tag_map[avatar]);
       expect(refreshed.tags).not.toEqual(expect.arrayContaining([expect.objectContaining({ name: '题材/悬疑' })]));
       await presets.put({ ...(await presets.get('refresh-preset'))!, catalog: { name: '自用名', version: 'v2', tags: ['状态/过期'] } });
       expect((await (await f.host.request('/ste/library/refresh')).json()).openai_setting_names).not.toContain('自用名 · v2');
@@ -106,7 +234,8 @@ describe('real Tavern host contracts', () => {
     for (let index = 0; index < 8; index++) await saveCharacter(buildCharacterFromCard({ name: `无关角色${index}` }));
     const characterLists = vi.spyOn(characters, 'list');
     const characterGets = vi.spyOn(characters, 'get');
-    const storyLists = vi.spyOn(stories, 'list');
+    const storyLists = vi.spyOn(stories, 'listLight');
+    const storyBodies = vi.spyOn(stories, 'list');
     const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
     try {
       expect(characterLists).toHaveBeenCalledTimes(1);
@@ -123,6 +252,7 @@ describe('real Tavern host contracts', () => {
       expect(characterGets).toHaveBeenCalledTimes(1);
       expect(characterLists).not.toHaveBeenCalled();
       expect(storyLists).not.toHaveBeenCalled();
+      expect(storyBodies).not.toHaveBeenCalled();
     } finally { host.close(); vi.restoreAllMocks(); }
   });
 
