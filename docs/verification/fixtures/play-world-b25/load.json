@@ -1,0 +1,188 @@
+{
+  "results": [
+    {
+      "actors": 12,
+      "id": "3d6f1f2d-2121-4db8-b8b0-2e6330cf4a5f",
+      "eventCount": 11004,
+      "tick": 845,
+      "prepareMs": 2774.899999976158,
+      "loadMs": 1267,
+      "stepMedianMs": 145,
+      "stepP95Ms": 463,
+      "fps": 120.27251113819354,
+      "frameP95Ms": 8.5,
+      "mainThreadBusyFraction": 0.023373823746828348,
+      "heapBytes": 25453076,
+      "domNodes": 2127,
+      "listeners": 401,
+      "index": {
+        "eventCount": 9994,
+        "snapshotsInIndex": false,
+        "rows": 866
+      },
+      "processes": [
+        {
+          "type": "browser",
+          "id": 37156,
+          "cpuTime": 6.623525,
+          "Id": 37156,
+          "WorkingSet64": 191668224,
+          "PrivateMemorySize64": 84930560
+        },
+        {
+          "type": "renderer",
+          "id": 29928,
+          "cpuTime": 0.049047,
+          "Id": 29928,
+          "WorkingSet64": 33103872,
+          "PrivateMemorySize64": 16158720
+        },
+        {
+          "type": "renderer",
+          "id": 18960,
+          "cpuTime": 8.40496,
+          "Id": 18960,
+          "WorkingSet64": 240128000,
+          "PrivateMemorySize64": 190513152
+        },
+        {
+          "type": "GPU",
+          "id": 4368,
+          "cpuTime": 3.154442,
+          "Id": 4368,
+          "WorkingSet64": 200617984,
+          "PrivateMemorySize64": 192024576
+        },
+        {
+          "type": "network.mojom.NetworkService",
+          "id": 19924,
+          "cpuTime": 1.082722,
+          "Id": 19924,
+          "WorkingSet64": 59232256,
+          "PrivateMemorySize64": 31236096
+        },
+        {
+          "type": "storage.mojom.StorageService",
+          "id": 28584,
+          "cpuTime": 0.073298,
+          "Id": 28584,
+          "WorkingSet64": 21430272,
+          "PrivateMemorySize64": 8843264
+        },
+        {
+          "type": "edge_collections.mojom.CollectionsDataManager",
+          "id": 10992,
+          "cpuTime": 0.055324,
+          "Id": 10992,
+          "WorkingSet64": 17952768,
+          "PrivateMemorySize64": 7913472
+        },
+        {
+          "type": "entity_extraction_service.mojom.Extractor",
+          "id": 39400,
+          "cpuTime": 0.042834,
+          "Id": 39400,
+          "WorkingSet64": 21528576,
+          "PrivateMemorySize64": 8720384
+        },
+        {
+          "type": "asset_store.mojom.AssetStoreService",
+          "id": 19580,
+          "cpuTime": 0.036798,
+          "Id": 19580,
+          "WorkingSet64": 20897792,
+          "PrivateMemorySize64": 8675328
+        },
+        {
+          "type": "winrt_app_id.mojom.WinrtAppIdService",
+          "id": 34632,
+          "cpuTime": 0.087539,
+          "Id": 34632,
+          "WorkingSet64": 30756864,
+          "PrivateMemorySize64": 10248192
+        }
+      ]
+    },
+    {
+      "actors": 50,
+      "id": "1645e9af-6776-44a5-ad69-aae650a05399",
+      "eventCount": 11014,
+      "tick": 195,
+      "prepareMs": 1545.300000011921,
+      "loadMs": 1233,
+      "stepMedianMs": 194,
+      "stepP95Ms": 294,
+      "fps": 120.29173743659389,
+      "frameP95Ms": 8.5,
+      "mainThreadBusyFraction": 0.026696573084287602,
+      "heapBytes": 26453304,
+      "domNodes": 2469,
+      "listeners": 439,
+      "index": {
+        "eventCount": 9944,
+        "snapshotsInIndex": false,
+        "rows": 216
+      },
+      "processes": [
+        {
+          "type": "browser",
+          "id": 37156,
+          "cpuTime": 9.853865,
+          "Id": 37156,
+          "WorkingSet64": 191967232,
+          "PrivateMemorySize64": 84750336
+        },
+        {
+          "type": "renderer",
+          "id": 29928,
+          "cpuTime": 0.049984,
+          "Id": 29928,
+          "WorkingSet64": 33079296,
+          "PrivateMemorySize64": 16089088
+        },
+        {
+          "type": "renderer",
+          "id": 18960,
+          "cpuTime": 17.115624,
+          "Id": 18960,
+          "WorkingSet64": 254963712,
+          "PrivateMemorySize64": 205365248
+        },
+        {
+          "type": "GPU",
+          "id": 4368,
+          "cpuTime": 4.385855,
+          "Id": 4368,
+          "WorkingSet64": 203722752,
+          "PrivateMemorySize64": 193933312
+        },
+        {
+          "type": "network.mojom.NetworkService",
+          "id": 19924,
+          "cpuTime": 1.535915,
+          "Id": 19924,
+          "WorkingSet64": 59179008,
+          "PrivateMemorySize64": 30957568
+        },
+        {
+          "type": "storage.mojom.StorageService",
+          "id": 28584,
+          "cpuTime": 0.074312,
+          "Id": 28584,
+          "WorkingSet64": 21454848,
+          "PrivateMemorySize64": 8851456
+        },
+        {
+          "type": "entity_extraction_service.mojom.Extractor",
+          "id": 39400,
+          "cpuTime": 0.045404,
+          "Id": 39400,
+          "WorkingSet64": 21512192,
+          "PrivateMemorySize64": 8667136
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "environment": "Headless Edge Windows; process working sets include browser/GPU processes, not dedicated GPU allocation measurements"
+}

@@ -1,0 +1,9 @@
+        Info Looking up installed tauri packages to check mismatched versions...
+   Compiling ste-explorer v0.9.8 (D:\8.Project\0_0_维护\silly-tavern-explorer-main\src-tauri)
+warning: linker stdout: 正在创建库 D:\8.Project\0_0_维护\silly-tavern-explorer-main\src-tauri\target\debug\deps\app_lib.dll.lib 和对象 D:\8.Project\0_0_维护\silly-tavern-explorer-main\src-tauri\target\debug\deps\app_lib.dll.exp
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `ste-explorer` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.09s
+       Built application at: D:\8.Project\0_0_维护\silly-tavern-explorer-main\src-tauri\target\debug\STE.exe

@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "sourceRequests": [],
+  "workerRequests": [
+    "http://127.0.0.1:4229/assets/simulation.worker-BuwRjkoF.js",
+    "http://127.0.0.1:4229/assets/simulation.worker-BuwRjkoF.js"
+  ],
+  "result": "最终dist入口、Worker、干预、接管重开、完整GAL包/素材/历史/返回及390px短视口通过"
+}

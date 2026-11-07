@@ -1,0 +1,17 @@
+{
+  "capturedFiles": {
+    "src/pages/WorldPlay.tsx": "a27026be0e0865dbe9ddf00db404acadd3cc1f2f81ebee195e316b67a1f1e3e4",
+    "src/pages/GalPlay.tsx": "7338774fc762a924991fb90d4fec7470f950dddf09e6d73ca8871581b14086cb",
+    "src/play/world/session.ts": "6bb757371c3a0f053701e28f498b80b9889b31eb89b91fde4a7de5c5c132f59c",
+    "src/play/world/simulation.ts": "44b183928d92c2e0c0a5f0ac20b9dbe8dbb2fc64365fc4a21c5ef3ab2feacf76",
+    "src/play/storage/world-repo.ts": "0442d0054f68126ba4f4d1d2a028b9d5fcec0d3cc5301a9e98aa7f996607187c",
+    "src/play/media/pool.ts": "c5730a6fbc12b50d83213073ba9af0c9628ebc4906b8feade56c96dce4d14680"
+  },
+  "changedSinceStart": [
+    "src/pages/WorldPlay.tsx",
+    "src/pages/GalPlay.tsx",
+    "src/play/world/simulation.ts"
+  ],
+  "unchangedLifecycleStoragePool": true,
+  "note": "Soak ran during final UI/visibility/gathering/expiry/output-limit fixes. Final short smoke covers these changes. Do not claim entire final tree ran one hour."
+}

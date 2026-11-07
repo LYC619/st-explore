@@ -34,6 +34,7 @@ const PAGE_LOADERS = {
 
 const Home = lazy(PAGE_LOADERS.home);
 const ChatHub = lazy(PAGE_LOADERS.chats);
+const GalPlay = lazy(() => import('./pages/GalPlay'));
 const WorldPlay = lazy(() => import('./pages/WorldPlay'));
 const Index = lazy(PAGE_LOADERS.index);
 const Tools = lazy(PAGE_LOADERS.tools);
@@ -56,6 +57,7 @@ const App = () => {
     <Route path="/play/:id" element={null} />
     <Route path="/worlds" element={<WorldPlay />} />
     <Route path="/worlds/:id" element={<WorldPlay />} />
+    <Route path="/gal/:id" element={<GalPlay />} />
     <Route element={<AppLayout />}>
       <Route path="/" element={<Home />} />
       <Route path="/play" element={<ChatHub />} />

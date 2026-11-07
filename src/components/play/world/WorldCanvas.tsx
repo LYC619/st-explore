@@ -12,8 +12,8 @@ function actorPosition(state: WorldState, actor: Actor): [number, number] {
     origin.y + ((destination?.y ?? origin.y) - origin.y) * fraction + (Math.floor(index / columns) - (rows - 1) / 2) * 62 + 24];
 }
 
-export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion }: {
-  state: WorldState; selected: string; focusRegion?: string; onSelect: (id: string) => void; onRegion: (id: string) => void;
+export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion, visiblePeople, playerId }: {
+  state: WorldState; visiblePeople?: string[]; playerId?: string; selected: string; focusRegion?: string; onSelect: (id: string) => void; onRegion: (id: string) => void;
 }) {
   const svg = useRef<SVGSVGElement>(null), drag = useRef<{ x: number; y: number; px: number; py: number }>();
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 }), [scale, setScale] = useState(1);
@@ -49,7 +49,7 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion }
       </defs>
       <g transform={`translate(${pan.x} ${pan.y}) translate(520 380) scale(${zoom}) translate(-520 -380)`}>
         <rect x="-1400" y="-1400" width="4000" height="4000" fill="#577c73" />
-        <path d="M0 0H1040V760H0z" fill="url(#world-grass)" />
+        {state.setting === 'sanctuary' ? <g><rect width="1040" height="760" fill="#253e42" /><ellipse cx="550" cy="390" rx="490" ry="330" fill="#364d47" stroke="#9aab8477" strokeWidth="3" /><ellipse cx="550" cy="390" rx="420" ry="275" fill="none" stroke="#a1ad8355" strokeDasharray="3 14" />{Object.values(state.regions).map(r => <g key={r.id}><rect x={r.x-71} y={r.y-43} width="142" height="111" rx="18" fill={r.id === 'camp' ? '#73836a' : '#506e60'} stroke="#b2bb8e" strokeWidth="2" /><path d={`M${r.x-65} ${r.y-42}L${r.x} ${r.y-75}L${r.x+65} ${r.y-42}`} fill="#899c7e" stroke="#cad2a5" strokeWidth="2" /></g>)}</g> : <><path d="M0 0H1040V760H0z" fill="url(#world-grass)" />
         <path d="M0 0H1040V170L890 200 820 153 739 205 620 182 530 230 410 189 360 260 230 184 135 210 0 130z" fill="url(#world-mountains)" />
         <path d="M160 220l155 0 100 68-19 126-87 79-140-63-20-91z" fill="url(#world-woods)" />
         <path d="M60 520l170-32 155 51 22 173H75z" fill="url(#world-farm)" />
@@ -57,21 +57,21 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion }
         <path d="M762 0h278v760H900l32-101-49-52 38-88-44-83 41-91-79-83-16-85-76-52z" fill="url(#world-sea)" />
         <path d="M570 170q-66 87-25 160t-30 153q-57 75-19 145t-43 132" stroke="#b3b897" strokeWidth="43" fill="none" />
         <path d="M570 170q-66 87-25 160t-30 153q-57 75-19 145t-43 132" stroke="#6597a0" strokeWidth="29" fill="none" />
-        <path d="M820 460l70 14 28 88-87 28-29-59z" fill="#c0b287" />
+        <path d="M820 460l70 14 28 88-87 28-29-59z" fill="#c0b287" /></>}
         {EDGES.map(edge => {
           const a = state.regions[edge.from], b = state.regions[edge.to], closed = edge.ferry && isRaining(state);
           return <g key={edge.from + edge.to}><path d={`M${a.x} ${a.y}L${b.x} ${b.y}`} stroke={closed ? '#c08d7b' : '#d7c594'} strokeWidth="6" opacity=".7" fill="none" strokeDasharray={edge.ferry ? '6 8' : undefined} />
             <path d={`M${a.x} ${a.y}L${b.x} ${b.y}`} stroke="#6c6747" strokeWidth="1" strokeDasharray="2 8" fill="none" /></g>;
         })}
         {Object.values(state.regions).map(region => <g key={region.id} data-map-target="region" role="button" tabIndex={0} aria-label={`查看地区 ${region.name}`}
-          onClick={() => onRegion(region.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRegion(region.id); } }} className="world-region">
+          onClick={() => onRegion(region.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRegion(region.id); } }} className="world-region" opacity={playerId && region.id !== actor.region ? .45 : 1}>
           <circle cx={region.x} cy={region.y} r={hit} fill="transparent" />
           <path d={`M${region.x - 10} ${region.y + 8}v-14h20v14zM${region.x - 15} ${region.y - 6}l15-12 15 12z`} fill="#dcd4aa" stroke="#4a5e48" strokeWidth="2" />
           <text x={region.x} y={region.y - 62} textAnchor="middle" className="world-region-name">{region.name}</text>
           {region.id === 'ferry' && isRaining(state) && <text x={region.x} y={region.y - 40} textAnchor="middle" className="world-map-warning">渡口封闭</text>}
         </g>)}
         {actor.job?.type === 'move' && <path d={`M${x} ${y}L${state.regions[actor.job.to!].x} ${state.regions[actor.job.to!].y}`} stroke="#fff0b9" strokeWidth="3" strokeDasharray="4 5" />}
-        {state.actors.map(person => {
+        {state.actors.filter(person => !visiblePeople || visiblePeople.includes(person.id)).map(person => {
           const [px, py] = actorPosition(state, person), chosen = person.id === selected;
           return <g key={person.id} data-map-target="actor" data-actor-id={person.id} role="button" tabIndex={0} aria-label={`追踪${person.name}`}
             className={'world-actor' + (chosen ? ' chosen' : '')} style={{ transform: `translate(${px}px, ${py}px)` }}
@@ -86,7 +86,7 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion }
       </g>
       <rect x="0" y="0" width="1040" height="760" fill="url(#world-vignette)" pointerEvents="none" />
     </svg>
-    <div className="world-map-title"><span className="world-eyebrow">山海之间 · 原生规则沙盘</span><h2>一念，山海有变。</h2><span className="world-weather">{isRaining(state) ? `雨 · 渡口封闭，剩余 ${state.weather.rainUntil - state.tick + 1} 步` : '晴 · 行路无碍'}</span></div>
+    <div className="world-map-title"><span className="world-eyebrow">{state.setting === 'sanctuary' ? '星门之间 · 异界休息室' : '山海之间 · 原生世界'}</span><h2>{state.setting === 'sanctuary' ? '来时异路，此刻同灯。' : '一念，山海有变。'}</h2><span className="world-weather">{isRaining(state) ? `雨 · 渡口封闭，剩余 ${state.weather.rainUntil - state.tick + 1} 步` : '晴 · 行路无碍'}</span></div>
     <div className="world-map-tools"><button aria-label="缩小地图" onClick={() => setZoom(v => Math.max(.7, v - .2))}><Minus size={17} /></button><button aria-label="放大地图" onClick={() => setZoom(v => Math.min(2, v + .2))}><Plus size={17} /></button><button aria-label="定位追踪人物" onClick={() => { setZoom(1); setPan({ x: 520 - x, y: 380 - y }); setTracking(true); }}><LocateFixed size={17} /></button></div>
   </div>;
 }

@@ -1,6 +1,6 @@
 import { chromium,expect } from '@playwright/test';
 import { readFile,writeFile } from 'node:fs/promises';
-const base='http://127.0.0.1:4214',out='.cache/1104-frontend';
+const base=process.env.STE_SMOKE_URL||'http://127.0.0.1:4214',out=process.env.STE_SMOKE_OUTPUT||'.cache/1104-frontend';
 const preset=JSON.parse((await readFile('D:/2.数据库/我的STExplore/资产/预设/Reborn2.3.json','utf8')).replace(/^\uFEFF/,''));
 const schema=await readFile('D:/8.Project/0_1_酒馆相关/加MVU前端/前端/柏崎星奈/01_MVU_ZOD脚本.js','utf8');
 const helper=Array.from(await readFile('.cache/helper.zip'));

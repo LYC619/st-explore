@@ -1,0 +1,151 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "fictionalInputsOnly": true,
+  "originalConfigUnchanged": true,
+  "results": [
+    {
+      "purpose": "narrative",
+      "elapsedMs": 5725.400000035763,
+      "error": "本次输出额度不足，模型已截断。可在“本次额度与记忆整理”调高单次输出上限后继续；本次未自动重试"
+    },
+    {
+      "purpose": "scene",
+      "elapsedMs": 3844.699999988079,
+      "scene": {
+        "id": "d668b141-6e90-4834-b426-b527b8ff4c7f",
+        "title": "渡口听雨·问路",
+        "background": "rain",
+        "entry": "b0",
+        "beats": [
+          {
+            "id": "b0",
+            "text": "雨丝斜织，渡口的木桩浸得发黑，缆绳在水里一沉一浮。你走近廊檐，檐角的雨水连成一线，落在青石上，碎成很细的白花。林照晚背着药篓，袖口卷到手肘，指节上有新鲜的草汁。",
+            "speaker": "旁白",
+            "next": "b1"
+          },
+          {
+            "id": "b1",
+            "text": "你来得正好。船家说水涨了，今日过不去。我在这儿站了半炷香，倒也不急——雨里的山，比晴时更肯说实话。你想问什么，就问吧，我知道的都告诉你。",
+            "speaker": "林照晚",
+            "next": "b2"
+          },
+          {
+            "id": "b2",
+            "text": "不过先说清楚，我不轻易应承人。要是我答不上来，或者不该答，我会直说。你问的是路，还是别的？",
+            "speaker": "林照晚",
+            "next": "b3"
+          },
+          {
+            "id": "b3",
+            "text": "她说话时，手指无意识地在药篓的系带上绕了一圈。系带底下压着一小片旧布，布角露出一点银色的圆环——像是铃，又像是别的什么。雨声很密，你看不真切。",
+            "speaker": "旁白"
+          }
+        ],
+        "choices": [
+          {
+            "id": "c0",
+            "label": "问她山路通往哪里",
+            "intent": "打听进山的路径与沿途草药分布"
+          },
+          {
+            "id": "c1",
+            "label": "问她为何守在渡口",
+            "intent": "探问她今日停留在此的真正缘由"
+          },
+          {
+            "id": "c2",
+            "label": "指一指药篓下的银环",
+            "intent": "直接点破那枚旧物，看她如何回应"
+          },
+          {
+            "id": "c3",
+            "label": "提议先避雨再谈",
+            "intent": "把话题放缓，陪她等雨停，观察她的态度"
+          }
+        ]
+      }
+    }
+  ],
+  "receipts": [
+    {
+      "id": "537a4a0b-f72f-4d8e-a282-86ff7a171d22",
+      "purpose": "narrative",
+      "tick": 1,
+      "contextRevision": 0,
+      "factIds": [],
+      "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "reserved": 1147,
+      "runId": "b9a94328-5e2a-4926-95f9-9a8658c873b9",
+      "charged": 1223,
+      "estimated": false,
+      "status": "failed",
+      "elapsedMs": 5696,
+      "inputTokens": 199,
+      "outputTokens": 1024
+    },
+    {
+      "id": "596a8287-a2e0-4613-94f0-f6ef5bf33f6e",
+      "purpose": "scene",
+      "actorId": "a0",
+      "tick": 1,
+      "contextRevision": 0,
+      "factIds": [],
+      "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "reserved": 1324,
+      "runId": "b9a94328-5e2a-4926-95f9-9a8658c873b9",
+      "charged": 870,
+      "estimated": false,
+      "status": "completed",
+      "elapsedMs": 3830,
+      "inputTokens": 359,
+      "outputTokens": 511
+    }
+  ],
+  "charged": 2093,
+  "envelopes": [
+    {
+      "status": 200,
+      "finishReason": "length",
+      "usage": {
+        "completion_tokens": 1024,
+        "prompt_tokens": 199,
+        "total_tokens": 1223,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1024,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 199,
+        "reasoning_tokens": 1024
+      }
+    },
+    {
+      "status": 200,
+      "finishReason": "stop",
+      "usage": {
+        "completion_tokens": 511,
+        "prompt_tokens": 359,
+        "total_tokens": 870,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 150,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 359,
+        "reasoning_tokens": 150
+      }
+    }
+  ]
+}

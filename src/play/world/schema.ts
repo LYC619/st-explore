@@ -1,10 +1,13 @@
+import type { WorldIntelligence } from '../agents/types';
+import type { AdventureState } from '../adventure/control';
+import type { GalState } from '../gal/scene';
 export const RULESET = 'shanhai-1' as const;
 export const RESOURCES = ['herb', 'food', 'ore'] as const;
 export type Resource = typeof RESOURCES[number];
 export const RESOURCE_NAMES: Record<Resource, string> = { herb: '青叶', food: '干粮', ore: '灵石' };
 export type Bag = Record<Resource, number>;
-export type Action = 'move' | 'gather' | 'rest' | 'train' | 'trade' | 'gift' | 'talk' | 'help';
-export const ACTION_NAMES: Record<Action, string> = { move: '行路', gather: '采集', rest: '歇息', train: '修行', trade: '交易', gift: '赠予', talk: '交谈', help: '援助' };
+export type Action = 'move' | 'gather' | 'rest' | 'train' | 'trade' | 'gift' | 'talk' | 'help' | 'explore';
+export const ACTION_NAMES: Record<Action, string> = { move: '行路', gather: '采集', rest: '歇息', train: '修行', trade: '交易', gift: '赠予', talk: '交谈', help: '援助', explore: '探索' };
 export interface Job { type: Action; remaining: number; duration: number; reason: string; to?: string; resource?: Resource; peer?: string }
 export interface Actor {
   id: string; name: string; role: string; color: string; region: string; energy: number; xp: number;
@@ -15,10 +18,17 @@ export interface Region { id: string; name: string; x: number; y: number; stock:
 export interface WorldState {
   schema: 1; ruleset: typeof RULESET; tick: number; rng: number;
   weather: { rainUntil: number }; actors: Actor[]; regions: Record<string, Region>;
+  intelligence?: WorldIntelligence;
+  setting?: 'sanctuary';
+  gathering?: { region: string; until: number };
+  adventure?: AdventureState;
+  gal?: GalState;
 }
 export type Intervention = { type: 'rain'; duration: number }
   | { type: 'supply'; region: string; resource: Resource; amount: number }
-  | { type: 'gathering'; region: string };
-export interface WorldEvent { id: string; tick: number; kind: string; title: string; detail: string; cause: string; actors: string[]; region: string }
+  | { type: 'gathering'; region: string }
+  | { type: 'action'; actorId: string; leaseId: string; actionId: string }
+  | { type: 'encounter'; actorId: string; leaseId: string; encounterId: string; choice: 'face' | 'avoid' };
+export interface WorldEvent { id: string; tick: number; kind: string; title: string; detail: string; cause: string; actors: string[]; region: string; witnesses?: string[] }
 export interface StepResult { state: WorldState; events: WorldEvent[] }
 export interface Edge { from: string; to: string; cost: number; ferry?: boolean }

@@ -1,0 +1,57 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "fictionalInputsOnly": true,
+  "originalConfigUnchanged": true,
+  "results": [
+    {
+      "purpose": "narrative",
+      "elapsedMs": 13531.399999976158,
+      "value": {
+        "text": "雨落灵泽，渡口笼在水汽里。渡口封闭，持续四步；在途渡船不再向前，掉转船头，沿来路返回出发地。山路仍可通行，雨幕中向远处延伸。水面被雨点敲出密密涟漪，渡口一时寂静，只余雨声与流水的声响。"
+      }
+    }
+  ],
+  "receipts": [
+    {
+      "id": "9c5a3abf-fb20-424b-885e-08c1fb7d9041",
+      "purpose": "narrative",
+      "tick": 1,
+      "contextRevision": 0,
+      "factIds": [],
+      "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "reserved": 2171,
+      "runId": "7997a2bb-b89b-44b5-8959-f202d6686d7d",
+      "charged": 1511,
+      "estimated": false,
+      "status": "completed",
+      "elapsedMs": 13505,
+      "inputTokens": 199,
+      "outputTokens": 1312
+    }
+  ],
+  "charged": 1511,
+  "envelopes": [
+    {
+      "status": 200,
+      "finishReason": "stop",
+      "usage": {
+        "completion_tokens": 1312,
+        "prompt_tokens": 199,
+        "total_tokens": 1511,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 1233,
+          "rejected_prediction_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cached_tokens": 0
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 199,
+        "reasoning_tokens": 1233
+      }
+    }
+  ]
+}

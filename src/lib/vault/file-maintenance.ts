@@ -12,6 +12,7 @@ import { parseFrontmatter } from './frontmatter';
 import { isRuntimePath, branchKey } from '@/lib/roleplay/paths';
 import { getActiveVault, getVaultEpoch } from './active';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { validWorldMedia } from '@/play/media/asset';
 import { validCommit } from '@/play/storage/world-commit';
 
 export interface ManagedFile { path: string; size: number; version: string }
@@ -169,6 +170,11 @@ async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained =
   }
   await walk('', 0);
   for (const path of result.files.keys()) {
+    const mediaFile = /^世界素材\/([a-f0-9]{64})\.json$/.exec(path);
+    if (mediaFile) {
+      try { if ((result.files.get(path)?.size ?? 0) <= 7_000_000) { const asset = JSON.parse(await fs.readText(path)); if (validWorldMedia(asset) && asset.id === mediaFile[1]) result.known.add(path); } } catch { /* Unknown/damaged resources stay protected. */ }
+      continue;
+    }
     const worldFile = /^世界\/([a-f0-9-]{36})\/(\d{6})\.json$/.exec(path);
     if (worldFile) {
       try {

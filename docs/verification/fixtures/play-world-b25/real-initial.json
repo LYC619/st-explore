@@ -1,0 +1,59 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "fictionalInputsOnly": true,
+  "originalConfigUnchanged": true,
+  "results": [
+    {
+      "persona": "守成者",
+      "repetition": 0,
+      "legal": false,
+      "error": "模型没有返回正文，本轮已暂停",
+      "elapsedMs": 5092,
+      "charged": 859,
+      "estimated": false,
+      "status": "failed"
+    },
+    {
+      "persona": "探路者",
+      "repetition": 0,
+      "legal": false,
+      "error": "模型没有返回正文，本轮已暂停",
+      "elapsedMs": 2190,
+      "charged": 856,
+      "estimated": false,
+      "status": "failed"
+    },
+    {
+      "persona": "修行者",
+      "repetition": 0,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 2360,
+      "charged": 713,
+      "estimated": false,
+      "status": "completed"
+    },
+    {
+      "persona": "修行者",
+      "repetition": 1,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 1673,
+      "charged": 687,
+      "estimated": false,
+      "status": "completed"
+    },
+    {
+      "persona": "修行者",
+      "repetition": 2,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 1305,
+      "charged": 688,
+      "estimated": false,
+      "status": "completed"
+    }
+  ],
+  "calls": 5,
+  "charged": 3803
+}

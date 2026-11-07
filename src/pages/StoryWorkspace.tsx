@@ -62,6 +62,7 @@ interface StoryWorkspaceLocationState {
   view?: string;
   branchId?: string | null;
   initialTarget?: OrganizeTarget;
+  sourceFloor?: number;
 }
 
 const VIEW_ITEMS: { key: WorkspaceView; label: string; icon: typeof BookOpenText; group?: string }[] = [
@@ -109,7 +110,7 @@ const StoryWorkspace = () => {
         setSearchParams((current) => {
           current.set('view', stateView);
           return current;
-        }, { replace: true });
+        }, { replace: true, state: location.state });
       }
     }
   }, [location.state, searchParams, setSearchParams]);
@@ -181,7 +182,11 @@ const StoryWorkspace = () => {
         });
         saverRef.current = loadedSaver;
         saverRef.current.queueMutation(s.id, viewPatch);
-        const withView = { ...s, ...viewPatch(s) };
+        let withView: ArchiveStory = { ...s, ...viewPatch(s) };
+        const sourceFloor = (location.state as StoryWorkspaceLocationState | null)?.sourceFloor;
+        const sourceLine = getBranchLine(withView, restoredBranchId);
+        if (Number.isSafeInteger(sourceFloor) && sourceFloor! >= 0 && sourceLine && sourceFloor! < sourceLine.session.messages.length)
+          withView = updateBranchLine(withView, restoredBranchId, { lastFloor: sourceFloor });
         storyRef.current = withView;
         setStory(withView);
         setLoading(false);

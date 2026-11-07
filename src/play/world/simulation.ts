@@ -1,4 +1,8 @@
 import { ACTION_NAMES, RESOURCE_NAMES, RESOURCES, RULESET, type Actor, type Edge, type Intervention, type Job, type Resource, type StepResult, type WorldEvent, type WorldState } from './schema';
+import { legalActions } from './legal-actions';
+import { validateIntelligence } from '../agents/state';
+import { validateAdventure } from '../adventure/control';
+import { validateGal } from '../gal/scene';
 
 export const EDGES: Edge[] = [
   { from: 'camp', to: 'ferry', cost: 1, ferry: true }, { from: 'ferry', to: 'market', cost: 1, ferry: true },
@@ -98,15 +102,73 @@ function choosePlan(world: WorldState, actor: Actor): Job {
   return job('rest', 2, '附近资源暂缺，休整等待新的机会');
 }
 
-export function stepWorld(input: WorldState, command?: Intervention): StepResult {
+export function availableActions(state: WorldState, actorId: string) {
+  const actor = state.actors.find(a => a.id === actorId);
+  if (!actor) throw new Error('人物不存在');
+  return legalActions(state, actor, EDGES.flatMap(e => {
+    if (e.ferry && isRaining(state)) return [];
+    const to = e.from === actor.region ? e.to : e.to === actor.region ? e.from : undefined;
+    return to ? [{ to, cost: e.cost }] : [];
+  }));
+}
+/** Complete plans only at the boundary after all existing actions settled. */
+export function finalizePlans(result: StepResult, choices: Record<string, string> = {}): StepResult {
+  const { state, events } = result;
+  for (const actor of state.actors) if (!actor.job) {
+    if (state.adventure?.control?.actorId === actor.id) continue;
+    if (state.setting === 'sanctuary') {
+      const schedule = ['farm', 'forest', 'market', 'camp', 'valley', actor.home];
+      actor.goal = state.gathering?.region ?? schedule[state.tick % schedule.length];
+    }
+    const selected = choices[actor.id];
+    const legal = selected ? availableActions(state, actor.id).find(a => a.id === selected) : undefined;
+    if (selected && !legal) throw new Error('行动已失效，请重新选择');
+    actor.job = legal ? { ...legal.job, reason: '自身判断：' + legal.label } : choosePlan(state, actor);
+    events.push({ id: `t${state.tick}-${events.length}`, tick: state.tick, kind: 'plan', title: `${actor.name}准备${ACTION_NAMES[actor.job.type]}`,
+      detail: `${actor.job.reason}；需要 ${actor.job.duration} 步`, cause: selected ? '角色自主选择 → 规则校验通过' : '当前目的地、物资、体力与同处人物共同决定', actors: [actor.id], region: actor.region, witnesses: [actor.id] });
+  }
+  return result;
+}
+export function stepWorld(input: WorldState, command?: Intervention, options: { deferPlans?: boolean } = {}): StepResult {
   assertWorld(input);
+  if (input.adventure?.encounter && command?.type !== 'encounter') throw new Error('眼前的遭遇还在等你选择，世界已暂停');
   const state = structuredClone(input); state.tick++;
+  if (state.gathering && state.tick > state.gathering.until) delete state.gathering;
   const events: WorldEvent[] = [];
   function emit(kind: string, title: string, detail: string, cause: string, actors: string[], region: string) {
-    events.push({ id: `t${state.tick}-${events.length}`, tick: state.tick, kind, title, detail, cause, actors, region });
+    const witnesses = kind === 'plan' ? actors : ['weather', 'supply', 'gathering'].includes(kind) ? state.actors.map(a => a.id)
+      : [...new Set([...actors, ...input.actors.filter(a => a.region === region && a.job?.type !== 'move').map(a => a.id), ...state.actors.filter(a => a.region === region && a.job?.type !== 'move').map(a => a.id)])];
+    events.push({ id: `t${state.tick}-${events.length}`, tick: state.tick, kind, title, detail, cause, actors, region, witnesses });
   }
   if (command) {
-    if (command.type === 'rain') {
+    if (command.type === 'action' || command.type === 'encounter') {
+      const control = state.adventure?.control;
+      if (!control || control.actorId !== command.actorId || control.leaseId !== command.leaseId) throw new Error('角色控制权已变化，请重新打开行动栏');
+      const actor = state.actors.find(a => a.id === control.actorId)!;
+      if (command.type === 'action') {
+        if (actor.job) throw new Error('请先完成当前行动');
+        const action = availableActions(state, actor.id).find(a => a.id === command.actionId);
+        if (!action) throw new Error('此行动已不可执行，请重新选择');
+        actor.job = { ...action.job, reason: '玩家选择：' + action.label };
+        emit('plan', `${actor.name}准备${ACTION_NAMES[action.job.type]}`, `${action.label}；${action.cost}`, '玩家接管 → 合法行动校验', [actor.id], actor.region);
+      } else {
+        const encounter = state.adventure!.encounter;
+        if (!encounter || encounter.id !== command.encounterId || !['face', 'avoid'].includes(command.choice)) throw new Error('遭遇选择已失效');
+        let detail = '谨慎退开，保全身上的物资。';
+        if (command.choice === 'face') {
+          const success = encounter.kind !== 'beast' || encounter.roll + Math.min(.5, actor.xp / 100) >= .35;
+          const loss = encounter.kind === 'beast' ? encounter.danger * (success ? 1 : 2) : 5;
+          state.adventure!.health[actor.id] = Math.max(1, (state.adventure!.health[actor.id] ?? 100) - loss);
+          const resource = state.regions[actor.region].resource, amount = success ? Math.min(encounter.reward, state.regions[actor.region].stock[resource]) : 0;
+          state.regions[actor.region].stock[resource] -= amount; actor.bag[resource] += amount;
+          actor.xp += success ? 5 : 1;
+          detail = `${success ? '顺利应对' : '受伤撤离'}，气血 -${loss}（最低 1），${RESOURCE_NAMES[resource]} +${amount}（来自此地存量），修为 +${success ? 5 : 1}。${state.adventure!.health[actor.id] < 20 ? '伤势较重，歇息后可继续冒险。' : ''}`;
+        }
+        emit('encounter', `${actor.name} · ${encounter.title}`, detail, `玩家${command.choice === 'face' ? '面对' : '退避'} → 已保存的种子判定 → 物资与气血结算`, [actor.id], actor.region);
+        state.adventure!.resolved++; delete state.adventure!.encounter;
+        if (state.gal?.kind === 'encounter') delete state.gal;
+      }
+    } else if (command.type === 'rain') {
       if (!Number.isInteger(command.duration) || command.duration < 1 || command.duration > 12) throw new Error('降雨持续范围为 1～12 步');
       state.weather.rainUntil = state.tick + command.duration - 1;
       emit('weather', '雨落灵泽，渡口封闭', `持续 ${command.duration} 步；山路仍可通行。在途渡船返回出发地。`, '玩家改变天气 → 水路关闭 → 重新寻路', [], 'ferry');
@@ -115,9 +177,10 @@ export function stepWorld(input: WorldState, command?: Intervention): StepResult
       state.regions[command.region].stock[command.resource] += command.amount;
       emit('supply', `${state.regions[command.region].name}获得补给`, `${RESOURCE_NAMES[command.resource]} +${command.amount}`, '玩家投放 → 公共资源增加（外部来源）', [], command.region);
     } else if (command.type === 'gathering') {
+      if (state.setting === 'sanctuary') state.gathering = { region: command.region, until: state.tick + 11 };
       if (!state.regions[command.region]) throw new Error('聚会地点不存在');
       state.actors.forEach(actor => { actor.goal = command.region; if (actor.job?.type !== 'move') actor.job = undefined; });
-      emit('gathering', `相约${state.regions[command.region].name}`, '行旅完成当前路段后向此地聚集，仍须自行走完路径。', '玩家邀请 → 人物目的地改变 → 同处时可以交往', [], command.region);
+      emit('gathering', `相约${state.regions[command.region].name}`, '行旅完成当前路段后向此地聚集，仍须自行走完路径。' + (state.setting === 'sanctuary' ? '接下来 12 步优先响应邀请，之后恢复日程。' : ''), '玩家邀请 → 人物目的地改变 → 同处时可以交往', [], command.region);
     } else throw new Error('未知干预');
   }
   if (input.weather.rainUntil > 0 && state.tick === input.weather.rainUntil + 1 && !isRaining(state))
@@ -142,7 +205,21 @@ export function stepWorld(input: WorldState, command?: Intervention): StepResult
     let detail = '', kind: string = current.type;
     switch (current.type) {
       case 'move': actor.region = current.to!; actor.energy = Math.max(0, actor.energy - 8); actor.journeys++; detail = `抵达${state.regions[actor.region].name}，体力 -8`; break;
-      case 'rest': actor.energy = Math.min(100, actor.energy + 25); detail = '歇息恢复 25 点体力（上限 100）'; break;
+      case 'rest':
+        actor.energy = Math.min(100, actor.energy + 25); detail = '歇息恢复 25 点体力（上限 100）';
+        if (state.adventure?.health[actor.id] !== undefined) { state.adventure.health[actor.id] = Math.min(100, state.adventure.health[actor.id] + 25); detail += '，气血恢复 25（上限 100）'; } break;
+      case 'explore': {
+        if (state.adventure?.control?.actorId !== actor.id) { detail = '放下探索，回到日常'; break; }
+        actor.energy = Math.max(0, actor.energy - 10);
+        const discovered = state.adventure.discovered[actor.id] ?? [];
+        if (!discovered.includes(actor.region)) state.adventure.discovered[actor.id] = [...discovered, actor.region];
+        const roll = nextRandom(state), kind = roll < .4 ? 'beast' : roll < .7 ? 'cache' : 'traveler';
+        state.adventure.encounter = { id: `encounter:${state.tick}:${actor.id}`, region: actor.region, kind, roll,
+          title: kind === 'beast' ? '林下异响' : kind === 'cache' ? '遗落的补给' : '路旁的陌生人',
+          description: kind === 'beast' ? '阴影里传来低吼。向前一步，可能收获稀有物资，也可能负伤归来。' : kind === 'cache' ? '你发现一处尚未采集的资源。可以仔细搜寻，也可以留给后来的人。' : '旅人朝你招手，愿意带你寻找附近的补给。',
+          danger: 10 + Math.floor(roll * 15), reward: 1 + Math.floor(roll * 3) };
+        detail = `体力 -10，发现「${state.adventure.encounter.title}」，等待你的抉择。`; break;
+      }
       case 'gather':
         if (here.stock[resource] > 0) {
           here.stock[resource]--; actor.bag[resource]++; actor.energy = Math.max(0, actor.energy - 6);
@@ -174,24 +251,20 @@ export function stepWorld(input: WorldState, command?: Intervention): StepResult
     }
     emit(kind, `${actor.name} · ${ACTION_NAMES[current.type]}`, detail, current.reason, peer ? [actor.id, peer.id] : [actor.id], actor.region);
   }
-  for (const actor of state.actors) if (!actor.job) {
-    actor.job = choosePlan(state, actor);
-    emit('plan', `${actor.name}准备${ACTION_NAMES[actor.job.type]}`, `${actor.job.reason}；需要 ${actor.job.duration} 步`, '当前目的地、物资、体力与同处人物共同决定', [actor.id], actor.region);
-  }
-  return { state, events };
+  return options.deferPlans ? { state, events } : finalizePlans({ state, events });
 }
 
 /** Boundary validation for saves/worker requests; rules are versioned, never silently upgraded. */
 export function assertWorld(value: unknown): asserts value is WorldState {
   const w = value as WorldState;
   if (!w || w.schema !== 1 || w.ruleset !== RULESET || !Number.isSafeInteger(w.tick) || w.tick < 0 || !Number.isInteger(w.rng) || w.rng < 0 || w.rng > 4294967295
-    || !w.weather || !Number.isSafeInteger(w.weather.rainUntil) || w.weather.rainUntil < 0 || !Array.isArray(w.actors) || w.actors.length !== 12 || !w.regions || Object.keys(w.regions).length !== 8) throw new Error('世界存档结构或规则版本不受支持');
+    || !w.weather || !Number.isSafeInteger(w.weather.rainUntil) || w.weather.rainUntil < 0 || !Array.isArray(w.actors) || w.actors.length < 1 || w.actors.length > 50 || !w.regions || Object.keys(w.regions).length !== 8) throw new Error('世界存档结构或规则版本不受支持');
   const bagValid = (bag: Actor['bag']) => bag && RESOURCES.every(key => Number.isSafeInteger(bag[key]) && bag[key] >= 0);
   const textValid = (text: unknown, max = 100) => typeof text === 'string' && text.length <= max;
   for (const [id, r] of Object.entries(w.regions)) if (id !== r.id || !EDGES.some(e => e.from === id || e.to === id) || !textValid(r.name) || !textValid(r.description, 400) || !RESOURCES.includes(r.resource) || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !bagValid(r.stock)) throw new Error('世界地区数据损坏');
-  if (new Set(w.actors.map(a => a.id)).size !== 12) throw new Error('人物标识重复');
+  if (new Set(w.actors.map(a => a.id)).size !== w.actors.length) throw new Error('人物标识重复');
   for (const a of w.actors) {
-    if (!/^a(?:[0-9]|1[01])$/.test(a.id) || !textValid(a.name) || !textValid(a.role) || !/^#[a-f0-9]{6}$/i.test(a.color) || !w.regions[a.region] || !w.regions[a.goal] || !w.regions[a.home]
+    if (!/^a(?:[0-9]|[1-4][0-9])$/.test(a.id) || !textValid(a.name) || !textValid(a.role) || !/^#[a-f0-9]{6}$/i.test(a.color) || !w.regions[a.region] || !w.regions[a.goal] || !w.regions[a.home]
       || !bagValid(a.bag) || !RESOURCES.includes(a.specialty) || !Number.isFinite(a.energy) || a.energy < 0 || a.energy > 100 || !Number.isSafeInteger(a.xp) || a.xp < 0
       || !a.relations || !Object.entries(a.relations).every(([id, n]) => Number.isFinite(n) && w.actors.some(p => p.id === id)) || !Number.isSafeInteger(a.journeys) || a.journeys < 0 || !Number.isFinite(a.lastSocial) || !Number.isFinite(a.sociability)) throw new Error('世界人物数据损坏');
     if (a.job && (!Object.hasOwn(ACTION_NAMES, a.job.type) || !Number.isInteger(a.job.remaining) || a.job.remaining < 1 || a.job.remaining > a.job.duration
@@ -201,4 +274,9 @@ export function assertWorld(value: unknown): asserts value is WorldState {
       || ['gather', 'trade'].includes(a.job.type) && !RESOURCES.includes(a.job.resource!)
       || a.job.resource !== undefined && !RESOURCES.includes(a.job.resource))) throw new Error('世界行动数据损坏');
   }
+  if (w.gathering && (w.setting !== 'sanctuary' || !Object.hasOwn(w.regions, w.gathering.region) || !Number.isSafeInteger(w.gathering.until) || w.gathering.until < w.tick)) throw new Error('召集安排无效');
+  validateIntelligence(w);
+  if (w.setting !== undefined && w.setting !== 'sanctuary') throw new Error('场景类型不受支持');
+  validateAdventure(w);
+  validateGal(w);
 }

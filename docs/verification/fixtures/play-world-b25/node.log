@@ -1,0 +1,66 @@
+
+> silly-tavern-explorer@0.9.8 test:tavern-source
+> node --test --test-reporter=spec scripts/tavern/*.test.mjs
+
+✔ relocates original compiler paths while preserving original entries and compiler behavior (1.6794ms)
+✔ refuses an upstream output directory outside the frontend tree (1.3642ms)
+✔ root dependency versions match the upstream lock and installed packages (1555.4958ms)
+✔ a root lock drift is rejected before running an upstream compiler (651.0143ms)
+✔ composing generated assets never silently replaces a pinned raw module (0.348ms)
+✔ the single host overlay seam requires the expected original hash (0.2124ms)
+✔ rejects the .cache junction before compiler cleaning or writes (2741.0793ms)
+✔ rejects the .cache/tavern junction before compiler cleaning or writes (3508.6626ms)
+✔ rejects the .cache/tavern/bundles/dist junction before compiler cleaning or writes (3469.8408ms)
+✔ rejects a cache junction even when it contains a valid reusable manifest (8428.2334ms)
+✔ creates absent cache and host parents as real in-project directories (41.0047ms)
+✔ validates every requested directory before creating any unsafe path (5.6976ms)
+✔ refuses existing .cache junctions without writing through them (12.786ms)
+✔ refuses existing .cache/tavern junctions without writing through them (12.6639ms)
+✔ refuses existing .cache/tavern/host junctions without writing through them (19.0212ms)
+✔ refuses existing .cache/tavern/rspack/vendor-libs junctions without writing through them (19.4456ms)
+✔ rejects a link installed after an earlier successful preparation (40.542ms)
+✔ rejects a non-directory cache ancestor without replacing it (7.3934ms)
+✔ rejects writable cache files hard-linked to an external file (37.875ms)
+✔ prepares every original compiler output and cache directory in one validation pass (79.9354ms)
+✔ active compiler ancestry rechecks reject an output directory replaced after preparation (36.8794ms)
+✔ serves exact pinned bytes with JavaScript MIME and leaves ordinary STE routes to Vite (69.4009ms)
+✔ HEAD sends headers without a body and mutation methods cannot reach static files (23.4913ms)
+✔ standard Windows and POSIX Vite filesystem module requests fall through unchanged (20.8039ms)
+✔ Vite filesystem requests cannot expose private directories or bypass path validation (103.3432ms)
+✔ real Vite client loads its filesystem env module when Vite is outside the project root (288.6143ms)
+✔ unknown reserved paths, traversal and direct metadata requests never fall through to Vite (30.22ms)
+✔ changed source cannot be served after middleware creation (14.6609ms)
+✔ production copy writes the identical asset set without replacing STE files (21.4728ms)
+✔ an existing collision aborts before any asset is copied (15.5682ms)
+✔ case-insensitive conflicts and file/directory conflicts fail on every platform (36.3059ms)
+✔ output traversal and junction escapes cannot write outside the build directory (18.3548ms)
+✔ a tampered asset aborts before any production files are written (18.4747ms)
+✔ explicit branch frontends execute with the original character allowlist still closed (2.4872ms)
+✔ refresh keeps variables already written by a running frontend script (1.6344ms)
+✔ legacy frontend replacements containing capture tokens run through the upstream engine (6.704ms)
+✔ literal HTML preserves JavaScript dollar tokens while ordinary regex capture replacement remains active (3.6442ms)
+✔ host bootstrap replaces only a hash-verified upstream URL, leaving pinned originals unchanged (1.9973ms)
+✔ canonical chat objects get stable IDs before upstream serializes the save payload (2.7723ms)
+✔ STE bootstrap never installs the upstream root service worker (0.764ms)
+✔ supplies real default settings/presets and default media through explicit generated assets (2.9476ms)
+✔ host output cannot escape the project cache (1.267ms)
+✔ streaming end before receipt still binds the original turn after another generation starts (3.1331ms)
+✔ nonstream receipt before end, quiet calls and chat switches keep their own associations (0.4908ms)
+✔ the complete source snapshot matches its pinned provenance and versions (1204.9587ms)
+✔ delivers genuine HTML and unchanged raw modules at the required origin-root URLs (658.9353ms)
+✔ moves upstream metadata conflicts without replacing STE public or root HTML (547.4615ms)
+✔ lookup accepts query strings but refuses traversal, alternate separators and unknown files (492.2764ms)
+✔ every read verifies source bytes instead of trusting a previous prepare (6.0118ms)
+✔ a manifest path cannot escape its approved root even when the bytes have a matching hash (3.4591ms)
+✔ a directory junction cannot disclose a file outside the approved root (5.786ms)
+✔ metadata with an unreviewed upstream commit fails before source preparation (6.5208ms)
+✔ the source manifest itself is hashed in provenance (11.6722ms)
+✔ pins real upstream startup defaults without exposing them as static assets (1170.6855ms)
+ℹ tests 54
+ℹ suites 0
+ℹ pass 54
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 20526.0783

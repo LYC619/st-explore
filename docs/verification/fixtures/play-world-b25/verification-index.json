@@ -1,0 +1,31 @@
+{
+  "sourceUnchangedAfterManifest": true,
+  "changedPaths": [],
+  "fullVitest": {
+    "files": 305,
+    "tests": 2488,
+    "passed": true,
+    "log": "vitest-full.log",
+    "scope": "Before final 3-line WorldPlay load restoration, subsequently covered in production/recovery UI"
+  },
+  "typeApp": true,
+  "typeNode": true,
+  "lintChangedSources": true,
+  "nodeTavern": 54,
+  "productionBrowser": true,
+  "recoveryGroups": 11,
+  "nativeGroups": 5,
+  "nativeBundle": false,
+  "androidDeviceTested": false,
+  "userPlayabilityAccepted": false,
+  "committed": false,
+  "pushed": false,
+  "installerBuilt": false,
+  "soak": {
+    "seconds": 3600.599,
+    "steps": 740,
+    "cycles": 37,
+    "errors": [],
+    "boundary": "soak-boundary.json"
+  }
+}

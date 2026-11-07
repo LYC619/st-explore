@@ -1,0 +1,306 @@
+{
+  "model": "deepseek-ai/DeepSeek-V4.1-Flash",
+  "fictionalInputsOnly": true,
+  "originalConfigUnchanged": true,
+  "results": [
+    {
+      "persona": "守成者",
+      "repetition": 0,
+      "actionId": "rest",
+      "legal": true,
+      "elapsedMs": 6621,
+      "charged": 895,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 292,
+          "prompt_tokens": 603,
+          "total_tokens": 895,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 285,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 0
+          },
+          "prompt_cache_hit_tokens": 0,
+          "prompt_cache_miss_tokens": 603,
+          "reasoning_tokens": 285
+        }
+      }
+    },
+    {
+      "persona": "守成者",
+      "repetition": 1,
+      "actionId": "rest",
+      "legal": true,
+      "elapsedMs": 5345,
+      "charged": 1251,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 648,
+          "prompt_tokens": 603,
+          "total_tokens": 1251,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 641,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 91,
+          "reasoning_tokens": 641
+        }
+      }
+    },
+    {
+      "persona": "守成者",
+      "repetition": 2,
+      "actionId": "rest",
+      "legal": true,
+      "elapsedMs": 5108,
+      "charged": 1034,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 431,
+          "prompt_tokens": 603,
+          "total_tokens": 1034,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 424,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 91,
+          "reasoning_tokens": 424
+        }
+      }
+    },
+    {
+      "persona": "探路者",
+      "repetition": 0,
+      "actionId": "move:ferry",
+      "legal": true,
+      "elapsedMs": 2426,
+      "charged": 726,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 126,
+          "prompt_tokens": 600,
+          "total_tokens": 726,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 116,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 88,
+          "reasoning_tokens": 116
+        }
+      }
+    },
+    {
+      "persona": "探路者",
+      "repetition": 1,
+      "actionId": "move:ferry",
+      "legal": true,
+      "elapsedMs": 2300,
+      "charged": 819,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 219,
+          "prompt_tokens": 600,
+          "total_tokens": 819,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 209,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 0
+          },
+          "prompt_cache_hit_tokens": 0,
+          "prompt_cache_miss_tokens": 600,
+          "reasoning_tokens": 209
+        }
+      }
+    },
+    {
+      "persona": "探路者",
+      "repetition": 2,
+      "actionId": "move:ferry",
+      "legal": true,
+      "elapsedMs": 2386,
+      "charged": 744,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 144,
+          "prompt_tokens": 600,
+          "total_tokens": 744,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 134,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 88,
+          "reasoning_tokens": 134
+        }
+      }
+    },
+    {
+      "persona": "修行者",
+      "repetition": 0,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 1328,
+      "charged": 682,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 83,
+          "prompt_tokens": 599,
+          "total_tokens": 682,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 76,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 87,
+          "reasoning_tokens": 76
+        }
+      }
+    },
+    {
+      "persona": "修行者",
+      "repetition": 1,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 1454,
+      "charged": 690,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 91,
+          "prompt_tokens": 599,
+          "total_tokens": 690,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 84,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 87,
+          "reasoning_tokens": 84
+        }
+      }
+    },
+    {
+      "persona": "修行者",
+      "repetition": 2,
+      "actionId": "train",
+      "legal": true,
+      "elapsedMs": 1119,
+      "charged": 695,
+      "estimated": false,
+      "status": "completed",
+      "envelope": {
+        "status": 200,
+        "maxTokens": 1024,
+        "finishReason": "stop",
+        "usage": {
+          "completion_tokens": 96,
+          "prompt_tokens": 599,
+          "total_tokens": 695,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 89,
+            "rejected_prediction_tokens": null
+          },
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 512
+          },
+          "prompt_cache_hit_tokens": 512,
+          "prompt_cache_miss_tokens": 87,
+          "reasoning_tokens": 89
+        }
+      }
+    }
+  ],
+  "calls": 9,
+  "charged": 7536
+}

@@ -7,7 +7,7 @@
  */
 
 export const DB_NAME = 'st-chat-beautifier';
-export const DB_VERSION = 12;
+export const DB_VERSION = 13;
 
 /** 全部 object store 名单。新增 store：在此登记 + DB_VERSION 加 1，所有调用点自动跟随。 */
 export const ALL_STORES = [
@@ -25,6 +25,7 @@ export const ALL_STORES = [
   'archiveMeta', // v10 归档库 schema 版本等内部元数据
   'roleplayFiles', // v11 Web/Android 的文件记忆与生成记录；桌面使用故事目录中的实际文件
   'worldCommits', // v12 独立规则世界的不可变状态与事件提交
+  'worldMedia', // v13 世界/剧场的内容哈希素材；无源目录写回
 ] as const;
 
 export type StoreName = (typeof ALL_STORES)[number];

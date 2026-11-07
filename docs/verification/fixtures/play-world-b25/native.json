@@ -1,0 +1,14 @@
+{
+  "results": [
+    "Windows WebView2真实Worker/原子磁盘存档/短事实/正常关窗",
+    "退出程序后重新启动：世界、记忆及时间一致",
+    "整包导入至原生Vault，素材落盘，GAL关窗重开",
+    "原生HTTP在途停止：世界不推进，预算已持久记账",
+    "原生HTTP真实超时与单次预算熔断；三次请求，无自动重试，费用随档保存"
+  ],
+  "errors": [],
+  "originalConfigUnchanged": true,
+  "isolatedProfile": "C:\\Users\\yicha\\AppData\\Roaming\\com.ste.explorer.world1107",
+  "vault": "D:\\8.Project\\0_0_维护\\silly-tavern-explorer-main\\.cache\\play-world-b25-native\\vault",
+  "executableHash": "8e671c268456e30d4b9bfb2db48e7d495453099c8cd5bc3081076c05a8a42879"
+}

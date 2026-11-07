@@ -5,6 +5,7 @@
 import { openDB, ALL_STORES, DB_VERSION, type StoreName } from '@/lib/idb';
 import { isRuntimePath, runtimeFileId } from '@/lib/roleplay/paths';
 import { checkChain, validCommit, type WorldCommit } from '@/play/storage/world-commit';
+import { validWorldMedia } from '@/play/media/asset';
 
 /** 备份文件大小硬上限：正常整库备份远低于此，超过多半是误选了别的大文件或文件损坏，直接拒绝以免 file.text() 撑爆内存。 */
 export const MAX_BACKUP_BYTES = 500 * 1024 * 1024;
@@ -58,6 +59,7 @@ const STORE_SPECS: readonly StoreSpec[] = [
   { key: 'roleplayFiles', label: '游玩记忆与记录', isValid: f => typeof f.storyId === 'string' && typeof f.text === 'string'
     && isRuntimePath(f.path) && f.id === runtimeFileId(f.storyId, f.path) },
   { key: 'worldCommits', label: '沙盘世界与回放', isValid: validCommit },
+  { key: 'worldMedia', label: '世界与剧场素材', isValid: validWorldMedia },
 ];
 
 /**

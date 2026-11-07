@@ -53,6 +53,7 @@ bun.lock
 scripts/*
 !scripts/sync-version.mjs
 !scripts/sync-version.test.mjs
+!scripts/generate-world-backdrops.py
 !scripts/smoke/
 !scripts/smoke/**
 !scripts/tavern/
@@ -79,3 +80,6 @@ _reference/回收站-*/
 
 # 本地发布产物：安装包体积大，走 GitHub Release，不进提交
 release/
+
+# Build-only dependencies for the pinned offline MVU bundle.
+scripts/tavern/mvu/node_modules/

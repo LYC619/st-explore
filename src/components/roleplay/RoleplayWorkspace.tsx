@@ -12,7 +12,7 @@ export function RoleplayWorkspace() {
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch);
   const match = matchPath('/play/:id', location.pathname);
   const active = !!match;
-  const worldRequested = location.pathname === '/worlds' || location.pathname.startsWith('/worlds/');
+  const worldRequested = location.pathname === '/worlds' || location.pathname.startsWith('/worlds/') || location.pathname.startsWith('/gal/');
   const [saved, setSaved] = useState<OpenChat | null>(null);
   const [taskDock, setTaskDock] = useState<HTMLDivElement | null>(null);
   const savedRef = useRef(saved); savedRef.current = saved;

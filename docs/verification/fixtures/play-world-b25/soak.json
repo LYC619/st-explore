@@ -1,0 +1,166 @@
+{
+  "identity": {
+    "src/pages/WorldPlay.tsx": "a27026be0e0865dbe9ddf00db404acadd3cc1f2f81ebee195e316b67a1f1e3e4",
+    "src/pages/GalPlay.tsx": "7338774fc762a924991fb90d4fec7470f950dddf09e6d73ca8871581b14086cb",
+    "src/play/world/session.ts": "6bb757371c3a0f053701e28f498b80b9889b31eb89b91fde4a7de5c5c132f59c",
+    "src/play/world/simulation.ts": "44b183928d92c2e0c0a5f0ac20b9dbe8dbb2fc64365fc4a21c5ef3ab2feacf76",
+    "src/play/storage/world-repo.ts": "0442d0054f68126ba4f4d1d2a028b9d5fcec0d3cc5301a9e98aa7f996607187c",
+    "src/play/media/pool.ts": "c5730a6fbc12b50d83213073ba9af0c9628ebc4906b8feade56c96dce4d14680"
+  },
+  "elapsedSeconds": 3600.599,
+  "steps": 740,
+  "cycles": 37,
+  "samples": [
+    {
+      "elapsedSeconds": 6.744,
+      "steps": 1,
+      "cycles": 0,
+      "heapBytes": 19250880,
+      "nodes": 314,
+      "listeners": 201,
+      "events": 0,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 238.66,
+      "steps": 50,
+      "cycles": 2,
+      "heapBytes": 22222092,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 478.047,
+      "steps": 100,
+      "cycles": 5,
+      "heapBytes": 21483972,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 716.377,
+      "steps": 150,
+      "cycles": 7,
+      "heapBytes": 24029548,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 958.042,
+      "steps": 200,
+      "cycles": 10,
+      "heapBytes": 22159248,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 1197.504,
+      "steps": 250,
+      "cycles": 12,
+      "heapBytes": 24637064,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 1439.635,
+      "steps": 300,
+      "cycles": 15,
+      "heapBytes": 22625332,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 1680.67,
+      "steps": 350,
+      "cycles": 17,
+      "heapBytes": 25105200,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 1924.603,
+      "steps": 400,
+      "cycles": 20,
+      "heapBytes": 23084044,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 2167.147,
+      "steps": 450,
+      "cycles": 22,
+      "heapBytes": 25441584,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 2412.722,
+      "steps": 500,
+      "cycles": 25,
+      "heapBytes": 23561724,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 2656.12,
+      "steps": 550,
+      "cycles": 27,
+      "heapBytes": 25983200,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 2902.486,
+      "steps": 600,
+      "cycles": 30,
+      "heapBytes": 24018312,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 3146.639,
+      "steps": 650,
+      "cycles": 32,
+      "heapBytes": 26372652,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    },
+    {
+      "elapsedSeconds": 3397.42,
+      "steps": 700,
+      "cycles": 35,
+      "heapBytes": 24487992,
+      "nodes": 1013,
+      "listeners": 401,
+      "events": 100,
+      "iframes": 0
+    }
+  ],
+  "errors": []
+}

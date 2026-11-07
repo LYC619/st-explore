@@ -4,7 +4,7 @@ import type { Intervention, WorldEvent, WorldState } from '../world/schema';
 
 export interface WorldCommit {
   schema: 1; id: string; worldId: string; title: string; revision: number; parent: string | null; hash: string;
-  updatedAt: number; kind: 'create' | 'step' | 'checkpoint' | 'archive' | 'restore'; deleted: boolean;
+  updatedAt: number; kind: 'create' | 'step' | 'checkpoint' | 'archive' | 'restore' | 'configure' | 'request'; deleted: boolean;
   origin?: { worldId: string; revision: number; hash: string }; command?: Intervention;
   state: WorldState; events: WorldEvent[];
 }
@@ -17,7 +17,7 @@ export function validCommit(value: unknown): value is WorldCommit {
     if (!c || c.schema !== 1 || typeof c.worldId !== 'string' || !validWorldId(c.worldId)
       || !Number.isSafeInteger(c.revision) || c.revision < 0 || c.revision > 2000 || c.id !== commitId(c.worldId, c.revision)
       || typeof c.title !== 'string' || c.title.length > 100 || typeof c.deleted !== 'boolean' || !Number.isFinite(c.updatedAt)
-      || !['create', 'step', 'checkpoint', 'archive', 'restore'].includes(c.kind)
+      || !['create', 'step', 'checkpoint', 'archive', 'restore', 'configure', 'request'].includes(c.kind)
       || !(c.parent === null || typeof c.parent === 'string' && /^[a-f0-9]{64}$/.test(c.parent)) || !Array.isArray(c.events) || c.events.length > 100) return false;
     assertWorld(c.state);
     if (!c.events.every(e => typeof e.id === 'string' && e.tick === c.state.tick && typeof e.title === 'string' && typeof e.detail === 'string'
