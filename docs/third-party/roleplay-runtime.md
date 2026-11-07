@@ -38,3 +38,5 @@ STE 只随程序提供接口适配和版本校验，不分发柏宝书代码。�
 - Agent 是 STE 实现的有界工具循环，复用现有 Provider 配置、检索和存储能力，没有另引入全套 Agent 框架或向量数据库。
 
 实际兼容范围见[扩展兼容说明](../principles/extension-compatibility.md)。
+
+2026-11-07 多态模式试验及其新增分发资源已撤回，历史来源与核验记录保存在[回退记录](../verification/2026-11-07-multimode-rollback.md)及其关联档案。原有扩展机制不受影响。
