@@ -20,8 +20,8 @@ type ExitDestination = { kind: 'route'; path: string; state?: unknown } | { kind
 const errorMessage = (reason: unknown) => reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : String(reason);
 
 /** STE owns navigation and recovery; the actual chat DOM belongs entirely to ST. */
-export default function Roleplay({ id, branchId, fromChats, active, onRelease, taskDock }: {
-  id: string; branchId?: string | null; fromChats: boolean; active: boolean; onRelease: () => void; taskDock: HTMLDivElement | null;
+export default function Roleplay({ id, branchId, fromChats, active, onRelease, taskDock, worldRequested = false }: {
+  id: string; branchId?: string | null; fromChats: boolean; active: boolean; onRelease: () => void; taskDock: HTMLDivElement | null; worldRequested?: boolean;
 }) {
   const activeRef = useRef(active); activeRef.current = active;
   const fromChatsRef = useRef(fromChats); fromChatsRef.current = fromChats;
@@ -74,6 +74,15 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     return task;
   }, [reportSaveError]);
 
+  const worldExitAttempted = useRef(false);
+  const worldRequestedRef = useRef(worldRequested); worldRequestedRef.current = worldRequested;
+  useEffect(() => {
+    if (!worldRequested) { worldExitAttempted.current = false; return; }
+    if (!ready || generating.current || worldExitAttempted.current || saveFailed) return;
+    worldExitAttempted.current = true;
+    void saveBeforeExit().then(() => { if (worldRequestedRef.current) onRelease(); }).catch(() => { /* Retain iframe and existing save recovery controls. */ });
+  }, [worldRequested, ready, status, saveFailed, saveBeforeExit, onRelease]);
+
   const navigateToModule = useCallback(async (path: string) => {
     if (!generating.current) {
       try { await saveBeforeExit(); } catch { return; }
@@ -89,8 +98,10 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     if (parked) libraryRefreshPending.current = true;
     // Browser Back can park the page without using our toolbar. Commit idle edits
     // while retaining the document; an in-progress generation must keep running.
-    if (parked && !generating.current) void saveBeforeExit().catch(() => {});
-  }, [active, saveBeforeExit]);
+    // World entry has its own readiness barrier; flushing before ST finishes
+    // loading can reject saveSettings and strand the pending transition.
+    if (parked && !generating.current && !worldRequested) void saveBeforeExit().catch(() => {});
+  }, [active, worldRequested, saveBeforeExit]);
 
   useEffect(() => {
     if (!active || !ready || generating.current || !libraryRefreshPending.current) return;

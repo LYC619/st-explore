@@ -88,6 +88,9 @@ export default function ChatHub() {
           <Button onClick={newChat}><Plus className="mr-2 h-4 w-4" />新建聊天</Button>
         </div>
       </header>
+      <button onClick={() => navigate('/worlds')} className="group flex min-h-28 w-full items-center justify-between gap-4 rounded-xl border border-primary/30 bg-gradient-to-r from-primary/15 to-card px-6 py-5 text-left text-card-foreground">
+        <span><span className="mb-1 block text-xs tracking-[0.2em] text-primary">原生世界 · 无需模型</span><span className="block font-serif text-2xl">山海之间</span><span className="mt-1 block text-sm text-muted-foreground">走进地图，追踪十二位行旅。下一场雨，会改变谁的路？</span></span><ArrowRight className="h-6 w-6 shrink-0 transition-transform group-hover:translate-x-1" />
+      </button>
       <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-4">
         <CircleHelp className="h-5 w-5 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">

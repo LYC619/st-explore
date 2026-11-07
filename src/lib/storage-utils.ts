@@ -4,6 +4,7 @@
 
 import { openDB, ALL_STORES, DB_VERSION, type StoreName } from '@/lib/idb';
 import { isRuntimePath, runtimeFileId } from '@/lib/roleplay/paths';
+import { checkChain, validCommit, type WorldCommit } from '@/play/storage/world-commit';
 
 /** 备份文件大小硬上限：正常整库备份远低于此，超过多半是误选了别的大文件或文件损坏，直接拒绝以免 file.text() 撑爆内存。 */
 export const MAX_BACKUP_BYTES = 500 * 1024 * 1024;
@@ -56,6 +57,7 @@ const STORE_SPECS: readonly StoreSpec[] = [
   { key: 'ratingTemplates', label: '评分模板', isValid: (t) => !!t.id && Array.isArray(t.dimensions) },
   { key: 'roleplayFiles', label: '游玩记忆与记录', isValid: f => typeof f.storyId === 'string' && typeof f.text === 'string'
     && isRuntimePath(f.path) && f.id === runtimeFileId(f.storyId, f.path) },
+  { key: 'worldCommits', label: '沙盘世界与回放', isValid: validCommit },
 ];
 
 /**
@@ -141,6 +143,8 @@ export interface BackupStorePreview {
   overwrite: number;
   /** 缺关键字段被判无效、将跳过不写的条数 */
   skipped: number;
+  /** World histories restore as complete chains; newer revisions are removed. */
+  remove?: number;
 }
 
 export interface BackupPreview {
@@ -236,11 +240,25 @@ function validItems(spec: StoreSpec, items: unknown[]): Record<string, unknown>[
   ).map(item => spec.prepare ? spec.prepare(item) : item);
 }
 
+function backupWorlds(parsed: ParsedBackup): Map<string, WorldCommit[]> {
+  const groups = new Map<string, WorldCommit[]>();
+  for (const item of parsed.byStore.worldCommits ?? []) {
+    if (!validCommit(item)) throw new BackupError('沙盘世界备份含损坏提交，未写入任何数据');
+    const rows = groups.get(item.worldId) ?? []; rows.push(item); groups.set(item.worldId, rows);
+  }
+  for (const rows of groups.values()) {
+    rows.sort((a, b) => a.revision - b.revision);
+    try { checkChain(rows); } catch { throw new BackupError('沙盘世界历史不完整，未写入任何数据'); }
+  }
+  return groups;
+}
+
 /**
  * 对照当前库统计"这份备份导入后会怎样"：逐 store 给出 新增 / 覆盖（同 id 现有记录将被替换）/ 跳过（无效）条数。
  * 供导入前预览弹窗展示，让用户在写库前看清将覆盖什么。
  */
 export async function previewBackup(parsed: ParsedBackup): Promise<BackupPreview> {
+  const worlds = backupWorlds(parsed);
   const db = await openDB();
   const stores = await Promise.all(
     STORE_SPECS.map(async (spec) => {
@@ -257,6 +275,8 @@ export async function previewBackup(parsed: ParsedBackup): Promise<BackupPreview
         add: valid.length - overwrite,
         overwrite,
         skipped: items.length - valid.length,
+        ...(spec.key === 'worldCommits' ? { remove: [...existing].filter(key => typeof key === 'string'
+          && worlds.has(key.split(':')[0]) && !valid.some(item => item.id === key)).length } : {}),
       };
     }),
   );
@@ -278,6 +298,7 @@ export async function previewBackup(parsed: ParsedBackup): Promise<BackupPreview
  * 绝不出现"写了一半、坏文件污染现有库"的中间态。返回各 store 实际写入条数。
  */
 export async function importBackup(parsed: ParsedBackup): Promise<BackupCounts> {
+  const worlds = backupWorlds(parsed);
   const db = await openDB();
   const targets = STORE_SPECS.filter((s) => db.objectStoreNames.contains(s.key));
   if (targets.length === 0) {
@@ -306,6 +327,17 @@ export async function importBackup(parsed: ParsedBackup): Promise<BackupCounts> 
     try {
       for (const spec of targets) {
         const store = tx.objectStore(spec.key);
+        if (spec.key === 'worldCommits') {
+          for (const [worldId, commits] of worlds) {
+            const cursor = store.index('worldId').openCursor(IDBKeyRange.only(worldId));
+            cursor.onsuccess = () => {
+              if (cursor.result) { cursor.result.delete(); cursor.result.continue(); }
+              else { for (const commit of commits) store.add(commit); }
+            };
+            counts[spec.key] += commits.length;
+          }
+          continue;
+        }
         // 未逐条挂 onerror：某条 put 出错会自然冒泡触发事务 abort（正是我们要的整体回滚）
         for (const it of validItems(spec, parsed.byStore[spec.key] ?? [])) {
           store.put(it);

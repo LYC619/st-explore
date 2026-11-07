@@ -1,0 +1,58 @@
+{
+  "baseline": "01686330ad5e64b2ec2f90e257dabe813afbf7f1",
+  "changed": {
+    "src/App.tsx": {
+      "before": "fb58581f1abafc220782877355543f3dd951797e1440d18fc2580b2ab59827d6",
+      "after": "1d9afd6b2d69e3280101df9d6ceab35d4ca77a09f59f704d4076c80bd2654fcd"
+    },
+    "src/components/GlobalSettings.tsx": {
+      "before": "82adb10b0ae7ba3be738780458e87afeaf5f58bbc5f9a13d9d0357067e251b4f",
+      "after": "2e08c48deff2b74bacb3114f42ae8db509702d93afecd2379b15da9408b12d6c"
+    },
+    "src/lib/idb.ts": {
+      "before": "098220191f78bfa64d948531051ea60dbb995e9ccb74028531b550575117573f",
+      "after": "96e93763c3619839d116824032e0d0d08f0dcf5f76a30f7379b80d4faf8efc2b"
+    },
+    "src/lib/storage-utils.ts": {
+      "before": "29fbbee403071b02c211d9d4ecdcdcb2b1d740f4dd3fce6d6bd5727efdbc33e7",
+      "after": "7418e19333f4e8f0f6b793157f1e53105ca08ea204a6ad07731bd3883c82dc4b"
+    },
+    "src/pages/ChatHub.tsx": {
+      "before": "9f50405ea3dc6d6d5af7b618fb69d4d0570e878a204b78bc137520e033545d94",
+      "after": "2414816a09d578f03147d27565edf1b83cbfcdede149a0c401c89a430e1cf2d1"
+    },
+    "src/pages/Roleplay.tsx": {
+      "before": "c3275aea171a1a7e76852987fdb9e5ef1e6f8cc706a4167895e2f250cda2e26c",
+      "after": "d8b9a41c0bb2b54a42b00629adb729a1a3daca8cc5a39260923cbd95cb9f5d97"
+    },
+    "src/test/roleplay-workspace.test.tsx": {
+      "before": "46b3052dcf23cc280550be85b7573688c1a4a09ce25b65bf1c80c571e6ee702e",
+      "after": "e6590f1411badb506206da0dbe813b9bbfb5d0c914c778b2103909ba122552f9"
+    },
+    "src/lib/vault/file-maintenance.ts": {
+      "before": "2b822f995075efc3b2fc1cb3b0b48d506d0979dcefb9e3e5dd55721b05febd49",
+      "after": "4e29156716531c6969e20684c464af418479de192b8acb5536eaef9ee7ffc7b0"
+    },
+    "src/components/roleplay/RoleplayWorkspace.tsx": {
+      "before": "900b3d437fd8f56645af841ebb210194627a1b06acd3f7092511378e3314c0fb",
+      "after": "293bc5540eea93d7ef017f8c3e6cd0671fab52149b56aafe15aa36b599f2a59b"
+    }
+  },
+  "new": {
+    "src/play/storage/world-commit.ts": "6eb52d85c3873b8405a9890ba4e631d767c0dfc35627036f20932de62dcec0d1",
+    "src/play/storage/world-repo.ts": "a80be9102f979da63377fb11e19e832f2f044604464aa40f9bec9dee71470f49",
+    "src/play/world/schema.ts": "1a734204b96b891bdccf37a9492014e860699240d300fcde4fc528e66f7da393",
+    "src/play/world/session.ts": "c9c958d318f067b06123831351d54b53be8b81911743c0250944ee771367cab0",
+    "src/play/world/simulation.ts": "b4c13abb67e385be73a94536ca888590f4a10a1b854b3b6dc948eeb8be6caa0b",
+    "src/play/world/simulation.worker.ts": "bf33d60efbc3ea760c8d4f89654c84afe6f984ce248fae398c09e1973b05586f",
+    "src/components/play/world/world.css": "3a84a8d1d5166a5b39b1450bcab8340fa6b90801619168a1ffcfe6fc1fdb79c3",
+    "src/components/play/world/WorldCanvas.tsx": "b57ed65142cebcdfb10ed35cf2ddf7089932f999a9c2339f123c15ef8aaa278e",
+    "src/pages/WorldPlay.tsx": "639f5dc484cd73266e1fd84e901ba07e17b4adc59ef18e653985fb21404e185a",
+    "src/test/world-rules.test.ts": "bef4f35fd2fa35a2b40d2483159f3a9e68c9eee5984f94df0824fda022ad894a",
+    "src/test/world-session.test.ts": "647dec5cee35583bf54985034ce7c34a7dbeceb7602bf5a92a4fc19f9562fd03",
+    "src/test/world-storage.test.ts": "52fbf277ab6df331f16052d16b4557896ae9e0d97d6374b3b2dbe566276bba5c",
+    "scripts/smoke/playtest-20261107-world-production.mjs": "f9ecaa6a136eb4ee4ea4fafa297f22de88a97aab278982e5728758524034a190",
+    "scripts/smoke/playtest-20261107-world.mjs": "53f8f795a3f7ea74f9d785abaaefa21e896973c6ba8cb7a14d8fccac9bc02d00"
+  },
+  "removed": []
+}

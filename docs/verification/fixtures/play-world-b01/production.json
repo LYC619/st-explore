@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "sourceRequests": [],
+  "workerRequests": [
+    "http://127.0.0.1:4229/assets/simulation.worker-CDyIgrst.js",
+    "http://127.0.0.1:4229/assets/simulation.worker-CDyIgrst.js"
+  ],
+  "result": "生产入口、Worker、干预、保存重开与390px通过"
+}

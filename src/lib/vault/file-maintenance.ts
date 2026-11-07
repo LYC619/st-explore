@@ -12,6 +12,7 @@ import { parseFrontmatter } from './frontmatter';
 import { isRuntimePath, branchKey } from '@/lib/roleplay/paths';
 import { getActiveVault, getVaultEpoch } from './active';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { validCommit } from '@/play/storage/world-commit';
 
 export interface ManagedFile { path: string; size: number; version: string }
 export interface FileRemovalPreview {
@@ -168,6 +169,14 @@ async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained =
   }
   await walk('', 0);
   for (const path of result.files.keys()) {
+    const worldFile = /^世界\/([a-f0-9-]{36})\/(\d{6})\.json$/.exec(path);
+    if (worldFile) {
+      try {
+        const commit = JSON.parse(await fs.readText(path));
+        if (validCommit(commit) && commit.worldId === worldFile[1] && commit.revision === Number(worldFile[2])) result.known.add(path);
+      } catch { /* Damaged commits remain protected unknown files; recover in World Console. */ }
+      continue;
+    }
     const store = recordStore(path);
     if (!store) continue;
     try {

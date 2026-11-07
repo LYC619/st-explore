@@ -26,6 +26,7 @@ beforeEach(() => {
     { path: '/play/:id', element: null }, { path: '/library', element: <p>角色库</p> },
     { path: '/chat', element: <p>聊天处理</p> },
     { path: '/play', element: <p>聊天列表</p> },
+    { path: '/worlds', element: <p>独立世界入口</p> },
   ] }], { initialEntries: ['/play/one?branch='] });
 });
 afterEach(async () => { await act(async () => root.unmount()); router.dispose(); container.remove(); vi.unstubAllGlobals(); });
@@ -104,4 +105,41 @@ it('does not create an old chat host after defaults finish loading in a differen
   await act(async () => setActiveVault(null));
   await act(async () => finish(new Response('{}', { headers: { 'Content-Type': 'application/json' } })));
   expect(createHost).not.toHaveBeenCalled(); expect(container.querySelector('iframe')).toBeNull();
+});
+
+it('world entry waits for the running chat, then flushes and releases it', async () => {
+  let options!: { onReady: () => void; onGeneration: (active: boolean) => void };
+  createHost.mockImplementation(async value => { options = value; return host; });
+  await render();
+  await act(async () => { options.onReady(); options.onGeneration(true); });
+  await go('/worlds');
+  expect(container.textContent).toContain('正在收好当前故事');
+  expect(container.textContent).not.toContain('独立世界入口');
+  expect(host.close).not.toHaveBeenCalled();
+  await act(async () => options.onGeneration(false));
+  expect(host.flush).toHaveBeenCalled(); expect(host.close).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('iframe')).toBeNull();
+  expect(container.textContent).toContain('独立世界入口');
+});
+it('world entry during iframe initialization does not flush the unready chat', async () => {
+  let options!: { onReady: () => void };
+  createHost.mockImplementation(async value => { options = value; return host; });
+  await render(); await go('/worlds');
+  expect(host.flush).not.toHaveBeenCalled();
+  await act(async () => options.onReady());
+  expect(host.flush).toHaveBeenCalledTimes(1);
+  expect(container.textContent).toContain('独立世界入口');
+});
+
+it('world entry keeps the chat recoverable if its flush fails', async () => {
+  let options!: { onReady: () => void; onGeneration: (active: boolean) => void };
+  createHost.mockImplementation(async value => { options = value; return host; });
+  await render();
+  await act(async () => { options.onReady(); options.onGeneration(true); });
+  await go('/worlds'); host.flush.mockRejectedValueOnce(new Error('world-entry disk full'));
+  await act(async () => options.onGeneration(false));
+  expect(host.close).not.toHaveBeenCalled();
+  expect(container.querySelector('iframe')).not.toBeNull();
+  expect(container.textContent).not.toContain('独立世界入口');
+  expect(container.textContent).toContain('world-entry disk full');
 });

@@ -34,6 +34,7 @@ const PAGE_LOADERS = {
 
 const Home = lazy(PAGE_LOADERS.home);
 const ChatHub = lazy(PAGE_LOADERS.chats);
+const WorldPlay = lazy(() => import('./pages/WorldPlay'));
 const Index = lazy(PAGE_LOADERS.index);
 const Tools = lazy(PAGE_LOADERS.tools);
 const Library = lazy(PAGE_LOADERS.library);
@@ -53,6 +54,8 @@ const App = () => {
   // Data-router blockers let the live editor finish its save before Back/search/navigation.
   const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<Route element={<RoleplayWorkspace />}>
     <Route path="/play/:id" element={null} />
+    <Route path="/worlds" element={<WorldPlay />} />
+    <Route path="/worlds/:id" element={<WorldPlay />} />
     <Route element={<AppLayout />}>
       <Route path="/" element={<Home />} />
       <Route path="/play" element={<ChatHub />} />

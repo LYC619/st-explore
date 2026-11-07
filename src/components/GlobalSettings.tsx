@@ -138,7 +138,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
     try {
       setLoading(true);
       await exportFullBackup();
-      toast({ title: '备份成功', description: '已导出完整备份（角色/故事/世界书/预设/正则/总结/故事树）' });
+      toast({ title: '备份成功', description: '已导出完整备份（角色/故事/世界书/预设/正则/总结/故事树/沙盘世界）' });
     } catch {
       toast({ title: '备份失败', variant: 'destructive' });
     } finally {
@@ -343,7 +343,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 「清除临时缓存」只清页面间的临时编辑态，常用于切页后内容异常时自救，不影响已保存数据；
-                「清空所有数据」会永久删除全部角色、故事、世界书、预设、正则与总结，请先备份。
+                「清空所有数据」会永久删除全部角色、故事、世界书、预设、正则、总结与沙盘世界，请先备份。
               </p>
             </div>
 
@@ -358,6 +358,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
             <AlertDialogTitle>确认恢复备份</AlertDialogTitle>
             <AlertDialogDescription>
               按 id 合并写入：下方「覆盖」的条目会用备份内容替换当前同 id 记录，其余现有数据保留不动。整个过程要么全部成功、要么全部不改（失败自动回滚）。
+              沙盘世界按整条历史恢复，同一世界较新的轮次会撤回到备份时刻；也可从世界列表导入独立备份，保留为新世界。
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -378,6 +379,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
                         {s.add > 0 && <span className="text-[color:var(--status-ok)]">新增 {s.add}</span>}
                         {s.overwrite > 0 && <span className="text-[color:var(--status-warn)]">覆盖 {s.overwrite}</span>}
                         {s.skipped > 0 && <span className="text-muted-foreground">跳过 {s.skipped}</span>}
+                        {(s.remove ?? 0) > 0 && <span className="text-[color:var(--status-warn)]">撤回 {s.remove}</span>}
                       </span>
                     </div>
                   ))}
@@ -411,7 +413,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>确认清空所有数据</AlertDialogTitle>
             <AlertDialogDescription>
-              此操作不可撤销，所有本地数据（角色/故事/世界书/预设/正则/总结）将被永久删除。建议先导出备份。
+              此操作不可撤销，所有本地数据（角色/故事/世界书/预设/正则/总结/沙盘世界）将被永久删除。建议先导出备份。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
