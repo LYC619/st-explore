@@ -101,23 +101,25 @@ test('Text Completions still waits for its own sampler preferences before initia
   assert.equal(fixture.presetsLoaded(), 1);
 });
 
-async function startupFlushFixture({ ready = false, chat = undefined, dirty = false } = {}) {
+async function startupFlushFixture({ ready = false, chat = undefined, dirty = false, evaluated = true } = {}) {
   const text = (await readAsset(assets.get('/tauri-main.js'))).toString();
   const start = text.indexOf('window.__STE_TAVERN_FLUSH__ = async () => {');
   const end = text.indexOf('window.__STE_BEFORE_CHAT_SWITCH__', start);
   assert.ok(start >= 0 && end > start);
-  let writes = 0, flushes = 0;
+  let writes = 0, flushes = 0, imports = 0;
   const st = {
     getCurrentChatId: () => chat, hasUnsavedChat: () => dirty,
     stopGeneration() {}, waitForGenerationIdle: async () => {}, flushDebouncedChatSave: async () => {},
     saveChatConditional: async () => { writes++; }, cancelPendingSettingsSave() {}, saveSettings: async () => ready,
   };
-  const win = { __STE_TAVERN_DIRTY__: () => dirty };
+  const win = { __STE_TAVERN_DIRTY__: () => dirty, __STE_ST_EVALUATED__: evaluated };
   const node = { length: 0, closest() { return this; }, find() { return this; } };
+  // A module still waiting on the frame's load event never settles its import.
+  const importSt = () => { imports++; return evaluated ? Promise.resolve(st) : new Promise(() => {}); };
   new Function('window', 'importSt', 'stModule', '$', 'flushBaiBai', 'host',
     text.slice(start, end).replace("import('./script.js')", 'importSt()'))
-    (win, async () => st, ready ? st : undefined, () => node, async () => {}, { flush: async () => { flushes++; } });
-  return { flush: win.__STE_TAVERN_FLUSH__, writes: () => writes, flushes: () => flushes };
+    (win, importSt, ready ? st : undefined, () => node, async () => {}, { flush: async () => { flushes++; } });
+  return { flush: win.__STE_TAVERN_FLUSH__, writes: () => writes, flushes: () => flushes, imports: () => imports };
 }
 
 test('closing a clean, uninitialized chat drains host writes without saving unready ST settings', async () => {
@@ -125,6 +127,21 @@ test('closing a clean, uninitialized chat drains host writes without saving unre
   await fixture.flush();
   assert.equal(fixture.writes(), 0);
   assert.equal(fixture.flushes(), 1);
+});
+
+test('closing while script.js is still evaluating does not wait on its import', async () => {
+  const fixture = await startupFlushFixture({ evaluated: false });
+  const outcome = await Promise.race([fixture.flush().then(() => 'closed'), new Promise(resolve => setTimeout(resolve, 200, 'waiting'))]);
+  assert.equal(outcome, 'closed');
+  assert.equal(fixture.imports(), 0); assert.equal(fixture.writes(), 0); assert.equal(fixture.flushes(), 1);
+});
+
+test('script.js marks evaluation complete only after its top-level wait for the load event', async () => {
+  const text = (await readAsset(assets.get('/script.js'))).toString().trimEnd();
+  const wait = text.indexOf('\nawait new Promise((resolve) => {');
+  assert.ok(wait > 0, 'upstream top-level load wait moved; recheck the close-path marker');
+  assert.ok(text.endsWith('globalThis.__STE_ST_EVALUATED__ = true;'));
+  assert.equal(text.split('__STE_ST_EVALUATED__').length, 2);
 });
 
 test('an initialized chat still saves, and a partial startup with edits or a loaded chat cannot skip saving', async () => {

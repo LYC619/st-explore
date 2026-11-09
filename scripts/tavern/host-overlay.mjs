@@ -153,7 +153,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
       'export async function openCharacterChat(file_name) {',
       'export async function doNewChat({ deleteCurrentChat = false } = {}) {',
     ]) text = replaceOnce(text, declaration, declaration + '\n    await globalThis.__STE_BEFORE_CHAT_SWITCH__();');
-    return replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(text,
+    text = replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(replaceOnce(text,
     'const payload = [chatHeader, ...trimmedChat];',
     'globalThis.__STE_STAMP_CHAT__(trimmedChat);\n    const payload = [chatHeader, ...trimmedChat];'),
     'await eventSource.emit(event_types.APP_READY);',
@@ -167,6 +167,9 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     'export function hasUnsavedChat() { return !!chatSaveTimeout || pendingChatSaveTasks > 0 || !!globalThis.__STE_SAVE_FAILED__; }\n\nexport function flushDebouncedChatSave() {'),
     "$('#avatar_url_pole').val(characters[chid].avatar);",
     "$('#avatar_url_pole').val(characters[chid].avatar);\n    globalThis.__STE_OPEN_CARD_EDITOR__(characters[chid]);");
+    // The module body awaits the frame's load event, so one stalled resource keeps it,
+    // and every import('./script.js'), pending. Mark completion for the host's close path.
+    return text + '\nglobalThis.__STE_ST_EVALUATED__ = true;\n';
   });
 
   const entries = new Map(source.manifest.files.map(entry => [entry.path, entry]));

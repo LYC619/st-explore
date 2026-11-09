@@ -227,6 +227,12 @@ async function restoreBaiBaiHidden(st) {
     if (changed) await st.saveChatConditional();
 }
 window.__STE_TAVERN_FLUSH__ = async () => {
+    // Until script.js finishes evaluating, ST has registered no chat or settings,
+    // and importing it would wait on the same stalled load event as startup.
+    if (!window.__STE_ST_EVALUATED__) {
+        await host.flush();
+        return;
+    }
     const st = await import('./script.js');
     // A failed/slow startup can still be closed. Do not serialize defaults before
     // settings and the selected chat exist; preserve the ordinary save path if
