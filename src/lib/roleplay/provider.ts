@@ -46,6 +46,11 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
     if (COMPLETION_FIELDS.has(key) && value !== undefined) body[key] = value;
   }
   body.messages = postProcessPrompt(request.messages, request.custom_prompt_post_processing, request);
+  // ST sends the requested probability count; Chat Completions uses a boolean + count.
+  if (typeof request.logprobs === 'number' && request.logprobs > 0) {
+    body.logprobs = true;
+    body.top_logprobs = request.logprobs;
+  }
   const include = yaml(request.custom_include_body);
   if (include != null) {
     if (typeof include !== 'object' || Array.isArray(include)) throw new Error('自定义请求体 YAML 必须是键值对象');
@@ -53,6 +58,10 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
       if (['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error('自定义请求体包含无效字段');
       body[key] = value;
     }
+  }
+  if (request.json_schema) {
+    const schema = request.json_schema as { name?: unknown; strict?: unknown; value?: unknown };
+    body.response_format = { type: 'json_schema', json_schema: { name: schema.name, strict: schema.strict ?? true, schema: schema.value } };
   }
   const exclude = yaml(request.custom_exclude_body);
   // Some older preset exports use {} for an empty list. Nonempty maps are still invalid.
@@ -64,7 +73,6 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
   // A profile reference is the only authoritative model selection.
   body.model = profile.model;
   if (!Array.isArray(body.messages)) throw new Error('自定义请求不能移除消息数组');
-  if (request.json_schema) body.response_format = { type: 'json_schema', json_schema: request.json_schema };
   const headers = { ...customHeaders(request.custom_include_headers), 'Content-Type': 'application/json',
     ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
   const promptProcessing = typeof request.custom_prompt_post_processing === 'string' && request.custom_prompt_post_processing
