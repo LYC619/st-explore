@@ -4,6 +4,8 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
+import { requireIsolatedNativeArtifact } from './native-test-artifact.mjs';
+const testExecutable = await requireIsolatedNativeArtifact('com.ste.explorer.world1107');
 const out=path.resolve('.cache/play-world-b25-native'),vault=path.join(out,'vault'),profile=path.join(process.env.APPDATA,'com.ste.explorer.world1107');
 const original='C:/Users/yicha/AppData/Roaming/com.ste.explorer/config.json',originalHash=createHash('sha256').update(await readFile(original)).digest('hex');
 await mkdir(vault,{recursive:true});await mkdir(profile,{recursive:true});
@@ -11,7 +13,7 @@ const configFile=path.join(profile,'config.json');
 try{const old=JSON.parse(await readFile(configFile,'utf8'));if(path.resolve(old.vaultRoot)!==vault)throw Error('Unexpected test profile');}catch(e){if(e.code!=='ENOENT')throw e;await writeFile(configFile,JSON.stringify({vaultRoot:vault,vaultRegistry:{version:1,activeId:'world1107',vaults:[{id:'world1107',name:'世界隔离核验',path:vault,createdAt:1,lastUsedAt:1}]}}));}
 const testConfig=JSON.parse(await readFile(configFile,'utf8'));testConfig.apiProfiles=JSON.stringify([{id:'native-fixture',name:'原生请求夹具',apiUrl:'http://127.0.0.1:4247/v1/chat/completions',apiKey:'TEST_ONLY',model:'gpt-4o-mini'}]);testConfig.apiActiveProfile='native-fixture';await writeFile(configFile,JSON.stringify(testConfig));
 let requests=0,respond=false;const sockets=new Set();const http=createServer((req,res)=>{requests++;req.resume();if(respond){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{message:{content:'{"actionId":"rest"}'}}],usage:{prompt_tokens:300,completion_tokens:30}}));}});http.on('connection',s=>{sockets.add(s);s.on('close',()=>sockets.delete(s));});await new Promise(resolve=>http.listen(4247,'127.0.0.1',resolve));
-const exe=path.resolve('src-tauri/target/debug/STE.exe'),errors=[],results=[];let app,browser,page;
+const exe=testExecutable,errors=[],results=[];let app,browser,page;
 async function launch(){
  app=spawn(exe,[],{cwd:process.cwd(),windowsHide:true,stdio:'ignore',env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:'--remote-debugging-port=9237'}});
  let ready=false;for(let i=0;i<60;i++){try{await fetch('http://127.0.0.1:9237/json/version');ready=true;break;}catch{await new Promise(r=>setTimeout(r,500));}}

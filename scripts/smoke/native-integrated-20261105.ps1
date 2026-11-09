@@ -2,6 +2,8 @@ param([switch]$RestoreOnly)
 $ErrorActionPreference = 'Stop'
 $workspace = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Set-Location -LiteralPath $workspace
+$testExecutable = & node scripts/smoke/verify-native-artifact.mjs com.ste.explorer.playtest1105
+if ($LASTEXITCODE -ne 0) { throw 'Verified isolated build receipt required before profile writes' }
 $out = Join-Path $workspace '.cache/1105-native-integrated'
 $originalFile = Join-Path $env:APPDATA 'com.ste.explorer/config.json'
 $testFile = Join-Path $env:APPDATA 'com.ste.explorer.playtest1105/config.json'
@@ -17,7 +19,7 @@ try {
   } | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $testFile -Encoding utf8NoBOM
   $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9229'
   $env:STE_REAL_MODEL_TEST='1'
-  $app = Start-Process -FilePath (Join-Path $workspace '.cache/1105-performance/STE-test.exe') -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
+  $app = Start-Process -FilePath $testExecutable -WorkingDirectory $workspace -WindowStyle Hidden -PassThru
   $ready=$false
   for($i=0;$i -lt 60;$i++){try{$null=Invoke-RestMethod 'http://127.0.0.1:9229/json/version' -TimeoutSec 1;$ready=$true;break}catch{Start-Sleep -Milliseconds 500}}
   if(-not $ready){throw 'WebView2 CDP unavailable'}

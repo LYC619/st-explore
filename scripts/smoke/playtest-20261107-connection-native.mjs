@@ -1,8 +1,14 @@
 // Synthetic vault and dedicated app identifier only; no user vault/config is read.
 import { chromium, expect } from '@playwright/test';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { requireIsolatedNativeArtifact } from './native-test-artifact.mjs';
+
+const testExecutable = await requireIsolatedNativeArtifact('com.ste.explorer.chat1107');
+let occupied = false;
+try { await fetch('http://127.0.0.1:9238/json/version', { signal: AbortSignal.timeout(1500) }); occupied = true; } catch { /* no existing debugger */ }
+if (occupied) throw Error('Test CDP port is occupied; refusing to attach to an unknown process');
 
 const out = path.resolve('.cache/connection-1107'), vault = path.join(out, 'vault');
 const configDir = path.join(process.env.APPDATA, 'com.ste.explorer.chat1107');
@@ -18,7 +24,7 @@ await writeFile(path.join(vault, '角色', '连接回归', '档案.json'), JSON.
 await writeFile(path.join(storyDir, '故事.json'), JSON.stringify(story));
 await writeFile(path.join(vault, '库信息.json'), JSON.stringify({ id: 'archive-schema', schemaVersion: 2, roleplay: { mainProfileId: 'saved-main', toolProfileId: 'saved-main' } }));
 await writeFile(path.join(configDir, 'config.json'), JSON.stringify({ vaultRoot: vault, vaultRegistry: { version: 1, activeId: 'connection-test', vaults: [{ id: 'connection-test', name: '连接隔离回归', path: vault, createdAt: 1, lastUsedAt: 1 }] }, apiProfiles: JSON.stringify(profiles), apiActiveProfile: 'saved-main' }));
-const app = spawn(path.resolve('src-tauri/target/debug/STE.exe'), [], { windowsHide: true, stdio: 'ignore', env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9238' } });
+const app = spawn(testExecutable, [], { windowsHide: true, stdio: 'ignore', env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9238' } });
 let browser, page;
 const errors = [], checks = [];
 try {
@@ -58,6 +64,30 @@ try {
   await expect(frame.locator('#ste_main_profile')).toHaveValue('other', { timeout: 60000 });
   await expect(frame.locator('#chat')).toContainText(card.card.data.first_mes);
   checks.push('genuinely removed connection remains missing; explicit replacement persists to disk');
+
+  // Corrupt only the isolated app's file, then retry through the actual connection drawer.
+  const configFile = path.join(configDir, 'config.json');
+  const saved = await readFile(configFile);
+  if (!(await frame.locator('#rm_api_block').evaluate(element => element.classList.contains('openDrawer')))) {
+    await frame.locator('#sys-settings-button .drawer-toggle').click();
+  }
+  await frame.locator('#ste_manage_profiles').click();
+  const reloadSaved = page.getByRole('button', { name: '重新读取已保存连接', exact: true });
+  await expect(reloadSaved).toBeVisible();
+  try {
+    await writeFile(configFile, '{invalid-fixture');
+    await reloadSaved.click();
+    await expect(page.locator('p[role="status"]')).toContainText('暂停写回');
+    await page.getByLabel('API Key', { exact: true }).fill('fixture-unsaved');
+    await page.getByRole('button', { name: '保存配置', exact: true }).click();
+    expect(await readFile(configFile, 'utf8')).toBe('{invalid-fixture');
+    checks.push('native read failure is visible in settings; saving a draft cannot overwrite the unreadable file');
+  } finally { await writeFile(configFile, saved); }
+  await reloadSaved.click();
+  await expect(page.locator('p[role="status"]').filter({ hasText: '暂停写回' })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('st-beautifier-api-profiles')).map(p => p.id))).toEqual(['other']);
+  expect(await readFile(configFile)).toEqual(saved);
+  checks.push('retry after repairing isolated file restores connections without rewriting disk');
   expect(errors).toEqual([]);
   await page.screenshot({ path: path.join(out, 'native.png') });
   await writeFile(path.join(out, 'result.json'), JSON.stringify({ passed: true, checks, errors, syntheticOnly: true, generatedMessages: 0 }, null, 2));
