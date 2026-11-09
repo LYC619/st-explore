@@ -338,6 +338,27 @@ fn config_file(config_dir: &Path) -> PathBuf {
     config_dir.join("config.json")
 }
 
+/// 读改写全程持有的跨进程排他锁，随返回的句柄释放。
+///
+/// 两个 STE 进程（免安装版 + 安装版、或没关掉的旧窗口）各自读到同一份旧配置再写回，
+/// 后写的会吞掉先写的那个键。config.json 本身靠改名替换，锁它等于锁一个马上被换掉的文件，
+/// 所以锁旁边一个固定文件。
+fn lock_config(config_dir: &Path) -> Result<fs::File, String> {
+    fs::create_dir_all(config_dir)
+        .map_err(|e| format!("创建配置目录失败 {}: {e}", config_dir.display()))?;
+    let path = config_dir.join(".config.lock");
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("打开配置锁失败 {}: {e}", path.display()))?;
+    file.lock()
+        .map_err(|e| format!("等待配置锁失败 {}: {e}", path.display()))?;
+    Ok(file)
+}
+
 const CONFIG_INVALID_PREFIX: &str = "STE_CONFIG_INVALID:";
 
 fn read_config_text(path: &Path) -> Result<String, String> {
@@ -385,6 +406,7 @@ fn config_set_impl(config_dir: &Path, key: &str, value: serde_json::Value) -> Re
     if !CONFIG_WRITABLE_KEYS.contains(&key) {
         return Err(format!("拒绝写入未知配置项: {key}"));
     }
+    let _lock = lock_config(config_dir)?;
     let file = config_file(config_dir);
     let mut map = if file.exists() {
         parse_config_object(&read_config_text(&file)?)?
@@ -403,6 +425,7 @@ fn config_repair_impl(config_dir: &Path) -> Result<Option<PathBuf>, String> {
     if !file.exists() {
         return Ok(None);
     }
+    let _lock = lock_config(config_dir)?;
     let original =
         fs::read(&file).map_err(|e| format!("读取配置文件失败 {}: {e}", file.display()))?;
     if std::str::from_utf8(&original)
@@ -1624,6 +1647,30 @@ mod tests {
         }
         // 「恰好」是双向的：白名单里也不该有前端根本不写、白放开的键。
         assert_eq!(CONFIG_WRITABLE_KEYS.len(), 7, "白名单增删后请同步上面的清单");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn config_set_keeps_every_key_under_concurrent_writers() {
+        let root = temp_root("cfg-concurrent");
+        // 每个线程反复写自己的键：没有锁时，一个线程按旧快照写回会把别的键改回旧值或抹掉。
+        let writers: Vec<_> = CONFIG_WRITABLE_KEYS
+            .iter()
+            .map(|key| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    for round in 0..40 {
+                        config_set_impl(&root, key, serde_json::json!(round)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        for key in CONFIG_WRITABLE_KEYS {
+            assert_eq!(config_get_impl(&root, key).unwrap(), Some(serde_json::json!(39)), "{key} 丢了最后一次写入");
+        }
         let _ = fs::remove_dir_all(&root);
     }
 
