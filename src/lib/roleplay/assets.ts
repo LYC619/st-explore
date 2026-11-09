@@ -144,6 +144,10 @@ export async function createRoleplayAssets(options: AssetOptions) {
         if (presetOwners.get(name) !== previous.id || (current && presetVersions.get(previous.id) !== presetVersion(current))) throw new Error('预设已被其他编辑修改，请重新打开');
         await options.presets.remove(previous.id);
         presetMap.delete(name);
+        // Only a successful explicit deletion releases the alias. Background refreshes
+        // keep tombstones so a stale editor cannot recreate an externally renamed asset.
+        presetOwners.delete(name);
+        presetVersions.delete(previous.id);
       });
     },
   };

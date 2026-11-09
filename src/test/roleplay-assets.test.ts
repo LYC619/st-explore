@@ -9,6 +9,19 @@ import { createRoleplayAssets } from '@/lib/roleplay/assets';
 import { parsePreset } from '@/lib/preset-parser';
 
 afterEach(() => setActiveVault(null));
+it('can import the same preset again after deleting it in the chat editor', async () => {
+  const { assets, presets } = await fixture();
+  const data = { temperature: 0.7, prompts: [], prompt_order: [] };
+  await assets.savePreset('合成预设', data);
+  const oldId = (await presets.list())[0].id;
+  await assets.deletePreset('合成预设');
+  await assets.refreshPresets();
+  await assets.savePreset('合成预设', data);
+  const list = await presets.list();
+  expect(list).toHaveLength(1);
+  expect(list[0].id).not.toBe(oldId);
+  expect(assets.presetData().get('合成预设')).toMatchObject(data);
+});
 async function fixture() {
   setActiveVault(createVault(createMemFs()));
   const worldbooks = getCurrentRepo<WorldBookItem>('worldbooks');
