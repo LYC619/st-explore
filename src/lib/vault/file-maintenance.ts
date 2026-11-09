@@ -72,8 +72,18 @@ async function assertSafePath(fs: VaultFs, path: string, allowMissing = false): 
   }
 }
 
-async function fileVersion(fs: VaultFs, path: string): Promise<string> {
+async function fileVersion(fs: VaultFs, path: string, expected?: string): Promise<string> {
   await assertSafePath(fs, path);
+  if (fs.fingerprint && (!expected || expected.startsWith('raw:'))) {
+    const hash = await fs.fingerprint(path);
+    if (!/^[a-f0-9]{64}$/.test(hash)) throw new Error('文件校验结果无效');
+    return `raw:${hash}`;
+  }
+  if (expected?.startsWith('raw:')) {
+    // Alternate backends can reopen native manifests without weakening verification.
+    try { return 'raw:' + sha256(Uint8Array.from(atob(await fs.readBinary(path)), c => c.charCodeAt(0))); }
+    catch { return 'raw:' + sha256(await fs.readText(path)); }
+  }
   try { return sha256('binary:' + await fs.readBinary(path)); }
   catch { return sha256('text:' + await fs.readText(path)); }
 }
@@ -325,7 +335,7 @@ async function readManifest(fs: VaultFs, operationId: string): Promise<Manifest>
       || !Number.isSafeInteger(value.recycleAfter) || value.recycleAfter !== value.createdAt + RECYCLE_RETENTION_MS)
     || !Array.isArray(value.files) || new Set(value.files.map(file => pathKey(file.path))).size !== value.files.length
     || value.files.some(file => !safePath(file.path) || file.path.startsWith('.ste/')
-      || typeof file.size !== 'number' || !Number.isFinite(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/.test(file.version))) {
+      || typeof file.size !== 'number' || !Number.isFinite(file.size) || file.size < 0 || !/^(?:raw:)?[a-f0-9]{64}$/.test(file.version))) {
     throw new Error(`保留区恢复清单损坏：${path}`);
   }
   return value;
@@ -346,7 +356,7 @@ async function rollback(fs: VaultFs, manifest: Manifest): Promise<void> {
     const atSource = (await fs.stat(file.path)).exists, atTarget = (await fs.stat(staged)).exists;
     if (atSource === atTarget) throw new Error(`无法自动还原，原文件与保留文件状态冲突：${file.path}`);
     const present = atTarget ? staged : file.path;
-    if (await fileVersion(fs, present) !== file.version) throw new Error(`文件已更改，需手动恢复：${present}`);
+    if (await fileVersion(fs, present, file.version) !== file.version) throw new Error(`文件已更改，需手动恢复：${present}`);
     if (atTarget) {
       await assertSafePath(fs, file.path, true);
       await fs.mkdir(parentDir(file.path));
@@ -388,6 +398,66 @@ export async function executeFileRemoval(vault: VaultBackend, store: StoreName, 
   if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止');
   const manifest: Manifest = { schema: 1, operationId, store, id, createdAt: Date.now(), deleteFiles: options.deleteFiles, files };
   await movePreparedFiles(fs, manifest, true);
+}
+
+export interface RetainedOperation {
+  operationId: string; createdAt: number; store: string; paths: string[]; bytes: number;
+  recycleAfter?: number; restorable: boolean; issue?: string;
+}
+
+/** Read manifests only: opening the recycle list never reads or encodes retained bodies. */
+export async function listRetainedOperations(vault: VaultBackend): Promise<RetainedOperation[]> {
+  const fs = vault.fs, results: RetainedOperation[] = [];
+  await assertSafePath(fs, RETAINED, true);
+  for (const entry of await fs.list(RETAINED)) {
+    if (!entry.isDir || entry.isSymlink || !operationIdPattern.test(entry.name)) continue;
+    if (!(await fs.stat(manifestPath(entry.name))).exists) continue;
+    try {
+      const m = await readManifest(fs, entry.name);
+      const primary = m.files.find(file => recordStore(file.path) === m.store);
+      results.push({ operationId: m.operationId, createdAt: m.createdAt, store: m.store, paths: m.files.map(f => f.path),
+        bytes: m.files.reduce((n, f) => n + f.size, 0), recycleAfter: m.recycleAfter,
+        restorable: !!primary, ...(!primary ? { issue: '仅保留附件；请定位文件后手动恢复，避免覆盖当前档案。' } : {}) });
+    } catch { results.push({ operationId: entry.name, createdAt: 0, store: '', paths: [], bytes: 0, restorable: false, issue: '清单损坏，请定位文件检查。' }); }
+  }
+  return results.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Restore files with the same no-overwrite rename and restart recovery used by deletion. */
+export async function restoreRetainedOperation(vault: VaultBackend, operationId: string): Promise<void> {
+  const epoch = getVaultEpoch(), fs = vault.fs;
+  let queue = cleanupQueues.get(fs);
+  if (!queue) { queue = new KeyedSerialQueue(); cleanupQueues.set(fs, queue); }
+  return queue.enqueue('cleanup', async () => {
+    let active = activeOperations.get(fs);
+    if (!active) { active = new Set(); activeOperations.set(fs, active); }
+    if (active.has(operationId)) throw new Error('此项仍在处理中，请稍后重试');
+    active.add(operationId);
+    try {
+    const check = () => { if (epoch !== getVaultEpoch() || getActiveVault() && getActiveVault() !== vault) throw new Error('文件库已切换，恢复已停止'); };
+    check();
+    const m = await readManifest(fs, operationId);
+    const primary = m.files.find(file => recordStore(file.path) === m.store);
+    if (!primary || !vault.registerRestoredRecord) throw new Error('此项仅保留附件，请定位文件后手动恢复');
+    const committed = await isCommitted(fs, m);
+    if (committed && await vault.pathOf(m.store, m.id)) throw new Error('已有同身份记录，已停止恢复');
+    // Preflight every source before any move; partial expiry never restores a half record.
+    for (const file of m.files) {
+      const staged = stagedPath(m, file.path);
+      await assertSafePath(fs, file.path, true);
+      const original = (await fs.stat(file.path)).exists;
+      const retained = (await fs.stat(staged)).exists;
+      if (original === retained || committed && original) throw new Error('原位置有文件或回收文件不完整，已停止恢复');
+      if (await fileVersion(fs, retained ? staged : file.path, file.version) !== file.version) throw new Error('保留文件已改变，已停止恢复');
+    }
+    check();
+    // Removing the commit marker publishes restoration intent. Restart recovery then
+    // completes rollback, including files already renamed before an interruption.
+    if (committed) await fs.removeFile(`${RETAINED}/${operationId}/committed.json`);
+    await rollback(fs, m);
+    await vault.registerRestoredRecord(m.store, m.id, primary.path);
+    } finally { active.delete(operationId); }
+  });
 }
 
 /** Finish a portrait deletion after its own metadata journal has committed. */
@@ -440,7 +510,7 @@ async function movePreparedFiles(fs: VaultFs, manifest: Manifest, versionsFresh 
     for (const file of manifest.files) {
       check();
       if (versionsFresh) await assertSafePath(fs, file.path);
-      else if (await fileVersion(fs, file.path) !== file.version) throw new Error(`文件已改变，请重新确认：${file.path}`);
+      else if (await fileVersion(fs, file.path, file.version) !== file.version) throw new Error(`文件已改变，请重新确认：${file.path}`);
       const target = stagedPath(manifest, file.path);
       await assertSafePath(fs, target, true);
       await fs.mkdir(parentDir(target));
@@ -500,7 +570,7 @@ export async function scanVaultFiles(vault: VaultBackend): Promise<FileMaintenan
       && !disk.references.has(pathKey(path))) { category = 'unreferenced'; reason = 'STE 创建的立绘文件，当前档案与恢复记录均无引用'; }
     if (category !== 'unknown') {
       try {
-        version = await fileVersion(fs, path);
+        version = await fileVersion(fs, path, retained.get(path)?.version);
         if (category === 'retained' && version !== retained.get(path)!.version) { category = 'unknown'; reason = '保留文件已改变，需手动检查'; }
       } catch (error) { disk.errors.push(`${path}: ${errorText(error)}`); category = 'unknown'; }
     }
@@ -553,7 +623,7 @@ async function cleanupFiles(scan: FileMaintenanceScan, selectedPaths: string[], 
       if (current.category === 'empty-directory') {
         if (!await fs.removeEmptyDir(path)) { result.skipped.push({ path, reason: '目录已不为空' }); continue; }
       } else {
-        if (await fileVersion(fs, path) !== original.version) { result.skipped.push({ path, reason: '文件已改变' }); continue; }
+        if (await fileVersion(fs, path, original.version) !== original.version) { result.skipped.push({ path, reason: '文件已改变' }); continue; }
         check();
         if (expiredBefore !== undefined) await fs.trashFile!(path);
         else await (fs.trashFile ? fs.trashFile(path) : fs.removeFile(path));
@@ -599,15 +669,15 @@ const activeRecordMoves = new WeakMap<VaultFs, Set<string>>();
 async function finishRecordMove(fs: VaultFs, move: RecordMove, committed: boolean): Promise<void> {
   const root = `${MOVE_ROOT}/${move.operationId}`, backup = `${root}/before`, staged = `${root}/after`;
   if (committed) {
-    if (!(await fs.stat(move.to)).exists || await fileVersion(fs, move.to) !== move.after || (await fs.stat(move.from)).exists) throw new Error('已提交移动的文件状态冲突，请检查恢复记录');
+    if (!(await fs.stat(move.to)).exists || await fileVersion(fs, move.to, move.after) !== move.after || (await fs.stat(move.from)).exists) throw new Error('已提交移动的文件状态冲突，请检查恢复记录');
   } else {
     if ((await fs.stat(move.to)).exists) {
-      if (await fileVersion(fs, move.to) !== move.after || (await fs.stat(staged)).exists) throw new Error('移动目标已改变，请手动恢复');
+      if (await fileVersion(fs, move.to, move.after) !== move.after || (await fs.stat(staged)).exists) throw new Error('移动目标已改变，请手动恢复');
       await fs.rename(move.to, staged);
     }
     const original = (await fs.stat(move.from)).exists, saved = (await fs.stat(backup)).exists;
     if (original === saved) throw new Error('移动原文件状态冲突，请手动恢复');
-    if (await fileVersion(fs, original ? move.from : backup) !== move.before) throw new Error('移动原文件已改变');
+    if (await fileVersion(fs, original ? move.from : backup, move.before) !== move.before) throw new Error('移动原文件已改变');
     if (saved) { await assertSafePath(fs, move.from, true); await fs.mkdir(parentDir(move.from)); await fs.rename(backup, move.from); }
   }
   // Sources are safe now. A failed metadata cleanup can be retried on reopen.
@@ -627,7 +697,7 @@ async function recoverRecordMoves(fs: VaultFs): Promise<void> {
     await assertSafePath(fs, path);
     const move = JSON.parse(await fs.readText(path)) as RecordMove;
     if (move?.schema !== 1 || move.operationId !== entry.name || !safePath(move.from) || !safePath(move.to)
-      || move.from.startsWith('.ste/') || move.to.startsWith('.ste/') || !/^[a-f0-9]{64}$/.test(move.before) || !/^[a-f0-9]{64}$/.test(move.after)) throw new Error('移动恢复记录损坏');
+      || move.from.startsWith('.ste/') || move.to.startsWith('.ste/') || !/^(?:raw:)?[a-f0-9]{64}$/.test(move.before) || !/^(?:raw:)?[a-f0-9]{64}$/.test(move.after)) throw new Error('移动恢复记录损坏');
     let committed = false;
     if ((await fs.stat(`${root}/committed.json`)).exists) {
       const marker = JSON.parse(await fs.readText(`${root}/committed.json`));

@@ -56,6 +56,7 @@ export interface VaultBackend {
   assertCharacterWritable(id: string): Promise<void>;
   /** Explicit refresh of just the asset subtree after external file changes. */
   refreshAssets?(store: 'presets'): Promise<void>;
+  registerRestoredRecord?(store: StoreName, id: string, file: string): Promise<void>;
   /** Publish a complete staged story with one directory rename. Caller holds the story queue. */
   publishStoryDirectory?(storyId: string, stagedDirectory: string, isCurrent?: () => boolean): Promise<string>;
   /** A full, uncached read with no journal recovery; import previews must not mutate disk. */
@@ -1065,6 +1066,17 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       if (store === 'presets' && path && !(await fs.stat(path)).exists) { of('presets').delete(id); invalidate('presets', id, false); return undefined; }
       if (store === 'characters' && path) await recoverCharacter(id, path);
       return path;
+    },
+    async registerRestoredRecord(store: StoreName, id: string, file: string): Promise<void> {
+      if (!(VAULT_STORES as readonly string[]).includes(store)) throw new Error('不支持恢复该记录');
+      await ensureIndex();
+      const typedStore = store as VaultStore;
+      const path = store === 'characters' || store === 'archiveStories' ? parentDir(file) : file;
+      const existing = of(typedStore).get(id);
+      if (existing && existing !== path) throw new Error('已有同身份记录，不能覆盖索引');
+      const record = await readRecordLight(typedStore, path);
+      if (record?.id !== id) throw new Error('恢复记录身份不匹配');
+      of(typedStore).set(id, path); invalidate(typedStore, id);
     },
   };
   return backend;

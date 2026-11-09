@@ -91,7 +91,7 @@ export function DeleteConfirmDialog({
             {preview ? `预计涉及 ${preview.count} 个文件 · ${(preview.bytes / 1024).toFixed(1)} KB。` : '正在读取目标文件信息，可直接确认删除。'}
             {deleteFiles
               ? '文件先移入库内回收站，每个文件保留满 30 天后移入系统回收站；不支持或失败时继续保留。'
-              : '文件会长期保留在库内保留区，可在设置的文件检查中查看和清理，不参与 30 天自动回收。'}
+              : '文件会长期保留，可在「设置 → 数据与备份 → 库内回收站」查看和恢复，不参与 30 天自动回收。'}
           </p>
         </div>}
         {previewError && <p className="text-xs text-muted-foreground">{previewError}</p>}

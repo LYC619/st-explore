@@ -32,6 +32,8 @@ export interface VaultFs {
   writeText(path: string, content: string): Promise<void>;
   /** 返回 base64（无前缀） */
   readBinary(path: string): Promise<string>;
+  /** Native bounded-memory SHA256 of raw bytes; only the digest crosses IPC. */
+  fingerprint?(path: string): Promise<string>;
   writeBinary(path: string, base64: string): Promise<void>;
   /** 只删单个文件；文件不存在时抛错 */
   removeFile(path: string): Promise<void>;

@@ -681,6 +681,27 @@ fn vault_read_binary(
     read_binary_impl(&authorized_rooted_path(&roots, &root, &path)?)
 }
 
+/// Hash bytes in bounded native memory. No base64 or file body crosses IPC.
+fn fingerprint_impl(path: &Path) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = fs::File::open(path).map_err(|_| "文件校验读取失败".to_string())?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let count = file.read(&mut buffer).map_err(|_| "文件校验读取失败".to_string())?;
+        if count == 0 { break; }
+        hash.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+#[tauri::command]
+async fn vault_fingerprint(roots: tauri::State<'_, AuthorizedRoots>, root: String, path: String) -> Result<String, String> {
+    let target = authorized_mutation_path(&roots, &root, &path)?;
+    tauri::async_runtime::spawn_blocking(move || fingerprint_impl(&target)).await.map_err(|_| "文件校验任务失败".to_string())?
+}
+
 #[tauri::command]
 fn vault_write_binary(
     roots: tauri::State<'_, AuthorizedRoots>,
@@ -1050,6 +1071,7 @@ pub fn run() {
             vault_read_text,
             vault_write_text,
             vault_read_binary,
+            vault_fingerprint,
             vault_write_binary,
             vault_remove_file,
             vault_trash_file,
@@ -1097,6 +1119,22 @@ mod tests {
         assert_eq!(read_text_impl(&file).unwrap(), "v2");
         assert!(!file.with_extension("ste-tmp").exists());
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fingerprint_streams_raw_bytes_and_survives_rename() {
+        use sha2::{Digest, Sha256};
+        let root = temp_root("fingerprint");
+        let file = root.join("original.bin");
+        let bytes = vec![217_u8; 200_003];
+        fs::write(&file, &bytes).unwrap();
+        let expected = format!("{:x}", Sha256::digest(&bytes));
+        assert_eq!(fingerprint_impl(&file).unwrap(), expected);
+        let moved = root.join("retained.bin");
+        rename_impl(&file, &moved).unwrap();
+        assert_eq!(fingerprint_impl(&moved).unwrap(), expected);
+        assert!(!file.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

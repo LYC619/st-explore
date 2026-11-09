@@ -1,4 +1,5 @@
 import { FileMaintenancePanel } from '@/components/settings/FileMaintenancePanel';
+import { RecycleBinPanel } from '@/components/settings/RecycleBinPanel';
 import { useState, useEffect } from 'react';
 import { HardDrive, Download, Upload, Trash2, AlertCircle, RotateCcw, Info, ExternalLink, Eraser, Package } from 'lucide-react';
 import { ReadingPackImportDialog } from '@/components/settings/ReadingPackImportDialog';
@@ -350,6 +351,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
       </div>
 
       <FileMaintenancePanel />
+      <RecycleBinPanel />
 
       {/* 恢复备份前的预览确认：先看清将新增/覆盖什么，再决定写不写 */}
       <AlertDialog open={!!pendingImport} onOpenChange={(v) => { if (!v) setPendingImport(null); }}>

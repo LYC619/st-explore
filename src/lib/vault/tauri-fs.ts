@@ -69,6 +69,7 @@ export function createTauriFs(root: string): VaultFs {
     readText: (path) => invoke('vault_read_text', args(path)),
     writeText: (path, content) => invoke('vault_write_text', { ...args(path), content }),
     readBinary: (path) => invoke('vault_read_binary', args(path)),
+    fingerprint: (path) => invoke('vault_fingerprint', args(path)),
     writeBinary: (path, base64) => invoke('vault_write_binary', { ...args(path), base64 }),
     removeFile: (path) => mutate('vault_remove_file', path),
     trashFile: (path) => mutate('vault_trash_file', path),
