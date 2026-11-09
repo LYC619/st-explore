@@ -27,6 +27,7 @@ import { MoveStoryRecordDialog } from './MoveStoryRecordDialog';
 import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
 import { RecordsToWorldbookDialog } from '@/components/summary/RecordsToWorldbookDialog';
 import { StoryTreePreview } from './StoryTreePreview';
+import { EditRecordDialog } from '@/components/summary/EditRecordDialog';
 
 export type RecordViewKind = 'volume' | 'diary' | 'tree';
 
@@ -49,6 +50,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const [branchFilter, setBranchFilter] = useState<RecordBranchFilter>('main');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [manualOpen, setManualOpen] = useState(false);
+  const [editing, setEditing] = useState<SummaryItem | null>(null);
   const [loadingRecords, setLoadingRecords] = useState(true);
   const [recordsError, setRecordsError] = useState('');
   const [moveRecord, setMoveRecord] = useState<SummaryItem | StoryTree | null>(null);
@@ -141,7 +143,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 font-sans min-w-0">
       {/* 工具行：故事切换 + 去处理区生成 + 手动录入 */}
       <div className="flex items-center gap-2 flex-wrap">
         <Select value={storyId ?? undefined} onValueChange={setStoryId}>
@@ -268,13 +270,12 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                     {item.rangeDetached ? item.provenance ? ` · 原故事 ${item.floorStart}-${item.floorEnd} 楼` : ' · 覆盖范围未指定'
                       : ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
                   </p>
-                  <div className={cn('break-words text-sm text-foreground/85 mt-2', !expanded && 'line-clamp-4')}>
+                  <div className={cn('record-reading mt-3', !expanded && 'max-h-32 overflow-hidden')}>
                     <MarkdownLite text={item.content} />
                   </div>
-                  {!batchMode && !expanded && item.content.length > 160 && (
-                    <p className="text-xs text-primary/80 mt-1">点击展开全文</p>
-                  )}
-                  {!batchMode && <div className="mt-2 flex gap-2" onClick={event => event.stopPropagation()}>
+                  {!batchMode && <div className="mt-3 flex flex-wrap gap-2 [&>button]:min-h-11" onClick={event => event.stopPropagation()}>
+                    <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? null : item.id)}>{expanded ? '收起全文' : '展开全文'}</Button>
+                    <Button variant="outline" size="sm" onClick={() => setEditing(item)}>编辑记录</Button>
                     <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
                     <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(item.content).then(() => toast({ title: '已复制正文' })).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}>复制正文</Button>
                   </div>}
@@ -285,6 +286,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
         </div>
       )}
 
+      {editing && <EditRecordDialog record={editing} onClose={() => setEditing(null)} onSaved={() => { setRevision(value => value + 1); toast({ title: '记录已更新' }); }} />}
       {moveRecord && story?.characterId && <MoveStoryRecordDialog record={moveRecord} kind={kind === 'tree' ? 'tree' : 'summary'} stories={stories}
         characterId={story.characterId} onClose={() => setMoveRecord(null)} onMoved={() => setRevision(value => value + 1)} />}
       {manualOpen && story && kind !== 'tree' && <CaptureRecordDialog storyId={story.id} branchId={selectedBranchId} initialKind={kind}

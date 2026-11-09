@@ -28,6 +28,22 @@ export async function saveSummary(item: SummaryItem): Promise<void> {
   return item.bookId ? withArchiveStoryLock(item.bookId, write) : write();
 }
 
+/** Explicit detail-editor save: never recreate a deleted/moved record or overwrite another editor. */
+export async function editSummary(expected: SummaryItem, patch: Pick<SummaryItem, 'title' | 'content' | 'volumeNumber' | 'volumeCategory' | 'diaryOwner'>, expectedEpoch: number): Promise<void> {
+  const repo = getCurrentRepo<SummaryItem>('summaries');
+  const baseline = JSON.stringify(expected), edits = structuredClone(patch);
+  if (!edits.title.trim() || !edits.content.trim()) throw new Error('标题和正文不能为空');
+  if (edits.volumeNumber !== undefined && (!Number.isSafeInteger(edits.volumeNumber) || edits.volumeNumber < 1)) throw new Error('卷号必须是正整数');
+  const write = () => withSummaryLock(expected.id, async () => {
+    if (getVaultEpoch() !== expectedEpoch) throw new Error('文件库已切换，请重新打开记录');
+    const current = await repo.get(expected.id);
+    if (getVaultEpoch() !== expectedEpoch) throw new Error('文件库已切换，请重新打开记录');
+    if (!current || JSON.stringify(current) !== baseline) throw new Error('记录已修改、移动或删除，请关闭后重新打开');
+    await repo.put({ ...current, ...edits, title: edits.title.trim(), autoSaved: false, updatedAt: Date.now() });
+  });
+  return expected.bookId ? withArchiveStoryLock(expected.bookId, write) : write();
+}
+
 export async function deleteSummary(id: string, options?: RemoveOptions): Promise<void> {
   const repo = getCurrentRepo<SummaryItem>('summaries'), epoch = getVaultEpoch();
   const original = await repo.get(id);

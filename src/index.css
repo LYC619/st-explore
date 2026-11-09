@@ -337,3 +337,16 @@
     }
   }
 }
+/* Character record reading uses local UI fonts, independent of decorative themes. */
+.record-reading {
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 16px;
+  line-height: 1.85;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  min-width: 0;
+  max-width: 76ch;
+}
+.record-reading :is(h1, h2, h3, h4) { font-family: inherit; line-height: 1.5; color: inherit; }
+.record-reading :is(p, li, blockquote) { line-height: 1.85; }
+.record-reading p { margin-block: .65em; }
