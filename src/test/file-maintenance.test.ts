@@ -97,6 +97,49 @@ describe('vault file lifecycle', () => {
     expect((await fs.stat(path)).exists).toBe(true);
   });
 
+  /** Native listings carry size + mtime; give MemFs the same stamps so scans can reuse facts. */
+  function stampedFs() {
+    const mem = createMemFs(), stamps = new Map<string, number>(), reads: string[] = [];
+    let clock = 1;
+    const fs: VaultFs = {
+      ...mem,
+      list: async dir => (await mem.list(dir)).map(entry => entry.isDir ? entry : { ...entry, modifiedAt: stamps.get(dir ? `${dir}/${entry.name}` : entry.name) ?? 0 }),
+      readText: async path => { reads.push(path); return mem.readText(path); },
+      writeText: async (path, content) => { await mem.writeText(path, content); stamps.set(path, ++clock); },
+      writeBinary: async (path, base64) => { await mem.writeBinary(path, base64); stamps.set(path, ++clock); },
+      rename: async (from, to) => { await mem.rename(from, to); stamps.set(to, stamps.get(from) ?? ++clock); stamps.delete(from); },
+    };
+    return { fs, reads };
+  }
+
+  it('reuses unchanged record facts between scans and rereads only changed files', async () => {
+    const { fs, reads } = stampedFs(), vault = createVault(fs);
+    for (const id of ['a', 'b', 'c']) await vault.repo<ArchiveCharacter>('characters').put(character(id));
+    await maintenance.scanVaultFiles(vault);
+    const profiles = () => reads.splice(0).filter(path => path.endsWith('档案.json'));
+    expect(profiles()).toHaveLength(3);
+    await maintenance.scanVaultFiles(vault);
+    expect(profiles()).toEqual([]);
+    await vault.repo<ArchiveCharacter>('characters').put({ ...character('b'), name: 'b', updatedAt: 2 });
+    reads.length = 0;
+    await maintenance.scanVaultFiles(vault);
+    expect(profiles()).toEqual([`${await vault.pathOf('characters', 'b')}/档案.json`]);
+  });
+
+  it('honors a reference added after an earlier scan when deleting shared media', async () => {
+    const { fs } = stampedFs(), vault = createVault(fs);
+    const a = { ...character(), portraitRows: [{ id: 'row', title: '默认', items: [{ id: 'p', source: 'manual' as const, fileName: 'a.png', addedAt: 1 }] }] };
+    await vault.repo<ArchiveCharacter>('characters').put(a);
+    await vault.repo<ArchiveCharacter>('characters').put(character('other'));
+    const path = `${await vault.pathOf('characters', 'c')}/立绘/默认/a.png`;
+    await fs.writeBinary(path, 'YQ==');
+    await maintenance.scanVaultFiles(vault);
+    await vault.repo<ArchiveCharacter & { customMediaPath: string }>('characters').put({ ...character('other'), customMediaPath: path });
+    await vault.repo('characters').remove('c', { deleteFiles: true });
+    expect((await fs.stat(path)).exists).toBe(true);
+    expect(await vault.repo('characters').get('c')).toBeUndefined();
+  });
+
   it('stops and restores staged files if the vault changes during deletion', async () => {
     const mem = createMemFs(); let switched = false;
     const fs: VaultFs = { ...mem, rename: async (from, to) => {

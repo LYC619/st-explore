@@ -141,7 +141,8 @@ export async function deleteCharacter(id: string, options?: RemoveOptions): Prom
     const moved: ArchiveStory[] = [];
     const releases: Array<() => void> = [];
     try {
-      for (const story of await stories.list()) {
+      // Light rows carry characterId without story bodies; each match is re-read in its queue.
+      for (const story of await stories.listLight()) {
         if (story.characterId !== id) continue;
         releases.push(acquireStoryMaintenance(story.id));
         await storyWrites.enqueue(story.id, async () => {

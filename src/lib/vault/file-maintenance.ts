@@ -163,6 +163,85 @@ function collectStringReferences(value: unknown, add: (path: string) => void): v
   }
 }
 
+/** 53-bit string hash (cyrb53). A collision can only add an owner, which keeps a file. */
+function pathHash(path: string): number {
+  const key = pathKey(path);
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < key.length; i++) {
+    const ch = key.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+/** ownedPaths reads only these fields, so cached records never hold story bodies. */
+function ownershipFields(record: BaseRecord & Record<string, unknown>): DiskRecord['record'] {
+  const { id, updatedAt, portraitRows, attachments, branches } = record;
+  return { id, updatedAt, portraitRows, attachments, branches: Array.isArray(branches)
+    ? branches.map(branch => branch && typeof branch === 'object' ? { id: branch.id, name: branch.name } : branch) : branches };
+}
+
+/** What one file contributes to an inventory; depends only on its path and bytes. */
+type FileFacts =
+  | { kind: 'none' } | { kind: 'known' } | { kind: 'error'; error: string }
+  | { kind: 'record'; item: DiskRecord; references: Float64Array };
+/**
+ * Facts by size and modification time, like the story cache. Every scan still lists the
+ * whole vault, but a deletion no longer re-reads hundreds of MB of unchanged records.
+ * References are kept as path hashes: callers only ask about files present in the listing.
+ */
+const factCache = new WeakMap<VaultFs, Map<string, { stamp: string; facts: FileFacts }>>();
+
+async function readFacts(fs: VaultFs, path: string, entry: VaultEntry): Promise<FileFacts> {
+  const mediaFile = /^世界素材\/([a-f0-9]{64})\.json$/.exec(path);
+  if (mediaFile) {
+    try { if (entry.size <= 7_000_000) { const asset = JSON.parse(await fs.readText(path)); if (validWorldMedia(asset) && asset.id === mediaFile[1]) return { kind: 'known' }; } } catch { /* Unknown/damaged resources stay protected. */ }
+    return { kind: 'none' };
+  }
+  const worldFile = /^世界\/([a-f0-9-]{36})\/(\d{6})\.json$/.exec(path);
+  if (worldFile) {
+    try {
+      const commit = JSON.parse(await fs.readText(path));
+      if (validCommit(commit) && commit.worldId === worldFile[1] && commit.revision === Number(worldFile[2])) return { kind: 'known' };
+    } catch { /* Damaged commits remain protected unknown files; recover in World Console. */ }
+    return { kind: 'none' };
+  }
+  const store = recordStore(path);
+  if (store) {
+    try {
+      const raw = path.endsWith('.md') ? parseFrontmatter(await fs.readText(path)).fields : JSON.parse(await fs.readText(path));
+      const record = ['worldbooks', 'presets', 'regexes'].includes(store) ? raw.__ste : raw;
+      if (!record || typeof record.id !== 'string') {
+        // Valid ST files with no STE identity are user files, never cleanup candidates.
+        if (['worldbooks', 'presets', 'regexes'].includes(store)) return { kind: 'none' };
+        throw new Error('缺少记录身份');
+      }
+      const references = new Set<number>();
+      // Include raw asset payload references as well as its STE metadata.
+      collectStringReferences(raw, reference => {
+        references.add(pathHash(reference)); references.add(pathHash(joinPath(parentDir(path), reference)));
+      });
+      return { kind: 'record', item: { store, path, record: ownershipFields(record) }, references: Float64Array.from(references) };
+    } catch (error) { return { kind: 'error', error: errorText(error) }; }
+  }
+  const recovery = storyRecoveryPath(path);
+  if (recovery) {
+    try {
+      const value = JSON.parse(await fs.readText(path));
+      if (value?.schema !== 1 || !['committed', 'rolled-back', 'resolved', 'complete', 'succeeded', 'failed', 'cancelled', 'adopted'].includes(value.status)) throw new Error('存在未完成或无效的恢复记录');
+      if (recovery.includes('/memory-journal/') && (typeof value.operationId !== 'string'
+        || !/^[a-f0-9]{64}$/.test(value.proposalDigest) || typeof value.manual !== 'boolean'
+        || !Array.isArray(value.sourceRefs) || !Array.isArray(value.changes) || !value.changes.length
+        || value.changes.some((change: { path?: unknown; before?: unknown; after?: unknown }) => !change
+          || !safePath(change.path) || !change.path.endsWith('.md') || typeof change.after !== 'string'
+          || change.before !== null && typeof change.before !== 'string'))) throw new Error('记忆恢复记录格式无效');
+    } catch (error) { return { kind: 'error', error: errorText(error) }; }
+  }
+  return { kind: 'none' };
+}
+
 async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained = true): Promise<Inventory> {
   const result: Inventory = { files: new Map(), directories: new Set(), records: [], errors: [], known: new Set(), references: new Map() };
   let visited = 0;
@@ -179,49 +258,43 @@ async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained =
     }
   }
   await walk('', 0);
+  let cache = factCache.get(fs);
+  if (!cache) { cache = new Map(); factCache.set(fs, cache); }
+  for (const path of cache.keys()) if (!result.files.has(path)) cache.delete(path);
+  const facts = new Map<string, FileFacts>();
+  for (const [path, entry] of result.files) {
+    if (!/^世界素材\/[a-f0-9]{64}\.json$|^世界\/[a-f0-9-]{36}\/\d{6}\.json$/.test(path) && !recordStore(path) && !storyRecoveryPath(path)) continue;
+    const stamp = Number.isFinite(entry.modifiedAt) ? `${entry.size}:${entry.modifiedAt}` : undefined;
+    const hit = cache.get(path);
+    let fact = stamp && hit?.stamp === stamp ? hit.facts : undefined;
+    if (!fact) {
+      fact = await readFacts(fs, path, entry);
+      if (stamp) cache.set(path, { stamp, facts: fact }); else cache.delete(path);
+    }
+    facts.set(path, fact);
+  }
+  const filesByHash = new Map<number, string[]>();
   for (const path of result.files.keys()) {
-    const mediaFile = /^世界素材\/([a-f0-9]{64})\.json$/.exec(path);
-    if (mediaFile) {
-      try { if ((result.files.get(path)?.size ?? 0) <= 7_000_000) { const asset = JSON.parse(await fs.readText(path)); if (validWorldMedia(asset) && asset.id === mediaFile[1]) result.known.add(path); } } catch { /* Unknown/damaged resources stay protected. */ }
-      continue;
-    }
-    const worldFile = /^世界\/([a-f0-9-]{36})\/(\d{6})\.json$/.exec(path);
-    if (worldFile) {
-      try {
-        const commit = JSON.parse(await fs.readText(path));
-        if (validCommit(commit) && commit.worldId === worldFile[1] && commit.revision === Number(worldFile[2])) result.known.add(path);
-      } catch { /* Damaged commits remain protected unknown files; recover in World Console. */ }
-      continue;
-    }
-    const store = recordStore(path);
-    if (!store) continue;
-    try {
-      const raw = path.endsWith('.md') ? parseFrontmatter(await fs.readText(path)).fields : JSON.parse(await fs.readText(path));
-      const record = ['worldbooks', 'presets', 'regexes'].includes(store) ? raw.__ste : raw;
-      if (!record || typeof record.id !== 'string') {
-        // Valid ST files with no STE identity are user files, never cleanup candidates.
-        if (['worldbooks', 'presets', 'regexes'].includes(store)) continue;
-        throw new Error('缺少记录身份');
-      }
-      const item: DiskRecord = { store, path, record };
-      if (result.records.some(existing => recordKey(existing) === recordKey(item))) result.errors.push(`${path}: 记录身份重复，需先确认原件`);
-      result.records.push(item);
-      // Include raw asset payload references as well as its STE metadata.
-      collectStringReferences(raw, reference => {
-        for (const candidate of [reference, joinPath(parentDir(path), reference)]) {
-          const owners = result.references.get(pathKey(candidate)) ?? new Set<string>();
-          owners.add(recordKey(item)); result.references.set(pathKey(candidate), owners);
-        }
-      });
-    } catch (error) { result.errors.push(`${path}: ${errorText(error)}`); }
+    const hash = pathHash(path), same = filesByHash.get(hash);
+    if (same) same.push(path); else filesByHash.set(hash, [path]);
+  }
+  const addOwner = (path: string, item: DiskRecord) => {
+    const owners = result.references.get(pathKey(path)) ?? new Set<string>();
+    owners.add(recordKey(item)); result.references.set(pathKey(path), owners);
+  };
+  const seen = new Set<string>();
+  for (const [path, fact] of facts) {
+    if (fact.kind === 'known') result.known.add(path);
+    if (fact.kind === 'error' && !storyRecoveryPath(path)) result.errors.push(`${path}: ${fact.error}`);
+    if (fact.kind !== 'record') continue;
+    if (seen.has(recordKey(fact.item))) result.errors.push(`${path}: 记录身份重复，需先确认原件`);
+    seen.add(recordKey(fact.item));
+    result.records.push(fact.item);
+    for (const hash of fact.references) for (const file of filesByHash.get(hash) ?? []) addOwner(file, fact.item);
   }
   for (const item of result.records) {
     try {
-      for (const path of ownedPaths(item, result.files)) {
-        result.known.add(path);
-        const owners = result.references.get(pathKey(path)) ?? new Set<string>();
-        owners.add(recordKey(item)); result.references.set(pathKey(path), owners);
-      }
+      for (const path of ownedPaths(item, result.files)) { result.known.add(path); addOwner(path, item); }
     } catch (error) { result.errors.push(`${item.path}: ${errorText(error)}`); }
   }
   // Journals can refer to files absent from the latest record; unresolved ones block cleanup.
@@ -230,19 +303,8 @@ async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained =
     if (path === ignoredJournal) continue;
     if (path.startsWith('.ste/moves/') && path.endsWith('/manifest.json')) { result.errors.push(`${path}: 记录移动需要先完成恢复`); continue; }
     if (/^角色\/[^/]+\/\.ste-control\/portrait-journal\/[^/]+\.json$/.test(path)) { result.errors.push(`${path}: 立绘操作需要先完成恢复`); continue; }
-    const recovery = storyRecoveryPath(path);
-    if (recovery) {
-      try {
-        const value = JSON.parse(await fs.readText(path));
-        if (value?.schema !== 1 || !['committed', 'rolled-back', 'resolved', 'complete', 'succeeded', 'failed', 'cancelled', 'adopted'].includes(value.status)) throw new Error('存在未完成或无效的恢复记录');
-        if (recovery.includes('/memory-journal/') && (typeof value.operationId !== 'string'
-          || !/^[a-f0-9]{64}$/.test(value.proposalDigest) || typeof value.manual !== 'boolean'
-          || !Array.isArray(value.sourceRefs) || !Array.isArray(value.changes) || !value.changes.length
-          || value.changes.some((change: { path?: unknown; before?: unknown; after?: unknown }) => !change
-            || !safePath(change.path) || !change.path.endsWith('.md') || typeof change.after !== 'string'
-            || change.before !== null && typeof change.before !== 'string'))) throw new Error('记忆恢复记录格式无效');
-      } catch (error) { result.errors.push(`${path}: ${errorText(error)}`); }
-    }
+    const fact = facts.get(path);
+    if (storyRecoveryPath(path) && fact?.kind === 'error') result.errors.push(`${path}: ${fact.error}`);
   }
   return result;
 }
