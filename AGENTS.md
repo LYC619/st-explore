@@ -10,6 +10,7 @@
 
 - 私密整理边界：仅允许酒馆将上下文发给用户配置的模型；原聊天、角色私密设定和生成结果不得通过正文、摘录、截图、DOM、日志或异常进入 Codex／其他服务。本地程序只向 Agent 返回别名、数量、固定状态等允许字段；禁止重跑旧内容筛查脚本。见 `docs/maintenance/2026-11-08-library-workflow-privacy-review.md`。
 - 原生测试不得删除、移动、替换正式 `%APPDATA%/com.ste.explorer` 或 `%LOCALAPPDATA%/com.ste.explorer`，备份后还原也不例外。必须使用独立构建 identifier、核对可执行文件构建凭据并使用合成库；仅改环境变量或测试目录名称不算隔离。旧 `.cache/`、`release/` 测试脚本是历史证据，不直接重跑。见 `docs/guides/native-test-isolation.md`。
+- Codex 桌面版是 MSIX 打包应用：它的命令（含“沙箱外”命令）和它启动的程序读写 `AppData` 时被重定向到 `%LOCALAPPDATA%/Packages/OpenAI.Codex_*/LocalCache/`。因此在 Codex 里核对、恢复的“正式配置”不是用户双击 STE 用的那份，在 Codex 里也不能用正式 identifier 的 STE 打开用户的真实库（两边连接 ID 不同，写进库里会让另一边报连接缺失）。用户配置只由用户自己打开的 STE 或非打包环境的工具核对。见 `docs/maintenance/2026-11-09-claude-stability-followup.md`。
 
 - 修改 UI 前确认具体入口、区域和保留的导航关系。检查进入、操作、保存、返回及状态恢复；局部意见不要自行扩大为全局重构。
 - ST 来源、STE 文件库、工作副本、导出副本分别对待。扫描/导入保持来源只读；显式写回与库内文件变更遵循现有安全流程。优先读 `docs/principles/` 的对应文档，复用导入、资产引用/派生与持久化逻辑。
