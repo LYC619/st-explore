@@ -1,0 +1,80 @@
+import { chromium, expect } from '@playwright/test';
+import { preview } from 'vite';
+import { mkdir, writeFile } from 'node:fs/promises';
+const out = process.env.STE_CHAT_SMOKE_OUT || '.cache/chat-load-1107';
+await mkdir(out, { recursive: true });
+const server = await preview({ configFile: false, preview: { host: '127.0.0.1', port: 4231, strictPort: true } });
+console.log('production preview ready');
+const browser = await chromium.launch({ headless: true, channel: 'msedge' });
+// Native clients disable the web PWA worker. Match that boundary so cached
+// modules cannot silently satisfy the deliberate network-failure cases below.
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+await page.addInitScript(() => { delete Navigator.prototype.serviceWorker; });
+const errors = [], consoleErrors = [], failed = [], responses = [];
+page.on('pageerror', e => errors.push(e.stack ?? e.message));
+page.on('console', m => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+page.on('requestfailed', r => failed.push({ url: r.url(), error: r.failure()?.errorText }));
+page.on('response', r => { if (r.status() >= 400) responses.push({ url: r.url(), status: r.status() }); });
+await page.route(/https:\/\//, r => r.abort());
+try {
+  await page.goto('http://127.0.0.1:4231/');
+  await expect(page.locator('main')).toBeVisible();
+  const id = await page.evaluate(async () => {
+    localStorage.setItem('ste-play-guide-seen', '1');
+    localStorage.setItem('ste-tag-migration-v2-notice', '1');
+    const db = await new Promise((resolve, reject) => { const r = indexedDB.open('st-chat-beautifier'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+    const c = { id: 'char-load', name: '林', tags: [], status: '未开始', createdAt: 1, updatedAt: 1, card: { spec: 'chara_card_v3', data: { name: '林', description: '虚构的书店店主。', first_mes: '聊天加载回归：请进，外面在下雨。', extensions: {} } } };
+    const s = { id: 'story-load', title: '聊天加载回归', createdAt: 1, updatedAt: 1, characterId: c.id, markers: [], meta: {}, session: { id: 'chat-load', title: '聊天加载回归', createdAt: 1, user: { name: '旅人' }, character: { name: '林' }, messages: [{ id: 'greeting', role: 'assistant', content: c.card.data.first_mes }] } };
+    await new Promise((resolve, reject) => { const tx = db.transaction(['characters', 'archiveStories'], 'readwrite'); tx.objectStore('characters').put(c); tx.objectStore('archiveStories').put(s); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); }); db.close();
+    return s.id;
+  });
+  console.log('fixture seeded');
+  await page.goto('http://127.0.0.1:4231/play');
+  await page.getByRole('button', { name: '继续 聊天加载回归', exact: true }).click();
+  console.log('entered chat');
+  const frame = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(frame.locator('#send_textarea')).toBeVisible({ timeout: 30000 });
+  await expect(frame.locator('#chat')).toContainText('聊天加载回归：请进，外面在下雨。', { timeout: 30000 });
+  await expect(frame.locator('#ste_play_mode')).toBeAttached();
+  await page.screenshot({ path: `${out}/loaded.png` });
+  await page.reload();
+  await expect(frame.locator('#chat')).toContainText('聊天加载回归：请进，外面在下雨。', { timeout: 30000 });
+  expect(errors).toEqual([]);
+  await page.route('**/tauri-main.js*', route => route.abort());
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText(/Failed|fetch|加载/i, { timeout: 30000 });
+  await expect(page.getByRole('button', { name: '重新加载酒馆', exact: true })).toBeVisible();
+  await page.unroute('**/tauri-main.js*');
+  await page.getByRole('button', { name: '重新加载酒馆', exact: true }).click();
+  await expect(frame.locator('#ste_play_mode')).toBeAttached({ timeout: 30000 });
+  await expect(frame.locator('#chat')).toContainText('聊天加载回归：请进，外面在下雨。');
+  const configureMissingProfile = missing => page.evaluate(async missing => {
+    const db = await new Promise((resolve, reject) => { const r = indexedDB.open('st-chat-beautifier'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('archiveMeta', 'readwrite'), store = tx.objectStore('archiveMeta'), request = store.get('archive-schema');
+      request.onsuccess = () => { const value = request.result ?? { id: 'archive-schema', schemaVersion: 2 }; value.roleplay ??= {}; if (missing) value.roleplay.mainProfileId = 'missing-startup-fixture'; else delete value.roleplay.mainProfileId; store.put(value); };
+      tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+    }); db.close();
+  }, missing);
+  await configureMissingProfile(true);
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('主模型连接配置已删除，请重新选择', { timeout: 30000 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('button', { name: '重新加载酒馆', exact: true })).toBeVisible();
+  const retryBox = await page.getByRole('button', { name: '重新加载酒馆', exact: true }).boundingBox();
+  expect(retryBox.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: `${out}/startup-error-390.png` });
+  await configureMissingProfile(false);
+  await page.getByRole('button', { name: '重新加载酒馆', exact: true }).click();
+  await expect(frame.locator('#ste_play_mode')).toBeAttached({ timeout: 30000 });
+  await expect(frame.locator('#chat')).toContainText('聊天加载回归：请进，外面在下雨。');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await writeFile(`${out}/result.json`, JSON.stringify({ passed: true, id, checks: ['normal load/reload', 'module failure/retry', 'real bootstrap 409 details/retry', '390px recovery'], expectedFaultErrors: errors, consoleErrors, failed, responses }, null, 2));
+  console.log('Final production chat: normal load, module failure recovery, real bootstrap failure recovery and 390px passed');
+} catch (error) {
+  const frames = [];
+  for (const f of page.frames()) frames.push({ url: f.url(), body: (await f.locator('body').innerText().catch(() => '')).slice(0, 5000) });
+  await writeFile(`${out}/failure.json`, JSON.stringify({ error: String(error), errors, consoleErrors, failed, responses, frames }, null, 2));
+  await page.screenshot({ path: `${out}/failure.png` });
+  throw error;
+} finally { await browser.close(); await new Promise(r => server.httpServer.close(r)); }

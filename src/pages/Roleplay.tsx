@@ -32,6 +32,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   const [src, setSrc] = useState<string>();
   const [status, setStatus] = useState('正在打开酒馆…');
   const [ready, setReady] = useState(false);
+  const [startupSlow, setStartupSlow] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [processOpen, setProcessOpen] = useState(false);
   const [processHost, setProcessHost] = useState<TavernHost>();
@@ -159,6 +160,8 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     let remove: (() => void) | undefined;
     const epoch = getVaultEpoch();
     setReady(false);
+    setError(undefined);
+    setStatus('正在打开酒馆…');
     setProcessHost(undefined);
     setSrc(undefined);
     const open = async () => {
@@ -179,9 +182,15 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
           }
         },
         onSaveError: message => { if (!disposed) reportSaveError(message, 'chat'); },
+        onStartup: (message, failed) => {
+          if (disposed) return;
+          setStatus(failed ? '酒馆加载失败' : message);
+          if (failed) setError(message);
+        },
         onReady: () => {
           if (disposed) return;
           setReady(true); setStatus(runtimeStatus.current ?? '无 Agent · 自动保存');
+          if (!saveFailureKind.current) setError(undefined);
           try { if (!localStorage.getItem('ste-play-guide-seen')) setGuideOpen(true); } catch { /* Help remains available without local preferences. */ }
         },
         onGeneration: active => { if (!disposed) { generating.current = active; setStatus(active ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存'); } },
@@ -215,7 +224,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
       };
       setSrc('/tavern.html?host=' + registration.id);
     };
-    void open().catch(reason => { if (!disposed) setError(errorMessage(reason)); });
+    void open().catch(reason => { if (!disposed) { setError(errorMessage(reason)); setStatus('酒馆加载失败'); } });
     return () => { disposed = true; remove?.(); flushRef.current = async () => {}; };
   }, [launch, navigate, navigateToModule, reportSaveError]);
 
@@ -259,6 +268,21 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     setGuideOpen(open);
     if (!open) try { localStorage.setItem('ste-play-guide-seen', '1'); } catch { /* Optional preference. */ }
   };
+  useEffect(() => {
+    setStartupSlow(false);
+    if (ready || error) return;
+    const timer = setTimeout(() => setStartupSlow(true), 20000);
+    return () => clearTimeout(timer);
+  }, [ready, error, launch]);
+  const retryStartup = async () => {
+    if (ready || leaving) return;
+    const child = frame.current?.contentWindow as TavernFrameWindow | null;
+    try {
+      if (child?.__STE_TAVERN_DIRTY__?.()) await saveBeforeExit();
+      else await processHost?.flush();
+      setLaunch({ ...returnTarget.current });
+    } catch (reason) { reportSaveError(reason); }
+  };
   useAndroidBackButton(active);
   useReaderBack(active, () => { void leave(); });
 
@@ -290,6 +314,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     </header>
     {(error || saveFailed) && <div role="alert" className="shrink-0 border-b bg-destructive/10 px-4 py-3 text-sm">
       <p className="break-words text-destructive">{error ?? '正在重试保存…'}</p>
+      {!ready && !saveFailed && <Button variant="outline" size="sm" className="mt-2 min-h-11" disabled={leaving} onClick={() => { void retryStartup(); }}><RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆</Button>}
       {saveFailed && <>
         <p className="mt-1 text-muted-foreground">可以修复原因后重试，或先导出恢复文件再离开。导出会保留当前编辑和未发送输入。</p>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -301,6 +326,10 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
         </div>
         {exportNotice && <p className="mt-2 text-muted-foreground" role="status">{exportNotice}</p>}
       </>}
+    </div>}
+    {!ready && !error && startupSlow && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-muted px-4 py-2 text-sm">
+      <span>加载时间较长，可等待当前步骤完成，或重新加载。</span>
+      <Button variant="outline" size="sm" className="min-h-11" disabled={leaving} onClick={() => { void retryStartup(); }}><RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆</Button>
     </div>}
     {src ? <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
       : !error && <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}

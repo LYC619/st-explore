@@ -597,7 +597,7 @@ window.__STE_TAVERN_READY__ = () => { void import('./script.js').then(async st =
     processEvents = installProcessEvents(host, st);
     if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
     await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();
-}).catch(error => { toastr.error(error.message); console.error(error); }); };
+}).catch(error => { window.__STE_TAVERN_STARTUP__(error.message || String(error), true); toastr.error(error.message); console.error(error); }); };
 // Blob module linking serves the user-installed browser build in WebViews as well as the browser.
 // Imported ST modules still resolve to the original, single module instance in this iframe.
 const extensionUrls = new Map();

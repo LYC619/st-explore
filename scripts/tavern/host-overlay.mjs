@@ -36,9 +36,21 @@ export async function createHostAssets(source, cacheRelative = 'host') {
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'
     + 'export async function getAgentGenerationOptions() { return {}; }\n');
-  await override('/init.js', text => replaceOnce(text,
+  await override('/init.js', text => {
+    text = replaceOnce(text,
     'await setupDevThirdPartyExtensionServiceWorker();',
-    '// STE owns the origin service worker; upstream development proxy is not installed.'));
+    '// STE owns the origin service worker; upstream development proxy is not installed.');
+    text = replaceOnce(text, "console.error('TauriTavern: Failed to initialize application:', error);",
+      "globalThis.__STE_TAVERN_STARTUP__(error.message || String(error), true);\n        console.error('TauriTavern: Failed to initialize application:', error);");
+    for (const [module, label] of [['lib.js', '正在加载酒馆基础组件…'], ['tauri-main.js', '正在连接资料库与扩展…'], ['script.js', '正在加载酒馆界面…']]) {
+      text = replaceOnce(text, `await importWithRetry('./${module}');`,
+        `globalThis.__STE_TAVERN_STARTUP__('${label}');\n        await importWithRetry('./${module}');`);
+    }
+    return `// Report even failures that occur before the host bridge module is loaded.\n`
+      + `globalThis.__STE_TAVERN_STARTUP__ = (message, failed = false) => {\n`
+      + `    const host = window.parent.__STE_TAVERN_HOSTS__?.get(new URLSearchParams(location.search).get('host'));\n`
+      + `    host?.startup(String(message), failed);\n};\n` + text;
+  });
   await override('/scripts/personas.js', text => replaceOnce(text,
     'return `${USER_AVATAR_PATH}${encodeURIComponent(String(avatarImg ?? \'\'))}`;',
     'return globalThis.__STE_USER_AVATAR__?.(String(avatarImg ?? \'\')) ?? `${USER_AVATAR_PATH}${encodeURIComponent(String(avatarImg ?? \'\'))}`;'));
@@ -96,6 +108,12 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     'if (getCurrentChatId() !== undefined) return;\n    await unshallowPermanentAssistant();\n    if (getCurrentChatId() !== undefined) return;\n    sendAssistantMessage();'));
   await override('/script.js', input => {
     let text = input;
+    text = replaceOnce(text, 'startupStatus.setText(message);',
+      'startupStatus.setText(message);\n        globalThis.__STE_TAVERN_STARTUP__(message);');
+    text = replaceOnce(text, 'await firstLoadInit();',
+      'try { await firstLoadInit(); }\n    catch (error) { globalThis.__STE_TAVERN_STARTUP__(error.message || String(error), true); throw error; }');
+    text = replaceOnce(text, 'throw new Error(`Bootstrap snapshot request failed with status ${response.status}`);',
+      'const detail = await response.json().catch(() => null);\n        throw new Error(detail?.error?.message || `酒馆核心数据读取失败（HTTP ${response.status}）`);');
     text = replaceOnce(text, 'await loadItemizedPrompts(getCurrentChatId());',
       'await globalThis.__STE_REFRESH_REGEX__?.();\n    await loadItemizedPrompts(getCurrentChatId());');
     text = replaceOnce(text, 'throw new Error(result.statusText);',

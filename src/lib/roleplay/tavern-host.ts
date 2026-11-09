@@ -56,6 +56,7 @@ export interface TavernHostOptions {
   onCommit?: (commit: StoryCommit) => void;
   onSaveError?: (message: string) => void;
   onReady?: () => void;
+  onStartup?: (message: string, failed: boolean) => void;
   onGeneration?: (active: boolean) => void;
   onManageProfiles?: () => void;
   onManagePage?: (path: string) => void;
@@ -427,6 +428,9 @@ export async function createTavernHost(options: TavernHostOptions) {
     },
     presetRevisions: () => assets.presetRevisions(),
     selectPreset: (name: string, revision: string) => assets.selectPreset(name, revision),
+    startup(message: string, failed = false) {
+      if (isCurrent()) options.onStartup?.(message, failed);
+    },
     ready() {
       if (isCurrent()) {
         options.onReady?.();

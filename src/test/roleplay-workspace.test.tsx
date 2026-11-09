@@ -143,3 +143,35 @@ it('world entry keeps the chat recoverable if its flush fails', async () => {
   expect(container.textContent).not.toContain('独立世界入口');
   expect(container.textContent).toContain('world-entry disk full');
 });
+
+it('shows startup failures, retries with a fresh host and ignores callbacks from the closed attempt', async () => {
+  const attempts: Array<{ onStartup: (message: string, failed: boolean) => void; onReady: () => void }> = [];
+  createHost.mockImplementation(async options => { attempts.push(options); return host; });
+  await render();
+  const first = container.querySelector('iframe');
+  await act(async () => attempts[0].onStartup('主模型连接配置已删除，请重新选择', true));
+  expect(container.textContent).toContain('酒馆加载失败');
+  const retry = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('重新加载酒馆'))!;
+  await act(async () => retry.click());
+  expect(host.close).toHaveBeenCalledTimes(1);
+  expect(container.querySelector('iframe')).not.toBe(first);
+  expect(attempts).toHaveLength(2);
+  await act(async () => attempts[0].onStartup('过期错误', true));
+  expect(container.textContent).not.toContain('过期错误');
+  await act(async () => attempts[1].onReady());
+  expect(container.textContent).not.toContain('重新加载酒馆');
+});
+
+it('does not reload an unready chat when saving the existing edits fails', async () => {
+  let options!: { onStartup: (message: string, failed: boolean) => void };
+  createHost.mockImplementation(async value => { options = value; return host; });
+  await render();
+  const frame = container.querySelector('iframe')!;
+  Object.assign(frame.contentWindow!, { __STE_TAVERN_DIRTY__: () => true, __STE_TAVERN_FLUSH__: async () => { throw Error('draft save failed'); } });
+  await act(async () => options.onStartup('扩展未能启动', true));
+  const retry = [...container.querySelectorAll('button')].find(button => button.textContent?.includes('重新加载酒馆'))!;
+  await act(async () => retry.click());
+  expect(container.querySelector('iframe')).toBe(frame);
+  expect(host.close).not.toHaveBeenCalled();
+  expect(container.textContent).toContain('draft save failed');
+});

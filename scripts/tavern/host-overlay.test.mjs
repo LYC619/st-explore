@@ -46,6 +46,19 @@ test('STE bootstrap never installs the upstream root service worker', async () =
   assert.match(sourceText, /await importWithRetry\('\.\/script\.js'\)/);
 });
 
+test('an early module load failure reaches the STE shell instead of leaving it loading forever', async () => {
+  const sourceText = (await readAsset(assets.get('/init.js'))).toString();
+  const notices = [];
+  const host = { startup: (...args) => notices.push(args) };
+  const win = { parent: { __STE_TAVERN_HOSTS__: new Map([['test', host]]) } };
+  const error = new Error('Cannot load local library');
+  const executable = sourceText.replace(/await import\(buildSpecifier\(i\)\)/g, 'await rejectImport()');
+  await new Function('window', 'globalThis', 'location', 'URLSearchParams', 'console', 'setTimeout', 'rejectImport',
+    executable.replace('initializeApplication();', 'return initializeApplication();'))
+    (win, win, { search: '?host=test' }, URLSearchParams, { error() {}, warn() {} }, callback => callback(), () => Promise.reject(error));
+  assert.ok(notices.some(([message, failed]) => failed && message.includes(error.message)), 'module failure is reported to the registered host');
+});
+
 test('supplies real default settings/presets and default media through explicit generated assets', async () => {
   const asset = assets.get('/ste/tavern-defaults.json');
   assert.ok(asset);
