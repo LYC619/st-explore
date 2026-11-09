@@ -11,7 +11,10 @@ const runtimeMocks = vi.hoisted(() => ({
   setActiveVault: vi.fn(),
   setVaultRoot: vi.fn(),
   stat: vi.fn(),
+  hydrateApiProfilesFromSystem: vi.fn(),
 }));
+
+vi.mock('@/lib/vault/sensitive-config', () => ({ hydrateApiProfilesFromSystem: runtimeMocks.hydrateApiProfilesFromSystem }));
 
 vi.mock('@/lib/vault/tauri-fs', () => ({
   createTauriFs: runtimeMocks.createTauriFs,
@@ -135,5 +138,6 @@ describe('首次选择文件库', () => {
     expect(runtimeMocks.stat).toHaveBeenCalledWith('');
     expect(runtimeMocks.createVault).toHaveBeenCalled();
     expect(runtimeMocks.setActiveVault).toHaveBeenCalled();
+    expect(runtimeMocks.hydrateApiProfilesFromSystem.mock.invocationCallOrder[0]).toBeLessThan(runtimeMocks.setActiveVault.mock.invocationCallOrder[0]);
   });
 });

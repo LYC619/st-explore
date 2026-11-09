@@ -283,6 +283,7 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     if (await window.__STE_REFRESH_REGEX__?.() && !host.isGenerating() && !document.querySelector('#chat .edit_textarea')) {
         await (stModule ?? await import('./script.js')).printMessages();
     }
+    await window.__STE_REFRESH_CONNECTIONS__?.();
 };
 window.__STE_TAVERN_SNAPSHOT__ = async () => captureRecoveryFile(stModule ?? await import('./script.js'));
 window.__STE_TAVERN_OPEN_SETTINGS__ = async section => {
@@ -353,8 +354,18 @@ async function installConnectionControls() {
     const { oai_settings } = await import('./scripts/openai.js');
     const panel = document.createElement('div');
     panel.className = 'flex-container flexFlowColumn';
-    panel.innerHTML = '<label>STE 主模型<select id="ste_main_profile"></select></label><label>工具模型<select id="ste_tool_profile"></select></label><button type="button" class="menu_button" id="ste_refresh_models">刷新模型列表</button><button type="button" class="menu_button" id="ste_manage_profiles">管理连接</button><small>连接与 STE 设置页共用。预设仍在原预设面板选择；自定义模型可在管理连接中填写。</small><hr>';
+    panel.innerHTML = '<label>STE 主模型<select id="ste_main_profile"></select></label><label>工具模型<select id="ste_tool_profile"></select></label><small id="ste_connection_status" role="status"></small><button type="button" class="menu_button" id="ste_restore_profiles">重新读取已保存连接</button><button type="button" class="menu_button" id="ste_refresh_models">刷新模型列表</button><button type="button" class="menu_button" id="ste_manage_profiles">管理连接</button><small>连接与 STE 设置页共用。预设仍在原预设面板选择；自定义模型可在管理连接中填写。</small><hr>';
     document.querySelector('#openai_api')?.prepend(panel);
+    const notice = document.createElement('div');
+    notice.id = 'ste_connection_notice';
+    notice.style.cssText = 'padding:6px 10px;flex-shrink:0;min-width:0;max-width:100%;white-space:normal;font-size:13px;background:var(--SmartThemeBlurTintColor);border-radius:8px';
+    notice.innerHTML = '<span role="status" style="display:block;white-space:normal;overflow-wrap:anywhere"></span> <button type="button" class="menu_button" style="min-width:44px;min-height:44px">选择连接</button>';
+    notice.querySelector('button').addEventListener('click', () => {
+        if (!document.querySelector('#rm_api_block')?.classList.contains('openDrawer')) $('#sys-settings-button .drawer-toggle').trigger('click');
+        panel.querySelector('#ste_main_profile').focus();
+    });
+    document.querySelector('#send_form')?.before(notice);
+    for (const control of panel.querySelectorAll('select,button')) control.style.minHeight = '44px';
     const request = async data => {
         const response = await host.request('/ste/configuration', data);
         const config = await response.json();
@@ -365,19 +376,41 @@ async function installConnectionControls() {
         for (const [id, field] of [['ste_main_profile', 'mainProfileId'], ['ste_tool_profile', 'toolProfileId']]) {
             const select = panel.querySelector('#' + id);
             select.replaceChildren(...config.profiles.map(profile => new Option(`${profile.name} · ${profile.model}`, profile.id)));
+            if (!config.profiles.some(profile => profile.id === config[field])) {
+                const missing = new Option('所选连接不可用，请重新选择', config[field] ?? '');
+                missing.disabled = true; select.prepend(missing);
+            }
             if (config[field]) select.value = config[field];
         }
         const chosen = config.profiles.find(p => p.id === config.mainProfileId);
+        const tool = config.profiles.find(p => p.id === config.toolProfileId);
+        const warning = !chosen ? '未找到所选主模型连接。已有聊天可正常浏览，发送前请选择连接。'
+            : !tool ? '未找到所选工具模型连接，使用工具或记忆维护前请重新选择。' : '';
+        notice.hidden = !warning;
+        notice.querySelector('span').textContent = warning;
+        panel.querySelector('#ste_connection_status').textContent = warning;
+        panel.querySelector('#ste_restore_profiles').hidden = !warning;
+        panel.querySelector('#ste_refresh_models').disabled = !chosen;
         oai_settings.chat_completion_source = 'custom';
-        oai_settings.custom_model = chosen.model;
-        oai_settings.custom_url = chosen.apiUrl;
+        oai_settings.custom_model = chosen?.model ?? '';
+        oai_settings.custom_url = chosen?.apiUrl ?? '';
         $('#main_api').val('openai').prop('disabled', true).attr('title', '当前使用 STE 的 Chat Completion 连接');
         $('#chat_completion_source').val('custom').prop('disabled', true);
-        $('#custom_model_id').val(chosen.model).prop('disabled', true);
-        $('#custom_api_url').val(chosen.apiUrl).prop('disabled', true);
+        $('#custom_model_id').val(chosen?.model ?? '').prop('disabled', true);
+        $('#custom_api_url').val(chosen?.apiUrl ?? '').prop('disabled', true);
         $('#api_key_custom').prop('disabled', true);
     };
     render(await request());
+    window.__STE_REFRESH_CONNECTIONS__ = async () => { render(await request()); };
+    panel.querySelector('#ste_restore_profiles').addEventListener('click', async event => {
+        const button = event.currentTarget; button.disabled = true;
+        try {
+            const config = await request({ restore: true }); render(config);
+            if (config.profiles.some(p => p.id === config.mainProfileId)) $('#api_button_openai').trigger('click');
+            else toastr.info('当前配置中仍未找到所选连接，请重新选择或打开“管理连接”。');
+        } catch (error) { toastr.error(error.message); }
+        finally { button.disabled = false; }
+    });
     panel.querySelector('#ste_refresh_models').addEventListener('click', () => { $('#api_button_openai').trigger('click'); });
     panel.querySelector('#ste_main_profile').addEventListener('change', async event => {
         try { render(await request({ mainProfileId: event.target.value })); $('#api_button_openai').trigger('click'); }

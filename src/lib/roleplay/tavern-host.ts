@@ -8,6 +8,7 @@ import type { ChatSession } from '@/types/chat';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 import { loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
+import { restoreMissingApiProfiles } from '@/lib/vault/sensitive-config';
 import { fetchModels } from '@/components/ai-tools/useOpenAI';
 import { openStorySession, type StoryCommit, type RoleplayStorySession } from './story-session';
 import { tokenizeTavern } from './tokenizer';
@@ -96,6 +97,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     })(), createRoleplayAssets({ ...repos, isCurrent }), getRoleplayPreferences(repos.meta),
   ]);
   let preferences = initialPreferences;
+  await restoreMissingApiProfiles([preferences.mainProfileId, preferences.toolProfileId]);
   let libraryTags = await getLibraryTagPreferences();
   const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64' | 'tags' | 'type' | 'rating' | 'roleplayWorldbookDisabled'> & { cardRevision: string }>();
   const cardEditorVersions = new Map<string, string>();
@@ -174,16 +176,19 @@ export async function createTavernHost(options: TavernHostOptions) {
     }
     return live;
   }
-  function mainProfile() {
+  function selectedMainProfile() {
     const { profiles, activeId } = loadApiProfiles();
-    const found = profiles.find(p => p.id === (preferences.mainProfileId ?? activeId));
-    if (!found) throw new Error('主模型连接配置已删除，请重新选择');
+    return profiles.find(p => p.id === (preferences.mainProfileId ?? activeId));
+  }
+  function mainProfile() {
+    const found = selectedMainProfile();
+    if (!found) throw new Error('未找到所选主模型连接，请在 API 抽屉中恢复或重新选择；已有聊天仍可浏览');
     return found;
   }
   function toolProfile() {
     const { profiles } = loadApiProfiles();
     const found = profiles.find(profile => profile.id === (preferences.toolProfileId ?? mainProfile().id));
-    if (!found) throw new Error('工具模型连接已删除，请在 API 抽屉中重新选择');
+    if (!found) throw new Error('未找到所选工具模型连接，请在 API 抽屉中恢复或重新选择');
     return found;
   }
   function runtimeFor(locator: ChatLocator) {
@@ -355,7 +360,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
 
   function settingsSnapshot() {
-    const profile = mainProfile();
+    const profile = selectedMainProfile();
     const base = structuredClone({ ...defaults.settings, ...preferences.tavern });
     if (preferences.installedTavernHelper && selectedFrontend?.scripts.some(script => script.enabled)) {
       const extensions = object(base.extension_settings), helper = object(extensions.tavern_helper), script = object(helper.script);
@@ -373,7 +378,7 @@ export async function createTavernHost(options: TavernHostOptions) {
       ...roleplayLibraryTags([...characters.values()], libraryTags, base),
       main_api: 'openai', active_character: selected.avatar, active_group: null,
       amount_gen: base.amount_gen ?? 600, max_context: base.max_context ?? 32768,
-      power_user: { ...object(defaults.settings.power_user), ...object(base.power_user), auto_load_chat: true, auto_connect: true },
+      power_user: { ...object(defaults.settings.power_user), ...object(base.power_user), auto_load_chat: true, auto_connect: !!profile },
       world_info_settings: { ...worldSettings, world_info: { ...worldInfo,
         globalSelect: savedWorldInfo.globalSelect ?? assets.worldItems().filter(item => item.stGlobal).map(item => assets.worldName(item.id)),
         charLore: savedWorldInfo.charLore ?? [...characters.values()].map(character => ({ name: avatarKey(character.id).slice(0, -4),
@@ -383,7 +388,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         openai_max_context: object(preferences.tavern?.oai_settings).openai_max_context ?? presetSettings?.openai_max_context ?? 32768,
         // Factory Default is not a user selection; use the linked preset on first entry.
         ...(presetName && !object(preferences.tavern?.oai_settings).preset_settings_openai ? { preset_settings_openai: presetName } : {}),
-        chat_completion_source: 'custom', custom_url: profile.apiUrl, custom_model: profile.model, stream_openai: true },
+        chat_completion_source: 'custom', custom_url: profile?.apiUrl ?? '', custom_model: profile?.model ?? '', stream_openai: true },
     };
     const group = (type: string) => defaults.presets?.[type] ?? [];
     const openai = new Map(group('openai_preset').map(preset => [preset.name, JSON.stringify(preset.data)]));
@@ -643,6 +648,10 @@ export async function createTavernHost(options: TavernHostOptions) {
           await runtimeFor(selected).ledger.reset(); return json({});
         }
         if (pathname === '/ste/configuration') {
+          if (body.restore === true) {
+            if (generation) throw new Error('请先停止当前生成，再恢复连接');
+            await restoreMissingApiProfiles([preferences.mainProfileId, preferences.toolProfileId]);
+          }
           if (body.mainProfileId !== undefined || body.toolProfileId !== undefined) {
             if (generation) throw new Error('请先停止当前生成，再切换模型');
             const { profiles } = loadApiProfiles();
@@ -654,8 +663,9 @@ export async function createTavernHost(options: TavernHostOptions) {
               ...(typeof body.toolProfileId === 'string' ? { toolProfileId: body.toolProfileId } : {}),
             });
           }
-          const { profiles } = loadApiProfiles();
-          return json({ mainProfileId: mainProfile().id, toolProfileId: preferences.toolProfileId ?? mainProfile().id,
+          const { profiles, activeId } = loadApiProfiles();
+          const mainProfileId = preferences.mainProfileId ?? activeId;
+          return json({ mainProfileId, toolProfileId: preferences.toolProfileId ?? mainProfileId,
             profiles: profiles.map(p => ({ id: p.id, name: p.name, model: p.model, apiUrl: p.apiUrl })) });
         }
         if (pathname === '/ste/manage-profiles') { options.onManageProfiles?.(); return json({}); }

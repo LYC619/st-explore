@@ -36,6 +36,10 @@ interface VaultApiSlot {
  * 所以这里留一份模块态。
  */
 let activeScope: ApiConfigScope = 'shared';
+let mirrorQueue = Promise.resolve();
+let mirrorFailed = false;
+let writeRevision = 0;
+let hydrationRevision = 0;
 
 async function readScopeMap(): Promise<Record<string, ApiConfigScope>> {
   const raw = await getAppConfig<unknown>(CFG_SCOPE_BY_VAULT);
@@ -80,29 +84,34 @@ export async function getApiConfigScope(): Promise<ApiConfigScope> {
  */
 export async function hydrateApiProfilesFromSystem(): Promise<void> {
   if (!isTauri()) return;
+  const vaultId = getCurrentVaultId(), revision = writeRevision, hydration = ++hydrationRevision;
+  const priorProfiles = localStorage.getItem(PROFILES_KEY), priorActive = localStorage.getItem(ACTIVE_KEY);
   try {
-    const vaultId = getCurrentVaultId();
-    activeScope = vaultId ? (await readScopeMap())[vaultId] ?? 'shared' : 'shared';
+    // A read must not race a pending save/delete or overwrite a newer local edit.
+    await mirrorQueue;
+    if (mirrorFailed) return;
+    const scope = vaultId ? (await readScopeMap())[vaultId] ?? 'shared' : 'shared';
 
     let profiles: string | null;
     let active: string | null;
-    if (activeScope === 'vault' && vaultId) {
+    if (scope === 'vault' && vaultId) {
       const slot = (await readSlotMap())[vaultId] ?? {};
       profiles = slot.profiles ?? null;
       active = slot.active ?? null;
       // 本库槽还没有内容（刚切过来就被清了 webview 数据）：不要把共享配置读进来，
       // 否则「本库单独」在用户眼里等于没生效。宁可显示未配置。
-      if (!profiles) {
-        localStorage.removeItem(PROFILES_KEY);
-        localStorage.removeItem(ACTIVE_KEY);
-        return;
-      }
     } else {
       profiles = await getAppConfig<string>(CFG_PROFILES);
       active = await getAppConfig<string>(CFG_ACTIVE);
     }
+    if (revision !== writeRevision || hydration !== hydrationRevision || vaultId !== getCurrentVaultId()
+      || priorProfiles !== localStorage.getItem(PROFILES_KEY) || priorActive !== localStorage.getItem(ACTIVE_KEY)) return;
+    const changedScope = activeScope !== scope;
+    activeScope = scope;
     if (profiles) localStorage.setItem(PROFILES_KEY, profiles);
+    else if (scope === 'vault' || changedScope) localStorage.removeItem(PROFILES_KEY);
     if (active) localStorage.setItem(ACTIVE_KEY, active);
+    else if (profiles || scope === 'vault' || changedScope) localStorage.removeItem(ACTIVE_KEY);
   } catch (err) {
     console.warn('恢复 API 配置失败（继续用 localStorage 现值）', err);
   } finally {
@@ -110,18 +119,31 @@ export async function hydrateApiProfilesFromSystem(): Promise<void> {
   }
 }
 
+/** Retry the current system slot only when an explicitly selected connection is missing. */
+export async function restoreMissingApiProfiles(ids: (string | undefined)[]): Promise<void> {
+  if (!isTauri() || !ids.some(Boolean)) return;
+  let saved: { id: string }[] = [];
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PROFILES_KEY) ?? '[]');
+    if (Array.isArray(value)) saved = value;
+  } catch { /* The system slot can restore an unreadable webview cache. */ }
+  if (ids.some(id => id && !saved.some(profile => profile?.id === id))) await hydrateApiProfilesFromSystem();
+}
+
 /** 保存时镜像：与 persistProfiles 同数据异步写系统配置；失败不打断保存（localStorage 已落） */
 export function mirrorApiProfilesToSystem(profilesJson: string, activeId: string): void {
   if (!isTauri()) return;
   const vaultId = getCurrentVaultId();
-  if (activeScope === 'vault' && vaultId) {
-    void writeVaultSlot(vaultId, profilesJson, activeId)
-      .catch((err) => console.warn('镜像 API 配置到本库槽失败', err));
-    return;
-  }
-  void setAppConfig(CFG_PROFILES, profilesJson)
-    .then(() => setAppConfig(CFG_ACTIVE, activeId))
-    .catch((err) => console.warn('镜像 API 配置到系统目录失败', err));
+  const scope = activeScope;
+  writeRevision++;
+  mirrorQueue = mirrorQueue.then(async () => {
+    if (scope === 'vault' && vaultId) await writeVaultSlot(vaultId, profilesJson, activeId);
+    else {
+      await setAppConfig(CFG_PROFILES, profilesJson);
+      await setAppConfig(CFG_ACTIVE, activeId);
+    }
+    mirrorFailed = false;
+  }).catch(err => { mirrorFailed = true; console.warn('镜像 API 配置到系统目录失败', err); });
 }
 
 /** 读-改-写整个映射：config_set 的粒度是顶层键，没有子键写入。 */
@@ -144,10 +166,12 @@ export async function setApiConfigScope(scope: ApiConfigScope): Promise<void> {
   const vaultId = getCurrentVaultId();
   if (!vaultId) throw new Error('尚未选择文件库，无法按库保存 API 配置');
 
+  await mirrorQueue;
+  if (mirrorFailed) throw new Error('连接配置尚未保存成功，请重新保存后再切换作用域');
+
   const map = await readScopeMap();
   map[vaultId] = scope;
   await setAppConfig(CFG_SCOPE_BY_VAULT, map);
-  activeScope = scope;
 
   if (scope === 'vault') {
     const slots = await readSlotMap();

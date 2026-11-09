@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, getArchiveStory, getCharacter, getRoleplayPreferences, saveArchiveStory, saveCharacter, updateArchiveStory, updateCharacter } from '@/lib/archive-db';
+import { buildBranchFromSession, buildCharacterFromCard, buildStoryFromSession, getArchiveStory, getCharacter, getRoleplayPreferences, saveArchiveStory, saveCharacter, saveRoleplayPreferences, updateArchiveStory, updateCharacter } from '@/lib/archive-db';
 import { createTavernHost } from '@/lib/roleplay/tavern-host';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
@@ -43,6 +43,33 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('loads existing chat with a missing connection and requires an explicit selection before generation', async () => {
+    const f = await fixture(); f.host.close();
+    await saveRoleplayPreferences({ mainProfileId: 'missing', toolProfileId: 'missing-tool' });
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    try {
+      const bootstrap = await host.request('/api/bootstrap');
+      expect(bootstrap.ok).toBe(true);
+      const data = await bootstrap.json();
+      expect(JSON.parse(data.settings.settings)).toMatchObject({ power_user: { auto_connect: false }, oai_settings: { custom_url: '', custom_model: '' } });
+      const card = data.characters[0];
+      expect(await (await host.request('/api/chats/get', { avatar_url: card.avatar, file_name: card.chat })).json()).toEqual(expect.arrayContaining([expect.objectContaining({ mes: '请进' })]));
+      expect(await (await host.request('/ste/configuration')).json()).toMatchObject({ mainProfileId: 'missing', toolProfileId: 'missing-tool', profiles: [expect.objectContaining({ id: 'profile' })] });
+      const blocked = await host.request('/api/backends/chat-completions/generate', { messages: [], stream: false });
+      expect(blocked.ok).toBe(false);
+      expect((await blocked.json()).error.message).toContain('未找到所选主模型连接');
+      expect(fetcher).not.toHaveBeenCalled();
+      expect((await getRoleplayPreferences()).mainProfileId).toBe('missing');
+      const chosen = await host.request('/ste/configuration', { mainProfileId: 'profile', toolProfileId: 'profile' });
+      expect(chosen.ok).toBe(true);
+      expect((await getRoleplayPreferences()).mainProfileId).toBe('profile');
+      fetcher.mockResolvedValue(Response.json({ choices: [{ message: { content: '恢复后的回复' }, finish_reason: 'stop' }] }));
+      const generated = await host.request('/api/backends/chat-completions/generate', { messages: [], stream: false });
+      expect(generated.ok).toBe(true); await generated.text();
+      expect(fetcher).toHaveBeenCalledOnce();
+    } finally { host.close(); }
+  });
   it('observes the effective request, response and committed candidate without retaining connection secrets', async () => {
     const f = await fixture();
     vi.stubGlobal('fetch', vi.fn(async () => Response.json({ choices: [{ message: { content: '模型原文' }, finish_reason: 'stop' }], usage: { total_tokens: 12 } })));

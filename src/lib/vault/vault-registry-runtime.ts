@@ -42,11 +42,11 @@ export async function registerAndActivateVault(path: string, name?: string): Pro
   const registry = activateVaultProfile(upserted.registry, upserted.profile.id);
   await setVaultRoot(upserted.profile.path);
   await persistVaultRegistry(registry);
-  setActiveVault(createVault(createTauriFs(upserted.profile.path)));
   // 这条路径不重载页面（引导页选完库直接放行），所以要自己接上按库作用域：
   // 先认库，再按本库的作用域恢复 API 配置。
   setCurrentVaultId(upserted.profile.id);
   await hydrateApiProfilesFromSystem();
+  setActiveVault(createVault(createTauriFs(upserted.profile.path)));
   emitChanged(upserted.profile);
   return upserted.profile;
 }

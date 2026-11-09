@@ -78,7 +78,14 @@ export function loadApiProfiles(): { profiles: ApiProfile[]; activeId: string } 
     model: localStorage.getItem(LEGACY_MODEL) || DEFAULT_MODEL,
     modelList,
   };
-  persistProfiles([first], first.id);
+  // A cache miss is not a user edit. Never replace saved native connections
+  // with a blank default merely because WebView storage was unavailable.
+  localStorage.setItem(PROFILES_KEY, JSON.stringify([first]));
+  localStorage.setItem(ACTIVE_KEY, first.id);
+  if ([LEGACY_KEY, LEGACY_URL, LEGACY_MODEL].some(key => localStorage.getItem(key))) {
+    mirrorApiProfilesToSystem(JSON.stringify([first]), first.id);
+  }
+  notifyApiProfilesChanged();
   [LEGACY_KEY, LEGACY_URL, LEGACY_MODEL, LEGACY_MODEL_LIST].forEach((k) => localStorage.removeItem(k));
   return { profiles: [first], activeId: first.id };
 }

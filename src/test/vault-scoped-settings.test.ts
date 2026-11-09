@@ -25,7 +25,10 @@ import {
   hydrateApiProfilesFromSystem,
   mirrorApiProfilesToSystem,
   setApiConfigScope,
+  restoreMissingApiProfiles,
 } from '@/lib/vault/sensitive-config';
+import { getAppConfig, setAppConfig } from '@/lib/vault/tauri-fs';
+import { loadApiProfiles } from '@/components/ai-tools/api-profiles';
 
 const PROFILES_KEY = 'st-beautifier-api-profiles';
 const ACTIVE_KEY = 'st-beautifier-api-active-profile';
@@ -105,6 +108,74 @@ describe('当前故事指针按库隔离', () => {
 });
 
 describe('API 配置的共享/独立作用域', () => {
+  it('missing-connection recovery respects private scope instead of importing shared credentials', async () => {
+    setCurrentVaultId('private');
+    cfg.store.set('apiScopeByVault', { private: 'vault' });
+    cfg.store.set('apiProfiles', profilesJson('公共'));
+    localStorage.setItem(PROFILES_KEY, profilesJson('过期公共缓存'));
+    await restoreMissingApiProfiles(['missing']);
+    expect(localStorage.getItem(PROFILES_KEY)).toBeNull();
+  });
+
+  it('switching from a private slot to an empty shared slot clears private credentials', async () => {
+    setCurrentVaultId('private');
+    cfg.store.set('apiScopeByVault', { private: 'vault' });
+    cfg.store.set('apiProfilesByVault', { private: { profiles: profilesJson('私有'), active: 'p1' } });
+    await hydrateApiProfilesFromSystem();
+    await setApiConfigScope('shared');
+    expect(localStorage.getItem(PROFILES_KEY)).toBeNull();
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull();
+  });
+  it('never mirrors a blank generated default over saved connections on a webview cache miss', async () => {
+    cfg.store.set('apiProfiles', profilesJson('已保存'));
+    vi.mocked(setAppConfig).mockClear();
+    expect(loadApiProfiles().profiles[0].name).toBe('默认');
+    expect(setAppConfig).not.toHaveBeenCalled();
+    await restoreMissingApiProfiles(['p1']);
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('已保存'));
+  });
+  it('recovers an exact missing connection from the current saved scope without writing the system file', async () => {
+    cfg.store.set('apiProfiles', profilesJson('已保存'));
+    cfg.store.set('apiActiveProfile', 'p1');
+    localStorage.setItem(PROFILES_KEY, '[]');
+    vi.mocked(setAppConfig).mockClear();
+    await restoreMissingApiProfiles(['p1']);
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('已保存'));
+    expect(setAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('waits for a pending deletion before recovery so a removed connection is not resurrected', async () => {
+    cfg.store.set('apiProfiles', profilesJson('旧连接'));
+    await hydrateApiProfilesFromSystem();
+    let finish!: () => void;
+    vi.mocked(setAppConfig).mockImplementationOnce(async (key, value) => {
+      await new Promise<void>(resolve => { finish = resolve; }); cfg.store.set(key, value);
+    });
+    localStorage.setItem(PROFILES_KEY, '[]');
+    mirrorApiProfilesToSystem('[]', '');
+    const recovery = restoreMissingApiProfiles(['p1']);
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    await Promise.resolve();
+    expect(localStorage.getItem(PROFILES_KEY)).toBe('[]');
+    finish(); await recovery;
+    expect(localStorage.getItem(PROFILES_KEY)).toBe('[]');
+    expect(cfg.store.get('apiProfiles')).toBe('[]');
+  });
+
+  it('does not overwrite a connection edited while the saved configuration is being read', async () => {
+    cfg.store.set('apiProfiles', profilesJson('旧连接'));
+    let finish!: () => void;
+    vi.mocked(getAppConfig).mockImplementationOnce(async () => {
+      await new Promise<void>(resolve => { finish = resolve; }); return null;
+    });
+    const recovery = hydrateApiProfilesFromSystem();
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'));
+    localStorage.setItem(PROFILES_KEY, profilesJson('最新编辑'));
+    mirrorApiProfilesToSystem(profilesJson('最新编辑'), 'p1');
+    finish(); await recovery;
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('最新编辑'));
+    await hydrateApiProfilesFromSystem();
+  });
   it('默认共享：读写系统配置的公共槽，与改动前行为一致', async () => {
     setCurrentVaultId('vault-aaa');
     cfg.store.set('apiProfiles', profilesJson('公共'));
