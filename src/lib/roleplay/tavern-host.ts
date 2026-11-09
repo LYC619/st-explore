@@ -7,8 +7,8 @@ import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
-import { loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
-import { restoreMissingApiProfiles } from '@/lib/vault/sensitive-config';
+import { isApiProfileConfigured, loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
+import { getApiConfigSyncState, restoreMissingApiProfiles } from '@/lib/vault/sensitive-config';
 import { fetchModels } from '@/components/ai-tools/useOpenAI';
 import { openStorySession, type StoryCommit, type RoleplayStorySession } from './story-session';
 import { tokenizeTavern } from './tokenizer';
@@ -178,7 +178,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
   function selectedMainProfile() {
     const { profiles, activeId } = loadApiProfiles();
-    return profiles.find(p => p.id === (preferences.mainProfileId ?? activeId));
+    return profiles.find(p => p.id === (preferences.mainProfileId ?? activeId) && isApiProfileConfigured(p));
   }
   function mainProfile() {
     const found = selectedMainProfile();
@@ -187,7 +187,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
   function toolProfile() {
     const { profiles } = loadApiProfiles();
-    const found = profiles.find(profile => profile.id === (preferences.toolProfileId ?? mainProfile().id));
+    const found = profiles.find(profile => profile.id === (preferences.toolProfileId ?? mainProfile().id) && isApiProfileConfigured(profile));
     if (!found) throw new Error('未找到所选工具模型连接，请在 API 抽屉中恢复或重新选择');
     return found;
   }
@@ -650,13 +650,14 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/ste/configuration') {
           if (body.restore === true) {
             if (generation) throw new Error('请先停止当前生成，再恢复连接');
-            await restoreMissingApiProfiles([preferences.mainProfileId, preferences.toolProfileId]);
+            const recovery = await restoreMissingApiProfiles([preferences.mainProfileId, preferences.toolProfileId], true);
+            if (recovery.status !== 'ready') throw new Error(recovery.message);
           }
           if (body.mainProfileId !== undefined || body.toolProfileId !== undefined) {
             if (generation) throw new Error('请先停止当前生成，再切换模型');
             const { profiles } = loadApiProfiles();
             for (const key of ['mainProfileId', 'toolProfileId'] as const) {
-              if (body[key] !== undefined && !profiles.some(p => p.id === body[key])) throw new Error('连接配置不存在');
+              if (body[key] !== undefined && !profiles.some(p => p.id === body[key] && isApiProfileConfigured(p))) throw new Error('连接配置不存在或未配置，请先在管理连接中保存完整配置');
             }
             await persistPreferences({
               ...(typeof body.mainProfileId === 'string' ? { mainProfileId: body.mainProfileId } : {}),
@@ -666,7 +667,8 @@ export async function createTavernHost(options: TavernHostOptions) {
           const { profiles, activeId } = loadApiProfiles();
           const mainProfileId = preferences.mainProfileId ?? activeId;
           return json({ mainProfileId, toolProfileId: preferences.toolProfileId ?? mainProfileId,
-            profiles: profiles.map(p => ({ id: p.id, name: p.name, model: p.model, apiUrl: p.apiUrl })) });
+            syncMessage: getApiConfigSyncState().message,
+            profiles: profiles.map(p => ({ id: p.id, name: p.name, model: p.model, apiUrl: p.apiUrl, configured: isApiProfileConfigured(p) })) });
         }
         if (pathname === '/ste/manage-profiles') { options.onManageProfiles?.(); return json({}); }
         if (pathname === '/ste/manage') {

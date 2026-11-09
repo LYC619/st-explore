@@ -33,12 +33,12 @@ describe('api-profiles 持久化层', () => {
     expect(setProfileModelFavorite('a', ' custom-x ', true)).toBe(true);
     expect(setProfileModelFavorite('a', 'custom-x', true)).toBe(true);
     storeProfileModelsIfCurrent(profile, [' a3 ', 'a3', '']);
-    const saved = getActiveProfile();
+    const saved = getActiveProfile()!;
     expect(saved.favoriteModels).toEqual(['custom-x']);
     expect(profileModels(saved)).toEqual(['a1', 'custom-x', 'a3']);
     expect(saved.model).toBe('a1');
     setProfileModelFavorite('a', 'custom-x', false);
-    expect(getActiveProfile().favoriteModels).toEqual([]);
+    expect(getActiveProfile()!.favoriteModels).toEqual([]);
   });
 
   it('never writes a late model list into the new active connection or a changed address', () => {
@@ -72,19 +72,21 @@ describe('api-profiles 持久化层', () => {
     expect(localStorage.getItem('st-beautifier-model-list')).toBeNull();
   });
 
-  it('无任何配置时迁移出一个空的默认提供商（缺省地址/模型）', () => {
-    const { profiles } = loadApiProfiles();
-    expect(profiles).toHaveLength(1);
-    expect(profiles[0].apiKey).toBe('');
-    expect(profiles[0].apiUrl).toBe(DEFAULT_API_URL);
-    expect(profiles[0].model).toBe(DEFAULT_MODEL);
+  it('空缓存反复读取保持空状态，不制造可选连接或修改存储', () => {
+    expect(loadApiProfiles()).toEqual({ profiles: [], activeId: '' });
+    expect(loadApiProfiles()).toEqual({ profiles: [], activeId: '' });
+    expect(getActiveProfile()).toBeUndefined();
+    expect(localStorage.getItem(PROFILES_KEY)).toBeNull();
+    expect(localStorage.getItem(ACTIVE_KEY)).toBeNull();
+    expect(activateApiModel({ profileId: '', model: DEFAULT_MODEL })).toBe(false);
+    expect(setProfileModelFavorite('', DEFAULT_MODEL, true)).toBe(false);
   });
 
-  it('坏 JSON 当作未初始化，走迁移而非抛错', () => {
+  it('坏 JSON 显示空状态并保留原数据供恢复，不写占位连接', () => {
     localStorage.setItem(PROFILES_KEY, '{不是合法 JSON');
     const { profiles } = loadApiProfiles();
-    expect(profiles).toHaveLength(1);
-    expect(profiles[0].name).toBe('默认');
+    expect(profiles).toHaveLength(0);
+    expect(localStorage.getItem(PROFILES_KEY)).toBe('{不是合法 JSON');
   });
 
   it('activeId 指向不存在的提供商时回退到第一个', () => {
@@ -97,7 +99,7 @@ describe('api-profiles 持久化层', () => {
 
     const { activeId } = loadApiProfiles();
     expect(activeId).toBe('p1');
-    expect(getActiveProfile().id).toBe('p1');
+    expect(getActiveProfile()!.id).toBe('p1');
   });
 
   it('saveAPIConfig / loadAPIConfig 只写读活跃提供商', () => {

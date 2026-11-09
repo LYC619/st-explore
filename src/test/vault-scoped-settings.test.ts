@@ -26,9 +26,10 @@ import {
   mirrorApiProfilesToSystem,
   setApiConfigScope,
   restoreMissingApiProfiles,
+  retryApiProfileSave,
 } from '@/lib/vault/sensitive-config';
 import { getAppConfig, setAppConfig } from '@/lib/vault/tauri-fs';
-import { loadApiProfiles } from '@/components/ai-tools/api-profiles';
+import { loadApiProfiles, activateApiModel, setProfileModelFavorite, persistProfiles } from '@/components/ai-tools/api-profiles';
 
 const PROFILES_KEY = 'st-beautifier-api-profiles';
 const ACTIVE_KEY = 'st-beautifier-api-active-profile';
@@ -108,6 +109,39 @@ describe('当前故事指针按库隔离', () => {
 });
 
 describe('API 配置的共享/独立作用域', () => {
+  it('读取失败返回明确状态，阻止残留缓存覆盖磁盘；重试读取成功后才允许保存', async () => {
+    cfg.store.set('apiProfiles', profilesJson('磁盘真实连接'));
+    localStorage.setItem(PROFILES_KEY, profilesJson('残留缓存'));
+    vi.mocked(getAppConfig).mockRejectedValueOnce(new Error('fixture read failure'));
+    expect(await hydrateApiProfilesFromSystem()).toMatchObject({ status: 'read-failed' });
+    expect(persistProfiles(JSON.parse(profilesJson('不该写入')), 'p1')).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(cfg.store.get('apiProfiles')).toBe(profilesJson('磁盘真实连接'));
+    expect(await hydrateApiProfilesFromSystem()).toMatchObject({ status: 'ready' });
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('磁盘真实连接'));
+  });
+
+  it('保存失败时恢复明确报告待保存状态，保留本地编辑而非静默退出', async () => {
+    cfg.store.set('apiProfiles', profilesJson('旧连接'));
+    await hydrateApiProfilesFromSystem();
+    vi.mocked(setAppConfig).mockRejectedValueOnce(new Error('fixture write failure'));
+    persistProfiles(JSON.parse(profilesJson('最新编辑')), 'p1');
+    expect(await hydrateApiProfilesFromSystem()).toMatchObject({ status: 'save-failed' });
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('最新编辑'));
+    expect(await retryApiProfileSave()).toMatchObject({ status: 'ready' });
+    expect(cfg.store.get('apiProfiles')).toBe(profilesJson('最新编辑'));
+    await hydrateApiProfilesFromSystem();
+  });
+  it('启动后缓存被替换成旧占位连接，收藏和切换也不能回写覆盖完整系统配置', async () => {
+    cfg.store.set('apiProfiles', profilesJson('已保存'));
+    await hydrateApiProfilesFromSystem();
+    localStorage.setItem(PROFILES_KEY, JSON.stringify([{ id: 'stale', name: '默认', apiKey: '', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' }]));
+    expect(activateApiModel({ profileId: 'stale', model: 'changed' })).toBe(false);
+    expect(setProfileModelFavorite('stale', 'favorite', true)).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(cfg.store.get('apiProfiles')).toBe(profilesJson('已保存'));
+    await hydrateApiProfilesFromSystem();
+  });
   it('missing-connection recovery respects private scope instead of importing shared credentials', async () => {
     setCurrentVaultId('private');
     cfg.store.set('apiScopeByVault', { private: 'vault' });
@@ -129,10 +163,21 @@ describe('API 配置的共享/独立作用域', () => {
   it('never mirrors a blank generated default over saved connections on a webview cache miss', async () => {
     cfg.store.set('apiProfiles', profilesJson('已保存'));
     vi.mocked(setAppConfig).mockClear();
-    expect(loadApiProfiles().profiles[0].name).toBe('默认');
+    const { activeId } = loadApiProfiles();
+    activateApiModel({ profileId: activeId, model: 'another-model' });
+    setProfileModelFavorite(activeId, 'favorite', true);
+    // Flush the asynchronous mirror queue: checking only its immediate calls missed the overwrite.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(cfg.store.get('apiProfiles')).toBe(profilesJson('已保存'));
     expect(setAppConfig).not.toHaveBeenCalled();
     await restoreMissingApiProfiles(['p1']);
     expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('已保存'));
+  });
+  it('空密钥占位 ID 虽然存在，也会尝试读取真正保存的连接', async () => {
+    cfg.store.set('apiProfiles', profilesJson('真实默认'));
+    localStorage.setItem(PROFILES_KEY, JSON.stringify([{ id: 'placeholder', name: '默认', apiKey: '', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' }]));
+    await restoreMissingApiProfiles(['placeholder']);
+    expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('真实默认'));
   });
   it('recovers an exact missing connection from the current saved scope without writing the system file', async () => {
     cfg.store.set('apiProfiles', profilesJson('已保存'));
@@ -192,6 +237,7 @@ describe('API 配置的共享/独立作用域', () => {
     localStorage.setItem(PROFILES_KEY, profilesJson('公共'));
     localStorage.setItem(ACTIVE_KEY, 'p1');
 
+    await hydrateApiProfilesFromSystem();
     await setApiConfigScope('vault');
 
     await expect(getApiConfigScope()).resolves.toBe('vault');
@@ -204,6 +250,7 @@ describe('API 配置的共享/独立作用域', () => {
   it('独立作用域下保存只写本库槽，不污染公共槽和别的库', async () => {
     setCurrentVaultId('vault-aaa');
     cfg.store.set('apiProfiles', profilesJson('公共'));
+    await hydrateApiProfilesFromSystem();
     await setApiConfigScope('vault');
 
     mirrorApiProfilesToSystem(profilesJson('A 专用'), 'p1');
@@ -232,8 +279,9 @@ describe('API 配置的共享/独立作用域', () => {
   it('切回共享后本库那份仍留着，能再切回去', async () => {
     setCurrentVaultId('vault-aaa');
     cfg.store.set('apiProfiles', profilesJson('公共'));
-    localStorage.setItem(PROFILES_KEY, profilesJson('A 专用'));
+    await hydrateApiProfilesFromSystem();
     await setApiConfigScope('vault');
+    persistProfiles(JSON.parse(profilesJson('A 专用')), 'p1');
 
     await setApiConfigScope('shared');
     expect(localStorage.getItem(PROFILES_KEY)).toBe(profilesJson('公共'));

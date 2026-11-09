@@ -10,6 +10,7 @@ import { ThemeSync } from "@/components/ThemeSync";
 import { AppLayout } from "@/components/AppLayout";
 import { THEME_KEYS, DEFAULT_THEME } from "@/lib/theme";
 import { RoleplayWorkspace } from '@/components/roleplay/RoleplayWorkspace';
+import { ApiConfigSyncObserver } from '@/components/ai-tools/ApiConfigSyncObserver';
 
 // 路由级代码分割：每个页面单独打包，首屏只加载首页所需 chunk。
 // 页面按访问加载；避免启动时解析所有编辑器和大型依赖。
@@ -98,6 +99,7 @@ const App = () => {
       */}
       <Toaster />
       <Sonner />
+      <ApiConfigSyncObserver />
       <VaultGate>
         <MigrationNotice>
         <RouterProvider router={router} />

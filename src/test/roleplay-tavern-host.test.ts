@@ -43,6 +43,21 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('a stored blank default remains visible for repair but cannot be selected or used to generate', async () => {
+    const f = await fixture(); f.host.close();
+    persistProfiles([{ id: 'placeholder', name: '默认', apiKey: '', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' }], 'placeholder');
+    await saveRoleplayPreferences({ mainProfileId: 'placeholder' });
+    const host = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+    const fetcher = vi.fn(); vi.stubGlobal('fetch', fetcher);
+    try {
+      expect((await host.request('/api/bootstrap')).ok).toBe(true);
+      expect(await (await host.request('/ste/configuration')).json()).toMatchObject({ profiles: [{ id: 'placeholder', configured: false }] });
+      expect((await host.request('/ste/configuration', { mainProfileId: 'placeholder' })).ok).toBe(false);
+      expect((await host.request('/api/backends/chat-completions/generate', { messages: [], stream: false })).ok).toBe(false);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect((await getRoleplayPreferences()).mainProfileId).toBe('placeholder');
+    } finally { host.close(); }
+  });
   it('loads existing chat with a missing connection and requires an explicit selection before generation', async () => {
     const f = await fixture(); f.host.close();
     await saveRoleplayPreferences({ mainProfileId: 'missing', toolProfileId: 'missing-tool' });

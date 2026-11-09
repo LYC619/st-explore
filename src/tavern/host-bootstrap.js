@@ -375,17 +375,21 @@ async function installConnectionControls() {
     const render = config => {
         for (const [id, field] of [['ste_main_profile', 'mainProfileId'], ['ste_tool_profile', 'toolProfileId']]) {
             const select = panel.querySelector('#' + id);
-            select.replaceChildren(...config.profiles.map(profile => new Option(`${profile.name} · ${profile.model}`, profile.id)));
+            select.replaceChildren(...config.profiles.map(profile => {
+                const option = new Option(`${profile.name} · ${profile.model}${profile.configured === false ? '（未配置密钥）' : ''}`, profile.id);
+                option.disabled = profile.configured === false;
+                return option;
+            }));
             if (!config.profiles.some(profile => profile.id === config[field])) {
                 const missing = new Option('所选连接不可用，请重新选择', config[field] ?? '');
                 missing.disabled = true; select.prepend(missing);
             }
             if (config[field]) select.value = config[field];
         }
-        const chosen = config.profiles.find(p => p.id === config.mainProfileId);
-        const tool = config.profiles.find(p => p.id === config.toolProfileId);
-        const warning = !chosen ? '未找到所选主模型连接。已有聊天可正常浏览，发送前请选择连接。'
-            : !tool ? '未找到所选工具模型连接，使用工具或记忆维护前请重新选择。' : '';
+        const chosen = config.profiles.find(p => p.id === config.mainProfileId && p.configured !== false);
+        const tool = config.profiles.find(p => p.id === config.toolProfileId && p.configured !== false);
+        const warning = config.syncMessage || (!chosen ? '所选主模型连接缺失或未配置。已有聊天可正常浏览，发送前请选择完整连接。'
+            : !tool ? '所选工具模型连接缺失或未配置，使用工具或记忆维护前请重新选择。' : '');
         notice.hidden = !warning;
         notice.querySelector('span').textContent = warning;
         panel.querySelector('#ste_connection_status').textContent = warning;
@@ -406,7 +410,7 @@ async function installConnectionControls() {
         const button = event.currentTarget; button.disabled = true;
         try {
             const config = await request({ restore: true }); render(config);
-            if (config.profiles.some(p => p.id === config.mainProfileId)) $('#api_button_openai').trigger('click');
+            if (config.profiles.some(p => p.id === config.mainProfileId && p.configured !== false)) $('#api_button_openai').trigger('click');
             else toastr.info('当前配置中仍未找到所选连接，请重新选择或打开“管理连接”。');
         } catch (error) { toastr.error(error.message); }
         finally { button.disabled = false; }

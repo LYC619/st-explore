@@ -40,6 +40,31 @@ let mirrorQueue = Promise.resolve();
 let mirrorFailed = false;
 let writeRevision = 0;
 let hydrationRevision = 0;
+let hydratedVaultId: string | null | undefined;
+let acceptedCache: string | null | undefined;
+let retrySave: (() => Promise<void>) | undefined;
+export const API_CONFIG_SYNC_EVENT = 'ste-api-config-sync';
+export interface ApiConfigSyncState {
+  status: 'uninitialized' | 'ready' | 'read-failed' | 'save-failed' | 'changed';
+  message: string;
+}
+let syncState: ApiConfigSyncState = { status: 'uninitialized', message: '正在读取本机保存的连接，完成前暂不能保存。' };
+export const getApiConfigSyncState = (): ApiConfigSyncState => isTauri() ? syncState : { status: 'ready', message: '' };
+function reportSync(status: ApiConfigSyncState['status'], message = ''): ApiConfigSyncState {
+  if (syncState.status === status && syncState.message === message) return syncState;
+  syncState = { status, message };
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(API_CONFIG_SYNC_EVENT));
+  return syncState;
+}
+export function canPersistApiProfiles(): boolean {
+  if (!isTauri()) return true;
+  if (hydratedVaultId !== getCurrentVaultId() || syncState.status === 'read-failed' || syncState.status === 'uninitialized') return false;
+  if (acceptedCache !== localStorage.getItem(PROFILES_KEY)) {
+    reportSync('changed', '连接缓存已变化，尚未写回本机。请重新读取已保存连接后再修改。');
+    return false;
+  }
+  return true;
+}
 
 async function readScopeMap(): Promise<Record<string, ApiConfigScope>> {
   const raw = await getAppConfig<unknown>(CFG_SCOPE_BY_VAULT);
@@ -82,14 +107,14 @@ export async function getApiConfigScope(): Promise<ApiConfigScope> {
  * 启动时恢复：把当前作用域对应的槽写回 localStorage（以系统配置为准）。
  * bootVault 必须先 setCurrentVaultId 再调用它，否则拿不到「本库单独配置」。
  */
-export async function hydrateApiProfilesFromSystem(): Promise<void> {
-  if (!isTauri()) return;
+export async function hydrateApiProfilesFromSystem(): Promise<ApiConfigSyncState> {
+  if (!isTauri()) return { status: 'ready', message: '' };
   const vaultId = getCurrentVaultId(), revision = writeRevision, hydration = ++hydrationRevision;
   const priorProfiles = localStorage.getItem(PROFILES_KEY), priorActive = localStorage.getItem(ACTIVE_KEY);
   try {
     // A read must not race a pending save/delete or overwrite a newer local edit.
     await mirrorQueue;
-    if (mirrorFailed) return;
+    if (mirrorFailed) return reportSync('save-failed', '连接更改尚未保存到本机，已保留当前编辑。请先重试保存，再重新读取。');
     const scope = vaultId ? (await readScopeMap())[vaultId] ?? 'shared' : 'shared';
 
     let profiles: string | null;
@@ -104,46 +129,82 @@ export async function hydrateApiProfilesFromSystem(): Promise<void> {
       profiles = await getAppConfig<string>(CFG_PROFILES);
       active = await getAppConfig<string>(CFG_ACTIVE);
     }
-    if (revision !== writeRevision || hydration !== hydrationRevision || vaultId !== getCurrentVaultId()
-      || priorProfiles !== localStorage.getItem(PROFILES_KEY) || priorActive !== localStorage.getItem(ACTIVE_KEY)) return;
+    if (hydration !== hydrationRevision || vaultId !== getCurrentVaultId()) {
+      return { status: 'changed', message: '读取期间连接或文件库已变化，本次未替换当前配置。请再次读取。' };
+    }
+    if (revision !== writeRevision || priorProfiles !== localStorage.getItem(PROFILES_KEY) || priorActive !== localStorage.getItem(ACTIVE_KEY)) {
+      return reportSync('changed', '读取期间连接已变化，本次未替换当前配置。请再次读取。');
+    }
+    if (profiles) {
+      const parsed: unknown = JSON.parse(profiles);
+      if (!Array.isArray(parsed) || !parsed.every(p => p && typeof p.id === 'string' && typeof p.name === 'string'
+        && typeof p.apiKey === 'string' && typeof p.apiUrl === 'string' && typeof p.model === 'string')) throw new Error('Invalid profile data');
+    }
     const changedScope = activeScope !== scope;
     activeScope = scope;
     if (profiles) localStorage.setItem(PROFILES_KEY, profiles);
     else if (scope === 'vault' || changedScope) localStorage.removeItem(PROFILES_KEY);
     if (active) localStorage.setItem(ACTIVE_KEY, active);
     else if (profiles || scope === 'vault' || changedScope) localStorage.removeItem(ACTIVE_KEY);
+    hydratedVaultId = vaultId;
+    acceptedCache = localStorage.getItem(PROFILES_KEY);
+    notifyApiProfilesChanged(changedScope ? 'scope' : 'profiles');
+    return reportSync('ready');
   } catch (err) {
-    console.warn('恢复 API 配置失败（继续用 localStorage 现值）', err);
-  } finally {
-    notifyApiProfilesChanged('scope');
+    // Do not publish raw IPC errors: malformed configuration may contain credentials.
+    void err;
+    if (revision !== writeRevision || hydration !== hydrationRevision || vaultId !== getCurrentVaultId()) return { status: 'changed', message: '当前连接或文件库已变化，请重新读取。' };
+    hydratedVaultId = undefined;
+    return reportSync('read-failed', '未能读取本机保存的连接，已保留缓存并暂停写回。请重试读取；仍失败时检查配置文件或目录权限。');
   }
 }
 
 /** Retry the current system slot only when an explicitly selected connection is missing. */
-export async function restoreMissingApiProfiles(ids: (string | undefined)[]): Promise<void> {
-  if (!isTauri() || !ids.some(Boolean)) return;
-  let saved: { id: string }[] = [];
+export async function restoreMissingApiProfiles(ids: (string | undefined)[], force = false): Promise<ApiConfigSyncState> {
+  if (!isTauri()) return { status: 'ready', message: '' };
+  let saved: { id: string; apiKey?: string }[] = [];
   try {
     const value: unknown = JSON.parse(localStorage.getItem(PROFILES_KEY) ?? '[]');
     if (Array.isArray(value)) saved = value;
   } catch { /* The system slot can restore an unreadable webview cache. */ }
-  if (ids.some(id => id && !saved.some(profile => profile?.id === id))) await hydrateApiProfilesFromSystem();
+  if (force || hydratedVaultId !== getCurrentVaultId() || syncState.status === 'read-failed' || !saved.length
+    || ids.some(id => id && !saved.some(profile => profile?.id === id && profile.apiKey))) return hydrateApiProfilesFromSystem();
+  return getApiConfigSyncState();
 }
 
 /** 保存时镜像：与 persistProfiles 同数据异步写系统配置；失败不打断保存（localStorage 已落） */
 export function mirrorApiProfilesToSystem(profilesJson: string, activeId: string): void {
   if (!isTauri()) return;
+  acceptedCache = profilesJson;
   const vaultId = getCurrentVaultId();
   const scope = activeScope;
   writeRevision++;
-  mirrorQueue = mirrorQueue.then(async () => {
+  const write = async () => {
     if (scope === 'vault' && vaultId) await writeVaultSlot(vaultId, profilesJson, activeId);
     else {
       await setAppConfig(CFG_PROFILES, profilesJson);
       await setAppConfig(CFG_ACTIVE, activeId);
     }
-    mirrorFailed = false;
-  }).catch(err => { mirrorFailed = true; console.warn('镜像 API 配置到系统目录失败', err); });
+  };
+  queueSave(write);
+}
+
+function queueSave(write: () => Promise<void>): void {
+  mirrorQueue = mirrorQueue.then(write).then(() => {
+    mirrorFailed = false; retrySave = undefined;
+    reportSync('ready');
+  }).catch(() => {
+    retrySave = write;
+    mirrorFailed = true;
+    reportSync('save-failed', '连接更改仅保存在当前窗口，写入本机配置失败。请重试保存，成功前不要关闭窗口。');
+  });
+}
+
+/** Retry the exact failed slot, never reassign it to a newly selected vault. */
+export async function retryApiProfileSave(): Promise<ApiConfigSyncState> {
+  await mirrorQueue;
+  if (retrySave) { writeRevision++; queueSave(retrySave); await mirrorQueue; }
+  return getApiConfigSyncState();
 }
 
 /** 读-改-写整个映射：config_set 的粒度是顶层键，没有子键写入。 */
@@ -168,7 +229,11 @@ export async function setApiConfigScope(scope: ApiConfigScope): Promise<void> {
 
   await mirrorQueue;
   if (mirrorFailed) throw new Error('连接配置尚未保存成功，请重新保存后再切换作用域');
+  if (!canPersistApiProfiles()) throw new Error(getApiConfigSyncState().message || '请先重新读取已保存连接，再切换作用域');
 
+  // The target slot changes below. Block old-scope edits until the new slot has been read.
+  hydratedVaultId = undefined;
+  reportSync('uninitialized', '正在切换连接作用域，完成前暂不能保存。');
   const map = await readScopeMap();
   map[vaultId] = scope;
   await setAppConfig(CFG_SCOPE_BY_VAULT, map);
@@ -181,5 +246,6 @@ export async function setApiConfigScope(scope: ApiConfigScope): Promise<void> {
       if (seedProfiles) await writeVaultSlot(vaultId, seedProfiles, seedActive);
     }
   }
-  await hydrateApiProfilesFromSystem();
+  const restored = await hydrateApiProfilesFromSystem();
+  if (restored.status !== 'ready') throw new Error(restored.message);
 }

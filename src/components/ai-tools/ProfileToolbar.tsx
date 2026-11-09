@@ -17,7 +17,7 @@ export function ProfileToolbar({ profiles, activeId, onSwitch, onAdd, onDuplicat
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <Select value={activeId} onValueChange={onSwitch}>
-        <SelectTrigger className="h-9 w-56" aria-label="选择提供商">
+        <SelectTrigger className="h-9 w-56" aria-label="选择提供商" disabled={!profiles.length}>
           <SelectValue placeholder="选择提供商" />
         </SelectTrigger>
         <SelectContent>
@@ -39,7 +39,7 @@ export function ProfileToolbar({ profiles, activeId, onSwitch, onAdd, onDuplicat
         size="sm"
         className="h-9 gap-1 text-destructive"
         onClick={onDeleteClick}
-        disabled={profiles.length <= 1}
+        disabled={!activeId}
       >
         <Trash2 className="w-4 h-4" />删除
       </Button>

@@ -39,6 +39,19 @@ async function input(label: string, value: string) {
 }
 async function openSwitcher() { await click(document.querySelector<HTMLButtonElement>('button[aria-label^="切换模型"]')); }
 
+it('empty settings and a new connection stay unsaved until explicit save, then become selectable', async () => {
+  localStorage.clear();
+  await render(<APIConfigCard />);
+  expect(loadApiProfiles().profiles).toEqual([]);
+  await click(button('新增'));
+  expect(loadApiProfiles().profiles).toEqual([]);
+  await input('提供商名称', '我的服务');
+  await input('API Key', 'fixture-new-key');
+  await click(button('保存配置'));
+  expect(loadApiProfiles().profiles).toHaveLength(1);
+  expect(getActiveProfile()).toMatchObject({ name: '我的服务', apiKey: 'fixture-new-key' });
+});
+
 it('groups saved models by service, searches fetched names and switches globally without exposing credentials or making requests', async () => {
   await render(<><QuickModelSwitcher /><ApiStatusLine /></>);
   await openSwitcher();
@@ -60,7 +73,7 @@ it('controlled selection stays in its workspace and custom models remain availab
   function Local() { const [value, setValue] = useState<ApiModelSelection>({ profileId: 'a', model: 'alpha' }); return <QuickModelSwitcher value={value} onChange={setValue} />; }
   await render(<Local />);
   await openSwitcher(); await click(button('使用 服务乙 的 gamma'));
-  expect(getActiveProfile().id).toBe('a');
+  expect(getActiveProfile()!.id).toBe('a');
   await openSwitcher(); await click(button('自定义模型')); await input('自定义模型名称', 'custom-beta'); await click(button('加入常用并使用'));
   expect(document.querySelector('button[aria-label^="切换模型"]')?.textContent).toContain('服务乙 · custom-beta');
   expect(loadApiProfiles().profiles.find(profile => profile.id === 'b')?.favoriteModels).toContain('custom-beta');
@@ -81,7 +94,7 @@ it('keeps the running request on its original profile/model while quick switchin
   expect(network).toHaveBeenCalledTimes(1);
   expect(network.mock.calls[0][0]).toBe(a.apiUrl);
   expect(JSON.parse(network.mock.calls[0][1]!.body as string).model).toBe('alpha');
-  expect(getActiveProfile().model).toBe('gamma');
+  expect(getActiveProfile()!.model).toBe('gamma');
 });
 
 async function selectService(name: string) {
@@ -104,11 +117,11 @@ it('fetches an entire service catalogue, saves favorites and custom models, and 
   await input('提供商名称', '甲的新名称');
   await selectService('服务乙');
   expect(document.querySelector('[role="alertdialog"]')?.textContent).toContain('服务配置还未保存');
-  expect(getActiveProfile().id).toBe('a');
+  expect(getActiveProfile()!.id).toBe('a');
   await click(button('继续编辑'));
   expect(document.querySelector('input[aria-label="提供商名称"]')).toHaveValue('甲的新名称');
   await selectService('服务乙'); await click(button('保存并切换'));
-  expect(getActiveProfile().id).toBe('b');
+  expect(getActiveProfile()!.id).toBe('b');
   expect(loadApiProfiles().profiles[0]).toMatchObject({ name: '甲的新名称', model: 'custom-local', favoriteModels: ['alpha', 'fresh-two', 'custom-local'] });
   await selectService('甲的新名称');
   expect(document.querySelector('#api-model-name')).toHaveValue('custom-local');

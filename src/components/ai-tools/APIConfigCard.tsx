@@ -13,6 +13,7 @@ import { useApiProfiles } from './useApiProfiles';
 import { ApiScopeToggle } from './ApiScopeToggle';
 import { ProfileToolbar } from './ProfileToolbar';
 import { ModelNameInput } from './ModelNameInput';
+import { ApiConfigSyncNotice } from './ApiConfigSyncNotice';
 
 // 持久化/领域层已拆到 api-profiles.ts；barrel（index.ts）从那里导出 loadAPIConfig 等。
 
@@ -48,6 +49,8 @@ export function APIConfigCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         <ApiScopeToggle onChanged={reload} onRequestChange={requestChange} />
+        <ApiConfigSyncNotice />
+        {!profiles.length && <p role="status" className="text-sm text-muted-foreground">尚无已保存连接。可重新读取本机连接，或填写下方信息后保存新服务。</p>}
 
         <ProfileToolbar
           profiles={profiles}

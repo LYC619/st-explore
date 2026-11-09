@@ -10,6 +10,7 @@ import {
   normalizeModelNames,
 } from './api-profiles';
 import { subscribeApiProfileChanges } from './useApiProfileState';
+import { getApiConfigSyncState } from '@/lib/vault/sensitive-config';
 
 export interface TestResult { ok: boolean; text: string }
 
@@ -37,16 +38,16 @@ export function useApiProfiles() {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
-  const loadIntoForm = useCallback((p: ApiProfile) => {
+  const loadIntoForm = useCallback((p?: ApiProfile) => {
     ++catalogRequest.current; ++connectionTest.current;
     modelAbort.current?.abort(); testAbort.current?.abort();
     setFetchingModels(false); setTesting(false);
-    setName(p.name);
-    setApiKey(p.apiKey);
-    setApiUrl(p.apiUrl || DEFAULT_API_URL);
-    setModel(p.model || DEFAULT_MODEL);
-    setModelList(normalizeModelNames(p.modelList));
-    setFavoriteModels(normalizeModelNames(p.favoriteModels));
+    setName(p?.name ?? '');
+    setApiKey(p?.apiKey ?? '');
+    setApiUrl(p?.apiUrl || DEFAULT_API_URL);
+    setModel(p?.model || DEFAULT_MODEL);
+    setModelList(normalizeModelNames(p?.modelList));
+    setFavoriteModels(normalizeModelNames(p?.favoriteModels));
     setTestResult(null);
     setDirty(false);
     setExternalChanged(false);
@@ -57,7 +58,7 @@ export function useApiProfiles() {
     setProfiles(ps);
     setActiveId(aid);
     const active = ps.find((p) => p.id === aid) ?? ps[0];
-    if (active) loadIntoForm(active);
+    loadIntoForm(active);
   }, [loadIntoForm]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -71,12 +72,17 @@ export function useApiProfiles() {
   useEffect(() => { ++connectionTest.current; testAbort.current?.abort(); setTesting(false); setTestResult(null); }, [apiKey, apiUrl, model]);
 
   const savedActive = profiles.find((p) => p.id === activeId);
+  const persist = (ps: ApiProfile[], id: string) => {
+    if (persistProfiles(ps, id)) return true;
+    toast({ title: '连接尚未保存', description: getApiConfigSyncState().message || '请先重新读取已保存连接。', variant: 'destructive' });
+    return false;
+  };
 
   const handleSwitch = (id: string) => {
     const { profiles: ps } = loadApiProfiles();
     const target = ps.find((p) => p.id === id);
     if (!target) return;
-    persistProfiles(ps, id);
+    if (!persist(ps, id)) return;
     setProfiles(ps);
     setActiveId(id);
     loadIntoForm(target);
@@ -85,7 +91,7 @@ export function useApiProfiles() {
   const handleAdd = () => {
     const { profiles: ps } = loadApiProfiles();
     const fresh: ApiProfile = {
-      id: generateProfileId(),
+      id: '',
       name: `提供商 ${ps.length + 1}`,
       apiKey: '',
       apiUrl: DEFAULT_API_URL,
@@ -93,15 +99,14 @@ export function useApiProfiles() {
       modelList: [],
       favoriteModels: [],
     };
-    persistProfiles([...ps, fresh], fresh.id);
-    reload();
-    toast({ title: '已新增提供商', description: '填好配置后记得「保存」' });
+    setActiveId('');
+    loadIntoForm(fresh);
+    setDirty(true);
   };
 
   const handleDuplicate = () => {
-    const { profiles: ps } = loadApiProfiles();
     const copy: ApiProfile = {
-      id: generateProfileId(),
+      id: '',
       name: `${name || '提供商'} 副本`,
       apiKey: apiKey.trim(),
       apiUrl: apiUrl.trim() || DEFAULT_API_URL,
@@ -109,20 +114,16 @@ export function useApiProfiles() {
       modelList,
       favoriteModels,
     };
-    persistProfiles([...ps, copy], copy.id);
-    reload();
-    toast({ title: '已复制为新提供商', description: copy.name });
+    setActiveId('');
+    loadIntoForm(copy);
+    setDirty(true);
   };
 
   const handleDelete = () => {
     const { profiles: ps, activeId: aid } = loadApiProfiles();
-    if (ps.length <= 1) {
-      toast({ title: '至少保留一个提供商', variant: 'destructive' });
-      return false;
-    }
     const rest = ps.filter((p) => p.id !== activeId);
     if (rest.length === ps.length) return false;
-    persistProfiles(rest, aid === activeId ? rest[0].id : aid);
+    if (!persist(rest, aid === activeId ? rest[0]?.id ?? '' : aid)) return false;
     reload();
     toast({ title: '已删除提供商' });
     return true;
@@ -134,7 +135,11 @@ export function useApiProfiles() {
       return false;
     }
     const { profiles: ps, activeId: aid } = loadApiProfiles();
-    const idx = ps.findIndex((p) => p.id === activeId);
+    let idx = ps.findIndex((p) => p.id === activeId);
+    if (!activeId) {
+      idx = ps.length;
+      ps.push({ id: generateProfileId(), name: name.trim() || '提供商', apiKey: '', apiUrl: DEFAULT_API_URL, model: DEFAULT_MODEL });
+    }
     if (idx < 0) { toast({ title: '当前服务已不存在，请重新选择', variant: 'destructive' }); return false; }
     ps[idx] = {
       ...ps[idx],
@@ -145,7 +150,8 @@ export function useApiProfiles() {
       modelList,
       favoriteModels,
     };
-    persistProfiles(ps, aid);
+    if (!persist(ps, activeId ? aid : ps[idx].id)) return false;
+    setActiveId(ps[idx].id);
     setProfiles(ps);
     setDirty(false);
     setExternalChanged(false);
