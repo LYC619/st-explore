@@ -1,7 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button } from '@/components/ui/button';
 import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
-import { listRetainedOperations, restoreRetainedOperation, type RetainedOperation } from '@/lib/vault/file-maintenance';
+import { listRetainedOperations, recycleExpiryLabel, restoreRetainedOperation, type RetainedOperation } from '@/lib/vault/file-maintenance';
+
+const STORE_LABELS: Record<string, string> = {
+  characters: '角色', archiveStories: '故事', cards: '卡片', worldbooks: '世界书', presets: '预设', regexes: '正则',
+  summaries: '总结/日记', stories: '故事树', summaryTemplates: '总结模板', ratingTemplates: '评分模板',
+};
 
 export function RecycleBinPanel() {
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch), vault = getActiveVault();
@@ -25,8 +30,8 @@ export function RecycleBinPanel() {
       <Button variant="outline" className="min-h-11" disabled={busy} onClick={() => void load()}>{busy ? '处理中…' : items ? '刷新回收站' : '查看回收站'}</Button></div>
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
     {items && <div className="max-h-96 overflow-y-auto space-y-3">{!items.length && <p role="status">回收站为空</p>}{items.map(item => <div key={item.operationId} className="rounded-lg border p-3">
-      <p className="break-all text-sm font-medium">{item.paths[0] ?? '无法读取的回收记录'}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{item.paths.length} 个文件 · {(item.bytes / 1024).toFixed(1)} KB · {item.createdAt ? new Date(item.createdAt).toLocaleString() : '时间未知'} · {item.recycleAfter ? '30天后转系统回收站' : '长期保留'}</p>
+      <p className="break-all text-sm font-medium">{STORE_LABELS[item.store] && <span className="mr-1 text-muted-foreground">{STORE_LABELS[item.store]} ·</span>}{item.title}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{item.paths.length} 个文件 · {(item.bytes / 1024).toFixed(1)} KB · {item.createdAt ? new Date(item.createdAt).toLocaleString() : '时间未知'} · {recycleExpiryLabel(item.recycleAfter)}</p>
       <details className="mt-2 text-sm"><summary className="cursor-pointer">查看文件清单</summary>{item.paths.map(p => <p className="break-all py-1" key={p}>{p}</p>)}</details>
       {item.issue && <p className="text-sm text-muted-foreground">{item.issue}</p>}
       <div className="mt-2 flex flex-wrap gap-2"><Button variant="outline" className="min-h-11" disabled={busy || !item.restorable} onClick={() => void restore(item)}>恢复到原位置</Button>

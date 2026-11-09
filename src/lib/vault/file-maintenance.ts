@@ -402,7 +402,22 @@ export async function executeFileRemoval(vault: VaultBackend, store: StoreName, 
 
 export interface RetainedOperation {
   operationId: string; createdAt: number; store: string; paths: string[]; bytes: number;
+  /** Record folder or file name; the first path may be an attachment. */
+  title: string;
   recycleAfter?: number; restorable: boolean; issue?: string;
+}
+
+/** Profiles and stories are named by their folder; other records by their file. */
+function retainedTitle(path: string): string {
+  const name = baseName(path);
+  return name === '档案.json' || name === '故事.json' ? baseName(parentDir(path)) : name.replace(/\.(?:json|md)$/i, '');
+}
+
+export function recycleExpiryLabel(recycleAfter: number | undefined, now = Date.now()): string {
+  if (recycleAfter === undefined) return '长期保留';
+  if (recycleAfter <= now) return '已到期，稍后自动移入系统回收站';
+  const days = Math.ceil((recycleAfter - now) / (24 * 60 * 60 * 1000));
+  return `${days} 天后（${new Date(recycleAfter).toLocaleDateString('zh-CN')}）移入系统回收站`;
 }
 
 /** Read manifests only: opening the recycle list never reads or encodes retained bodies. */
@@ -416,9 +431,10 @@ export async function listRetainedOperations(vault: VaultBackend): Promise<Retai
       const m = await readManifest(fs, entry.name);
       const primary = m.files.find(file => recordStore(file.path) === m.store);
       results.push({ operationId: m.operationId, createdAt: m.createdAt, store: m.store, paths: m.files.map(f => f.path),
+        title: primary ? retainedTitle(primary.path) : m.files[0] ? baseName(m.files[0].path) : '空回收记录',
         bytes: m.files.reduce((n, f) => n + f.size, 0), recycleAfter: m.recycleAfter,
         restorable: !!primary, ...(!primary ? { issue: '仅保留附件；请定位文件后手动恢复，避免覆盖当前档案。' } : {}) });
-    } catch { results.push({ operationId: entry.name, createdAt: 0, store: '', paths: [], bytes: 0, restorable: false, issue: '清单损坏，请定位文件检查。' }); }
+    } catch { results.push({ operationId: entry.name, createdAt: 0, store: '', paths: [], bytes: 0, title: '无法读取的回收记录', restorable: false, issue: '清单损坏，请定位文件检查。' }); }
   }
   return results.sort((a, b) => b.createdAt - a.createdAt);
 }

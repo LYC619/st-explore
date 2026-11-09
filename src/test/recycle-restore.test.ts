@@ -3,7 +3,7 @@ import { sha256 } from 'js-sha256';
 import { createMemFs } from '@/lib/vault/fs';
 import { createVault } from '@/lib/vault/vault-backend';
 import { setActiveVault } from '@/lib/vault/active';
-import { listRetainedOperations, restoreRetainedOperation, recoverFileMaintenance } from '@/lib/vault/file-maintenance';
+import { listRetainedOperations, recycleExpiryLabel, restoreRetainedOperation, recoverFileMaintenance } from '@/lib/vault/file-maintenance';
 import { buildCharacterFromCard } from '@/lib/archive-db';
 import type { ArchiveCharacter } from '@/types/archive';
 
@@ -32,6 +32,16 @@ it('moves bytes without frontend binary reads, lists without bodies, and restore
   expect(await mem.readText('角色/合成角色/档案.json')).toBe(before);
   expect(await vault.repo('characters').get('fixture')).toMatchObject({ id: 'fixture', pngBase64: 'YQ==' });
   expect(await listRetainedOperations(vault)).toEqual([]);
+});
+it('names an entry by its record, not its first file, and shows the actual recycle date', async () => {
+  const { vault } = await fixture();
+  const [entry] = await listRetainedOperations(vault);
+  expect(entry).toMatchObject({ store: 'characters', title: '合成角色' });
+  const day = 24 * 60 * 60 * 1000;
+  expect(recycleExpiryLabel(entry.recycleAfter, entry.createdAt + 3 * day))
+    .toBe(`27 天后（${new Date(entry.recycleAfter!).toLocaleDateString('zh-CN')}）移入系统回收站`);
+  expect(recycleExpiryLabel(entry.recycleAfter, entry.recycleAfter! + 1)).toBe('已到期，稍后自动移入系统回收站');
+  expect(recycleExpiryLabel(undefined)).toBe('长期保留');
 });
 it('never overwrites an occupied destination and preflights all missing files', async () => {
   const { vault, mem } = await fixture();
