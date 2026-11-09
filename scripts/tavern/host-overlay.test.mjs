@@ -59,6 +59,84 @@ test('an early module load failure reaches the STE shell instead of leaving it l
   assert.ok(notices.some(([message, failed]) => failed && message.includes(error.message)), 'module failure is reported to the registered host');
 });
 
+function samplerStartupFixture(sourceText, loadApiSelectedSamplers) {
+  // Execute the full upstream settings initializer, with inert DOM controls.
+  const start = sourceText.indexOf('export async function loadTextGenSettings(');
+  const end = sourceText.indexOf('\n/**', start);
+  assert.ok(start >= 0 && end > start);
+  const controls = { val() { return this; }, trigger() { return this; } };
+  let presetsLoaded = 0;
+  const globals = {
+    loadApiSelectedSamplers,
+    convertPresets: () => { presetsLoaded++; return []; },
+    textgenerationwebui_presets: [], textgenerationwebui_preset_names: [],
+    textgenerationwebui_settings: { server_urls: {} }, SERVER_INPUTS: {}, setting_names: [],
+    $: () => controls, showSamplerControls() {}, BIAS_CACHE: new Map(), BIAS_KEY: 'fixture',
+    displayLogitBias() {}, registerDebugFunction() {},
+  };
+  const load = new Function(...Object.keys(globals), sourceText.slice(start, end).replace('export ', '') + ';return loadTextGenSettings;')(...Object.values(globals));
+  return { load: main_api => load({}, { main_api }), presetsLoaded: () => presetsLoaded };
+}
+
+test('Chat Completions initializes while its unrelated Text Completions cache is blocked', async () => {
+  const text = (await readAsset(assets.get('/scripts/textgen-settings.js'))).toString();
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const fixture = samplerStartupFixture(text, () => blocked);
+  const loading = fixture.load('openai');
+  await new Promise(resolve => setImmediate(resolve));
+  try { assert.equal(fixture.presetsLoaded(), 1, 'unrelated cache must not block the actual chat startup'); }
+  finally { release(); await loading; }
+});
+
+test('Text Completions still waits for its own sampler preferences before initializing', async () => {
+  const text = (await readAsset(assets.get('/scripts/textgen-settings.js'))).toString();
+  let release;
+  const blocked = new Promise(resolve => { release = resolve; });
+  const fixture = samplerStartupFixture(text, () => blocked);
+  const loading = fixture.load('textgenerationwebui');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fixture.presetsLoaded(), 0);
+  release(); await loading;
+  assert.equal(fixture.presetsLoaded(), 1);
+});
+
+async function startupFlushFixture({ ready = false, chat = undefined, dirty = false } = {}) {
+  const text = (await readAsset(assets.get('/tauri-main.js'))).toString();
+  const start = text.indexOf('window.__STE_TAVERN_FLUSH__ = async () => {');
+  const end = text.indexOf('window.__STE_BEFORE_CHAT_SWITCH__', start);
+  assert.ok(start >= 0 && end > start);
+  let writes = 0, flushes = 0;
+  const st = {
+    getCurrentChatId: () => chat, hasUnsavedChat: () => dirty,
+    stopGeneration() {}, waitForGenerationIdle: async () => {}, flushDebouncedChatSave: async () => {},
+    saveChatConditional: async () => { writes++; }, cancelPendingSettingsSave() {}, saveSettings: async () => ready,
+  };
+  const win = { __STE_TAVERN_DIRTY__: () => dirty };
+  const node = { length: 0, closest() { return this; }, find() { return this; } };
+  new Function('window', 'importSt', 'stModule', '$', 'flushBaiBai', 'host',
+    text.slice(start, end).replace("import('./script.js')", 'importSt()'))
+    (win, async () => st, ready ? st : undefined, () => node, async () => {}, { flush: async () => { flushes++; } });
+  return { flush: win.__STE_TAVERN_FLUSH__, writes: () => writes, flushes: () => flushes };
+}
+
+test('closing a clean, uninitialized chat drains host writes without saving unready ST settings', async () => {
+  const fixture = await startupFlushFixture();
+  await fixture.flush();
+  assert.equal(fixture.writes(), 0);
+  assert.equal(fixture.flushes(), 1);
+});
+
+test('an initialized chat still saves, and a partial startup with edits or a loaded chat cannot skip saving', async () => {
+  const ready = await startupFlushFixture({ ready: true });
+  await ready.flush(); assert.equal(ready.writes(), 1); assert.equal(ready.flushes(), 1);
+  for (const state of [{ dirty: true }, { chat: 'synthetic' }]) {
+    const fixture = await startupFlushFixture(state);
+    await assert.rejects(fixture.flush(), /酒馆设置尚未保存/);
+    assert.equal(fixture.writes(), 1); assert.equal(fixture.flushes(), 0);
+  }
+});
+
 test('supplies real default settings/presets and default media through explicit generated assets', async () => {
   const asset = assets.get('/ste/tavern-defaults.json');
   assert.ok(asset);

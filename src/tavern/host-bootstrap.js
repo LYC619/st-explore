@@ -228,6 +228,13 @@ async function restoreBaiBaiHidden(st) {
 }
 window.__STE_TAVERN_FLUSH__ = async () => {
     const st = await import('./script.js');
+    // A failed/slow startup can still be closed. Do not serialize defaults before
+    // settings and the selected chat exist; preserve the ordinary save path if
+    // the user has typed, edited, generated, or a chat has already been loaded.
+    if (!stModule && st.getCurrentChatId() === undefined && !st.hasUnsavedChat() && !window.__STE_TAVERN_DIRTY__()) {
+        await host.flush();
+        return;
+    }
     st.stopGeneration();
     await st.waitForGenerationIdle();
     await window.__STE_HELPER_FLUSH__?.();
@@ -630,9 +637,12 @@ window.__STE_TAVERN_READY__ = () => { void import('./script.js').then(async st =
     st.eventSource.makeFirst(st.event_types.OAI_PRESET_CHANGED_BEFORE, ({ presetName }) => {
         if (menuPresetRevisions[presetName]) host.selectPreset(presetName, menuPresetRevisions[presetName]);
     });
+    window.__STE_TAVERN_STARTUP__('启动中：连接模型与玩法控件…');
     stModule = st; await installConnectionControls(); await installRuntimeControls(st);
     processEvents = installProcessEvents(host, st);
+    window.__STE_TAVERN_STARTUP__('启动中：准备酒馆助手…');
     if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
+    window.__STE_TAVERN_STARTUP__('启动中：准备扩展管理控件…');
     await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();
 }).catch(error => { window.__STE_TAVERN_STARTUP__(error.message || String(error), true); toastr.error(error.message); console.error(error); }); };
 // Blob module linking serves the user-installed browser build in WebViews as well as the browser.

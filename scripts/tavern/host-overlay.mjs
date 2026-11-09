@@ -70,6 +70,11 @@ export async function createHostAssets(source, cacheRelative = 'host') {
   await override('/scripts/openai.js', text => replaceOnce(text,
     'chatCompletion.setTokenBudget(userSettings.openai_max_context, userSettings.openai_max_tokens);',
     'chatCompletion.setTokenBudget(Math.max(1, userSettings.openai_max_context - (globalThis.__STE_AGENT_MODE__ ? (globalThis.__STE_CONTEXT_RESERVE__ || 2600) : 0)), userSettings.openai_max_tokens);'));
+  await override('/scripts/textgen-settings.js', text => replaceOnce(text,
+    '    await loadApiSelectedSamplers();',
+    // This cache handles its own read errors. A blocked IndexedDB upgrade must
+    // not hold up Chat Completions, which never reads these sampler selections.
+    '    if (loadedSettings.main_api === "openai") void loadApiSelectedSamplers();\n    else await loadApiSelectedSamplers();'));
   await override('/scripts/extensions/runtime/resource-paths.js', text => replaceOnce(text,
     'return `/scripts/extensions/${name}/${normalizedPath}`;',
     'return globalThis.__STE_EXTENSION_RESOURCE__?.(name, normalizedPath) ?? `/scripts/extensions/${name}/${normalizedPath}`;'));
@@ -112,6 +117,26 @@ export async function createHostAssets(source, cacheRelative = 'host') {
       'startupStatus.setText(message);\n        globalThis.__STE_TAVERN_STARTUP__(message);');
     text = replaceOnce(text, 'await firstLoadInit();',
       'try { await firstLoadInit(); }\n    catch (error) { globalThis.__STE_TAVERN_STARTUP__(error.message || String(error), true); throw error; }');
+    const startupStart = text.indexOf('async function firstLoadInit() {');
+    const startupEnd = text.indexOf('\nasync function fixViewport()', startupStart);
+    if (startupStart < 0 || startupEnd < 0) throw new Error('Upstream startup boundary changed');
+    let startup = text.slice(startupStart, startupEnd);
+    for (const [seam, label] of [
+      ['await initPresetManager();', '准备预设控件'],
+      ['await initSystemMessages();', '读取内置界面模板'],
+      ['await applySettingsSnapshot(bootstrapSnapshot.settings);', '应用酒馆设置'],
+      ['await getUserAvatars(true, user_avatar);', '显示玩家头像'],
+      ['const appliedCharacters = await applyCharactersSnapshot(bootstrapSnapshot.characters);', '装配角色列表'],
+      ['await getBackgrounds();', '读取场景背景'],
+      ['await initPersonas();', '准备玩家设定'],
+      ['await extensionsDiscoveryPromise;', '读取扩展清单'],
+      ['deferThirdPartyExtensions = await activateStartupSystemExtensions({', '启动内置扩展'],
+      ['if (!deferThirdPartyExtensions) {', '应用扩展设置'],
+      ['if (isChatVirtualizationEnabled()) {', '准备聊天显示扩展'],
+      ['void autoloadLastChat().catch((error) => {', '打开故事与初始化回调'],
+      ['await eventSource.emit(event_types.APP_READY);', '完成启动回调'],
+    ]) startup = replaceOnce(startup, seam, `setStage('full', '启动中：${label}…');\n        ${seam}`);
+    text = text.slice(0, startupStart) + startup + text.slice(startupEnd);
     text = replaceOnce(text, 'throw new Error(`Bootstrap snapshot request failed with status ${response.status}`);',
       'const detail = await response.json().catch(() => null);\n        throw new Error(detail?.error?.message || `酒馆核心数据读取失败（HTTP ${response.status}）`);');
     text = replaceOnce(text, 'await loadItemizedPrompts(getCurrentChatId());',
