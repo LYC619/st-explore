@@ -1291,6 +1291,39 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn rooted_mutations_preserve_existing_trailing_dots_and_spaces() {
+        let root = temp_root("existing-name-suffixes");
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&root).unwrap();
+        let canonical = roots.resolve_root(root.to_str().unwrap()).unwrap();
+        assert!(canonical.to_string_lossy().starts_with(r"\\?\"));
+        let names = ["package", "package.", "package ", "package.."];
+        for (index, name) in names.iter().enumerate() {
+            let relative = format!("attachments/{name}/data.txt{name}");
+            let target = authorized_mutation_path(&roots, root.to_str().unwrap(), &relative).unwrap();
+            fs::create_dir_all(target.parent().unwrap()).unwrap();
+            fs::write(&target, [index as u8]).unwrap();
+        }
+        let listed = list_dir_impl(&canonical.join("attachments")).unwrap();
+        for name in names { assert!(listed.iter().any(|entry| entry.name == name && !entry.is_symlink)); }
+        for (index, name) in names.iter().enumerate() {
+            let relative = format!("attachments/{name}/data.txt{name}");
+            let from = authorized_mutation_path(&roots, root.to_str().unwrap(), &relative).unwrap();
+            let to = authorized_mutation_path(&roots, root.to_str().unwrap(), &format!("retained/{relative}")).unwrap();
+            assert_eq!(fs::read(&from).unwrap(), [index as u8]);
+            rename_impl(&from, &to).unwrap();
+            assert!(!from.exists());
+            assert_eq!(fs::read(&to).unwrap(), [index as u8]);
+            rename_impl(&to, &from).unwrap();
+            assert_eq!(fs::read(&from).unwrap(), [index as u8]);
+        }
+        // Exact paths remain under the canonical root and never alias a sibling.
+        assert!(authorized_mutation_path(&roots, root.to_str().unwrap(), "attachments/../outside").is_err());
+        fs::remove_dir_all(canonical).unwrap();
+    }
+
+    #[test]
     fn file_mutations_validate_before_entering_operation() {
         let root = temp_root("mutation-operation");
         fs::create_dir(root.join("empty")).unwrap();

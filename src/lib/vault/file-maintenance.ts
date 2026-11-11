@@ -18,6 +18,7 @@ import { validCommit } from '@/play/storage/world-commit';
 export interface ManagedFile { path: string; size: number; version: string }
 export interface FileRemovalPreview {
   store: StoreName; id: string; files: Omit<ManagedFile, 'version'>[]; count: number; bytes: number; usesTrash: boolean;
+  records?: { store: StoreName; id: string }[];
 }
 export type MaintenanceCategory = 'retained' | 'unreferenced' | 'unknown' | 'empty-directory';
 export interface FileMaintenanceEntry extends ManagedFile {
@@ -50,7 +51,13 @@ const operationIdPattern = /^[a-f0-9-]{36}$/i;
 const activeOperations = new WeakMap<VaultFs, Set<string>>();
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const pathKey = (path: string) => path.toLocaleLowerCase();
-const safePath = (path: unknown): path is string => typeof path === 'string' && path.split('/').every(isSafeFileSegment);
+/** Existing imports can end in dots/spaces. Validate the segment without renaming it:
+ * VaultFs preserves exact spellings (native paths use a canonical, verbatim root).
+ * New filenames still use the stricter isSafeFileSegment/safeName rules. Traversal,
+ * separators, controls, device names and empty/dot-only segments remain rejected.
+ */
+const safeExistingSegment = (segment: string): boolean => isSafeFileSegment(segment.replace(/[. ]+$/g, ''));
+const safePath = (path: unknown): path is string => typeof path === 'string' && path.split('/').every(safeExistingSegment);
 const recordKey = (record: DiskRecord) => `${record.store}:${record.record.id}`;
 const stagedPath = (manifest: Manifest, path: string) => `${RETAINED}/${manifest.operationId}/files/${path}`;
 const manifestPath = (operationId: string) => `${RETAINED}/${operationId}/manifest.json`;
@@ -178,8 +185,8 @@ function pathHash(path: string): number {
 
 /** ownedPaths reads only these fields, so cached records never hold story bodies. */
 function ownershipFields(record: BaseRecord & Record<string, unknown>): DiskRecord['record'] {
-  const { id, updatedAt, portraitRows, attachments, branches } = record;
-  return { id, updatedAt, portraitRows, attachments, branches: Array.isArray(branches)
+  const { id, updatedAt, characterId, bookId, portraitRows, attachments, branches } = record;
+  return { id, updatedAt, characterId, bookId, portraitRows, attachments, branches: Array.isArray(branches)
     ? branches.map(branch => branch && typeof branch === 'object' ? { id: branch.id, name: branch.name } : branch) : branches };
 }
 
@@ -250,7 +257,7 @@ async function inventory(fs: VaultFs, ignoredJournal?: string, includeRetained =
     let entries: VaultEntry[];
     try { entries = await fs.list(dir); } catch (error) { result.errors.push(`${dir}: ${errorText(error)}`); return; }
     for (const entry of entries) {
-      if (!isSafeFileSegment(entry.name) || entry.isSymlink) { result.errors.push(`${joinPath(dir, entry.name)}: 已跳过链接或非法路径`); continue; }
+      if (!safeExistingSegment(entry.name) || entry.isSymlink) { result.errors.push(`${joinPath(dir, entry.name)}: 已跳过链接或非法路径`); continue; }
       const path = joinPath(dir, entry.name);
       if (!includeRetained && path === RETAINED) continue;
       if (entry.isDir) { result.directories.add(path); await walk(path, depth + 1); }
@@ -347,6 +354,15 @@ async function targetRemovalPreview(vault: VaultBackend, store: StoreName, id: s
       await assertSafePath(fs, directory, true);
       for (const entry of await fs.list(directory)) if (!entry.isDir && !entry.isSymlink) files.set(joinPath(directory, entry.name), entry);
     }
+    const walkChildren = async (directory: string): Promise<void> => {
+      for (const entry of await fs.list(directory)) {
+        if (entry.isSymlink || !safeExistingSegment(entry.name)) throw new Error('角色目录含链接或异常路径，已停止删除');
+        const child = joinPath(directory, entry.name);
+        if (entry.isDir) await walkChildren(child);
+        else files.set(child, entry);
+      }
+    };
+    await walkChildren(dir);
   } else if (store === 'archiveStories') {
     const story = record as ArchiveStory;
     const branches = ['main', ...(story.branches ?? []).map(branch => branchKey(branch.id))];
@@ -364,7 +380,7 @@ async function targetRemovalPreview(vault: VaultBackend, store: StoreName, id: s
       await walkRuntime(root);
     }
   }
-  for (const file of ownedPaths(item, files)) {
+  for (const file of store === 'characters' ? files.keys() : ownedPaths(item, files)) {
     const entry = files.get(file)!;
     preview.files.push({ path: file, size: entry.size });
   }
@@ -380,11 +396,20 @@ async function characterRemovalPreview(vault: VaultBackend, id: string): Promise
   if (disk.errors.length) throw new Error(`文件检查未完成，已停止删除：${disk.errors.join('；')}`);
   const item = disk.records.find(record => record.store === 'characters' && record.record.id === id);
   if (!item) throw new Error('记录已改变或无法读取，请重新检查');
-  const files = [...ownedPaths(item, disk.files)]
-    .filter(file => ![...(disk.references.get(pathKey(file)) ?? [])].some(owner => owner !== recordKey(item)))
+  const stories = disk.records.filter(record => record.store === 'archiveStories' && record.record.characterId === id);
+  const storyIds = new Set(stories.map(record => record.record.id));
+  const records = [item, ...stories, ...disk.records.filter(record =>
+    (record.store === 'summaries' || record.store === 'stories') && storyIds.has(String(record.record.bookId)))];
+  const owners = new Set(records.map(recordKey));
+  const candidates = new Set(records.flatMap(record => [...ownedPaths(record, disk.files)]));
+  // User-imported TXT/HTML and other local files belong to this character directory too.
+  const root = parentDir(item.path) + '/';
+  for (const file of disk.files.keys()) if (file.startsWith(root)) candidates.add(file);
+  const files = [...candidates]
+    .filter(file => ![...(disk.references.get(pathKey(file)) ?? [])].some(owner => !owners.has(owner)))
     .map(path => ({ path, size: disk.files.get(path)!.size }));
-  if (!files.some(file => file.path === item.path)) throw new Error('记录文件仍被其他条目引用，已停止删除');
-  return { store: 'characters', id, files, count: files.length, bytes: files.reduce((total, file) => total + file.size, 0), usesTrash: !!vault.fs.trashFile };
+  if (records.some(record => !files.some(file => file.path === record.path))) throw new Error('记录文件仍被其他条目引用，已停止删除');
+  return { store: 'characters', id, records: records.map(record => ({ store: record.store, id: record.record.id })), files, count: files.length, bytes: files.reduce((total, file) => total + file.size, 0), usesTrash: !!vault.fs.trashFile };
 }
 
 async function readManifest(fs: VaultFs, operationId: string): Promise<Manifest> {
@@ -446,20 +471,26 @@ export async function recoverFileMaintenance(fs: VaultFs): Promise<void> {
   }
 }
 
-export async function executeFileRemoval(vault: VaultBackend, store: StoreName, id: string, options: RemoveOptions): Promise<void> {
+export async function executeFileRemoval(vault: VaultBackend, store: StoreName, id: string, options: RemoveOptions): Promise<{ store: StoreName; id: string }[]> {
   const epoch = getVaultEpoch();
   const fs = vault.fs;
   // Startup/index recovery already restores interrupted operations. Daily deletion does not
   // reopen every historical manifest, and execution refreshes only the selected target.
   const preview = store === 'characters' ? await characterRemovalPreview(vault, id) : await targetRemovalPreview(vault, store, id);
   if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止');
-  if (!preview.count) return;
+  if (!preview.count) return [];
   const operationId = crypto.randomUUID();
   const files: ManagedFile[] = [];
   for (const file of preview.files) files.push({ ...file, version: await fileVersion(fs, file.path) });
   if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止');
   const manifest: Manifest = { schema: 1, operationId, store, id, createdAt: Date.now(), deleteFiles: options.deleteFiles, files };
-  await movePreparedFiles(fs, manifest, true);
+  const records = preview.records ?? [{ store, id }];
+  try { await movePreparedFiles(fs, manifest, true); }
+  catch (error) {
+    if (error && typeof error === 'object' && 'committed' in error && error.committed) Object.assign(error, { removedRecords: records });
+    throw error;
+  }
+  return records;
 }
 
 export interface RetainedOperation {
@@ -518,6 +549,16 @@ export async function restoreRetainedOperation(vault: VaultBackend, operationId:
     const primary = m.files.find(file => recordStore(file.path) === m.store);
     if (!primary || !vault.registerRestoredRecord) throw new Error('此项仅保留附件，请定位文件后手动恢复');
     const committed = await isCommitted(fs, m);
+    const records: { store: StoreName; id: string; path: string }[] = [];
+    for (const file of m.files) {
+      const store = recordStore(file.path); if (!store) continue;
+      const present = (await fs.stat(stagedPath(m, file.path))).exists ? stagedPath(m, file.path) : file.path;
+      const raw = file.path.endsWith('.md') ? parseFrontmatter(await fs.readText(present)).fields : JSON.parse(await fs.readText(present));
+      const record = ['worldbooks', 'presets', 'regexes'].includes(store) ? raw.__ste : raw;
+      if (typeof record?.id !== 'string') throw new Error('回收记录身份缺失，已停止恢复');
+      if (committed && await vault.pathOf(store, record.id)) throw new Error('已有同身份记录，已停止恢复');
+      records.push({ store, id: record.id, path: file.path });
+    }
     if (committed && await vault.pathOf(m.store, m.id)) throw new Error('已有同身份记录，已停止恢复');
     // Preflight every source before any move; partial expiry never restores a half record.
     for (const file of m.files) {
@@ -533,7 +574,7 @@ export async function restoreRetainedOperation(vault: VaultBackend, operationId:
     // completes rollback, including files already renamed before an interruption.
     if (committed) await fs.removeFile(`${RETAINED}/${operationId}/committed.json`);
     await rollback(fs, m);
-    await vault.registerRestoredRecord(m.store, m.id, primary.path);
+    for (const record of records) await vault.registerRestoredRecord(record.store, record.id, record.path);
     } finally { active.delete(operationId); }
   });
 }
