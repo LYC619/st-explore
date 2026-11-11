@@ -277,8 +277,27 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     if (!response.ok) throw new Error((await response.json()).error?.message ?? '资料库列表无法读取');
     const data = await response.json();
     menuPresetRevisions = data.presetRevisions;
+    const worlds = await import('./scripts/world-info.js');
+    for (let i = 0; i < worlds.selected_world_info.length; i++) {
+        worlds.selected_world_info[i] = data.worldRenames[worlds.selected_world_info[i]] ?? worlds.selected_world_info[i];
+    }
+    const st = stModule ?? await import('./script.js');
+    const currentWorld = st.chat_metadata[worlds.METADATA_KEY];
+    if (data.worldRenames[currentWorld]) st.chat_metadata[worlds.METADATA_KEY] = data.worldRenames[currentWorld];
+    await worlds.updateWorldInfoList();
+    worlds.worldInfoCache.clear();
     const tags = await import('./scripts/tags.js');
     tags.loadTagsSettings(data);
+    const { FILTER_TYPES } = await import('./scripts/filters.js');
+    const groups = await import('./scripts/group-chats.js');
+    const visibleTags = new Set(data.tags.map(tag => tag.id));
+    for (const helper of [st.entitiesFilter, groups.groupCandidatesFilter, groups.groupMembersFilter]) {
+        const previous = helper.getFilterData(FILTER_TYPES.TAG);
+        helper.setFilterData(FILTER_TYPES.TAG, {
+            selected: previous.selected.filter(id => visibleTags.has(id)),
+            excluded: previous.excluded.filter(id => visibleTags.has(id)),
+        }, true);
+    }
     const openai = await import('./scripts/openai.js');
     const selected = data.presetRenames[openai.oai_settings.preset_settings_openai] ?? openai.oai_settings.preset_settings_openai;
     openai.openai_settings.splice(0, openai.openai_settings.length, ...data.openai_settings.map(value => JSON.parse(value)));

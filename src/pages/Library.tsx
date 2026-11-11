@@ -13,7 +13,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
  * 外观偏好与批量选择抽到 hooks/，本文件只留数据装载、导入导出删除与组装。
  */
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense, useSyncExternalStore } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
 import { Plus, BookOpen, ListFilter } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -142,8 +142,16 @@ const Library = () => {
     items: PreparedLibraryCharacterImport[];
     failures: string[];
   } | null>(null);
+  const [searchParams] = useSearchParams();
+  const [chatTagSetup] = useState(() => searchParams.get('manageTags') === '1');
+  const chatTagSetupOpened = useRef(false);
   const [tagManagerOpen, setTagManagerOpen] = useState(false);
-  const [tagManagerCategory, setTagManagerCategory] = useState<'人物' | '类型'>('人物');
+  const [tagManagerCategory, setTagManagerCategory] = useState<TagCategory | '类型'>('人物');
+  useEffect(() => {
+    if (chatTagSetup && !loading && !loadFailed && !chatTagSetupOpened.current) {
+      chatTagSetupOpened.current = true; setTagManagerCategory('未分类'); setTagManagerOpen(true);
+    }
+  }, [chatTagSetup, loading, loadFailed]);
   const [batchTagOpen, setBatchTagOpen] = useState(false);
   /** 待确认删除（单删=长度1，批量=多条）；null=无弹窗 */
   const [pendingDelete, setPendingDelete] = useState<ArchiveCharacter[] | null>(null);
@@ -307,7 +315,7 @@ const Library = () => {
       for (const c of pendingDelete) await deleteCharacter(c.id, options);
       await load();
       selection.setSelected(new Set());
-      toast({ title: `已删除 ${pendingDelete.length} 个角色（名下故事已转为未绑定，未被删除）` });
+      toast({ title: `已删除 ${pendingDelete.length} 个角色（名下故事与记录已一并移除）` });
     } catch (e) {
       toast({
         title: '删除失败',
@@ -593,6 +601,7 @@ const Library = () => {
       <div className="h-full flex flex-col overflow-hidden">
         <LibraryToolbar
           characterCount={characters.length}
+          filteredCount={filtered.length}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onOpenTagManager={() => { setTagManagerCategory('人物'); setTagManagerOpen(true); }}
@@ -805,7 +814,7 @@ const Library = () => {
       <TagManagerDialog
         initialCategory={tagManagerCategory}
         open={tagManagerOpen}
-        onOpenChange={setTagManagerOpen}
+        onOpenChange={open => { setTagManagerOpen(open); if (!open && chatTagSetup) navigate('/play'); }}
         characters={characters}
         selectedCharacters={characters.filter((character) => selection.selected.has(character.id))}
         preferences={tagPreferences}
@@ -822,7 +831,7 @@ const Library = () => {
 
       <DeleteConfirmDialog open={!!pendingDelete} onOpenChange={open => !open && setPendingDelete(null)}
         title={pendingDelete?.length === 1 ? `删除「${displayCharacterName(pendingDelete[0])}」？` : `删除所选 ${pendingDelete?.length ?? 0} 个角色？`}
-        description="名下故事不会被删除，会转为未绑定状态。"
+        description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"
         fileTargets={pendingDelete?.map(c => ({ store: 'characters', id: c.id }))}
         onConfirm={handleConfirmDelete} confirmLabel="删除" />
 

@@ -739,6 +739,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/ste/library/refresh') {
           const presetRenames = await assets.refreshPresets();
+          const worldRenames = await assets.refreshWorlds();
           libraryTags = await getLibraryTagPreferences();
           const cards = await characterDtos();
           const avatars = new Set(cards.map(card => card.avatar));
@@ -747,7 +748,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           const snapshot = settingsSnapshot();
           const settings = JSON.parse(snapshot.settings);
           return json({ tags: settings.tags, tag_map: settings.tag_map, openai_settings: snapshot.openai_settings,
-            openai_setting_names: snapshot.openai_setting_names, presetRenames, presetRevisions: assets.presetRevisions() });
+            openai_setting_names: snapshot.openai_setting_names, presetRenames, presetRevisions: assets.presetRevisions(), worldRenames });
         }
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
         if (pathname === '/api/settings/save') {

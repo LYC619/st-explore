@@ -5,6 +5,7 @@ import { setActiveVault } from '@/lib/vault/active';
 import { buildCharacterFromCard, buildStoryFromSession, deleteArchiveStory, deleteCharacter } from '@/lib/archive-db';
 import type { SummaryItem } from '@/types/summary';
 import type { StoryTree } from '@/types/story-tree';
+import { listRetainedOperations, restoreRetainedOperation } from '@/lib/vault/file-maintenance';
 
 afterEach(() => setActiveVault(null));
 
@@ -23,15 +24,41 @@ async function fixture() {
 }
 
 describe('用户删除的关联保留', () => {
-  it('直接删除角色会将故事转为未绑定，重启仍能读取故事和下属记录', async () => {
+  it('角色整组删除中途失败，所有故事与记录仍保留原归属', async () => {
+    const f = await fixture();
+    const rename = f.fs.rename; let count = 0;
+    f.fs.rename = async (from, to) => {
+      if (to.includes('/files/') && ++count === 3) throw new Error('磁盘故障');
+      return rename(from, to);
+    };
+    await expect(deleteCharacter(f.character.id, { deleteFiles: true })).rejects.toThrow('磁盘故障');
+    const reopened = createVault(f.fs);
+    expect(await reopened.repo('characters').get(f.character.id)).toBeDefined();
+    expect(await reopened.repo('archiveStories').get(f.story.id)).toMatchObject({ characterId: f.character.id });
+    expect(await reopened.repo('summaries').get('sum')).toMatchObject({ bookId: f.story.id });
+  });
+  it('删除角色连同故事、日记和树进入同一回收记录，恢复后归属完整', async () => {
     const f = await fixture();
     await deleteCharacter(f.character.id, { deleteFiles: false });
     const reopened = createVault(f.fs);
     expect(await reopened.repo('characters').get(f.character.id)).toBeUndefined();
     const saved = await reopened.repo<import('@/types/archive').ArchiveStory>('archiveStories').get(f.story.id);
-    expect(saved).toMatchObject({ title: '故事' });
-    expect(saved!.characterId).toBeUndefined();
-    expect(await reopened.repo('summaries').get('sum')).toMatchObject({ content: '不能丢失' });
+    expect(saved).toBeUndefined();
+    expect(await reopened.repo('summaries').get('sum')).toBeUndefined();
+    expect(await f.vault.repo('archiveStories').get(f.story.id)).toBeUndefined();
+    expect(await f.vault.repo('summaries').get('sum')).toBeUndefined();
+    expect(await reopened.repo('stories').get('tree')).toBeUndefined();
+    const retained = await listRetainedOperations(reopened);
+    expect(retained).toHaveLength(1);
+    setActiveVault(reopened);
+    await restoreRetainedOperation(reopened, retained[0].operationId);
+    expect(await reopened.repo('archiveStories').get(f.story.id)).toMatchObject({ characterId: f.character.id });
+    expect(await reopened.repo('summaries').get('sum')).toMatchObject({ bookId: f.story.id });
+    const restored = createVault(f.fs);
+    expect(await restored.repo('characters').get(f.character.id)).toBeDefined();
+    expect(await restored.repo('archiveStories').get(f.story.id)).toMatchObject({ characterId: f.character.id });
+    expect(await restored.repo('summaries').get('sum')).toMatchObject({ bookId: f.story.id, content: '不能丢失' });
+    expect(await restored.repo('stories').get('tree')).toMatchObject({ bookId: f.story.id });
   });
 
   it('删除故事将日记和树转为永久未绑定记录，重启不丢失', async () => {

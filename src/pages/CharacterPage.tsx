@@ -318,12 +318,12 @@ const CharacterPage = () => {
     }
   };
 
-  /** 删除角色：名下故事转未绑定，不连带删除 */
+  /** 删除角色及其故事、记录和角色自有文件；共享资产仍保留。 */
   const handleConfirmDeleteChar = async (options: RemoveOptions) => {
     if (!character) return;
     try {
       await deleteCharacter(character.id, options);
-      toast({ title: `已删除「${character.name}」（名下故事已转为未绑定）` });
+      toast({ title: `已删除「${character.name}」（名下故事与记录已一并移除）` });
       navigate('/library');
     } catch (e) {
       toast({
@@ -787,7 +787,7 @@ const CharacterPage = () => {
 
       <DeleteConfirmDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}
         title={`删除「${character.name}」？`}
-        description="名下故事不会被删除，会转为未绑定状态。"
+        description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"
         fileTarget={{ store: 'characters', id: character.id }}
         onConfirm={handleConfirmDeleteChar} />
     </AppLayout>

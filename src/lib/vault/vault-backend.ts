@@ -893,13 +893,17 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         invalidate(store, id);
         try {
           if (options) {
-            await executeFileRemoval(backend, store, id, options);
-            of(store).delete(id);
+            const removed = await executeFileRemoval(backend, store, id, options);
+            for (const target of removed) { of(target.store as VaultStore).delete(target.id); invalidate(target.store as VaultStore, target.id); }
           } else await removeRecord(store, id);
         }
         catch (error) {
           maintenanceRecovered = false;
-          if (error && typeof error === 'object' && 'committed' in error && error.committed) of(store).delete(id);
+          if (error && typeof error === 'object' && 'committed' in error && error.committed) {
+            of(store).delete(id);
+            const removed = 'removedRecords' in error ? error.removedRecords as { store: VaultStore; id: string }[] : [];
+            for (const target of removed) { of(target.store).delete(target.id); invalidate(target.store, target.id); }
+          }
           throw error;
         }
         finally { invalidate(store, id); }

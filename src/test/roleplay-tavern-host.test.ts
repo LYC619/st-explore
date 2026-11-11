@@ -21,6 +21,8 @@ import { Blob as NodeBlob } from 'node:buffer';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
 import { stScriptToRule } from '@/lib/st-regex-interop';
 import regexOverlaySource from '@/tavern/regex-assets.js?raw';
+import { saveLibraryTagPreferences } from '@/lib/archive-db';
+import { normalizeLibraryTagPreferences } from '@/lib/library-tag-preferences';
 
 afterEach(() => { setActiveVault(null); localStorage.clear(); vi.unstubAllGlobals(); });
 
@@ -43,6 +45,16 @@ async function fixture() {
 }
 
 describe('real Tavern host contracts', () => {
+  it('refreshing the retained Tavern exposes a worldbook imported after startup', async () => {
+    const { host } = await fixture();
+    try {
+      await getCurrentRepo<WorldBookItem>('worldbooks').put({ id: 'new-world', title: '新导入世界书', createdAt: 2, updatedAt: 2, worldbook: parseWorldBook({ entries: { 0: { uid: 0, content: '合成设定' } } }) });
+      expect((await (await host.request('/api/settings/get')).json()).world_names).not.toContain('新导入世界书');
+      expect((await host.request('/ste/library/refresh')).ok).toBe(true);
+      expect((await (await host.request('/api/settings/get')).json()).world_names).toContain('新导入世界书');
+      expect((await (await host.request('/api/worldinfo/get', { name: '新导入世界书' })).json()).entries['0'].content).toBe('合成设定');
+    } finally { host.close(); }
+  });
   it('a stored blank default remains visible for repair but cannot be selected or used to generate', async () => {
     const f = await fixture(); f.host.close();
     persistProfiles([{ id: 'placeholder', name: '默认', apiKey: '', apiUrl: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' }], 'placeholder');
@@ -251,6 +263,36 @@ describe('real Tavern host contracts', () => {
       await presets.put({ ...(await presets.get('refresh-preset'))!, catalog: { name: '自用名', version: 'v2', tags: ['状态/过期'] } });
       expect((await (await f.host.request('/ste/library/refresh')).json()).openai_setting_names).not.toContain('自用名 · v2');
       expect((await getArchiveStory(f.story.id))!.session.messages).toHaveLength(1);
+    } finally { f.host.close(); }
+  });
+  it('keeps organizing tag ownership current across bootstrap, settings save, refresh and reopen', async () => {
+    const f = await fixture();
+    try {
+      const preferences = normalizeLibraryTagPreferences({ version: 1, chatVisible: ['缺总结', '总结完', '日记完'] });
+      await saveLibraryTagPreferences(preferences);
+      await f.host.request('/ste/library/refresh');
+      await updateCharacter(f.character.id, () => ({ tags: ['缺总结', '日记完', '保留标签'] }));
+      const bootstrap = await (await f.host.request('/api/bootstrap')).json();
+      const first = JSON.parse(bootstrap.settings.settings);
+      const avatar = bootstrap.characters[0].avatar;
+      const missing = first.tags.find((tag: { name: string }) => tag.name === '缺总结');
+      expect(missing).toBeDefined();
+      expect(first.tag_map[avatar]).toContain(missing.id);
+      expect((await f.host.request('/api/settings/save', first)).ok).toBe(true);
+      expect((await getCharacter(f.character.id))!.tags).toEqual(['缺总结', '日记完', '保留标签']);
+      await updateCharacter(f.character.id, () => ({ tags: ['总结完', '日记完', '保留标签'] }));
+      await saveLibraryTagPreferences({ ...preferences, chatVisible: ['总结完', '日记完'] });
+      const refreshed = await (await f.host.request('/ste/library/refresh')).json();
+      expect(refreshed.tag_map[avatar]).not.toContain(missing.id);
+      expect(refreshed.tags.map((tag: { name: string }) => tag.name)).toContain('总结完');
+      f.host.close();
+      const reopened = await createTavernHost({ storyId: f.story.id, defaults: { settings: {} } });
+      try {
+        const data = await (await reopened.request('/api/bootstrap')).json();
+        const settings = JSON.parse(data.settings.settings);
+        expect(settings.tag_map[avatar]).toEqual(refreshed.tag_map[avatar]);
+        expect(settings.tags.map((tag: { name: string }) => tag.name)).not.toContain('缺总结');
+      } finally { reopened.close(); }
     } finally { f.host.close(); }
   });
   it('refreshes the provider model catalog on each explicit connection request and preserves the last list on failure', async () => {

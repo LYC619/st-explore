@@ -44,8 +44,26 @@ export async function createRoleplayAssets(options: AssetOptions) {
   const presetOwners = new Map([...presetMap].map(([name, item]) => [name, item.id]));
   // A read by a tool must not advance the baseline of an older, unversioned editor.
   const legacyWorldVersions = new Map([...worldMap].map(([name, item]) => [name, digest(worldVersion(item))]));
+  const worldOwners = new Map([...worldMap].map(([name, item]) => [name, item.id]));
 
   return {
+    async refreshWorlds() {
+      const next = names(await options.worldbooks.list());
+      assertCurrent();
+      const renames = Object.fromEntries([...worldMap].flatMap(([name, item]) => {
+        const currentName = [...next].find(([, current]) => current.id === item.id)?.[0];
+        return currentName && name !== currentName ? [[name, currentName]] : [];
+      }));
+      worldMap.clear();
+      for (const [name, item] of next) {
+        worldMap.set(name, item);
+        if (!worldOwners.has(name)) {
+          worldOwners.set(name, item.id);
+          legacyWorldVersions.set(name, digest(worldVersion(item)));
+        }
+      }
+      return renames;
+    },
     presetRevisions: () => Object.fromEntries([...presetMap].map(([name, item]) => [name, digest(presetVersion(item))])),
     selectPreset(name: string, revision: string) {
       assertCurrent();
@@ -81,25 +99,30 @@ export async function createRoleplayAssets(options: AssetOptions) {
       const item = mapped ? await options.worldbooks.get(mapped.id) : undefined;
       if (!item) throw new Error(`世界书不存在：${name}`);
       worldMap.set(name, item);
-      return { ...JSON.parse(worldVersion(item)), _ste_revision: digest(worldVersion(item)) };
+      return { ...JSON.parse(worldVersion(item)), _ste_revision: digest(worldVersion(item)), _ste_owner: item.id };
     },
     async saveWorld(name: string, data: unknown) {
       validName(name);
       if (!data || typeof data !== 'object' || !('entries' in data) || typeof data.entries !== 'object' || !data.entries) throw new Error('世界书缺少条目');
       const raw = structuredClone(data) as Record<string, unknown>;
       const expected = raw._ste_revision;
+      const expectedOwner = raw._ste_owner;
       delete raw._ste_revision;
+      delete raw._ste_owner;
       const parsed = parseWorldBook(raw);
       return writes.enqueue(`world:${name}`, async () => {
         assertCurrent();
         const previous = worldMap.get(name);
         const current = previous ? await options.worldbooks.get(previous.id) : undefined;
+        if (!current && (typeof expected === 'string' || worldOwners.has(name))) throw new Error('世界书已被删除，请重新打开列表');
+        if (current && (typeof expectedOwner === 'string' ? expectedOwner : worldOwners.get(name)) !== current.id) throw new Error('同名世界书已更换，请重新打开列表');
         if (previous && (!current || (typeof expected === 'string' ? expected : legacyWorldVersions.get(name)) !== digest(worldVersion(current)))) throw new Error('世界书已被其他编辑修改，请重新打开后保存');
         const item: WorldBookItem = { ...current, id: current?.id ?? crypto.randomUUID(), title: current?.title ?? name,
           createdAt: current?.createdAt ?? Date.now(), updatedAt: Date.now(), worldbook: parsed };
         assertCurrent();
         await options.worldbooks.put(item);
         worldMap.set(name, item);
+        worldOwners.set(name, item.id);
         const revision = digest(worldVersion(item));
         legacyWorldVersions.set(name, revision);
         return { _ste_revision: revision };
@@ -115,6 +138,7 @@ export async function createRoleplayAssets(options: AssetOptions) {
         await options.worldbooks.remove(previous.id);
         worldMap.delete(name);
         legacyWorldVersions.delete(name);
+        worldOwners.delete(name);
       });
     },
     async savePreset(name: string, data: unknown) {

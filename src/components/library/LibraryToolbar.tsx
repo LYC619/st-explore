@@ -19,6 +19,7 @@ import {
 
 interface LibraryToolbarProps {
   characterCount: number;
+  filteredCount?: number;
   searchQuery: string;
   onSearchChange: (value: string) => void;
   onOpenTagManager: () => void;
@@ -47,7 +48,7 @@ interface LibraryToolbarProps {
 
 /** 顶栏一行：标题 / 搜索 / 排序+方向 / 分组 / 外观 / 导入 */
 export function LibraryToolbar({
-  characterCount, searchQuery, onSearchChange, onOpenTagManager,
+  characterCount, filteredCount = characterCount, searchQuery, onSearchChange, onOpenTagManager,
   batchMode, onToggleBatchMode,
   sortKey, onSortKeyChange, sortAsc, onSortAscToggle,
   viewMode, onViewModeChange, groupBy, onGroupByChange,
@@ -58,7 +59,7 @@ export function LibraryToolbar({
   return (
     <div className="shrink-0 flex items-center gap-2.5 px-6 pt-4 pb-2 flex-wrap">
       <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">角色库</h1>
-      <span className="text-xs text-[color:var(--text-faint)]">{characterCount} 张</span>
+      <span aria-label="当前筛选角色数" className="text-xs text-[color:var(--text-faint)]">{filteredCount === characterCount ? `${characterCount} 张` : `${filteredCount} / ${characterCount} 张`}</span>
       <HelpCard>
         角色库是私人收藏馆：导入 ST 角色卡（PNG/JSON）建立档案，聊天记录以「故事」形式挂在角色名下。类型、标签、评分都是 STE 本地整理信息，不会写回角色卡文件。
       </HelpCard>

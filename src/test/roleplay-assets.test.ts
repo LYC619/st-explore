@@ -9,6 +9,30 @@ import { createRoleplayAssets } from '@/lib/roleplay/assets';
 import { parsePreset } from '@/lib/preset-parser';
 
 afterEach(() => setActiveVault(null));
+it('refreshes imported, removed and renamed worldbooks while rejecting stale editor writes', async () => {
+  const { assets, worldbooks } = await fixture();
+  const old = await assets.readWorld('北门');
+  await worldbooks.put({ id: 'south', title: '南门', createdAt: 2, updatedAt: 2, worldbook: parseWorldBook({ entries: {} }) });
+  const current = (await worldbooks.get('north'))!;
+  current.worldbook.entries['1'].content = '新版';
+  await worldbooks.put(current);
+  await assets.refreshWorlds();
+  expect(assets.worldNames()).toEqual(expect.arrayContaining(['北门', '南门']));
+  expect((await assets.readWorld('北门')).entries['1'].content).toBe('新版');
+  await expect(assets.saveWorld('北门', old)).rejects.toThrow(/修改/);
+  await worldbooks.remove('north');
+  await assets.refreshWorlds();
+  expect(assets.worldNames()).toEqual(['南门']);
+  await expect(assets.saveWorld('北门', old)).rejects.toThrow();
+  await worldbooks.put({ ...current, id: 'replacement' });
+  await assets.refreshWorlds();
+  await expect(assets.saveWorld('北门', old)).rejects.toThrow();
+  const replacement = await assets.readWorld('北门');
+  replacement.entries['1'].content = '编辑替换资产';
+  await assets.saveWorld('北门', replacement);
+  expect((await worldbooks.get('replacement'))!.worldbook.entries['1'].content).toBe('编辑替换资产');
+  expect(JSON.stringify((await worldbooks.get('replacement'))!.worldbook)).not.toContain('_ste_owner');
+});
 it('can import the same preset again after deleting it in the chat editor', async () => {
   const { assets, presets } = await fixture();
   const data = { temperature: 0.7, prompts: [], prompt_order: [] };

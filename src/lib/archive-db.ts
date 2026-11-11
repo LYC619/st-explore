@@ -17,6 +17,7 @@ import type { StoryTree } from '@/types/story-tree';
 import { acquireStoryMaintenance } from '@/lib/story-activity';
 import { extractModels, estimatePlayTime, computeStoryProps } from '@/lib/story-meta';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { notifyRecordChanged } from '@/lib/repo/changes';
 import { bytesToBase64 } from '@/lib/utils';
 import {
   normalizeLibraryTagPreferences,
@@ -138,38 +139,41 @@ export async function deleteCharacter(id: string, options?: RemoveOptions): Prom
     const check = () => { if (getVaultEpoch() !== epoch) throw new Error('文件库已切换，删除已停止'); };
     check();
     if (!options) return repo.remove(id);
-    const moved: ArchiveStory[] = [];
     const releases: Array<() => void> = [];
     try {
-      // Light rows carry characterId without story bodies; each match is re-read in its queue.
-      for (const story of await stories.listLight()) {
-        if (story.characterId !== id) continue;
-        releases.push(acquireStoryMaintenance(story.id));
-        await storyWrites.enqueue(story.id, async () => {
-          check();
-          const current = await stories.get(story.id);
-          if (!current || current.characterId !== id) return;
-          await stories.put({ ...current, characterId: undefined, updatedAt: Date.now() }, { derivedUnchanged: true });
-          moved.push(current);
+      const children = (await stories.listLight()).filter(story => story.characterId === id);
+      for (const story of children) releases.push(acquireStoryMaintenance(story.id));
+      const remove = async () => {
+        check();
+        if (getActiveVault()) { await repo.remove(id, options); return; }
+        // Browser storage has no filesystem recycle area; delete the complete family atomically.
+        const db = await openDB(); check();
+        const changed: { store: import('@/lib/idb').StoreName; id: string }[] = [];
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(['characters', 'archiveStories', 'summaries', 'stories', 'roleplayFiles'], 'readwrite');
+          tx.oncomplete = () => resolve(); tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('删除失败'));
+          tx.objectStore('characters').delete(id); changed.push({ store: 'characters', id });
+          const request = tx.objectStore('archiveStories').getAll();
+          request.onsuccess = () => {
+            const ids = new Set((request.result as ArchiveStory[]).filter(s => s.characterId === id).map(s => s.id));
+            for (const sid of ids) { tx.objectStore('archiveStories').delete(sid); changed.push({ store: 'archiveStories', id: sid }); }
+            for (const store of ['summaries', 'stories', 'roleplayFiles'] as const) {
+              const cursor = tx.objectStore(store).openCursor();
+              cursor.onsuccess = () => {
+                const row = cursor.result; if (!row) return;
+                if (ids.has(store === 'roleplayFiles' ? row.value.storyId : row.value.bookId)) {
+                  row.delete(); changed.push({ store, id: row.value.id });
+                }
+                row.continue();
+              };
+            }
+          };
         });
-      }
-      check();
-      await repo.remove(id, options);
-    } catch (error) {
-      // If removal committed but trash cleanup failed, the stories must stay detached.
-      if (await repo.get(id)) {
-        const failures: string[] = [];
-        for (const previous of moved.reverse()) {
-          try {
-            await storyWrites.enqueue(previous.id, async () => {
-              const current = await stories.get(previous.id);
-              if (current && !current.characterId) await stories.put({ ...current, characterId: id }, { derivedUnchanged: true });
-            });
-          } catch { failures.push(previous.title); }
-        }
-        if (failures.length) throw new Error(`删除失败；这些故事仍保留为未绑定：${failures.join('、')}。${String(error)}`);
-      }
-      throw error;
+        changed.forEach(target => notifyRecordChanged(target.store, target.id));
+      };
+      const lock = (index: number): Promise<void> => index < children.length
+        ? storyWrites.enqueue(children[index].id, () => lock(index + 1)) : remove();
+      await lock(0);
     } finally { releases.forEach(release => release()); }
   });
 }

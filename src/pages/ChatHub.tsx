@@ -13,6 +13,14 @@ import { displayCharacterName } from '@/lib/library-query';
 import { saveSettingsSection } from '@/lib/settings-navigation';
 import { formatFullTime, formatListTime } from '@/lib/time-display';
 import { LOADING_LABEL } from '@/lib/ui-copy';
+import { getLibraryTagPreferences } from '@/lib/archive-db';
+import { characterChatTags, getChatTagOptions, normalizeLibraryTagPreferences } from '@/lib/library-tag-preferences';
+import { scopedKey } from '@/lib/vault/vault-scope';
+
+// Keep only list controls during this app session, scoped to the selected library.
+type ChatListFilters = { search: string; tag: string };
+const returnFilters = new Map<string, ChatListFilters>();
+const defaultFilters: ChatListFilters = { search: '', tag: '' };
 
 export default function ChatHub() {
   const navigate = useNavigate();
@@ -21,7 +29,13 @@ export default function ChatHub() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
   const [revision, setRevision] = useState(0);
-  const [search, setSearch] = useState('');
+  const [tagPreferences, setTagPreferences] = useState(() => normalizeLibraryTagPreferences(undefined));
+  const scope = scopedKey('chat-list-filters');
+  const [filterState, setFilterState] = useState(() => ({ scope, ...(returnFilters.get(scope) ?? defaultFilters) }));
+  const filters = filterState.scope === scope ? filterState : returnFilters.get(scope) ?? defaultFilters;
+  const { search } = filters;
+  const tagOptions = getChatTagOptions(tagPreferences);
+  const selectedTag = tagOptions.some(option => option.raw === filters.tag) ? filters.tag : '';
   const [visibleCount, setVisibleCount] = useState(60);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [characterSearch, setCharacterSearch] = useState('');
@@ -38,10 +52,17 @@ export default function ChatHub() {
       const currentRequest = ++requestId, epoch = getVaultEpoch();
       setLoading(true); setLoadError(undefined);
       try {
-        const [chats, cards] = await Promise.all([listStoryIndex(), listCharacterIndex()]);
+        const [chats, cards, preferences] = await Promise.all([listStoryIndex(), listCharacterIndex(), getLibraryTagPreferences()]);
         if (disposed || currentRequest !== requestId || epoch !== getVaultEpoch()) return;
         setStories(chats.sort((a, b) => b.updatedAt - a.updatedAt));
         setCharacters(cards.sort((a, b) => b.updatedAt - a.updatedAt));
+        setTagPreferences(preferences);
+        const key = scopedKey('chat-list-filters');
+        const remembered = returnFilters.get(key);
+        if (remembered?.tag && !getChatTagOptions(preferences).some(option => option.raw === remembered.tag)) {
+          const cleared = { ...remembered, tag: '' };
+          returnFilters.set(key, cleared); setFilterState({ scope: key, ...cleared });
+        }
       } catch (reason) {
         if (!disposed && currentRequest === requestId) setLoadError(reason instanceof Error ? reason.message : String(reason));
       } finally { if (!disposed && currentRequest === requestId) setLoading(false); }
@@ -52,9 +73,16 @@ export default function ChatHub() {
   }, [revision]);
 
   const names = new Map(characters.map(character => [character.id, displayCharacterName(character)]));
+  const taggedCharacters = new Set(characters.filter(character => characterChatTags(character).includes(selectedTag)).map(character => character.id));
   const characterName = (story: StoryIndexEntry) => story.characterId ? names.get(story.characterId) ?? '角色已移除' : '未绑定角色';
   const query = search.trim().toLocaleLowerCase();
-  const filtered = stories.filter(story => (story.title + ' ' + characterName(story)).toLocaleLowerCase().includes(query));
+  const filtered = stories.filter(story => (!selectedTag || !!story.characterId && taggedCharacters.has(story.characterId))
+    && (story.title + ' ' + characterName(story)).toLocaleLowerCase().includes(query));
+  const hasFilters = !!query || !!selectedTag;
+  const changeFilters = (patch: Partial<ChatListFilters>) => {
+    const next = { ...filters, ...patch };
+    returnFilters.set(scope, next); setFilterState({ ...next, scope }); setVisibleCount(60);
+  };
   const cardQuery = characterSearch.trim().toLocaleLowerCase();
   const filteredCharacters = characters.filter(character => [displayCharacterName(character), character.name, character.subtitle ?? '']
     .some(value => value.toLocaleLowerCase().includes(cardQuery)));
@@ -71,7 +99,7 @@ export default function ChatHub() {
     finally { if (mounted.current) setStarting(undefined); }
   };
   const enterTavern = () => {
-    if (stories[0]) openChat(stories[0].id);
+    if (filtered[0]) openChat(filtered[0].id);
     else newChat();
   };
 
@@ -83,7 +111,7 @@ export default function ChatHub() {
           <p className="mt-1 text-sm text-muted-foreground">继续已有的对话，或选一个角色，开始新的故事。</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled={loading || !!loadError} onClick={enterTavern}><MessageCircle className="mr-2 h-4 w-4" />进入酒馆</Button>
+          <Button variant="outline" disabled={loading || !!loadError || hasFilters && !filtered.length} onClick={enterTavern}><MessageCircle className="mr-2 h-4 w-4" />进入酒馆</Button>
           <Button variant="outline" onClick={openModels}><Settings2 className="mr-2 h-4 w-4" />模型设置</Button>
           <Button onClick={newChat}><Plus className="mr-2 h-4 w-4" />新建聊天</Button>
         </div>
@@ -101,12 +129,24 @@ export default function ChatHub() {
       </div>
       <section aria-label="已有聊天" className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-medium">已有聊天{!loading && !loadError && <span className="ml-2 text-sm font-normal text-muted-foreground">{stories.length}</span>}</h2>
+          <h2 className="font-medium">已有聊天{!loading && !loadError && <span className="ml-2 text-sm font-normal text-muted-foreground">{hasFilters ? `${filtered.length} / ${stories.length}` : stories.length}</span>}</h2>
           <div className="relative w-full sm:w-72">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <Input aria-label="搜索聊天" placeholder="搜索聊天或角色" className="pl-9" value={search} onChange={event => { setSearch(event.target.value); setVisibleCount(60); }} />
+            <Input aria-label="搜索聊天" placeholder="搜索聊天或角色" className="pl-9" value={search} onChange={event => changeFilters({ search: event.target.value })} />
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="chat-organizing-tag" className="text-sm text-muted-foreground">标签筛选</label>
+          <select id="chat-organizing-tag" value={selectedTag} disabled={loading || !!loadError}
+            className="h-11 min-w-36 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onChange={event => changeFilters({ tag: event.target.value })}>
+            <option value="">全部标签</option>
+            {tagOptions.map(tag => <option key={tag.raw} value={tag.raw}>{tag.label}</option>)}
+          </select>
+          {hasFilters && <Button variant="ghost" className="min-h-11" onClick={() => changeFilters(defaultFilters)}>清除筛选</Button>}
+          <Button variant="ghost" className="min-h-11" onClick={() => navigate('/library?manageTags=1')}>设置显示的标签</Button>
+        </div>
+        {selectedTag && <p className="text-xs text-muted-foreground">按当前库的角色标签筛选，显示该角色的全部故事。</p>}
         {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{LOADING_LABEL}</div>
           : loadError ? <div role="alert" className="rounded-lg border p-5">
             <p className="font-medium">聊天列表暂时无法读取，文件库里的原记录未改动。</p>
@@ -115,9 +155,9 @@ export default function ChatHub() {
           </div>
           : filtered.length === 0 ? <div className="flex flex-col items-center rounded-xl border border-dashed px-4 py-14 text-center">
             <MessageCircle className="mb-3 h-8 w-8 text-muted-foreground" />
-            <h3 className="font-medium">{query ? '没有找到匹配的聊天' : '还没有聊天'}</h3>
-            <p className="mt-1 text-sm text-muted-foreground">{query ? '试试角色名或其他关键词。' : '选择库里的角色，就能直接进入酒馆开始对话。'}</p>
-            {!query && <Button className="mt-4" variant="outline" onClick={newChat}>选择角色开始</Button>}
+            <h3 className="font-medium">{hasFilters ? '没有找到匹配的聊天' : '还没有聊天'}</h3>
+            <p className="mt-1 text-sm text-muted-foreground">{hasFilters ? '试试其他标签、关键词，或清除筛选。' : '选择库里的角色，就能直接进入酒馆开始对话。'}</p>
+            {!hasFilters && <Button className="mt-4" variant="outline" onClick={newChat}>选择角色开始</Button>}
           </div>
           : <div className="divide-y rounded-xl border bg-card">
             {filtered.slice(0, visibleCount).map(story => <button key={story.id} type="button" aria-label={'继续 ' + story.title}

@@ -12,7 +12,7 @@ const story = (): ArchiveStory => ({ id: 's', title: '故事', session: { id: 's
 afterEach(() => setActiveVault(null));
 
 describe('vault file lifecycle', () => {
-  it('retains owned files without reindexing them on restart and preserves unknown files', async () => {
+  it('retains the full character directory, including local notes, outside the active index', async () => {
     const fs = createMemFs(), vault = createVault(fs);
     await vault.repo<ArchiveCharacter>('characters').put({ ...character(), pngBase64: 'YQ==' });
     const dir = (await vault.pathOf('characters', 'c'))!;
@@ -20,7 +20,8 @@ describe('vault file lifecycle', () => {
     await vault.repo('characters').remove('c', { deleteFiles: false });
     expect(Object.keys(fs.dump()).some(path => path.startsWith('.ste/retained/') && path.endsWith('/档案.json'))).toBe(true);
     expect(await createVault(fs).repo('characters').list()).toEqual([]);
-    expect(await fs.readText(`${dir}/私有笔记.txt`)).toBe('mine');
+    expect((await fs.stat(`${dir}/私有笔记.txt`)).exists).toBe(false);
+    expect(Object.entries(fs.dump()).some(([p, value]) => p.startsWith('.ste/retained/') && p.endsWith('/私有笔记.txt') && value === 'mine')).toBe(true);
   });
 
   it('rolls back a partially moved operation and keeps the record readable', async () => {
@@ -32,7 +33,7 @@ describe('vault file lifecycle', () => {
     expect(await createVault(mem).repo('characters').get('c')).toMatchObject({ id: 'c', pngBase64: 'YQ==' });
   });
 
-  it('removes managed portrait and attachment files but never sourcePath or user strays', async () => {
+  it('recycles character media and local extra files but never the original import source', async () => {
     const fs = createMemFs(), vault = createVault(fs);
     const c = { ...character(), sourcePath: '外部/原卡.png', portraitRows: [{ id: 'row', title: '默认', items: [{ id: 'p', source: 'manual' as const, fileName: 'a.png', addedAt: 1 }] }], attachments: [{ id: 'a', title: 'a', path: '附件/a.txt', pathBase: 'character' as const, size: 1, addedAt: 1 }] };
     await vault.repo<ArchiveCharacter>('characters').put(c);
@@ -45,7 +46,8 @@ describe('vault file lifecycle', () => {
     expect((await fs.stat(`${dir}/立绘/默认/a.png`)).exists).toBe(false);
     expect((await fs.stat(`${dir}/附件/a.txt`)).exists).toBe(false);
     expect((await fs.stat('外部/原卡.png')).exists).toBe(true);
-    expect(await fs.readText(`${dir}/立绘/默认/user.txt`)).toBe('user');
+    expect((await fs.stat(`${dir}/立绘/默认/user.txt`)).exists).toBe(false);
+    expect(Object.keys(fs.dump()).some(p => p.startsWith('.ste/retained/') && p.endsWith('/立绘/默认/user.txt'))).toBe(true);
   });
 
   it('preserves valid unbound stories and only removes owned story runtime files', async () => {
