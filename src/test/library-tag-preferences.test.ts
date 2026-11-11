@@ -83,6 +83,7 @@ describe('library tag preferences', () => {
       categoryOrder: [],
       order: ['世界观/蒸汽朋克'],
       hidden: ['人物/少女'],
+      chatVisible: DEFAULT_LIBRARY_TAG_PREFERENCES.chatVisible,
     });
   });
 

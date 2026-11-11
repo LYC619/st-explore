@@ -20,3 +20,33 @@ it('preserves hidden original ST tag data when the filtered chat settings are sa
   expect(saved.tags).toEqual([{id:'manual',name:'原有标签'},{id:'new',name:'新标签'}]);
   expect(saved.tag_map.a).toEqual(['manual','new']);
 });
+
+it('makes library-enabled organizing tags selectable without matching completed or untagged cards', () => {
+  const characters = [
+    { id: 'missing', tags: ['缺总结', '日记完', '其他标签'], type: '人物' as const, rating: 8 },
+    { id: 'done', tags: ['总结完', '缺日记'], type: '人物' as const, rating: 8 },
+    { id: 'untagged', tags: [], type: '剧情' as const },
+  ];
+  const preferences = { ...DEFAULT_LIBRARY_TAG_PREFERENCES, chatVisible: [...DEFAULT_LIBRARY_TAG_PREFERENCES.chatVisible!, '缺总结', '总结完', '缺日记', '日记完'] };
+  const linked = roleplayLibraryTags(characters, preferences, {});
+  expect(linked.tags.slice(8).map(tag => tag.name)).toEqual(['缺总结', '总结完', '缺日记', '日记完']);
+  const missing = linked.tags.find(tag => tag.name === '缺总结')!;
+  expect(missing).toBeDefined();
+  expect(characters.filter(character => linked.tag_map[avatarKey(character.id)].includes(missing.id)).map(character => character.id)).toEqual(['missing']);
+  expect(linked.tag_map[avatarKey('missing')]).toHaveLength(4);
+  const reordered = roleplayLibraryTags([...characters].reverse(), preferences, {});
+  expect(reordered.tags).toEqual(linked.tags);
+  expect(linked.tags.some(tag => tag.name === '其他标签')).toBe(false);
+});
+
+it('respects deleted tags while keeping an enabled filter even when no cards match', () => {
+  const characters = [{ id: 'missing', tags: ['缺总结', '缺日记'] }];
+  const preferences = { ...DEFAULT_LIBRARY_TAG_PREFERENCES, chatVisible: ['缺总结', '缺日记'] };
+  const deleted = roleplayLibraryTags(characters, { ...preferences, deleted: ['缺总结'] }, {});
+  expect(deleted.tags.map(tag => tag.name)).toEqual(['缺日记']);
+  const deletedCategory = roleplayLibraryTags(characters, { ...preferences, deletedCategories: ['未分类'] }, {});
+  expect(deletedCategory.tag_map[avatarKey('missing')]).toEqual([]);
+  const refreshed = roleplayLibraryTags([{ id: 'missing', tags: ['总结完'] }], preferences, {});
+  expect(refreshed.tags.map(tag => tag.name)).toEqual(['缺总结', '缺日记']);
+  expect(refreshed.tag_map[avatarKey('missing')]).toEqual([]);
+});

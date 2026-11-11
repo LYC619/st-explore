@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { ManagedTagRow } from '@/components/library/ManagedTagRow';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,8 @@ import {
   addCustomCategory,
   buildManagedTagOptions,
   getTagCategories,
+  getChatTagOptions,
+  setTagChatVisibility,
   moveTag,
   removeCustomTagDefinition,
   removeTagCategory,
@@ -116,6 +119,7 @@ export function TagManagerDialog({
     () => options.filter((option) => option.category === activeCategory),
     [activeCategory, options],
   );
+  const chatVisible = new Set(getChatTagOptions(preferences).map(option => option.raw));
   const categories = useMemo(() => [...getTagCategories(preferences), '未分类' as TagCategory].filter(c => !preferences.deletedCategories?.includes(c)), [preferences]);
   useEffect(() => {
     if (activeCategory === '类型' && !preferences.deletedCategories?.includes('类型') || categories.includes(activeCategory)) return;
@@ -425,16 +429,16 @@ export function TagManagerDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next); }}>
-        <DialogContent className="max-h-[calc(100vh-2rem)] max-w-4xl overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
+        <DialogContent className="max-h-[calc(100dvh-2rem)] h-[min(48rem,calc(100dvh-2rem))] max-w-4xl overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
           <DialogHeader>
             <DialogTitle>标签管理</DialogTitle>
             <DialogDescription>
-              新增自定义标签、调整左侧显示顺序，或隐藏暂时不需要的标签。隐藏不会修改任何角色卡。
+              标签定义与显示设置保存在当前库。勾选框控制角色库侧栏；“在聊天中显示”控制聊天列表和酒馆角色筛选，不修改角色卡。
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden rounded-xl border border-[color:var(--border-normal)]">
-            <aside className="flex min-h-0 flex-col overflow-hidden border-r border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-2">
+          <div className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)] sm:grid-rows-1 overflow-hidden rounded-xl border border-[color:var(--border-normal)]">
+            <aside className="flex min-h-0 max-h-36 sm:max-h-none flex-col overflow-hidden border-r border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-2">
               <div className="min-h-0 flex-1 overflow-y-auto">
               {!preferences.deletedCategories?.includes('类型') && <button
                 type="button"
@@ -572,9 +576,9 @@ export function TagManagerDialog({
 
               <div className="min-h-0 flex-1 overflow-y-auto p-3">
                 {activeCategory === '类型' ? (
-                  <div className="grid grid-cols-2 gap-2.5" data-managed-type-grid>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5" data-managed-type-grid>
                     {CHARACTER_TYPES.filter(type => !preferences.deleted?.includes(`类型/${type}`)).map((type) => (
-                      <div key={type} className="flex items-center gap-1"><button
+                      <div key={type} className="flex flex-wrap items-center gap-1"><button
                         type="button"
                         aria-label={`选择类型 ${type}`}
                         aria-pressed={assignmentType === type}
@@ -591,11 +595,15 @@ export function TagManagerDialog({
                       >
                         <span className="font-medium">{type}</span>
                         <span className="text-xs opacity-65">{typeCounts.get(type) ?? 0} 张</span>
-                      </button><Button variant="ghost" size="icon" aria-label={`删除标签 类型/${type}`} disabled={busy} onClick={() => setTypeDelete(type)}><Trash2 className="w-3.5 h-3.5" /></Button></div>
+                      </button><Button variant="ghost" size="icon" aria-label={`删除标签 类型/${type}`} disabled={busy} onClick={() => setTypeDelete(type)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      <label className="flex min-h-11 basis-full items-center justify-between gap-2 px-2 text-xs text-[color:var(--text-muted)]">在聊天中显示
+                        <Switch aria-label={`在聊天中显示 类型/${type}`} checked={chatVisible.has(`类型/${type}`)} disabled={busy}
+                          onCheckedChange={visible => { void savePreferences(setTagChatVisibility(preferences, `类型/${type}`, visible)); }} />
+                      </label></div>
                     ))}
                   </div>
                 ) : (
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
                   {previewOptions.map((option, index) => (
                     <ManagedTagRow
                       key={option.raw}
@@ -603,6 +611,8 @@ export function TagManagerDialog({
                       index={index}
                       total={previewOptions.length}
                       busy={busy}
+                      chatVisible={chatVisible.has(option.raw)}
+                      onChatVisibilityChange={(raw, visible) => { void savePreferences(setTagChatVisibility(preferences, raw, visible)); }}
                       selected={assignmentRaw === option.raw}
                       dropEdge={pointerDropTarget?.kind === 'tag' && pointerDropTarget.raw === option.raw
                         ? pointerDropTarget.edge
@@ -625,7 +635,7 @@ export function TagManagerDialog({
                   <p className="py-12 text-center text-sm text-[color:var(--text-muted)]">{activeCategory ? '这个分类还没有标签' : '请先新建一级标签'}</p>
                 )}
               </div>
-              <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-3 py-2.5">
+              <div className="flex flex-wrap shrink-0 items-center justify-between gap-3 border-t border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-3 py-2.5">
                 <div className="min-w-0 text-xs text-[color:var(--text-muted)]">
                   {assignmentType ? (
                     <>

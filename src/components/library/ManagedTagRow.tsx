@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, GripVertical, Trash2 } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import type { ManagedTagOption } from '@/lib/library-tag-preferences';
 
@@ -9,6 +10,8 @@ interface ManagedTagRowProps {
   total: number;
   busy: boolean;
   selected: boolean;
+  chatVisible: boolean;
+  onChatVisibilityChange: (raw: string, visible: boolean) => void;
   dropEdge?: 'before' | 'after';
   onVisibilityChange: (raw: string, visible: boolean) => void;
   onMove: (raw: string, targetIndex: number) => void;
@@ -23,6 +26,8 @@ export function ManagedTagRow({
   total,
   busy,
   selected,
+  chatVisible,
+  onChatVisibilityChange,
   dropEdge,
   onVisibilityChange,
   onMove,
@@ -35,7 +40,7 @@ export function ManagedTagRow({
       data-managed-tag={option.raw}
       data-pointer-drop-edge={dropEdge}
       className={cn(
-        'group relative min-h-11 flex items-center gap-2 rounded-lg border bg-[var(--bg-elevated)] px-2 py-1.5 transition-[border-color,background-color,transform] duration-150',
+        'group relative min-h-11 flex flex-wrap items-center gap-2 rounded-lg border bg-[var(--bg-elevated)] px-2 py-1.5 transition-[border-color,background-color,transform] duration-150',
         selected ? 'border-[color:var(--brand)]' : 'border-[color:var(--border-normal)]',
       )}
     >
@@ -118,6 +123,11 @@ export function ManagedTagRow({
             <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
+      <label className="flex min-h-11 basis-full items-center justify-between gap-2 border-t border-[color:var(--border-normal)] px-1 text-xs text-[color:var(--text-muted)]">
+        在聊天中显示
+        <Switch aria-label={`在聊天中显示 ${option.raw}`} checked={chatVisible} disabled={busy}
+          onCheckedChange={visible => onChatVisibilityChange(option.raw, visible)} />
+      </label>
     </div>
   );
 }

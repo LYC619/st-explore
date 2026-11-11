@@ -21,6 +21,8 @@ export interface LibraryTagPreferences {
   hidden: string[];
   deleted?: string[];
   deletedCategories?: string[];
+  /** Library-owned selection shared by the chat list and Tavern character picker. */
+  chatVisible?: string[];
 }
 
 export interface ManagedTagOption extends ParsedTag {
@@ -53,6 +55,10 @@ const DEFAULT_HIDDEN = [
   '评价/6分以下',
 ];
 
+// Compatibility seed for libraries created before chat visibility was configurable.
+// Once saved, even an empty library selection takes precedence over these defaults.
+const DEFAULT_CHAT_VISIBLE = ['类型/人物', '类型/剧情', '类型/玩法', '类型/综合', '类型/同人', '评价/神作', '评价/精品', '评价/及格'];
+
 export const DEFAULT_LIBRARY_TAG_PREFERENCES: LibraryTagPreferences = {
   version: 1,
   customCategories: [],
@@ -60,6 +66,7 @@ export const DEFAULT_LIBRARY_TAG_PREFERENCES: LibraryTagPreferences = {
   categoryOrder: [],
   order: [],
   hidden: DEFAULT_HIDDEN,
+  chatVisible: DEFAULT_CHAT_VISIBLE,
 };
 
 function uniqueStrings(value: unknown): string[] {
@@ -85,6 +92,7 @@ export function normalizeLibraryTagPreferences(value: unknown): LibraryTagPrefer
       categoryOrder: [],
       order: [],
       hidden: [...DEFAULT_HIDDEN],
+      chatVisible: [...DEFAULT_CHAT_VISIBLE],
     };
   }
   const source = value as Partial<LibraryTagPreferences>;
@@ -102,9 +110,36 @@ export function normalizeLibraryTagPreferences(value: unknown): LibraryTagPrefer
     categoryOrder,
     order: uniqueStrings(source.order),
     hidden: uniqueStrings(source.hidden),
+    chatVisible: source.chatVisible === undefined ? [...DEFAULT_CHAT_VISIBLE]
+      : uniqueStrings(uniqueStrings(source.chatVisible).map(normalizeRatingTag)),
     ...(source.deleted ? { deleted: uniqueStrings(uniqueStrings(source.deleted).map(normalizeRatingTag)) } : {}),
     ...(source.deletedCategories ? { deletedCategories: uniqueStrings(source.deletedCategories) } : {}),
   };
+}
+
+export function getChatTagOptions(preferences: LibraryTagPreferences): ParsedTag[] {
+  const raws = uniqueStrings((preferences.chatVisible ?? DEFAULT_CHAT_VISIBLE).map(normalizeRatingTag));
+  const knownCategories = ['类型', ...preferences.customCategories, ...(preferences.deletedCategories ?? [])];
+  const order = new Map(preferences.order.map((raw, index) => [normalizeRatingTag(raw), index]));
+  const options = raws.map(raw => parseTag(raw, knownCategories)).filter(option =>
+    !preferences.deleted?.some(raw => normalizeRatingTag(raw) === option.raw)
+    && !preferences.deletedCategories?.includes(option.category));
+  options.sort((a, b) => (order.get(a.raw) ?? Number.MAX_SAFE_INTEGER) - (order.get(b.raw) ?? Number.MAX_SAFE_INTEGER));
+  // Two groups may use the same label; keep them distinguishable in both chat views.
+  const counts = new Map<string, number>();
+  for (const option of options) counts.set(option.label, (counts.get(option.label) ?? 0) + 1);
+  return options.map(option => ({ ...option, label: counts.get(option.label)! > 1 ? option.raw : option.label }));
+}
+
+export function setTagChatVisibility(preferences: LibraryTagPreferences, raw: string, visible: boolean): LibraryTagPreferences {
+  const normalized = normalizeRatingTag(raw.trim());
+  const selected = new Set(preferences.chatVisible ?? DEFAULT_CHAT_VISIBLE);
+  if (visible && normalized) selected.add(normalized); else selected.delete(normalized);
+  return { ...preferences, chatVisible: [...selected] };
+}
+
+export function characterChatTags(character: { tags: string[]; rating?: number; type?: string }): string[] {
+  return [...characterFilterTags(character), ...(character.type ? [`类型/${character.type}`] : [])].map(normalizeRatingTag);
 }
 
 export function getTagCategories(preferences: LibraryTagPreferences): TagCategory[] {
@@ -143,7 +178,7 @@ export function buildManagedTagOptions(
       definitions.set(raw, { parsed: parseTag(raw), builtIn: true });
     }
   }
-  for (const storedRaw of preferences.customTags) {
+  for (const storedRaw of [...preferences.customTags, ...(preferences.chatVisible ?? [])]) {
     const raw = normalizeRatingTag(storedRaw);
     if (!raw.startsWith('类型/') && !definitions.has(raw)) {
       definitions.set(raw, { parsed: parseTag(raw, knownCategories), builtIn: false });
@@ -253,10 +288,11 @@ export function addCustomTagDefinition(
 }
 
 export function removeTagCategory(preferences: LibraryTagPreferences, category: string): LibraryTagPreferences {
-  const belongs = (raw: string) => parseTag(raw, preferences.customCategories).category === category;
+  const belongs = (raw: string) => parseTag(raw, ['类型', ...preferences.customCategories]).category === category;
   return { ...preferences, customCategories: preferences.customCategories.filter(value => value !== category),
     customTags: preferences.customTags.filter(raw => !belongs(raw)), order: preferences.order.filter(raw => !belongs(raw)),
     hidden: preferences.hidden.filter(raw => !belongs(raw)), categoryOrder: preferences.categoryOrder.filter(value => value !== category),
+    chatVisible: (preferences.chatVisible ?? DEFAULT_CHAT_VISIBLE).filter(raw => !belongs(raw)),
     deletedCategories: [...new Set([...(preferences.deletedCategories ?? []), category])] };
 }
 
@@ -270,6 +306,7 @@ export function removeCustomTagDefinition(
     customTags: preferences.customTags.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
     order: preferences.order.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
     hidden: preferences.hidden.filter((item) => normalizeRatingTag(item) !== normalizedRaw),
+    chatVisible: (preferences.chatVisible ?? DEFAULT_CHAT_VISIBLE).filter(item => normalizeRatingTag(item) !== normalizedRaw),
     deleted: uniqueStrings([...(preferences.deleted ?? []).map(normalizeRatingTag), normalizedRaw]),
   };
 }

@@ -43,6 +43,21 @@ beforeEach(async () => {
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); setActiveVault(null); });
 
+it('saves chat visibility through the real library manager without changing cards or sidebar visibility', async () => {
+  const before = await getCharacter('人物卡');
+  await renderLibrary();
+  await click(labelButton('标签管理'));
+  await click(labelButton('在聊天中显示 人物/少女'));
+  expect((await getLibraryTagPreferences()).chatVisible).toContain('人物/少女');
+  expect((await getLibraryTagPreferences()).hidden).not.toContain('人物/少女');
+  expect(await getCharacter('人物卡')).toEqual(before);
+  await click(labelButton('在聊天中显示 人物/少女'));
+  expect((await getLibraryTagPreferences()).chatVisible).not.toContain('人物/少女');
+  await click(button('类型互斥'));
+  await click(labelButton('在聊天中显示 类型/人物'));
+  expect((await getLibraryTagPreferences()).chatVisible).not.toContain('类型/人物');
+});
+
 it('clears a selected type filter when its default second-level tag is deleted through the actual manager', async () => {
   await renderLibrary();
   await click(document.querySelector<HTMLButtonElement>('[data-library-type-panel] button[title="人物"]')!);

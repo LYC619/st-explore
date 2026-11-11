@@ -1,23 +1,20 @@
 import type { ArchiveCharacter } from '@/types/archive';
-import type { LibraryTagPreferences } from '@/lib/library-tag-preferences';
-import { characterFilterTags } from '@/lib/tag-taxonomy';
+import { getChatTagOptions, characterChatTags, type LibraryTagPreferences } from '@/lib/library-tag-preferences';
 import { avatarKey } from './catalog';
 import { sha256 } from 'js-sha256';
 
 const prefix = 'ste-library:';
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const filterNames = ['类型/人物','类型/剧情','类型/玩法','类型/综合','类型/同人','评价/神作','评价/精品','评价/及格'];
 const idOf = (name: string) => prefix + sha256(name).slice(0, 20);
 
-/** The chat picker shows only the agreed type/rating filters; library tags remain intact. */
+/** Project the current library's explicit chat selection without changing character data. */
 export function roleplayLibraryTags(characters: Pick<ArchiveCharacter, 'id' | 'tags' | 'type' | 'rating'>[], preferences: LibraryTagPreferences, _base: Record<string, unknown>) {
-  const visible = (raw: string) => !preferences.deleted?.includes(raw) && !preferences.deletedCategories?.includes(raw.split('/')[0]);
-  const names = filterNames.filter(visible);
-  const tags = names.map(name => ({id: idOf(name), name: name.split('/')[1]}));
+  const options = getChatTagOptions(preferences);
+  const tags = options.map(option => ({ id: idOf(option.raw), name: option.label }));
   const tagMap: Record<string, string[]> = {};
   for (const character of characters) {
-    const labels = [...characterFilterTags({ tags: character.tags ?? [], rating: character.rating }), ...(character.type ? [`类型/${character.type}`] : [])];
-    tagMap[avatarKey(character.id)] = names.filter(name => labels.includes(name)).map(idOf);
+    const labels = characterChatTags(character);
+    tagMap[avatarKey(character.id)] = options.filter(option => labels.includes(option.raw)).map(option => idOf(option.raw));
   }
   return { tags, tag_map: tagMap };
 }
