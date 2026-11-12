@@ -9,7 +9,7 @@ import { getBuiltinPromptDefault, getBuiltinPrompt, formatBuiltinPrompt } from '
 import type { ChatSession } from '@/types/chat';
 import type { StoryNode } from '@/types/story-tree';
 import { isStoryNodeType } from '@/types/story-tree';
-import type { ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage } from '@/lib/llm';
 import { addNode, updateNode, childrenOf, buildOutline, findById } from '@/lib/story-tree-model';
 
 export interface TreeOp {

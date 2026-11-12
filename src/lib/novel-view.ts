@@ -18,7 +18,7 @@ import { applyRegexRules } from '@/lib/regex-processor';
 import { isOOCMessage } from '@/lib/chat-edit';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
 import { extractFirstJson } from '@/lib/character-ai';
-import type { ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage } from '@/lib/llm';
 import type { ChatSession } from '@/types/chat';
 import type { SummaryItem } from '@/types/summary';
 

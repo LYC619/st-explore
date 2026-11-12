@@ -25,7 +25,7 @@
 | --- | --- | --- |
 | S4 偶发加载 | 已修复可复现路径，原始偶发触发仍待用户新包验证 | [记录](../verification/2026-11-09-s4-startup.md) |
 | S5 关窗 | 合成库关窗通过；未证明原始触发已消失，合并进最终验收 | [记录](../verification/2026-11-09-s5-window-exit.md) |
-| 总结失败／被拒 | 本轮统一错误分类与超时，不调用真实模型；实际生成由用户最终确认 | [收口方案第 6 项](../superpowers/plans/2026-11-10-closeout-reliability.md) |
+| 总结失败／被拒 | 统一分类、超时、重试与全部生成入口已实现，合成检查通过；实际生成由用户最终确认 | [执行记录第6项](2026-11-10-closeout-execution.md) |
 | 用户桌面配置位置 | Codex 中的 AppData 有重定向，不能替代用户双击环境；本轮加环境自检 | [更正与边界](2026-11-09-claude-stability-followup.md) |
 | 聊天标签、回收站、附件批删 | 自动及独立环境有历史证据，用户桌面集中验收待做 | [附件补修](../verification/2026-11-11-existing-attachment-paths.md) |
 | Android | 无真机，本轮不验证 | [原生测试边界](../guides/native-test-isolation.md) |

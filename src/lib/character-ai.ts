@@ -8,7 +8,7 @@ import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
  * 读取范围（定稿第四章）：每次由用户勾选——仅角色卡 / +世界书 / +指定故事，
  * 范围以字符串数组记录（'card' / 'worldbook:<id>' / 'story:<id>'），存进简介版本或评分记录。
  */
-import type { ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage } from '@/lib/llm';
 import type { NormalizedCharacterCard } from '@/lib/png-parser';
 import type { WorldBook } from '@/types/worldbook';
 import type { ChatSession } from '@/types/chat';

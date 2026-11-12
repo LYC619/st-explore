@@ -44,6 +44,7 @@ export function SummaryWorkspace({
 }: SummaryWorkspaceProps) {
   const [view, setView] = useState<'workshop' | 'gallery'>('workshop');
   const [selectedRecord, setSelectedRecord] = useState<SummaryItem | null>(null);
+  const [truncatedRecords, setTruncatedRecords] = useState<Set<string>>(() => new Set());
   const [refreshKey, setRefreshKey] = useState(0);
   const [draftNonce, setDraftNonce] = useState(0);
   const [pendingAction, setPendingAction] = useState<'manual' | 'regenerate' | null>(null);
@@ -73,7 +74,12 @@ export function SummaryWorkspace({
 
   const refresh = useCallback(() => setRefreshKey((value) => value + 1), []);
 
-  const handleSaved = useCallback((item: SummaryItem) => {
+  const handleSaved = useCallback((item: SummaryItem, truncated = false) => {
+    setTruncatedRecords(previous => {
+      const next = new Set(previous);
+      if (truncated) next.add(item.id); else next.delete(item.id);
+      return next;
+    });
     setSelectedRecord(item);
     setDetailMode(true);
     setRefreshKey((value) => value + 1);
@@ -204,6 +210,7 @@ export function SummaryWorkspace({
             record={selectedRecord?.kind === kind ? selectedRecord : null}
             defaultBranchId={currentBranchId}
             onSaved={handleSaved}
+            initialTruncated={!!selectedRecord && truncatedRecords.has(selectedRecord.id)}
             onDiscarded={handleDiscarded}
             showEmptyEditor={false}
             showApiStatus={false}

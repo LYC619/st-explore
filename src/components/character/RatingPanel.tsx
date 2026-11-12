@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 /**
  * 角色卡主页 · 评分面板（2.0 阶段6，定稿第四章·评分）。
  * 10 分制总分，三种打分方式：直接手动 / 模板（多维度+权重，算参考总分）/ AI 评分。
@@ -19,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import {
   buildRatingMessages, parseRatingResponse, computeWeightedTotal, describeReadScope,
 } from '@/lib/character-ai';
@@ -83,6 +85,7 @@ function DimensionRow({
 
 export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelProps) {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('direct');
 
@@ -172,8 +175,8 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
 
   const handleAiGenerate = async () => {
     const config = loadAPIConfig();
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     const { messages, readScope } = buildRatingMessages({
@@ -184,6 +187,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
     });
     setAiSnapshot({ templateId: template.id, templateTitle: template.title, prompt: messages[0].content, model: config.model });
     setAiScope(readScope);
+    setTruncated(false);
     setAiStreaming(true);
     setAiDims(null);
     setAiRaw('');
@@ -197,6 +201,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
           setAiRaw(outputRef.current);
         },
         signal: controller.signal,
+        onWarning: () => setTruncated(true),
       });
       const parsed = parseRatingResponse(outputRef.current, template);
       if (!parsed) {
@@ -206,7 +211,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
         setAiNote(parsed.note ?? '');
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isLLMCancelled(err)) {
         toast({ title: '已停止生成' });
       } else {
         toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
@@ -303,6 +308,7 @@ export function RatingPanel({ character, norm, stories, onPatch }: RatingPanelPr
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[90dvh] overflow-y-auto">
+          <CompletionWarning truncated={truncated} />
           <DialogHeader>
             <DialogTitle>评分「{character.name}」</DialogTitle>
             <DialogDescription>

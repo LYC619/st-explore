@@ -308,7 +308,10 @@ describe('real Tavern host contracts', () => {
       }
       expect(fetcher).toHaveBeenCalledTimes(2);
       const failed = await (await f.host.request('/api/backends/chat-completions/status', {})).json();
-      expect(failed.data.map((item: { id: string }) => item.id)).toContain('M2'); expect(failed.ste_warning).toContain('断网');
+      expect(failed.data.map((item: { id: string }) => item.id)).toContain('M2');
+      expect(failed.ste_warning).toContain('连接模型服务失败，请检查网络和接口地址。');
+      expect(failed.ste_warning).toContain('已尝试 1 次');
+      expect(failed.ste_warning).not.toContain('断网');
     } finally { f.host.close(); }
   });
   it('shares the startup character read and decorates bootstrap/single-card DTOs without rereading the library', async () => {

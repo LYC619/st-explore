@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -12,7 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
 import { ApiStatusLine } from '@/components/ai-tools/ApiStatusLine';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import { FloorRangePicker } from '@/components/summary/FloorRangePicker';
 import { getAllSummaries } from '@/lib/summary-db';
 import { getAllPresets } from '@/lib/preset-db';
@@ -65,6 +67,7 @@ const OP_BADGE: Record<TreeOp['op'], { text: string; cls: string }> = {
  */
 export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, storyId = null, branchId = null, treeId }: AIFillDialogProps) {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
   const [floorStart, setFloorStart] = useState(0);
   const [floorEnd, setFloorEnd] = useState(Math.max(0, session.messages.length - 1));
   const [instruction, setInstruction] = useState('');
@@ -134,8 +137,8 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
     if (streaming || contextLoading || contextError) return;
     if (requestEpoch.current !== getVaultEpoch()) { setOutputError('资料库已切换，请重新打开。'); return; }
     const config = loadAPIConfig(); // 即时读取全局配置
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     const floorText = floorsToText(session, floorStart, floorEnd);
@@ -150,6 +153,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
     const sequence = ++generation.current;
     generatedNodes.current = JSON.stringify(nodes); setOutputError('');
     generatedRequest.current = JSON.stringify({ floorStart, floorEnd, messages });
+    setTruncated(false);
     setStreaming(true);
     setRawOutput('');
     setOpItems(null);
@@ -160,6 +164,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
       await callOpenAIMessages(config, messages, {
         onChunk: (c) => { if (generation.current === sequence && requestEpoch.current === getVaultEpoch()) { outputRef.current += c; setRawOutput(outputRef.current); } },
         signal: controller.signal,
+        onWarning: () => setTruncated(true),
         params: { ...request.params, temperature: 0.2 },
       });
       if (generation.current !== sequence || requestEpoch.current !== getVaultEpoch()) return;
@@ -167,7 +172,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
       if (parsed.status !== 'ok') { setOutputError(parsed.status === 'refused' ? '模型拒绝了本次请求，原始输出已保留。' : parsed.status === 'invalid-json' ? '模型输出不是有效 JSON，原始输出已保留。' : '没有有效树操作，原始输出已保留。'); return; }
       setOpItems(parsed.ops.map((op) => ({ op, included: true, expanded: false })));
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') toast({ title: '已停止' });
+      if (isLLMCancelled(err)) toast({ title: '已停止' });
       else toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
     } finally {
       if (generation.current === sequence) { setStreaming(false); abortRef.current = null; }
@@ -227,6 +232,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* 宽度加行内样式兜底：个别环境下 !max-w 类规则不生效（见 v0.16.1 世界书弹窗同款教训） */}
       <DialogContent className="!max-w-[min(64rem,94vw)] max-h-[88vh] overflow-y-auto" style={{ maxWidth: 'min(64rem, 94vw)' }}>
+        <CompletionWarning truncated={truncated} />
         <DialogHeader>
           <DialogTitle>AI 从楼层生成事实节点</DialogTitle>
         </DialogHeader>

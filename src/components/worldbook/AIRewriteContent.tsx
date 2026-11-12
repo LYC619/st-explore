@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useState, useRef, useMemo } from 'react';
 import { Wand2, Loader2, StopCircle, Check, X } from 'lucide-react';
@@ -35,6 +37,8 @@ interface Props {
 /** 通用 AI 改写：输入要求 → 喂当前内容+要求 → 左右对照确认后替换。世界书条目 / 预设块等均可复用 */
 export function AIRewriteContent({ content, onResult, compact, systemPrompt, quickPresets, title, builtinPromptId, promptVariables, quickPresetPrefix }: Props) {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
+  const [failure, setFailure] = useState('');
   const [open, setOpen] = useState(false);
   const [instruction, setInstruction] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,8 +57,8 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
 
   const run = async () => {
     const config = loadAPIConfig();
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '到「AI 配置」页填入 API Key 后再用', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '到「AI 配置」页填写接口地址和模型后再用', variant: 'destructive' });
       return;
     }
     if (!content.trim()) {
@@ -69,10 +73,12 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
     const userContent = formatBuiltinPrompt('rewrite.input', { content, instruction: instruction.trim() });
     const controller = new AbortController();
     abortRef.current = controller;
+    setTruncated(false);
+    setFailure('');
     setLoading(true);
     let acc = '';
     try {
-      await callOpenAI(config, userContent, sysPrompt, (chunk) => { acc += chunk; }, controller.signal);
+      await callOpenAI(config, userContent, sysPrompt, (chunk) => { acc += chunk; }, controller.signal, () => setTruncated(true));
       const result = acc.replace(/^```[a-z]*\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
       if (result) {
         setPendingResult(result); // 进对照弹窗，由用户决定是否替换
@@ -80,7 +86,9 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
         toast({ title: 'AI 未返回内容', description: '请调整要求后重试', variant: 'destructive' });
       }
     } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') toast({ title: '已停止' });
+      setFailure(isLLMCancelled(e) ? '已停止，保留已收到的部分内容。' : e instanceof Error ? e.message : '改写失败，请检查连接配置。');
+      if (acc.trim()) setPendingResult(acc);
+      if (isLLMCancelled(e)) toast({ title: '已停止' });
       else toast({ title: '改写失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
     } finally {
       setLoading(false);
@@ -152,6 +160,8 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
       {/* 对照确认弹窗：左=当前内容（标删除），右=AI 结果（标新增） */}
       <Dialog open={pendingResult != null} onOpenChange={(o) => { if (!o) setPendingResult(null); }}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+          <CompletionWarning truncated={truncated} />
+          {failure && <p role="alert" className="text-xs text-destructive">{failure}</p>}
           <DialogHeader>
             <DialogTitle>对照确认改写结果</DialogTitle>
             <DialogDescription>

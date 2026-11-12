@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPromptDefault, getBuiltinPrompt, formatBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
@@ -7,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import { ApiStatusLine } from '@/components/ai-tools/ApiStatusLine';
 import { FloorRangePicker } from '@/components/summary/FloorRangePicker';
 import { floorsToText } from '@/lib/story-tree-ai';
@@ -29,6 +31,7 @@ export const DEFAULT_WB_UPDATE_PROMPT = getBuiltinPromptDefault('worldbook.updat
 
 export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }: Props) {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
   const [session, setSession] = useState<ChatSession | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [floorStart, setFloorStart] = useState(0);
@@ -66,6 +69,7 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   useEffect(() => {
     if (!open) return;
     setOutput('');
+    setTruncated(false);
     loadActiveSession().then((s) => {
       setSession(s);
       setSessionLoaded(true);
@@ -91,8 +95,8 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
 
   const handleGenerate = useCallback(async () => {
     const config = loadAPIConfig(); // 生成时即时读取（配置在 AI 工具页维护）
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     if (!session || floorCount === 0) {
@@ -103,6 +107,7 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
     const userContent = formatBuiltinPrompt('worldbook.update.input', { existing: existingSummary, chat: floorsToText(session, floorStart, floorEnd) });
     const controller = new AbortController();
     abortRef.current = controller;
+    setTruncated(false);
     setLoading(true);
     setOutput('');
     try {
@@ -112,9 +117,10 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
       ], {
         onChunk: (chunk) => setOutput((p) => p + chunk),
         signal: controller.signal,
+        onWarning: () => setTruncated(true),
       });
     } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') {
+      if (isLLMCancelled(e)) {
         toast({ title: '已停止生成' });
       } else {
         toast({ title: '生成失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
@@ -154,6 +160,7 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!max-w-2xl max-h-[85vh] overflow-y-auto">
+        <CompletionWarning truncated={truncated} />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />

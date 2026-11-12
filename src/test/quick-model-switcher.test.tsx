@@ -6,7 +6,7 @@ import { QuickModelSwitcher } from '@/components/ai-tools/QuickModelSwitcher';
 import { ApiStatusLine } from '@/components/ai-tools/ApiStatusLine';
 import { APIConfigCard } from '@/components/ai-tools/APIConfigCard';
 import { activateApiModel, getActiveProfile, getAPIConfigForSelection, loadApiProfiles, persistProfiles, type ApiModelSelection } from '@/components/ai-tools/api-profiles';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 
 vi.mock('@/lib/vault/tauri-fs', () => ({ isTauri: () => false }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

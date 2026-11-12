@@ -9,7 +9,7 @@ import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
 import { isApiProfileConfigured, loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
 import { getApiConfigSyncState, restoreMissingApiProfiles } from '@/lib/vault/sensitive-config';
-import { fetchModels } from '@/components/ai-tools/useOpenAI';
+import { fetchModels } from '@/lib/llm';
 import { openStorySession, type StoryCommit, type RoleplayStorySession } from './story-session';
 import { tokenizeTavern } from './tokenizer';
 import { customHeaders, prepareCompletion, sendPreparedCompletion } from './provider';

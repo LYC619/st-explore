@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
 /**
  * 记录工作台（2.0 阶段3，从 pages/Summary.tsx 拆出的生成+编辑流）。
@@ -28,7 +30,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
 import { ApiStatusLine } from '@/components/ai-tools/ApiStatusLine';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { DiaryView } from '@/components/summary/DiaryView';
 import type { ArchiveStory } from '@/types/archive';
@@ -69,7 +71,9 @@ interface RecordWorkbenchProps {
   /** 新建时默认脉络 = 工作区当前分支 */
   defaultBranchId: string | null;
   /** 保存/自动暂存落库后通知（父组件刷新索引并选中该条） */
-  onSaved: (item: SummaryItem) => void;
+  onSaved: (item: SummaryItem, truncated?: boolean) => void;
+  /** Keep the current workspace warning through its autosave remount, outside saved content. */
+  initialTruncated?: boolean;
   /** 「不要了」删掉记录后通知（父组件刷新索引并取消选中）。不传则不显示该按钮。 */
   onDiscarded?: (id: string | null) => void;
   /** 旧版总结页右栏顶部的已存记录列表。 */
@@ -100,6 +104,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     record,
     defaultBranchId,
     onSaved,
+    initialTruncated = false,
     onDiscarded,
     sidePanel,
     configurationHeader,
@@ -108,6 +113,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     recordsRefreshKey = 0,
   }, ref) {
     const { toast } = useToast();
+    const [truncated, setTruncated] = useState(initialTruncated);
 
     // 脉络选择：记录带 branchId 用记录的；新建默认工作区当前分支。分支被删则回落主线
     const initialBranch = record ? (record.branchId ?? null) : defaultBranchId;
@@ -349,7 +355,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       autoSaved,
     });
 
-    const autoSave = async (content: string, title: string, volume?: number) => {
+    const autoSave = async (content: string, title: string, volume: number | undefined, wasTruncated: boolean) => {
       const id = generateSummaryId();
       const item = buildItem(content, title, true, id, volume);
       await saveSummary(item);
@@ -357,7 +363,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setCurrentSummaryId(id);
       setSavedPermanent(false);
       setVolumeOverride(null);
-      onSaved(item);
+      onSaved(item, wasTruncated);
     };
 
     const handleGenerate = async () => {
@@ -366,8 +372,8 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         return;
       }
       const config = loadAPIConfig();
-      if (!config.apiKey) {
-        toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+      if (!isLLMConfigured(config)) {
+        toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
         return;
       }
       const { messages, warnings } = buildSummaryMessages(buildEngineInput());
@@ -383,6 +389,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setMetadataEdited(false);
       setPreview(false);
       setManualDraft(false);
+      setTruncated(false);
       setStreaming(true);
       setResultContent('');
       setResultTitle('');
@@ -391,6 +398,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       abortRef.current = controller;
       scrollResultIntoView();
 
+      let wasTruncated = false;
       try {
         await callOpenAIMessages(config, messages, {
           onChunk: (chunk) => {
@@ -398,13 +406,14 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
             setResultContent(outputRef.current);
           },
           signal: controller.signal,
+          onWarning: () => { wasTruncated = true; setTruncated(true); },
         });
         const finalText = outputRef.current;
         const autoTitle = extractTitle(kind, finalText) || `${SUMMARY_KIND_LABELS[kind]} · ${new Date().toLocaleDateString()}`;
         setResultTitle(autoTitle);
-        await autoSave(finalText, autoTitle, vol);
+        await autoSave(finalText, autoTitle, vol, wasTruncated);
       } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isLLMCancelled(err)) {
           toast({ title: '已停止生成' });
         } else {
           toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
@@ -432,7 +441,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setMetadataEdited(false);
       setVolumeOverride(null);
       reloadVolumes();
-      onSaved(item);
+      onSaved(item, truncated);
       toast({ title: '已永久保存', description: resultTitle || SUMMARY_KIND_LABELS[kind] });
     };
 
@@ -639,6 +648,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
           <div className="min-h-0 min-w-0 space-y-3 overflow-y-auto pr-1 scrollbar-thin">
             {sidePanel}
             <div ref={resultRef} className="space-y-3">
+            <CompletionWarning truncated={truncated} />
             {!streaming && resultContent && (
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" className="gap-1" onClick={() => setPreview((v) => !v)}>

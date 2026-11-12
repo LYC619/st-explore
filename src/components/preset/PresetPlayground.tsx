@@ -16,7 +16,7 @@ import { buildPresetPlaygroundRequest, type PlaygroundWorldMode } from '@/lib/pr
 import { streamPresetPlayground } from '@/lib/preset-playground-stream';
 import { normalizeCharacterCard } from '@/lib/png-parser';
 import { substituteVars } from '@/lib/preset-parser';
-import type { ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage } from '@/lib/llm';
 
 interface TrialMessage extends ChatCompletionMessage { id: string; model?: string; state?: 'pending' | 'done' | 'stopped' | 'error' }
 interface Choice { id: string; title: string }

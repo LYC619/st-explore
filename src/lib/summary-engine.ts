@@ -17,7 +17,7 @@ import type { ChatSession } from '@/types/chat';
 import type { NormalizedPreset, PromptBlock } from '@/types/preset';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
 import type { SummaryItem } from '@/types/summary';
-import type { ChatCompletionMessage, SamplingParams } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage, SamplingParams } from '@/lib/llm';
 import { substituteVars, estimateTokens, getActiveOrder } from '@/lib/preset-parser';
 import { DEFAULT_CHARACTER_ID } from '@/types/preset';
 

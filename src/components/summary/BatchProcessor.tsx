@@ -1,3 +1,6 @@
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
+import { LLMError } from '@/lib/llm';
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
 /**
  * TODO(移动端适配)：AI 批量处理暂未做窄屏适配（<1024px）。
  * 这里是「一屏同时看提示词、进度、每段结果」的三处并置，
@@ -6,7 +9,7 @@
  * 不是布局问题。同批 AI 面板：worldbook/AIUpdateDialog、story-tree/AIFillDialog。
  * 见 docs/mobile-adaptation.md「没做的部分」。
  */
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Layers, Play, Loader2, Merge, ChevronDown, Copy, Check, Square, FileInput } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,7 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages, type ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages, type ChatCompletionMessage } from '@/lib/llm';
 import type { ChatSession, ChatMessage } from '@/types/chat';
 
 interface BatchProcessorProps {
@@ -44,6 +47,8 @@ interface SegmentResult {
   total: number;
   content: string;
   done: boolean;
+  error?: string;
+  truncated?: boolean;
 }
 
 /** 批量分段生成：把所选楼层范围按每段 N 楼拆开并行调用，适合超长范围的分段总结。 */
@@ -57,7 +62,9 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
   const [progress, setProgress] = useState(0);
   const [merged, setMerged] = useState('');
   const [copied, setCopied] = useState(false);
-  const abortRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const [stopReason, setStopReason] = useState('');
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const lo = Math.max(0, Math.min(floorStart, floorEnd));
   const hi = Math.min(session.messages.length - 1, Math.max(floorStart, floorEnd));
@@ -86,8 +93,8 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
 
   const handleStart = async () => {
     const config = loadAPIConfig(); // 生成时即时读取（配置在「AI 配置」页维护）
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     if (floorCount === 0) {
@@ -106,7 +113,9 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
     setResults([]);
     setMerged('');
     setProgress(0);
-    abortRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setStopReason('');
 
     const resultArr: SegmentResult[] = segments.map((_, i) => ({
       index: i,
@@ -117,11 +126,13 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
     setResults([...resultArr]);
 
     let completed = 0;
+    let consecutiveServiceFailures = 0;
+    let stopped = false;
     const queue = [...segments.map((seg, i) => ({ seg, i }))];
     const workers: Promise<void>[] = [];
 
     const runNext = async (): Promise<void> => {
-      while (queue.length > 0 && !abortRef.current) {
+      while (queue.length > 0 && !controller.signal.aborted && !stopped) {
         const item = queue.shift();
         if (!item) break;
         const { seg, i } = item;
@@ -132,12 +143,24 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
             { role: 'system', content: systemPrompt },
             { role: 'user', content: seg.text },
           ];
-          const result = await callOpenAIMessages(config, messages);
-          resultArr[i] = { ...resultArr[i], content: result, done: true };
+          let truncated = false;
+          const result = await callOpenAIMessages(config, messages, {
+            signal: controller.signal,
+            onWarning: () => { truncated = true; },
+          });
+          resultArr[i] = { ...resultArr[i], content: result, done: true, truncated };
+          consecutiveServiceFailures = 0;
         } catch (e) {
+          const serviceFailure = e instanceof LLMError && (e.category === 'rate_limit' || e.category === 'service');
+          consecutiveServiceFailures = serviceFailure ? consecutiveServiceFailures + 1 : 0;
+          if (consecutiveServiceFailures >= 3) {
+            stopped = true;
+            setStopReason('连续 3 段遇到限流或服务故障，已停止领取新任务；已完成的结果保留。');
+          }
           resultArr[i] = {
             ...resultArr[i],
-            content: `❌ 第 ${i + 1} 段处理失败: ${e instanceof Error ? e.message : '未知错误'}`,
+            content: e instanceof LLMError ? e.partialText : '',
+            error: isLLMCancelled(e) ? '已取消' : e instanceof Error ? e.message : '生成失败，请检查连接配置。',
             done: true,
           };
         }
@@ -153,16 +176,21 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
 
     await Promise.all(workers);
     setProcessing(false);
-    if (abortRef.current) {
+    abortRef.current = null;
+    if (controller.signal.aborted) {
+      setStopReason('已取消，已完成的结果保留。');
       toast({ title: `已取消，已完成 ${completed}/${segments.length} 段` });
+    } else if (stopped) {
+      toast({ title: '批量生成已停止', description: '连续限流或服务故障，请稍后再试。' });
     } else {
-      toast({ title: `批量生成完成，共 ${segments.length} 段` });
+      const succeeded = resultArr.filter(r => r.done && !r.error).length;
+      toast({ title: `批量生成结束，成功 ${succeeded}/${segments.length} 段` });
     }
   };
 
   const handleMerge = () => {
     const text = results
-      .filter(r => r.done)
+      .filter(r => r.done && !r.error && r.content.trim())
       .map(r => r.content)
       .join('\n\n---\n\n');
     setMerged(text);
@@ -175,7 +203,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
     toast({ title: '已复制到剪贴板' });
   };
 
-  const allDone = results.length > 0 && results.every(r => r.done);
+  const canMerge = !processing && results.some(r => r.done && !r.error && r.content.trim());
 
   return (
     <Collapsible>
@@ -253,7 +281,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                       variant="destructive"
                       size="sm"
                       className="px-2"
-                      onClick={() => { abortRef.current = true; }}
+                      onClick={() => abortRef.current?.abort()}
                     >
                       <Square className="w-3 h-3 mr-1" />
                       取消
@@ -264,6 +292,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
               </div>
             )}
 
+            {stopReason && <p role="status" className="text-sm text-[color:var(--status-warn)]">{stopReason}</p>}
             {results.length > 0 && (
               <div className="space-y-3">
                 <Label>分段结果</Label>
@@ -272,7 +301,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                     <div key={r.index} className="border rounded-md p-3 text-sm">
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium text-xs">
-                          第 {r.index + 1}/{r.total} 段 {r.done ? '✓' : '⏳'}
+                          第 {r.index + 1}/{r.total} 段 {r.error ? '⚠' : r.done ? '✓' : processing ? '⏳' : '未处理'}
                         </span>
                         {r.done && r.content && (
                           <Button variant="ghost" size="sm" className="px-2" onClick={() => handleCopy(r.content)}>
@@ -280,21 +309,23 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                           </Button>
                         )}
                       </div>
+                      {r.error && <p role="alert" className="text-xs text-destructive">{r.error}</p>}
+                      <CompletionWarning truncated={!!r.truncated} />
                       {r.done ? (
                         <div className="text-muted-foreground whitespace-pre-wrap text-xs max-h-32 overflow-auto">
                           {r.content.slice(0, 500)}{r.content.length > 500 ? '...' : ''}
                         </div>
                       ) : (
-                        <div className="text-muted-foreground text-xs">处理中...</div>
+                        <div className="text-muted-foreground text-xs">{processing ? '等待或处理中...' : '未处理'}</div>
                       )}
                     </div>
                   ))}
                 </div>
 
-                {allDone && !merged && (
+                {canMerge && !merged && (
                   <Button variant="outline" onClick={handleMerge}>
                     <Merge className="w-4 h-4 mr-1" />
-                    合并全部结果
+                    合并成功结果
                   </Button>
                 )}
 

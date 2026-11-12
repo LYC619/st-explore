@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import type { RemoveOptions } from '@/lib/repo';
 /**
  * 小说视图（2.0 阶段6，定稿 5.1「小说视图」三层管道，阅读增强非独立功能）。
@@ -32,7 +34,7 @@ import { shouldIgnoreGlobalShortcut } from '@/lib/keyboard-shortcuts';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import {
   buildNovelDocument, buildChapterSuggestMessages, parseChapterSuggestions,
   buildNovelBookmarks, findNovelPageIndex, paginateNovelDocument,
@@ -122,6 +124,8 @@ const NovelView = ({
   embedded = false,
 }: NovelViewProps) => {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
+  const [suggestTruncated, setSuggestTruncated] = useState(false);
   const { isMobile } = useViewport();
   const [stored] = useState(loadStoredOptions);
   const [userMode, setUserMode] = useState<UserFloorMode>(stored.userMode);
@@ -380,17 +384,18 @@ const NovelView = ({
   const handleSuggestChapters = async () => {
     if (readOnly) return;
     const config = loadAPIConfig();
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
+    setSuggestTruncated(false);
     setSuggesting(true);
     setSuggestions(null);
     const controller = new AbortController();
     abortRef.current = controller;
     try {
       const messages = buildChapterSuggestMessages({ session, volumeSummaries });
-      const text = await callOpenAIMessages(config, messages, { signal: controller.signal });
+      const text = await callOpenAIMessages(config, messages, { signal: controller.signal, onWarning: () => setSuggestTruncated(true) });
       const parsed = parseChapterSuggestions(text, session.messages.length);
       if (!parsed || parsed.length === 0) {
         toast({ title: '没有解析到章节建议', description: '可重试或换模型', variant: 'destructive' });
@@ -398,7 +403,7 @@ const NovelView = ({
         setSuggestions(parsed.map((s) => ({ ...s, picked: true })));
       }
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') toast({ title: '已停止' });
+      if (isLLMCancelled(err)) toast({ title: '已停止' });
       else toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
     } finally {
       setSuggesting(false);
@@ -472,8 +477,8 @@ const NovelView = ({
   const handlePolish = async () => {
     if (readOnly || !polish || !polishChapter || !polishTemplate) return;
     const config = loadAPIConfig();
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     const { messages } = buildSummaryMessages({
@@ -482,6 +487,7 @@ const NovelView = ({
       floorEnd: polishChapter.endFloor,
       template: polishTemplate.content,
     });
+    setTruncated(false);
     setPolishStreaming(true);
     setPolishResult('');
     setPolishSavedId(null);
@@ -496,6 +502,7 @@ const NovelView = ({
           setPolishResult(polishOutputRef.current);
         },
         signal: controller.signal,
+        onWarning: () => setTruncated(true),
       });
       // 生成完自动暂存（与整理与记录一致，防丢）
       const id = generateSummaryId();
@@ -504,7 +511,7 @@ const NovelView = ({
       setPolishSavedId(id);
       toast({ title: '已自动暂存', description: '在「整理与记录」里可继续编辑；点「永久保存」防自动清理' });
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') toast({ title: '已停止生成' });
+      if (isLLMCancelled(err)) toast({ title: '已停止生成' });
       else toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
     } finally {
       setPolishStreaming(false);
@@ -722,6 +729,7 @@ const NovelView = ({
       className="gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
       onClick={() => {
         setPolishChapter(polishTarget);
+        setTruncated(false);
         setPolishResult('');
         setPolishSavedId(null);
         setPolishPermanent(false);
@@ -1165,6 +1173,7 @@ const NovelView = ({
       {/* ===== AI 章节建议对话框 ===== */}
       <Dialog open={!readOnly && chapterDialogOpen} onOpenChange={(v) => { if (!suggesting) { setChapterDialogOpen(v); if (!v) setSuggestions(null); } }}>
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <CompletionWarning truncated={suggestTruncated} />
           <DialogHeader>
             <DialogTitle>AI 建议章节边界</DialogTitle>
             <DialogDescription>
@@ -1217,6 +1226,7 @@ const NovelView = ({
       {/* ===== 按章 AI 润色对话框 ===== */}
       <Dialog open={!readOnly && !!polishChapter} onOpenChange={(v) => { if (!polishStreaming && !v) setPolishChapter(null); }}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <CompletionWarning truncated={truncated} />
           <DialogHeader>
             <DialogTitle>AI 润色本章（{polishChapter?.title ?? `#${polishChapter?.startFloor}–${polishChapter?.endFloor} 楼`}）</DialogTitle>
             <DialogDescription>

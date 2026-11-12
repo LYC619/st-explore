@@ -1,3 +1,5 @@
+import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
+import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 /**
  * 角色卡主页 · 简介区（2.0 阶段6，定稿第四章·简介）。
  * 主体是整理后的可读简介：未生成时显示原始 Description 的整理版；
@@ -18,7 +20,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages } from '@/components/ai-tools/useOpenAI';
+import { callOpenAIMessages } from '@/lib/llm';
 import { buildIntroMessages, describeReadScope } from '@/lib/character-ai';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import type { WorldBookItem } from '@/types/worldbook';
@@ -38,6 +40,7 @@ function fmtTime(ts: number): string {
 
 export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
   const { toast } = useToast();
+  const [truncated, setTruncated] = useState(false);
   const current = character.intro?.current;
   const history = character.intro?.history ?? [];
 
@@ -76,14 +79,15 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
 
   const openGenerate = () => {
     setDraft('');
+    setTruncated(false);
     setPickedWbIds(linkedWbs.map((w) => w.id)); // 默认全选关联世界书
     setGenOpen(true);
   };
 
   const handleGenerate = async () => {
     const config = loadAPIConfig();
-    if (!config.apiKey) {
-      toast({ title: '请先配置 API Key', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+    if (!isLLMConfigured(config)) {
+      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
       return;
     }
     const worldbooks = linkedWbs
@@ -91,6 +95,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
       .map((w) => ({ id: w.id, title: w.title, wb: w.worldbook }));
     const { messages, readScope } = buildIntroMessages({ norm, worldbooks });
     setDraftScope(readScope);
+    setTruncated(false);
     setStreaming(true);
     setDraft('');
     outputRef.current = '';
@@ -103,9 +108,10 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
           setDraft(outputRef.current);
         },
         signal: controller.signal,
+        onWarning: () => setTruncated(true),
       });
     } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isLLMCancelled(err)) {
         toast({ title: '已停止生成' });
       } else {
         toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
@@ -167,7 +173,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
 
   const displayText = current?.content ?? norm.description;
   // 未配 API 时入口置灰+tooltip（10.3a；handleGenerate 里的 toast 仍留作兜底）
-  const hasApiKey = !!loadAPIConfig().apiKey;
+  const hasConfiguredModel = isLLMConfigured(loadAPIConfig());
 
   return (
     <div className="space-y-2">
@@ -197,8 +203,8 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
             可能已过期（关联世界书有更新）
           </Badge>
         )}
-        <span title={hasApiKey ? undefined : '未配置 AI API：前往「AI 配置」页填好后可用'}>
-          <Button variant="outline" size="sm" className="gap-1" disabled={!hasApiKey} onClick={openGenerate}>
+        <span title={hasConfiguredModel ? undefined : '未配置 AI API：前往「AI 配置」页填好后可用'}>
+          <Button variant="outline" size="sm" className="gap-1" disabled={!hasConfiguredModel} onClick={openGenerate}>
             <Sparkles className="w-3.5 h-3.5" />
             {current ? '重新生成简介' : '生成 AI 简介'}
           </Button>
@@ -226,6 +232,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
             </DialogDescription>
           </DialogHeader>
 
+          <CompletionWarning truncated={truncated} />
           {/* 读取范围 */}
           <div className="flex items-center gap-4 flex-wrap text-sm">
             <Label className="flex items-center gap-1.5 text-muted-foreground">

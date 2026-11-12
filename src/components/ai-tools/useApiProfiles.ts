@@ -2,7 +2,7 @@
 // 拆自原 APIConfigCard.tsx（阶段8.1 codex P2.1）：视图只管渲染，交互全走这个 hook。
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useToast } from '@/hooks/use-toast';
-import { fetchModels, callOpenAIMessages } from './useOpenAI';
+import { fetchModels, callOpenAIMessages } from '@/lib/llm';
 import {
   type APIConfig, type ApiProfile, DEFAULT_API_URL, DEFAULT_MODEL,
   generateProfileId, persistProfiles, loadApiProfiles,
@@ -130,10 +130,6 @@ export function useApiProfiles() {
   };
 
   const handleSave = () => {
-    if (!apiKey.trim()) {
-      toast({ title: '请输入 API Key', variant: 'destructive' });
-      return false;
-    }
     const { profiles: ps, activeId: aid } = loadApiProfiles();
     let idx = ps.findIndex((p) => p.id === activeId);
     if (!activeId) {
@@ -162,10 +158,6 @@ export function useApiProfiles() {
   const handleFetchModels = async (): Promise<boolean> => {
     const key = apiKey.trim();
     const url = apiUrl.trim() || DEFAULT_API_URL;
-    if (!key) {
-      toast({ title: '请先输入 API Key', variant: 'destructive' });
-      return false;
-    }
     setFetchingModels(true);
     const request = ++catalogRequest.current;
     modelAbort.current?.abort();
@@ -196,10 +188,6 @@ export function useApiProfiles() {
       apiUrl: apiUrl.trim() || DEFAULT_API_URL,
       model: model.trim() || DEFAULT_MODEL,
     };
-    if (!cfg.apiKey) {
-      toast({ title: '请先输入 API Key', variant: 'destructive' });
-      return;
-    }
     setTesting(true);
     const request = ++connectionTest.current;
     testAbort.current?.abort();
@@ -207,7 +195,7 @@ export function useApiProfiles() {
     setTestResult(null);
     const t0 = performance.now();
     try {
-      await callOpenAIMessages(cfg, [{ role: 'user', content: 'Hi' }], { params: { max_tokens: 5 }, signal: controller.signal });
+      await callOpenAIMessages(cfg, [{ role: 'user', content: 'Hi' }], { params: { max_tokens: 5 }, signal: controller.signal, purpose: 'probe' });
       if (request !== connectionTest.current || controller.signal.aborted) return;
       const ms = Math.round(performance.now() - t0);
       setTestResult({ ok: true, text: `连通正常 · ${ms}ms · ${cfg.model}` });

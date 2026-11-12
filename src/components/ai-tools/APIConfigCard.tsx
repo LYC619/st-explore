@@ -134,7 +134,7 @@ export function APIConfigCard() {
           </div>
         )}
 
-        {savedActive?.apiKey ? (
+        {savedActive ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Check className="w-4 h-4 text-primary" />
             已保存：{savedActive.name} · {savedActive.model}
@@ -143,7 +143,7 @@ export function APIConfigCard() {
         ) : (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <AlertCircle className="w-4 h-4 text-destructive" />
-            当前提供商尚未配置 API Key
+            当前提供商尚未保存
           </div>
         )}
       </CardContent>

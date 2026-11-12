@@ -1,3 +1,4 @@
+import { isLLMConfigured } from '@/lib/llm';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Check, ChevronDown, Search, Settings2, Star, Plus } from 'lucide-react';
@@ -58,12 +59,12 @@ export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, 
       </div>
       <div className="max-h-[min(23rem,50vh)] overflow-y-auto p-2 space-y-2">
         {groups.map(({ profile, models }) => <section key={profile.id} aria-label={profile.name}>
-          <div className="px-2 py-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="truncate font-medium">{profile.name}</span>{!profile.apiKey && <span className="shrink-0">未配置密钥</span>}</div>
+          <div className="px-2 py-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground"><span className="truncate font-medium">{profile.name}</span>{!profile.apiKey && <span className="shrink-0">未填写密钥</span>}</div>
           {models.map(model => {
             const checked = selection?.profileId === profile.id && selection.model === model;
             const favorite = normalizeModelNames(profile.favoriteModels).includes(model);
             return <div key={model} className={cn('flex min-w-0 items-center rounded-md', checked && 'bg-accent')}>
-              <button type="button" disabled={!profile.apiKey} aria-label={`使用 ${profile.name} 的 ${model}`} aria-pressed={checked}
+              <button type="button" disabled={!isLLMConfigured({ ...profile, model })} aria-label={`使用 ${profile.name} 的 ${model}`} aria-pressed={checked}
                 onClick={() => choose({ profileId: profile.id, model })} className="min-w-0 flex-1 flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm hover:bg-accent disabled:opacity-45 disabled:cursor-not-allowed">
                 <span className="w-4 shrink-0">{checked && <Check className="h-4 w-4 text-primary" />}</span><span className="min-w-0 truncate" title={model}>{model}</span>
               </button>
@@ -83,7 +84,7 @@ export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, 
             {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
           </select>
           <Input aria-label="自定义模型名称" value={customModel} onChange={event => setCustomModel(event.target.value)} placeholder="填写服务要求的完整模型 ID" />
-          <Button size="sm" className="w-full" disabled={!customModel.trim() || !customTarget?.apiKey} onClick={() => { if (!customTarget) return; setProfileModelFavorite(customTarget.id, customModel, true); choose({ profileId: customTarget.id, model: customModel.trim() }); }}>加入常用并使用</Button>
+          <Button size="sm" className="w-full" disabled={!customModel.trim() || !customTarget || !isLLMConfigured({ ...customTarget, model: customModel })} onClick={() => { if (!customTarget) return; setProfileModelFavorite(customTarget.id, customModel, true); choose({ profileId: customTarget.id, model: customModel.trim() }); }}>加入常用并使用</Button>
         </div>}
       </div>
     </PopoverContent>

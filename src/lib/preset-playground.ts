@@ -3,7 +3,7 @@ import { DEFAULT_CHARACTER_ID } from '@/types/preset';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
-import type { ChatCompletionMessage } from '@/components/ai-tools/useOpenAI';
+import type { ChatCompletionMessage } from '@/lib/llm';
 import { estimateTokens, getActiveOrder, substituteVars } from './preset-parser';
 import { collectWorldbookEntries, insertAtDepth } from './summary-engine';
 import { inspectPresetScripts } from './preset-catalog';

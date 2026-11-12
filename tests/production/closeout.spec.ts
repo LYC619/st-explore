@@ -47,3 +47,35 @@ test('a failed production page chunk keeps navigation and offers reload',async({
   await expect(page.locator('[data-app-error]')).toHaveCount(0);
 });
 });
+
+test.describe('AI settings with a synthetic service', () => {
+  test.use({serviceWorkers:'block'});
+  test('keyless profiles save and show classified probe errors in the production page', async ({page}) => {
+    let requests=0;
+    await page.route('**/*', async route => {
+      const url=new URL(route.request().url());
+      if(url.hostname==='synthetic.invalid'){
+        requests++;
+        expect(route.request().headers()['authorization']).toBeUndefined();
+        return route.fulfill({status:401,contentType:'application/json',body:JSON.stringify({error:{message:'synthetic-private-response'}})});
+      }
+      return url.hostname==='127.0.0.1'?route.continue():route.abort();
+    });
+    await page.goto('/settings');
+    await page.getByRole('button',{name:'AI 配置',exact:true}).click();
+    await page.getByRole('button',{name:'新增',exact:true}).click();
+    await page.getByRole('textbox',{name:'提供商名称',exact:true}).fill('合成服务');
+    await page.getByRole('textbox',{name:'API 接口地址',exact:true}).fill('https://synthetic.invalid/v1/chat/completions');
+    await page.locator('#api-model-name').fill('synthetic');
+    await page.getByRole('button',{name:'保存配置',exact:true}).click();
+    await page.getByRole('button',{name:'测试连通',exact:true}).click();
+    await expect(page.getByText(/密钥无效或没有访问权限/)).toBeVisible();
+    await expect(page.getByText(/HTTP 401；已尝试 1 次/)).toBeVisible();
+    await expect(page.getByText('synthetic-private-response',{exact:true})).toHaveCount(0);
+    expect(requests).toBe(1);
+    await page.reload();
+    await expect(page.getByRole('textbox',{name:'提供商名称',exact:true})).toHaveValue('合成服务');
+    await expect(page.locator('#api-model-name')).toHaveValue('synthetic');
+    await expect(page.getByLabel('API Key',{exact:true})).toHaveValue('');
+  });
+});
