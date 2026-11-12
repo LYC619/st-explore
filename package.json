@@ -27,6 +27,7 @@
     "verify:e2e": "node scripts/verify-e2e.mjs",
     "smoke": "node scripts/smoke/run.mjs",
     "smoke:routes": "node scripts/smoke/run.mjs route-assets",
+    "release:pack": "node scripts/release-pack.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

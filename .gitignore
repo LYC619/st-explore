@@ -60,6 +60,8 @@ scripts/*
 !scripts/build-info.mjs
 !scripts/build-info.d.mts
 !scripts/build-info.test.mjs
+!scripts/release-pack.mjs
+!scripts/release-pack.test.mjs
 !scripts/generate-world-backdrops.py
 !scripts/smoke/
 !scripts/smoke/**
