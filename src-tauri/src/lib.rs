@@ -9,6 +9,7 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 mod st_backup_import;
+mod st_import_cleanup;
 mod diagnostics;
 mod environment;
 
@@ -346,6 +347,10 @@ fn config_file(config_dir: &Path) -> PathBuf {
 /// 后写的会吞掉先写的那个键。config.json 本身靠改名替换，锁它等于锁一个马上被换掉的文件，
 /// 所以锁旁边一个固定文件。
 fn lock_config(config_dir: &Path) -> Result<fs::File, String> {
+    lock_config_with_timeout(config_dir, std::time::Duration::from_secs(5))
+}
+
+fn lock_config_with_timeout(config_dir: &Path, timeout: std::time::Duration) -> Result<fs::File, String> {
     fs::create_dir_all(config_dir)
         .map_err(|e| format!("创建配置目录失败 {}: {e}", config_dir.display()))?;
     let path = config_dir.join(".config.lock");
@@ -357,8 +362,23 @@ fn lock_config(config_dir: &Path) -> Result<fs::File, String> {
         .open(&path)
         .map_err(|e| format!("打开配置锁失败 {}: {e}", path.display()))?;
     let waited = std::time::Instant::now();
-    file.lock()
-        .map_err(|e| format!("等待配置锁失败 {}: {e}", path.display()))?;
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(fs::TryLockError::WouldBlock) => {
+                let elapsed = waited.elapsed();
+                if elapsed >= timeout {
+                    let mut event = diagnostics::event(diagnostics::EventKind::Lock, "timeout");
+                    event.category = Some("timeout".into());
+                    event.elapsed_ms = Some(elapsed.as_millis() as u64);
+                    diagnostics::record(event);
+                    return Err("STE_CONFIG_LOCK_TIMEOUT:另一个 STE 窗口正在写配置，请稍后再试".into());
+                }
+                std::thread::sleep((timeout - elapsed).min(std::time::Duration::from_millis(50)));
+            }
+            Err(fs::TryLockError::Error(error)) => return Err(format!("等待配置锁失败 {}: {error}", path.display())),
+        }
+    }
     if waited.elapsed() >= std::time::Duration::from_secs(1) {
         let mut event = diagnostics::event(diagnostics::EventKind::Lock, "waiting");
         event.elapsed_ms = Some(waited.elapsed().as_millis() as u64);
@@ -1171,6 +1191,7 @@ pub fn run() {
             }
             app.manage(roots);
             app.manage(st_backup_import::ImportCancel::default());
+            std::thread::spawn(st_import_cleanup::cleanup_stale_imports);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1798,6 +1819,24 @@ mod tests {
             assert_eq!(config_get_impl(&root, key).unwrap(), Some(serde_json::json!(39)), "{key} 丢了最后一次写入");
         }
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn config_lock_times_out_without_mutation_and_can_retry_after_release() {
+        let root = temp_root("cfg-lock-timeout");
+        config_set_impl(&root, "vaultRoot", serde_json::json!("synthetic-root")).unwrap();
+        let before = fs::read(config_file(&root)).unwrap();
+        let held = lock_config(&root).unwrap();
+        let started = std::time::Instant::now();
+        let error = lock_config_with_timeout(&root, std::time::Duration::from_millis(100)).unwrap_err();
+        assert!(error.starts_with("STE_CONFIG_LOCK_TIMEOUT:"));
+        assert!(started.elapsed() >= std::time::Duration::from_millis(100));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert_eq!(fs::read(config_file(&root)).unwrap(), before);
+        drop(held);
+        config_set_impl(&root, "vaultRoot", serde_json::json!("synthetic-next")).unwrap();
+        assert_eq!(config_get_impl(&root, "vaultRoot").unwrap(), Some(serde_json::json!("synthetic-next")));
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

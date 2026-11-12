@@ -147,7 +147,19 @@ export async function getAppConfig<T>(key: string): Promise<T | null> {
 }
 
 export async function setAppConfig(key: string, value: unknown): Promise<void> {
-  await invoke('config_set', { key, value });
+  await mutateAppConfig('config_set', { key, value });
+}
+
+/** The mirror retains failed edits; surface lock contention even when its caller catches the rejection. */
+async function mutateAppConfig<T>(command: 'config_set' | 'config_repair', args?: Record<string, unknown>): Promise<T> {
+  try { return await invoke<T>(command, args); }
+  catch (error) {
+    if (String(error).includes('STE_CONFIG_LOCK_TIMEOUT:')) {
+      const { toast } = await import('@/hooks/use-toast');
+      toast({ title: '配置暂未保存', description: '另一个 STE 窗口正在写配置，请稍后再试', variant: 'destructive' });
+    }
+    throw error;
+  }
 }
 
 const INVALID_APP_CONFIG_PREFIX = 'STE_CONFIG_INVALID:';
@@ -158,7 +170,7 @@ export function isInvalidAppConfigError(error: unknown): boolean {
 
 /** 仅在配置无法解析时调用：Rust 侧先生成同目录备份，再把 config.json 重置为空对象。 */
 export async function repairAppConfig(): Promise<string | null> {
-  return (await invoke<string | null>('config_repair')) ?? null;
+  return (await mutateAppConfig<string | null>('config_repair')) ?? null;
 }
 
 const VAULT_ROOT_KEY = 'vaultRoot';

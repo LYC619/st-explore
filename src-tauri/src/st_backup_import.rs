@@ -186,18 +186,25 @@ fn ensure_parent(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn copy_entry<R: Read>(mut input: R, destination: &Path) -> Result<(), String> {
+fn copy_entry<R: Read>(input: R, destination: &Path, declared_size: u64) -> Result<u64, String> {
+    if declared_size > MAX_ENTRY_BYTES {
+        return Err("单个压缩包文件超过上限".into());
+    }
     ensure_parent(destination)?;
     let mut output = OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(destination)
         .map_err(|error| format!("写入临时导入文件失败 {}: {error}", destination.display()))?;
-    io::copy(&mut input, &mut output)
+    let copied = io::copy(&mut input.take(declared_size + 1), &mut output)
         .map_err(|error| format!("解压临时导入文件失败 {}: {error}", destination.display()))?;
+    if copied > declared_size {
+        return Err("压缩包实际解压大小超过声明大小，已停止导入".into());
+    }
     output
         .flush()
-        .map_err(|error| format!("刷新临时导入文件失败 {}: {error}", destination.display()))
+        .map_err(|error| format!("刷新临时导入文件失败 {}: {error}", destination.display()))?;
+    Ok(copied)
 }
 
 fn validate_archive<R: Read + Seek>(
@@ -269,6 +276,7 @@ fn extract_archive<R: Read + Seek>(
 ) -> Result<usize, PrepareError> {
     let count = archive.len();
     let mut skipped_secrets = 0usize;
+    let mut actual_total = 0u64;
     for index in 0..count {
         reporter.check()?;
         let mut file = archive
@@ -285,7 +293,13 @@ fn extract_archive<R: Read + Seek>(
                     format!("创建临时导入目录失败 {}: {error}", target.display())
                 })?;
             } else {
-                copy_entry(&mut file, &target)?;
+                let declared_size = file.size();
+                let copied = copy_entry(&mut file, &target, declared_size)?;
+                actual_total = actual_total.checked_add(copied)
+                    .ok_or_else(|| "压缩包实际解压大小溢出".to_string())?;
+                if actual_total > MAX_TOTAL_BYTES {
+                    return Err("压缩包实际解压总大小超过上限".to_string().into());
+                }
             }
         }
         if should_report(index, count) {
@@ -454,6 +468,20 @@ mod tests {
             safe_entry_path("characters/A.png").unwrap(),
             PathBuf::from("characters/A.png")
         );
+    }
+
+    #[test]
+    fn extraction_stops_after_declared_size_plus_one_and_counts_actual_bytes() {
+        let root = std::env::temp_dir().join(format!("ste-import-size-test-{}-{}", std::process::id(), nonce().unwrap()));
+        fs::create_dir_all(&root).unwrap();
+        let mut input = Cursor::new(vec![b'x'; 100]);
+        let error = copy_entry(&mut input, &root.join("oversized.txt"), 3).unwrap_err();
+        assert!(error.contains("超过声明大小"));
+        assert_eq!(input.position(), 4, "must not keep decompressing an oversized entry");
+        assert_eq!(fs::metadata(root.join("oversized.txt")).unwrap().len(), 4);
+        assert_eq!(copy_entry(Cursor::new(b"abc"), &root.join("exact.txt"), 3).unwrap(), 3);
+        assert_eq!(copy_entry(Cursor::new(b"ab"), &root.join("short.txt"), 3).unwrap(), 2);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
