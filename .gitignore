@@ -54,6 +54,8 @@ scripts/*
 !scripts/smoke-tauri.cjs
 !scripts/sync-version.mjs
 !scripts/sync-version.test.mjs
+!scripts/verify.mjs
+!scripts/verify.test.mjs
 !scripts/generate-world-backdrops.py
 !scripts/smoke/
 !scripts/smoke/**

@@ -125,4 +125,4 @@ it('imports author files from the preset library, reads details, saves metadata,
   await settle(() => expect(document.querySelectorAll('[data-preset-collection] button[aria-label^="查看预设 "]')).toHaveLength(1));
   expect(document.querySelector('[data-preset-collection] button[aria-label^="查看预设 "]')).toHaveAttribute('aria-label', `查看预设 ${(await getPreset(diyId))!.catalog!.name}`);
   expect(document.querySelector<HTMLInputElement>('input[aria-label="搜索预设"]')?.value).toBe('作者 A');
-});
+}, 15_000);

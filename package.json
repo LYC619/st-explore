@@ -22,6 +22,8 @@
     "version:sync": "node scripts/sync-version.mjs --write",
     "test:version-script": "node --test scripts/sync-version.test.mjs",
     "lint": "eslint .",
+    "verify": "node scripts/verify.mjs",
+    "verify:web": "node scripts/verify.mjs --web",
     "smoke:stage10": "node scripts/smoke/stage10-route-smoke.mjs",
     "preview": "vite preview",
     "test": "vitest run",

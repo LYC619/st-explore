@@ -120,7 +120,7 @@ impl<'a> Reporter<'a> {
 /// 首条、末条和每隔 step 条上报一次。
 fn should_report(index: usize, total: usize) -> bool {
     let step = (total / PROGRESS_MESSAGES).max(1);
-    index == 0 || index + 1 == total || index % step == 0
+    index == 0 || index + 1 == total || index.is_multiple_of(step)
 }
 
 
