@@ -82,7 +82,7 @@ for (const width of [1360, 390]) test(`chat organizing filter opens a matching s
   expect((await page.getByLabel('标签筛选', { exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
 });
 
-test('original Tavern selects organizing tags and refreshes a changed library label', async ({ page }) => {
+test('original Tavern selects organizing tags and refreshes a changed library label', async ({ page }, info) => {
   const ids = await seed(page);
   await enableChatTags(page);
   await page.getByRole('button', { name: '继续 筛选故事0-0', exact: true }).click();
@@ -125,7 +125,16 @@ test('original Tavern selects organizing tags and refreshes a changed library la
   }, ids[0]);
   await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
   await expect(missing).toHaveCount(0);
-  await expect(cards).toHaveCount(3);
+  try { await expect(cards).toHaveCount(3); }
+  catch (error) {
+    const state = await page.frames().find(frame => frame.url().includes('tavern.html'))!.evaluate(async () => {
+      const st = await import('/script.js'), tags = await import('/scripts/tags.js'), { FILTER_TYPES } = await import('/scripts/filters.js');
+      return { filters: st.entitiesFilter.getFilterData(FILTER_TYPES.TAG), tags: tags.tags, map: tags.tag_map,
+        avatars: st.characters.map(card => card.avatar) };
+    });
+    await info.attach('synthetic-filter-state', { body: JSON.stringify(state), contentType: 'application/json' });
+    throw error;
+  }
   await tagFilter.getByRole('button', { name: '总结完', exact: true }).click();
   await expect(cards).toHaveCount(2);
   await page.getByRole('button', { name: '返回聊天列表', exact: true }).click();

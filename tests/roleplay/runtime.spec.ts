@@ -243,6 +243,7 @@ test('Agent mode automatically reads green lore, freezes actual provider context
   const firstSupplement = first.messages.findIndex(message => message.content?.includes('本轮背景资料'));
   expect(firstSupplement).toBeGreaterThan(0);
   expect(second.messages.slice(0, firstSupplement + 1)).toEqual(first.messages.slice(0, firstSupplement + 1));
+  await expect.poll(readMemory).toContain('revision: 2');
   await page.getByRole('button', { name: '返回聊天处理' }).click();
   await expect(page).toHaveURL(/\/chat\?/);
   const memory = await readMemory();
@@ -605,6 +606,8 @@ for (const stream of [true, false]) test(`native overswipe generates and reopens
   await message.locator('.swipe_right').click();
   await expect(message.locator('.mes_text')).toHaveText('门外传来轻轻的敲门声。');
   expect(requests).toHaveLength(1);
+  // Text is replaced before the original swipe animation releases its input guard.
+  await expect(tavern.locator('body')).not.toHaveAttribute('data-swiping', /.+/);
   await tavern.locator('#send_textarea').focus();
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => requests.length).toBe(2);
@@ -915,6 +918,7 @@ test('real BaiBai 1.2.7 installs, summarizes through ST, survives reopening and 
   await expect(tavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
   await expect.poll(() => currentFrame().evaluate(() => (window as any).SillyTavern.getContext().chat[0].extra?.bbs_leaf?.text)).toContain('铜钥匙');
   for (let i = 0; i < 3; i++) {
+    await expect.poll(() => currentFrame().evaluate(async () => (await import('/script.js')).isGenerating())).toBe(false);
     await tavern.locator('#send_textarea').fill('继续第 ' + (i + 2) + ' 轮。'); await tavern.locator('#send_but').click();
     await expect.poll(() => currentFrame().evaluate(() => (window as any).SillyTavern.getContext().chat.length)).toBe(5 + i * 2);
     await expect.poll(() => currentFrame().evaluate(() => (window as any).__STE_BAIBAI_BUSY__())).toBe(false);

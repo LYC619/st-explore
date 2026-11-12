@@ -232,11 +232,22 @@ export async function setApiConfigScope(scope: ApiConfigScope): Promise<void> {
   if (!canPersistApiProfiles()) throw new Error(getApiConfigSyncState().message || '请先重新读取已保存连接，再切换作用域');
 
   // The target slot changes below. Block old-scope edits until the new slot has been read.
+  const previousHydratedVaultId = hydratedVaultId;
+  const previousSyncState = syncState;
   hydratedVaultId = undefined;
   reportSync('uninitialized', '正在切换连接作用域，完成前暂不能保存。');
-  const map = await readScopeMap();
-  map[vaultId] = scope;
-  await setAppConfig(CFG_SCOPE_BY_VAULT, map);
+  try {
+    const map = await readScopeMap();
+    map[vaultId] = scope;
+    await setAppConfig(CFG_SCOPE_BY_VAULT, map);
+  } catch (error) {
+    // No target change was committed. Keep the old hydrated slot usable for retry.
+    if (getCurrentVaultId() === vaultId) {
+      hydratedVaultId = previousHydratedVaultId;
+      reportSync(previousSyncState.status, previousSyncState.message);
+    }
+    throw error;
+  }
 
   if (scope === 'vault') {
     const slots = await readSlotMap();

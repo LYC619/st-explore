@@ -48,7 +48,9 @@ export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeTogglePro
     } catch (err) {
       toast({
         title: '切换失败',
-        description: err instanceof Error ? err.message : '请稍后重试',
+        description: String(err).includes('STE_CONFIG_LOCK_TIMEOUT:')
+          ? '另一个 STE 窗口正在写配置，请稍后再试'
+          : err instanceof Error ? err.message : '请稍后重试',
         variant: 'destructive',
       });
     } finally {
