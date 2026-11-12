@@ -32,6 +32,8 @@ import { getAllCharacters, getAllArchiveStories } from '@/lib/archive-db';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { resetAllTours } from '@/lib/tour-steps';
 import { BUILD_INFO, formatBuildInfo } from '@/lib/build-info';
+import { getEnvironmentInfo, openLogDirectory, type EnvironmentInfo } from '@/lib/diagnostics';
+import { isTauri } from '@/lib/runtime';
 
 export const APP_VERSION = 'v0.9.9';
 
@@ -440,6 +442,15 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
 
 export function AboutSettingsPanel() {
   const { toast } = useToast();
+  const [environment, setEnvironment] = useState<EnvironmentInfo | null>(null);
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    void getEnvironmentInfo().then(info => { if (!cancelled) setEnvironment(info); }).catch(() => {
+      if (!cancelled) setEnvironment({status:'unknown',nominalPath:'',resolvedPath:null,packageIdentity:null,logAvailable:false});
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleResetOnboarding = () => {
     // resetAllTours 已按库清理，并顺带清掉升级前遗留的无后缀键。
@@ -474,6 +485,20 @@ export function AboutSettingsPanel() {
         <div className="text-sm space-y-1">
           <p className="font-medium">ST Explorer</p>
           <p className="text-muted-foreground text-xs break-words" data-build-identity>{formatBuildInfo(BUILD_INFO, APP_VERSION.slice(1))}</p>
+          {isTauri() && <div className="space-y-2 pt-2 text-xs">
+            <p data-config-location>配置位置：{!environment ? '检查中' : environment.status === 'normal' ? '正常' : environment.status === 'redirected' ? '被打包应用重定向' : '无法确认'}</p>
+            {environment && <details className="text-muted-foreground">
+              <summary className="cursor-pointer">查看配置位置</summary>
+              <p className="break-all">名义位置：{environment.nominalPath || '未知'}</p>
+              <p className="break-all">实际位置：{environment.resolvedPath || '未知'}</p>
+              {environment.packageIdentity && <p className="break-all">所属应用：{environment.packageIdentity}</p>}
+            </details>}
+            <Button variant="outline" size="sm" disabled={!environment?.logAvailable} onClick={() => {
+              void openLogDirectory().catch(() => toast({title:'无法打开日志文件夹',description:'请稍后重试。',variant:'destructive'}));
+            }}>打开日志文件夹</Button>
+            <p className="text-muted-foreground">日志只记运行状态和错误类别，不记录聊天内容、角色设定或密钥。</p>
+            {environment && !environment.logAvailable && <p className="text-muted-foreground">本次运行未能创建日志文件。</p>}
+          </div>}
           <a
             href="https://github.com/LYC619/st-explore"
             target="_blank"

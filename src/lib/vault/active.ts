@@ -4,12 +4,14 @@
  * repo 层每次调用现查，激活/停用即时生效，上层 *-db.ts 无需重建。
  */
 import type { VaultBackend } from './vault-backend';
+import { reportDiagnostic } from '@/lib/diagnostics';
 
 let active: VaultBackend | null = null;
 let epoch = 0;
 const listeners = new Set<() => void>();
 
 export function setActiveVault(v: VaultBackend | null): void {
+  reportDiagnostic({event:'vault',operation:v ? (active ? 'switch' : 'open') : 'close'});
   active = v;
   epoch += 1;
   for (const listener of listeners) listener();

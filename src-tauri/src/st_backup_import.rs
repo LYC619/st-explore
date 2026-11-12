@@ -208,6 +208,9 @@ fn validate_archive<R: Read + Seek>(
     let mut packed = 0u64;
     let mut supported = false;
     let count = archive.len();
+    let mut diagnostic = crate::diagnostics::event(crate::diagnostics::EventKind::Import, "start");
+    diagnostic.count = Some(count as u64);
+    crate::diagnostics::record(diagnostic);
     for index in 0..count {
         reporter.check()?;
         if index >= MAX_FILES {
@@ -289,6 +292,9 @@ fn extract_archive<R: Read + Seek>(
             reporter.send("extract", index + 1, count, file.name());
         }
     }
+    let mut diagnostic = crate::diagnostics::event(crate::diagnostics::EventKind::Import, "end");
+    diagnostic.count = Some(count as u64);
+    crate::diagnostics::record(diagnostic);
     Ok(skipped_secrets)
 }
 
@@ -330,6 +336,7 @@ pub async fn prepare_st_backup_import(
     cancel: tauri::State<'_, ImportCancel>,
     on_progress: Channel<ExtractProgress>,
 ) -> Result<Option<PreparedSTBackup>, String> {
+    crate::diagnostics::command_async("prepare_st_backup_import", None, async {
     let _run = cancel.begin()?;
     let Some(selected) = crate::dialog_for(&app)
         .set_title("选择 SillyTavern 导出包")
@@ -380,6 +387,7 @@ pub async fn prepare_st_backup_import(
     })();
 
     finish_preparation(outcome, temp_root.as_deref(), |root| fs::remove_dir_all(root))
+    }).await
 }
 
 /// 请求中断正在进行的解压。同步 command 是故意的：它只做一次原子写，必须立刻返回，
@@ -395,7 +403,9 @@ pub fn cleanup_st_backup_import(
     roots: tauri::State<'_, AuthorizedRoots>,
     root: String,
 ) -> Result<(), String> {
-    roots.cleanup_temporary(Path::new(&root), |path| fs::remove_dir_all(path))
+    crate::diagnostics::command("cleanup_st_backup_import", Some(root.clone()), || {
+        roots.cleanup_temporary(Path::new(&root), |path| fs::remove_dir_all(path))
+    })
 }
 
 #[cfg(test)]

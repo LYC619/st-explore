@@ -2,6 +2,7 @@ import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import { parse as parseYaml } from 'yaml';
 import { isTauri } from '@/lib/runtime';
 import { postProcessPrompt } from './prompt-post-processing';
+import { reportDiagnostic } from '@/lib/diagnostics';
 
 const COMPLETION_FIELDS = new Set([
   'messages', 'temperature', 'top_p', 'frequency_penalty', 'presence_penalty',
@@ -93,11 +94,20 @@ export type PreparedCompletion = ReturnType<typeof prepareCompletion>;
 /** Send the exact envelope already checked by the Agent/cache boundary, without applying YAML twice. */
 export async function sendPreparedCompletion(prepared: PreparedCompletion, signal?: AbortSignal): Promise<Response> {
   signal?.throwIfAborted();
-  const transport = isTauri() ? (await import('@tauri-apps/plugin-http')).fetch : fetch;
-  return transport(prepared.url, {
-    method: 'POST',
-    headers: prepared.headers,
-    body: JSON.stringify(prepared.body),
-    signal,
-  });
+  const started = Date.now();
+  let host: string | undefined;
+  try { host = new URL(prepared.url).hostname; } catch { /* Preserve transport validation. */ }
+  const diagnostic = {event:'model' as const,operation:'request',host,model:typeof prepared.body.model === 'string' ? prepared.body.model : undefined,attempt:1};
+  try {
+    const transport = isTauri() ? (await import('@tauri-apps/plugin-http')).fetch : fetch;
+    const response = await transport(prepared.url, {
+      method: 'POST', headers: prepared.headers, body: JSON.stringify(prepared.body), signal,
+    });
+    if (!response.ok) reportDiagnostic({...diagnostic,status:response.status,elapsedMs:Date.now()-started,
+      category:response.status === 401 || response.status === 403 ? 'permission' : response.status === 429 ? 'rate_limit' : response.status >= 500 ? 'service' : 'invalid_request'});
+    return response;
+  } catch (error) {
+    if (!signal?.aborted) reportDiagnostic({...diagnostic,category:'network',elapsedMs:Date.now()-started});
+    throw error;
+  }
 }

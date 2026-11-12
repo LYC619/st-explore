@@ -9,6 +9,8 @@ use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
 
 mod st_backup_import;
+mod diagnostics;
+mod environment;
 
 /// 文件库(FileVault)的 Rust 侧原语：列目录/读写文本与二进制/删除/改名 + 应用配置读写。
 /// 策略与映射逻辑全部在 TS 层（src/lib/vault/），这里保持薄且可单测。
@@ -354,8 +356,14 @@ fn lock_config(config_dir: &Path) -> Result<fs::File, String> {
         .truncate(false)
         .open(&path)
         .map_err(|e| format!("打开配置锁失败 {}: {e}", path.display()))?;
+    let waited = std::time::Instant::now();
     file.lock()
         .map_err(|e| format!("等待配置锁失败 {}: {e}", path.display()))?;
+    if waited.elapsed() >= std::time::Duration::from_secs(1) {
+        let mut event = diagnostics::event(diagnostics::EventKind::Lock, "waiting");
+        event.elapsed_ms = Some(waited.elapsed().as_millis() as u64);
+        diagnostics::record(event);
+    }
     Ok(file)
 }
 
@@ -666,11 +674,13 @@ fn vault_list_dir(
     root: String,
     path: String,
 ) -> Result<Vec<DirEntryInfo>, String> {
-    let path = authorized_rooted_path(&roots, &root, &path)?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    list_dir_impl(&path)
+    diagnostics::command("vault_list_dir", Some(path.clone()), || {
+        let path = authorized_rooted_path(&roots, &root, &path)?;
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        list_dir_impl(&path)
+    })
 }
 
 #[tauri::command]
@@ -679,7 +689,9 @@ fn vault_read_text(
     root: String,
     path: String,
 ) -> Result<String, String> {
-    read_text_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    diagnostics::command("vault_read_text", Some(path.clone()), || {
+        read_text_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    })
 }
 
 #[tauri::command]
@@ -689,10 +701,12 @@ fn vault_write_text(
     path: String,
     content: String,
 ) -> Result<(), String> {
-    write_bytes_atomic(
-        &authorized_rooted_path(&roots, &root, &path)?,
-        content.as_bytes(),
-    )
+    diagnostics::command("vault_write_text", Some(path.clone()), || {
+        write_bytes_atomic(
+            &authorized_rooted_path(&roots, &root, &path)?,
+            content.as_bytes(),
+        )
+    })
 }
 
 #[tauri::command]
@@ -701,7 +715,9 @@ fn vault_read_binary(
     root: String,
     path: String,
 ) -> Result<String, String> {
-    read_binary_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    diagnostics::command("vault_read_binary", Some(path.clone()), || {
+        read_binary_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    })
 }
 
 /// Hash bytes in bounded native memory. No base64 or file body crosses IPC.
@@ -721,8 +737,10 @@ fn fingerprint_impl(path: &Path) -> Result<String, String> {
 
 #[tauri::command]
 async fn vault_fingerprint(roots: tauri::State<'_, AuthorizedRoots>, root: String, path: String) -> Result<String, String> {
-    let target = authorized_mutation_path(&roots, &root, &path)?;
-    tauri::async_runtime::spawn_blocking(move || fingerprint_impl(&target)).await.map_err(|_| "文件校验任务失败".to_string())?
+    diagnostics::command_async("vault_fingerprint", Some(path.clone()), async {
+        let target = authorized_mutation_path(&roots, &root, &path)?;
+        tauri::async_runtime::spawn_blocking(move || fingerprint_impl(&target)).await.map_err(|_| "文件校验任务失败".to_string())?
+    }).await
 }
 
 #[tauri::command]
@@ -732,7 +750,9 @@ fn vault_write_binary(
     path: String,
     base64: String,
 ) -> Result<(), String> {
-    write_binary_impl(&authorized_rooted_path(&roots, &root, &path)?, &base64)
+    diagnostics::command("vault_write_binary", Some(path.clone()), || {
+        write_binary_impl(&authorized_rooted_path(&roots, &root, &path)?, &base64)
+    })
 }
 
 #[tauri::command]
@@ -741,7 +761,9 @@ fn vault_remove_file(
     root: String,
     path: String,
 ) -> Result<(), String> {
-    remove_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
+    diagnostics::command("vault_remove_file", Some(path.clone()), || {
+        remove_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
+    })
 }
 
 /// 送进系统回收站而不是抹掉。给用户主动删自己文件的场景用（立绘等），
@@ -752,7 +774,9 @@ fn vault_trash_file(
     root: String,
     path: String,
 ) -> Result<(), String> {
-    trash_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
+    diagnostics::command("vault_trash_file", Some(path.clone()), || {
+        trash_file_impl(&authorized_mutation_path(&roots, &root, &path)?)
+    })
 }
 
 /// 把库内文件交给系统默认程序（reveal=true 则在文件管理器里定位）。
@@ -768,21 +792,23 @@ fn vault_open_path(
     path: String,
     reveal: bool,
 ) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
-    let target = authorized_rooted_path(&roots, &root, &path)?;
-    if !target.is_file() && !target.is_dir() {
-        return Err(format!("文件或文件夹不存在: {}", target.display()));
-    }
-    if reveal {
-        app.opener()
-            .reveal_item_in_dir(&target)
-            .map_err(|e| format!("在文件管理器中显示失败 {}: {e}", target.display()))
-    } else {
-        // with 传 None = 系统默认关联程序；不指定程序名，免得替用户挑
-        app.opener()
-            .open_path(target.to_string_lossy(), None::<&str>)
-            .map_err(|e| format!("调用外部程序失败 {}: {e}", target.display()))
-    }
+    diagnostics::command("vault_open_path", Some(path.clone()), || {
+        use tauri_plugin_opener::OpenerExt;
+        let target = authorized_rooted_path(&roots, &root, &path)?;
+        if !target.is_file() && !target.is_dir() {
+            return Err(format!("文件或文件夹不存在: {}", target.display()));
+        }
+        if reveal {
+            app.opener()
+                .reveal_item_in_dir(&target)
+                .map_err(|e| format!("在文件管理器中显示失败 {}: {e}", target.display()))
+        } else {
+            // with 传 None = 系统默认关联程序；不指定程序名，免得替用户挑
+            app.opener()
+                .open_path(target.to_string_lossy(), None::<&str>)
+                .map_err(|e| format!("调用外部程序失败 {}: {e}", target.display()))
+        }
+    })
 }
 
 #[tauri::command]
@@ -791,7 +817,9 @@ fn vault_remove_empty_dir(
     root: String,
     path: String,
 ) -> Result<bool, String> {
-    remove_empty_dir_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    diagnostics::command("vault_remove_empty_dir", Some(path.clone()), || {
+        remove_empty_dir_impl(&authorized_rooted_path(&roots, &root, &path)?)
+    })
 }
 
 #[tauri::command]
@@ -801,10 +829,12 @@ fn vault_rename(
     from: String,
     to: String,
 ) -> Result<(), String> {
-    rename_impl(
-        &authorized_rooted_path(&roots, &root, &from)?,
-        &authorized_rooted_path(&roots, &root, &to)?,
-    )
+    diagnostics::command("vault_rename", Some(from.clone()), || {
+        rename_impl(
+            &authorized_rooted_path(&roots, &root, &from)?,
+            &authorized_rooted_path(&roots, &root, &to)?,
+        )
+    })
 }
 
 #[tauri::command]
@@ -813,8 +843,10 @@ fn vault_mkdir(
     root: String,
     path: String,
 ) -> Result<(), String> {
-    let path = authorized_rooted_path(&roots, &root, &path)?;
-    fs::create_dir_all(&path).map_err(|e| format!("创建目录失败 {}: {e}", path.display()))
+    diagnostics::command("vault_mkdir", Some(path.clone()), || {
+        let path = authorized_rooted_path(&roots, &root, &path)?;
+        fs::create_dir_all(&path).map_err(|e| format!("创建目录失败 {}: {e}", path.display()))
+    })
 }
 
 #[tauri::command]
@@ -823,7 +855,9 @@ fn vault_stat(
     root: String,
     path: String,
 ) -> Result<StatInfo, String> {
-    Ok(stat_impl(&authorized_rooted_path(&roots, &root, &path)?))
+    diagnostics::command("vault_stat", Some(path.clone()), || {
+        Ok(stat_impl(&authorized_rooted_path(&roots, &root, &path)?))
+    })
 }
 
 #[tauri::command]
@@ -831,7 +865,9 @@ fn vault_read_abs_text(
     roots: tauri::State<'_, AuthorizedRoots>,
     path: String,
 ) -> Result<String, String> {
-    read_text_impl(&authorized_read_absolute_path(&roots, &path)?)
+    diagnostics::command("vault_read_abs_text", Some(path.clone()), || {
+        read_text_impl(&authorized_read_absolute_path(&roots, &path)?)
+    })
 }
 
 #[derive(Serialize, Debug)]
@@ -908,15 +944,17 @@ fn dialog_for(app: &tauri::AppHandle) -> tauri_plugin_dialog::FileDialogBuilder<
 
 #[tauri::command]
 async fn pick_chat_file(app: tauri::AppHandle) -> Result<Option<PickedChatFile>, String> {
-    let Some(selected) = dialog_for(&app)
-        .set_title("选择聊天或角色卡文件")
-        .add_filter("聊天与角色卡", &["jsonl", "json", "txt", "png"])
-        .blocking_pick_file()
-    else {
-        return Ok(None);
-    };
-    let path = selected.into_path().map_err(|e| format!("选择结果不是本机文件: {e}"))?;
-    read_picked_file_impl(&path, MAX_PICKED_FILE_BYTES).map(Some)
+    diagnostics::command_async("pick_chat_file", None, async {
+        let Some(selected) = dialog_for(&app)
+            .set_title("选择聊天或角色卡文件")
+            .add_filter("聊天与角色卡", &["jsonl", "json", "txt", "png"])
+            .blocking_pick_file()
+        else {
+            return Ok(None);
+        };
+        let path = selected.into_path().map_err(|e| format!("选择结果不是本机文件: {e}"))?;
+        read_picked_file_impl(&path, MAX_PICKED_FILE_BYTES).map(Some)
+    }).await
 }
 
 // The path comes only from the native save dialog, never from a frontend argument.
@@ -962,18 +1000,20 @@ async fn save_text_export(
     extension: String,
     content: String,
 ) -> Result<bool, String> {
-    let label = text_export_label(&extension)?;
-    let selected = dialog_for(&app)
-        .set_title(format!("导出{label}"))
-        .set_file_name(file_name)
-        .add_filter(label, &[extension.as_str()])
-        .blocking_save_file()
-        .map(|file| {
-            file.into_path()
-                .map_err(|error| format!("导出位置不是本机文件: {error}"))
-        })
-        .transpose()?;
-    write_selected_text_export(selected, &content)
+    diagnostics::command_async("save_text_export", None, async {
+        let label = text_export_label(&extension)?;
+        let selected = dialog_for(&app)
+            .set_title(format!("导出{label}"))
+            .set_file_name(file_name)
+            .add_filter(label, &[extension.as_str()])
+            .blocking_save_file()
+            .map(|file| {
+                file.into_path()
+                    .map_err(|error| format!("导出位置不是本机文件: {error}"))
+            })
+            .transpose()?;
+        write_selected_text_export(selected, &content)
+    }).await
 }
 
 #[tauri::command]
@@ -983,17 +1023,19 @@ async fn save_binary_export(
     extension: String,
     base64: String,
 ) -> Result<bool, String> {
-    let label = binary_export_label(&extension)?;
-    let bytes = base64::engine::general_purpose::STANDARD.decode(&base64)
-        .map_err(|error| format!("导出内容编码无效: {error}"))?;
-    let selected = dialog_for(&app)
-        .set_title(format!("导出{label}"))
-        .set_file_name(file_name)
-        .add_filter(label, &[extension.as_str()])
-        .blocking_save_file()
-        .map(|file| file.into_path().map_err(|error| format!("导出位置不是本机文件: {error}")))
-        .transpose()?;
-    write_selected_export(selected, &bytes)
+    diagnostics::command_async("save_binary_export", None, async {
+        let label = binary_export_label(&extension)?;
+        let bytes = base64::engine::general_purpose::STANDARD.decode(&base64)
+            .map_err(|error| format!("导出内容编码无效: {error}"))?;
+        let selected = dialog_for(&app)
+            .set_title(format!("导出{label}"))
+            .set_file_name(file_name)
+            .add_filter(label, &[extension.as_str()])
+            .blocking_save_file()
+            .map(|file| file.into_path().map_err(|error| format!("导出位置不是本机文件: {error}")))
+            .transpose()?;
+        write_selected_export(selected, &bytes)
+    }).await
 }
 
 #[tauri::command]
@@ -1002,10 +1044,12 @@ fn vault_write_abs_text(
     path: String,
     content: String,
 ) -> Result<(), String> {
-    write_bytes_atomic(
-        &authorized_write_absolute_path(&roots, &path)?,
-        content.as_bytes(),
-    )
+    diagnostics::command("vault_write_abs_text", Some(path.clone()), || {
+        write_bytes_atomic(
+            &authorized_write_absolute_path(&roots, &path)?,
+            content.as_bytes(),
+        )
+    })
 }
 
 /// 按绝对路径写二进制（阅读包导出用）。
@@ -1017,7 +1061,9 @@ fn vault_write_abs_binary(
     path: String,
     base64: String,
 ) -> Result<(), String> {
-    write_binary_impl(&authorized_write_absolute_path(&roots, &path)?, &base64)
+    diagnostics::command("vault_write_abs_binary", Some(path.clone()), || {
+        write_binary_impl(&authorized_write_absolute_path(&roots, &path)?, &base64)
+    })
 }
 
 #[tauri::command]
@@ -1027,20 +1073,22 @@ async fn vault_pick_authorized_directory(
     title: String,
     persistent: bool,
 ) -> Result<Option<String>, String> {
-    let Some(selected) = dialog_for(&app).set_title(title).blocking_pick_folder() else {
-        return Ok(None);
-    };
-    let selected = selected
-        .into_path()
-        .map_err(|e| format!("目录选择结果不是本机路径: {e}"))?;
-    let canonical = if persistent {
-        let canonical = roots.authorize_persistent(&selected)?;
-        persist_authorized_roots(&roots, &app_config_dir(&app)?)?;
-        canonical
-    } else {
-        roots.authorize(&selected)?
-    };
-    Ok(Some(simplified_for_frontend(&canonical)))
+    diagnostics::command_async("vault_pick_authorized_directory", None, async {
+        let Some(selected) = dialog_for(&app).set_title(title).blocking_pick_folder() else {
+            return Ok(None);
+        };
+        let selected = selected
+            .into_path()
+            .map_err(|e| format!("目录选择结果不是本机路径: {e}"))?;
+        let canonical = if persistent {
+            let canonical = roots.authorize_persistent(&selected)?;
+            persist_authorized_roots(&roots, &app_config_dir(&app)?)?;
+            canonical
+        } else {
+            roots.authorize(&selected)?
+        };
+        Ok(Some(simplified_for_frontend(&canonical)))
+    }).await
 }
 
 fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1051,45 +1099,84 @@ fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 fn config_get(app: tauri::AppHandle, key: String) -> Result<Option<serde_json::Value>, String> {
-    config_get_impl(&app_config_dir(&app)?, &key)
+    diagnostics::command("config_get", None, || {
+        let value = config_get_impl(&app_config_dir(&app)?, &key)?;
+        diagnostics::config_result(&key, value.as_ref().map(diagnostics::value_count).unwrap_or(0), false);
+        Ok(value)
+    })
 }
 
 #[tauri::command]
 fn config_set(app: tauri::AppHandle, key: String, value: serde_json::Value) -> Result<(), String> {
-    config_set_impl(&app_config_dir(&app)?, &key, value)
+    diagnostics::command("config_set", None, || {
+        let count = diagnostics::value_count(&value);
+        config_set_impl(&app_config_dir(&app)?, &key, value)?;
+        diagnostics::config_result(&key, count, true);
+        Ok(())
+    })
 }
 
 #[tauri::command]
 fn config_repair(app: tauri::AppHandle) -> Result<Option<String>, String> {
-    config_repair_impl(&app_config_dir(&app)?)
-        .map(|backup| backup.map(|path| path.to_string_lossy().into_owned()))
+    diagnostics::command("config_repair", None, || {
+        config_repair_impl(&app_config_dir(&app)?)
+            .map(|backup| backup.map(|path| path.to_string_lossy().into_owned()))
+    })
+}
+
+#[tauri::command]
+fn write_diagnostic_event(event: diagnostics::Event) {
+    diagnostics::record(event);
+}
+
+#[tauri::command]
+fn get_environment_info(info: tauri::State<'_, environment::EnvironmentInfo>) -> environment::EnvironmentInfo {
+    info.inner().clone()
+}
+
+#[tauri::command]
+fn open_log_directory(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = app.path().app_log_dir().map_err(|_| "无法确定日志文件夹".to_string())?;
+    if !dir.is_dir() { return Err("日志文件夹尚未创建".into()); }
+    app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(|_| "无法打开日志文件夹".into())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .setup(|app| {
+            let mut log_available = false;
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            if let Ok(log_dir) = app.path().app_log_dir() {
+                log_available = diagnostics::initialize(log_dir).is_ok();
+                diagnostics::startup(&app.config().identifier);
+            }
             let roots = AuthorizedRoots::default();
             if let Ok(config_dir) = app.path().app_config_dir() {
+                let _ = fs::create_dir_all(&config_dir);
+                let info = environment::inspect(&config_dir, log_available);
+                diagnostics::record(diagnostics::event(diagnostics::EventKind::Environment, info.status));
+                app.manage(info);
                 if let Err(error) = restore_authorized_roots(&roots, &config_dir) {
-                    log::warn!("恢复文件访问授权失败: {error}");
+                    let mut event = diagnostics::event(diagnostics::EventKind::Config, "failed");
+                    event.category = Some(diagnostics::error_category(&error).into());
+                    diagnostics::record(event);
                 }
+            } else {
+                app.manage(environment::EnvironmentInfo {status:"unknown",nominal_path:String::new(),resolved_path:None,package_identity:None,log_available});
             }
             app.manage(roots);
             app.manage(st_backup_import::ImportCancel::default());
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            write_diagnostic_event,
+            get_environment_info,
+            open_log_directory,
             vault_list_dir,
             vault_read_text,
             vault_write_text,
@@ -1117,8 +1204,14 @@ pub fn run() {
             st_backup_import::cancel_st_backup_import,
             st_backup_import::cleanup_st_backup_import
         ])
-        .run(tauri::generate_context!())
+        .build(tauri::generate_context!())
         .expect("error while running tauri application");
+    app.run(|_, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            diagnostics::record(diagnostics::event(diagnostics::EventKind::Vault, "close"));
+            diagnostics::flush();
+        }
+    });
 }
 
 #[cfg(test)]
