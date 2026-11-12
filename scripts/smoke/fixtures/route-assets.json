@@ -1,5 +1,5 @@
 {
-  "name": "stage10-route-smoke",
+  "name": "route-assets",
   "rootMarker": "id=\"root\"",
   "routes": [
     "/",

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- Original ST and installed helper expose JavaScript APIs. */
 import { test, expect } from '@playwright/test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 test('original helper ZIP installs, loads its full public API and persists message variables', async ({ page }) => {
   test.skip(!existsSync('.cache/helper.zip'), 'Run the documented helper fixture download first');
@@ -54,7 +54,10 @@ test('original helper ZIP installs, loads its full public API and persists messa
 
 test('library return keeps sorting and tags; cloud portrait preview downloads a selected image', async ({ page }) => {
   await page.route(/https:\/\/fonts\.(googleapis|gstatic)\.com\//, route => route.abort());
-  await page.route('https://portraits.example.test/**', route => route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXcAAAAASUVORK5CYII=', 'base64') }));
+  const red = readFileSync(new URL('../../src/test/fixtures/portrait-red.png', import.meta.url));
+  const blue = readFileSync(new URL('../../src/test/fixtures/portrait-blue.png', import.meta.url));
+  await page.route('https://portraits.example.test/**', route => route.fulfill({ contentType: 'image/png',
+    body: decodeURIComponent(route.request().url()).includes('开心') ? red : blue }));
   await page.goto('/');
   const id = await page.evaluate(async () => {
     const db = await import('/src/lib/archive-db.ts');
@@ -82,10 +85,11 @@ test('library return keeps sorting and tags; cloud portrait preview downloads a 
   await page.getByRole('tab', { name: /^立绘/ }).click();
   await page.getByRole('button', { name: '从图床导入' }).click();
   await page.getByLabel('名称或世界书片段', { exact: true }).fill('开心\n生气');
+  await page.getByText('高级设置', { exact: true }).click();
+  await page.getByLabel('解析模式', { exact: true }).selectOption('advanced');
   await page.getByLabel('图片链接模板', { exact: true }).fill('https://portraits.example.test/{name}.png');
-  await page.getByRole('button', { name: '预览链接', exact: true }).click();
-  await expect(page.getByText('全选 · 2 个链接')).toBeVisible();
-  await page.getByRole('button', { name: '下载所选', exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('status').first()).toContainText('2 行有效');
+  await page.getByRole('button', { name: '导入所选（2）', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '从图床导入立绘' })).toContainText('2/2 张已保存');
   const count = await page.evaluate(async id => {
     const c = await (await import('/src/lib/archive-db.ts')).getCharacter(id);

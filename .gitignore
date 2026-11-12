@@ -56,6 +56,7 @@ scripts/*
 !scripts/sync-version.test.mjs
 !scripts/verify.mjs
 !scripts/verify.test.mjs
+!scripts/verify-e2e.mjs
 !scripts/build-info.mjs
 !scripts/build-info.d.mts
 !scripts/build-info.test.mjs

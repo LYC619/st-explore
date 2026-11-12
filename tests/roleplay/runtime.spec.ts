@@ -14,6 +14,10 @@ test.beforeAll(async () => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'fixture-model' }] }));
+      return;
+    }
     let text = '';
     for await (const chunk of req) text += chunk;
     const request = JSON.parse(text);
@@ -363,8 +367,8 @@ test('built-in helper scripts and HTML use scoped variables and clean up on chat
   expect((await readStory()).session.messages).toHaveLength(1);
   await script.getByLabel('读取剧情', { exact: true }).uncheck();
   await script.getByRole('button', { name: '权限检查', exact: true }).click();
-  await expect.poll(() => page.frames().find(frame => frame.name() === '' && frame.url() === 'about:srcdoc')
-    ?.evaluate(() => document.body.dataset.permissionChecks)).toBe('[true,true]');
+  await expect(tavern.frameLocator('iframe[title="状态助手"]').locator('body'))
+    .toHaveAttribute('data-permission-checks', '[true,true]');
   expect(requests).toHaveLength(1);
   await script.getByLabel('读取剧情', { exact: true }).check();
   await tavern.locator('#ste_helper_html').getByLabel('修改资料', { exact: true }).check();

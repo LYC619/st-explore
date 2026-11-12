@@ -74,22 +74,36 @@ test('a pending swipe saves without warning and finishes while browsing other mo
 
 test('Catbox preset downloads concurrently in the background with Chinese names', async ({ page }) => {
   const fixture = await seed(page);
+  // Different portraits must have different bytes: identical images are deduplicated.
+  const portraits = (await page.evaluate(() => Array.from({ length: 5 }, (_, index) => {
+    const canvas = document.createElement('canvas'); canvas.width = 2; canvas.height = 2;
+    const context = canvas.getContext('2d')!; context.fillStyle = `hsl(${index * 60}, 100%, 50%)`;
+    context.fillRect(0, 0, 2, 2); return canvas.toDataURL('image/png').split(',')[1];
+  }))).map(value => Buffer.from(value, 'base64'));
   let finish!: () => void;
   const gate = new Promise<void>(resolve => { finish = resolve; });
   let requests = 0;
   await page.route('https://files.catbox.moe/**', async route => {
     requests++; await gate;
-    await route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJXcAAAAASUVORK5CYII=', 'base64') });
+    const index = Number(route.request().url().match(/abc12([3-7])\.png$/)?.[1]) - 3;
+    expect(index).toBeGreaterThanOrEqual(0); expect(index).toBeLessThan(5);
+    await route.fulfill({ contentType: 'image/png', body: portraits[index] });
   });
   await page.goto(`/character/${fixture.characterId}`);
   await page.getByRole('tab', { name: /^立绘/ }).click();
   await page.getByRole('button', { name: '从图床导入' }).click();
+  await page.getByText('高级设置', { exact: true }).click();
   await page.getByRole('button', { name: 'Catbox 世界书列表' }).click();
   await page.getByLabel('名称或世界书片段', { exact: true }).fill('开心: 开心abc123.png\n生气: 生气abc124.png\n害羞: 害羞abc125.png\n微笑: 微笑abc126.png\n惊讶: 惊讶abc127.png');
-  await page.getByRole('button', { name: '预览链接', exact: true }).click();
-  await expect(page.getByText('全选 · 5 个链接')).toBeVisible();
-  await page.getByRole('button', { name: '下载所选', exact: true }).click();
-  await expect.poll(() => requests).toBe(4);
+  await expect(page.getByRole('dialog').getByRole('status').first()).toContainText('5 行有效');
+  await page.getByRole('button', { name: '导入所选（5）', exact: true }).click();
+  // Visible previews may also be in flight or reused; assert the actual import
+  // worker limit separately from concurrent image requests.
+  await expect.poll(() => requests).toBeGreaterThan(1);
+  await expect.poll(() => page.evaluate(async () => {
+    const task = (await import('/src/lib/portrait-cloud-task.ts')).portraitCloudTasks.getSnapshot();
+    return task?.items.map(item => item.status);
+  })).toEqual(['downloading', 'downloading', 'downloading', 'downloading', 'pending']);
   await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '角色库', exact: true }).first().click();
   await expect(page).toHaveURL(/\/library/);

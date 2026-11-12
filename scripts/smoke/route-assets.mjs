@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-const fixtureUrl = new URL('./fixtures/stage10-routes.json', import.meta.url);
+const fixtureUrl = new URL('./fixtures/route-assets.json', import.meta.url);
 const fixture = JSON.parse(await readFile(fileURLToPath(fixtureUrl), 'utf8'));
 const baseUrl = process.env.STE_SMOKE_URL ?? 'http://127.0.0.1:4173/';
 
@@ -29,4 +29,4 @@ for (const asset of entryCandidates.slice(0, 3)) {
   assert.equal(response.ok, true, `${asset} returned HTTP ${response.status}`);
 }
 
-console.log(`stage10 route smoke passed: ${fixture.routes.length} routes, ${entryCandidates.length} app assets`);
+console.log(`route asset smoke passed: ${fixture.routes.length} routes, ${entryCandidates.length} app assets`);

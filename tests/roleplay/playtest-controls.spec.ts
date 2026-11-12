@@ -8,6 +8,10 @@ test.beforeAll(async () => {
   server = createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*'); res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') { res.writeHead(204).end(); return; }
+    if (req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'fixture' }] }));
+      return;
+    }
     let body = ''; for await (const chunk of req) body += chunk;
     requests.push(JSON.parse(body));
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });

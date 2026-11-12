@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
-import { createRequire } from 'node:module';
+import { chromium } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-const { chromium } = createRequire(import.meta.url)('playwright');
 const base = process.env.STE_SMOKE_URL || 'http://127.0.0.1:5187';
 const output = path.join(tmpdir(), `ste-maintenance-reader-${Date.now()}`);
 await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ channel: 'msedge', headless: true });
+const browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : process.platform === 'win32' ? { channel: 'msedge' } : {}) });
 const errors = [];
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
 page.on('pageerror', error => errors.push(error.message));

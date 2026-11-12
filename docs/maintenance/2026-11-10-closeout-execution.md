@@ -5,7 +5,7 @@
 
 ## 当前恢复点
 
-- goal 活跃，第0–9项实现与对应门禁通过，第4、7、9项独立原生验收留第13项；进入第10项冒烟脚本归拢与CI。
+- goal 活跃，第0–10项实现与对应门禁通过，第4、7、9项独立原生验收留第13项；进入第11项统一打包入口。第10项完整E2E首跑失败均已解释并复验，最终统一重跑留第13项。
 - 初始分支 `fix/stability-1109`，HEAD `b3f0ea346411c0f91c11a03eed3899c4abd52341`，与方案一致。
 - 三批既有源码／测试改动已按第0项提交；同文件跨批不拆块，后批收纳并注明。
 - 原 `_reference/`、`start.bat`、`.user/`、`user/`、`.planning/` 状态已仅按路径保存到 `.cache/closeout/protected-status-before.txt`，第 0 项完成时比较。
@@ -26,7 +26,8 @@
 | 7 | 实现与门禁完成，原生待验 | 本项提交见git历史；`.cache/closeout/item7-*` | 单测58通过／1原有忽略；真实独立进程的启动清扫及5秒锁提示留第13项 |
 | 8 | 完成 | 本项提交见 git 历史；`.cache/verify/2026-11-12T06-19-56-916Z/` | 26项定向、324文件2633项全量前端、Rust58通过／1原有忽略；未改产品代码 |
 | 9 | 实现与门禁完成，原生待验 | 本项提交见git历史；`.cache/closeout/item9-*` | 104项相关测试、类型与lint通过；子格式兼容边界已记录，未扩改 |
-| 10–13 | 待执行 | — | 按编号顺序推进 |
+| 10 | 完成 | 本项提交见git历史；`.cache/closeout/item10-*` | 67份脚本逐项归类，61份原样归档；全套E2E首跑29通过／27失败，修正测试后相关用例与生产4项通过；CI未实跑 |
+| 11–13 | 待执行 | — | 按编号顺序推进 |
 
 ## 授权与验证边界
 
@@ -151,3 +152,134 @@ CURRENT 为 4035 字节，全部相对链接可解析。原文全字节备份与
 验证：`item9-final-focused.log` 8文件104项通过，其中新门禁13项；真实 VaultGate 与 VaultSwitcher 显示同一句错误且仍可选库，高版本启动／引导／已注册切换／新增下次启动目标均拒绝；文件系统写入记录为空，原内容与当前后端保持。当前／旧版／缺字段／字符串／null均可启动和切换，缺元信息与JSON损坏沿用既有处理；读取权限失败不绕过。网页启动不触发原生命令。两套类型与改动文件lint通过，最终测试变更后的app类型和lint重跑通过。第8项两个旧接线单测的文件系统替身增加元信息读取能力，未删改原断言。独立原生仍留第13项。
 
 子格式静态核查发现、按计划只记录不修：预设标签的更高schema会在规整／保存时回到2；显式ST重导会以version1写生成的personas清单；故事摘要缓存忽略更高schema后可重建覆盖（可丢弃缓存）；完整备份未按高DB_VERSION拒绝且仅处理已知store。最终报告需区分数据兼容风险与缓存例外。新库级规则要求未来不兼容格式先提升库级schema，不能只升子格式。
+
+## 第10项冒烟与 CI（2026-11-12）
+
+实际盘点为67个原顶层脚本（旧方案为68）；61个原样归档且逐份SHA256一致，6个保留／更名，加统一入口共7个顶层文件。原生构建与凭据工具只提供隔离支持，不随冒烟启动程序；实际浏览器冒烟为阅读包和路由资源两项。后者只证明11条HTTP路由及入口资源响应，不替代页面交互。
+
+稳定冒烟已通过，证据 `.cache/smoke/2026-11-12T07-04-45-188Z/`。三个候选失败后原样归档：maintenance-editors等旧“保存”；library-maintenance-smoke已完成合成删除但等旧回收区标题；preset-series-production等旧“打开完整详情”。maintenance-service-worker静态核对发现硬编码旧缓存版本，未执行。真实模型／正式目录脚本均未执行。候选日志见 `.cache/smoke/2026-11-12T06-57-19-391Z/`、`2026-11-12T06-59-29-715Z/`、`2026-11-12T07-00-50-544Z/`。
+
+统一入口：`npm run smoke`按顺序运行凭据安全测试、构建、独立dev阅读包检查与preview路由检查；`npm run verify:e2e`依次运行smoke、roleplay、production，失败即停。CI前端改用verify:web，Windows Rust任务先构建dist，再test及clippy，不构建安装器或发布；YAML解析通过，命令已有本机证据，**CI未实跑**。
+
+本机Vite测试服务器的配置加载在 `ste-pinned-tavern-frontend.configureServer` 阻塞。默认加载120秒及runner方式45秒超时，native加载加类型剥离后也阻塞；阶段探针定位后，预先原生import同一份完整配置，再用`configFile:false`创建服务器约2.1秒启动，所有插件保留。最终仅在测试服务器入口预加载配置，alias用`import.meta.dirname`，不同端口用独立缓存。证据 `.cache/closeout/item10-vite-{probe,traced,preloaded}.log`；不是停用酒馆插件或改运行行为。
+
+两套类型、7项脚本测试已通过；浏览器全量与失败用例原因待下文补齐。
+
+### 原脚本 → 去向 → 理由
+
+路径均相对 `scripts/smoke/`；archive内脚本不再是执行入口。
+
+| 原脚本 | 去向 | 理由 |
+| --- | --- | --- |
+| `benchmark-vault-20261105.mjs` | `archive/benchmark-vault-20261105.mjs` | 旧绝对目录性能基准，未证明样本为合成；不执行 |
+| `build-isolated-native.mjs` | `build-isolated-native.mjs` | 保留独立构建／凭据校验支持；安全单测接统一门禁，实际程序不随smoke启动 |
+| `compare-summary-transport-20261109.mjs` | `archive/compare-summary-transport-20261109.mjs` | 历史配置与提示词传输比较；不重读历史配置，统一请求已有新用例 |
+| `delete-large-vault-20261109-native.mjs` | `archive/delete-large-vault-20261109-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `existing-paths-20261111-native.mjs` | `archive/existing-paths-20261111-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `exit-20261109-native.mjs` | `archive/exit-20261109-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `exit-failed-load-20261109-native.mjs` | `archive/exit-failed-load-20261109-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `exit-process-20261109.ps1` | `archive/exit-process-20261109.ps1` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `experience-notes.mjs` | `archive/experience-notes.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `feedback-20261109-native.mjs` | `archive/feedback-20261109-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `feedback-release.mjs` | `archive/feedback-release.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `global-ui-consistency.mjs` | `archive/global-ui-consistency.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `large-vault-fixture-20261109.mjs` | `archive/large-vault-fixture-20261109.mjs` | 旧原生专项的合成夹具生成器；随该组归档，第13项另建合成现场 |
+| `library-maintenance-smoke.mjs` | `archive/library-maintenance-smoke.mjs` | 本轮实跑已完成合成删除，但断言仍找旧“删除时保留的文件”分组；界面已改为“库内回收站与长期保留文件”，按方案归档 |
+| `library-review-smoke.mjs` | `archive/library-review-smoke.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `maintenance-editors.mjs` | `archive/maintenance-editors.mjs` | 本轮合成实跑等待旧“保存”按钮超时；按计划归档，不修改产品迁就旧选择器 |
+| `maintenance-reader.mjs` | `maintenance-reader.mjs` | 真实阅读包Worker、桌面重排、移动书签和重复定位通过；接smoke |
+| `maintenance-service-worker.mjs` | `archive/maintenance-service-worker.mjs` | 硬编码旧缓存版本 st-chat-v0.9.1，现已过时；不为旧断言改产品 |
+| `native-formal-20261105.ps1` | `archive/native-formal-20261105.ps1` | 已停用的正式目录测试；保持原样，不执行或复活 |
+| `native-integrated-20261105.ps1` | `archive/native-integrated-20261105.ps1` | 涉及正式目录或身份，未满足本轮原生隔离要求；不执行 |
+| `native-performance-20261105.mjs` | `archive/native-performance-20261105.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `native-performance-20261105.ps1` | `archive/native-performance-20261105.ps1` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `native-test-artifact.mjs` | `native-test-artifact.mjs` | 保留独立构建／凭据校验支持；安全单测接统一门禁，实际程序不随smoke启动 |
+| `native-test-safety.test.mjs` | `native-test-safety.test.mjs` | 保留独立构建／凭据校验支持；安全单测接统一门禁，实际程序不随smoke启动 |
+| `performance-library.mjs` | `archive/performance-library.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261031-chat.mjs` | `archive/playtest-20261031-chat.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261031-presets.mjs` | `archive/playtest-20261031-presets.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261031-production.mjs` | `archive/playtest-20261031-production.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261031-round2-concepts.mjs` | `archive/playtest-20261031-round2-concepts.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261031-round2-scan-regex.mjs` | `archive/playtest-20261031-round2-scan-regex.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261101-chat-presets.mjs` | `archive/playtest-20261101-chat-presets.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261104-extensions.mjs` | `archive/playtest-20261104-extensions.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261104-frontend-refresh.mjs` | `archive/playtest-20261104-frontend-refresh.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261104-frontend.mjs` | `archive/playtest-20261104-frontend.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261104-native-integrated.mjs` | `archive/playtest-20261104-native-integrated.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `playtest-20261104-native.mjs` | `archive/playtest-20261104-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `playtest-20261104-process.mjs` | `archive/playtest-20261104-process.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261104-real-model.mjs` | `archive/playtest-20261104-real-model.mjs` | 依赖真实模型／配置，超出本轮授权；不执行 |
+| `playtest-20261104-usability.mjs` | `archive/playtest-20261104-usability.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261105-diagnostics.mjs` | `archive/playtest-20261105-diagnostics.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261105-native-integrated.mjs` | `archive/playtest-20261105-native-integrated.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `playtest-20261107-chat-load.mjs` | `archive/playtest-20261107-chat-load.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261107-chat-native.mjs` | `archive/playtest-20261107-chat-native.mjs` | 涉及正式目录或身份，未满足本轮原生隔离要求；不执行 |
+| `playtest-20261107-connection-native.mjs` | `archive/playtest-20261107-connection-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `playtest-20261107-world-b25.mjs` | `archive/playtest-20261107-world-b25.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261107-world-compatibility.mjs` | `archive/playtest-20261107-world-compatibility.mjs` | 旧扩展专项的包装入口；依赖归档脚本，不接稳定集合 |
+| `playtest-20261107-world-load.mjs` | `archive/playtest-20261107-world-load.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261107-world-native.mjs` | `archive/playtest-20261107-world-native.mjs` | 涉及正式目录或身份，未满足本轮原生隔离要求；不执行 |
+| `playtest-20261107-world-production.mjs` | `archive/playtest-20261107-world-production.mjs` | 依赖旧 .cache 世界包；按规则不复用历史产物 |
+| `playtest-20261107-world-real-model.mjs` | `archive/playtest-20261107-world-real-model.mjs` | 依赖真实模型／配置，超出本轮授权；不执行 |
+| `playtest-20261107-world-real-prose.mjs` | `archive/playtest-20261107-world-real-prose.mjs` | 依赖真实模型／配置，超出本轮授权；不执行 |
+| `playtest-20261107-world-recovery.mjs` | `archive/playtest-20261107-world-recovery.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261107-world-soak.mjs` | `archive/playtest-20261107-world-soak.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-20261107-world.mjs` | `archive/playtest-20261107-world.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-followups.mjs` | `archive/playtest-followups.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-polish-smoke.mjs` | `archive/playtest-polish-smoke.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-presets-chat.mjs` | `archive/playtest-presets-chat.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `playtest-round2-resources.mjs` | `archive/playtest-round2-resources.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `preset-experience.mjs` | `archive/preset-experience.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `preset-navigation.mjs` | `archive/preset-navigation.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `preset-series-production.mjs` | `archive/preset-series-production.mjs` | 本轮生产构建实跑等待旧“打开完整详情”按钮超时；不硬修历史界面流程，原样归档 |
+| `preset-series-workbench.mjs` | `archive/preset-series-workbench.mjs` | 历史界面／性能专项；本轮不判定其仍可运行，不扩修旧选择器或重复加入稳定集合 |
+| `stage10-route-smoke.mjs` | `route-assets.mjs` | 生产HTML路由与入口资源响应通过；稳定命名，接smoke；不把HTTP检查声称为页面交互验证 |
+| `startup-20261109-native.mjs` | `archive/startup-20261109-native.mjs` | 历史原生专项，不能以旧进程或旧构建凭据证明本轮行为；留第13项统一复查 |
+| `verify-final-20261105.ps1` | `archive/verify-final-20261105.ps1` | 旧门禁包装已由 verify／verify:e2e 与原生凭据工具替代；不再重复维护 |
+| `verify-native-artifact.mjs` | `verify-native-artifact.mjs` | 保留独立构建／凭据校验支持；安全单测接统一门禁，实际程序不随smoke启动 |
+| `verify-platform-20261105.ps1` | `archive/verify-platform-20261105.ps1` | 旧门禁包装已由 verify／verify:e2e 与原生凭据工具替代；不再重复维护 |
+
+
+### 首次完整浏览器检查（失败保留）
+
+
+`npm run verify:e2e`：smoke通过，roleplay 29通过／27失败，用时732.4秒，production因前项失败尚未执行。日志 `.cache/verify/2026-11-12T07-04-45-120Z/`；截图、trace与失败上下文已另存 `.cache/closeout/item10-first-browser/`，避免复验覆盖。
+
+| 用例 | 原因及处理 |
+| --- | --- |
+| `archive-workflow.spec.ts:32` detail moves records to a sibling branch, reads full content and preserves ownership on reload | 旧正文样式／楼层处理菜单／收录及批量管理入口；已按真实界面更新，待复验 |
+| `archive-workflow.spec.ts:64` processing clears numeric input and persists a single batch unhide without plugin changes | 旧正文样式／楼层处理菜单／收录及批量管理入口；已按真实界面更新，待复验 |
+| `archive-workflow.spec.ts:85` captures consecutive records from a saved message and imports them once into the current character worldbook | 旧正文样式／楼层处理菜单／收录及批量管理入口；已按真实界面更新，待复验 |
+| `playtest-1006.spec.ts:55` library return keeps sorting and tags; cloud portrait preview downloads a selected image | 图床导入已改自动预览／高级设置入口；已更新入口及保留导入、并发和后台保存断言，待复验 |
+| `playtest-1007.spec.ts:75` Catbox preset downloads concurrently in the background with Chinese names | 图床导入已改自动预览／高级设置入口；已更新入口及保留导入、并发和后台保存断言，待复验 |
+| `playtest-controls.spec.ts:22` visible branch and script controls keep live execution and persistence on the selected line | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:117` original Tavern opens a STE story, streams a reply and persists it for reopening | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:154` a delayed welcome template cannot insert its panel or greeting into an opened story | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:175` a character without archived chats starts a new story using the original greeting | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:198` Agent mode automatically reads green lore, freezes actual provider context and commits sourced file memory | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:251` classic mode uses the linked preset, depth lore and original regex editor without losing WI placement | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:301` built-in helper scripts and HTML use scoped variables and clean up on chat reload | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:398` complete story package downloads from Tavern and restores through the STE library | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:442` original chat history exports raw JSONL and character import opens the STE library after saving edits | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:466` a 2000-message story stays virtualized with bounded Agent input and no per-token story writes | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:527` helper download and project links reach the parent external browser bridge | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:571` native overswipe generates and reopens candidates without a branch (stream=true) | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:571` native overswipe generates and reopens candidates without a branch (stream=false) | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:615` existing swipes and original message editing keep STE IDs and candidate data | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:643` stop cancels the actual provider stream and the accepted partial text can be reopened | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:660` browser Back retains the current editor and explicit close flushes it | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:684` a failed story write keeps the live chat open and retry preserves the edited prose | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:712` failed saving still lets the player export the editor and input, then explicitly leave | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:757` the chat hub opens conversations directly and guides a new chat to its real settings | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:794` the original branch command creates an internal STE branch and continues only that line | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:861` a reload recovers the composer and an unfinished editor draft without treating it as a generated fact | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+| `runtime.spec.ts:883` real BaiBai 1.2.7 installs, summarizes through ST, survives reopening and yields ownership to the native Agent | 本地固定响应服务未处理模型列表GET，错误地解析空正文；已补合成列表响应，待复验 |
+
+
+本次维护中的Playwright用例与历史smoke不同：保留实际浏览器行为断言，只修正过时入口／夹具。具体为：记录正文改定位现有阅读区，并验证展开后完整文本和无裁切；批量隐藏从“楼层处理”进入，正则栏按当前展开状态操作；收录使用当前按钮并先开“批量管理”；图床使用高级模板与自动预览，夹具采用不同图片字节避免现有内容去重；并发检查直接验证4个导入任务在途、1个等待，同时证明确有并发网络请求，避免把共享预览请求误当成导入线程。运行测试的本地固定响应服务补GET模型列表（第6项允许空密钥后会走真实刷新）；权限断言定位具名脚本frame，不任取第一个srcdoc。未改酒馆、图床、记录等产品实现，未删断言或放宽全局时限。
+
+### 第10项最终结果
+
+第二次仅跑5个受影响文件：34项中30通过／4失败，证据 `.cache/closeout/item10-browser-focused.log`，失败现场留 `.cache/closeout/item10-second-browser/`。4项分别为正则栏本已自动展开却再次切关、同字节图片被去重、预览队列改变了网络请求计数、权限检查取错匿名frame。按实际状态修正后，这4项全部通过：`.cache/closeout/item10-browser-final-focused.log`，含助手50次真实重载的清理断言。其余52项已有相同相关实现的通过证据；这不是声称一次全套verify:e2e退出0，最终统一重跑留第13项。
+
+生产构建Edge检查4项全通过：`.cache/closeout/item10-production.log`，覆盖两种宽度关于页、真实分包加载失败兜底和空密钥固定服务错误。7项脚本安全测试与5文件定向lint通过；最终两套类型证据为 `.cache/closeout/item10-types-{app,node}-final.log`。没有修产品以迁就旧测试，未执行旧原生／真实模型脚本。

@@ -17,7 +17,7 @@ export default defineConfig({
       ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH } : undefined,
   },
   webServer: {
-    command: 'node scripts/tavern/roleplay-test-server.mjs',
+    command: 'node --experimental-strip-types scripts/tavern/roleplay-test-server.mjs',
     url: 'http://127.0.0.1:4178',
     reuseExistingServer: false,
     timeout: 180_000,

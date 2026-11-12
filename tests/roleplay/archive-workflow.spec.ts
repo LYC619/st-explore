@@ -45,9 +45,12 @@ test('detail moves records to a sibling branch, reads full content and preserves
   await page.goto(`/character/${fixture.characterId}`); await page.getByRole('button', { name: '总结', exact: true }).click();
   const panel = page.getByRole('tabpanel');
   await panel.getByRole('combobox').first().click(); await page.getByRole('option', { name: '来源故事', exact: true }).click();
-  const body = panel.locator('.break-words').filter({ hasText: '正文段落。' });
+  const body = panel.locator('.record-reading').filter({ hasText: '正文段落。' });
   await body.hover(); expect(await body.getAttribute('title')).toBeNull();
-  await body.click(); await expect(panel.getByText('点击展开全文')).toHaveCount(0);
+  await panel.getByRole('button', { name: '展开全文', exact: true }).click();
+  await expect(panel.getByRole('button', { name: '收起全文', exact: true })).toHaveAttribute('aria-expanded', 'true');
+  await expect(body).toHaveText('正文段落。'.repeat(80));
+  expect(await body.evaluate(node => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
   await page.screenshot({ path: '.cache/archive-maintenance-20261018/b-record-reading.png' });
   await panel.getByRole('button', { name: '移动到其他故事', exact: true }).click();
   const dialog = page.getByRole('dialog');
@@ -72,9 +75,13 @@ test('processing clears numeric input and persists a single batch unhide without
     await db.saveArchiveStory(story); return story.id;
   });
   await page.goto(`/story/${storyId}?view=read`);
-  await page.getByText('批量隐藏操作', { exact: true }).click();
+  await page.getByRole('button', { name: '楼层处理', exact: true }).click();
   await page.getByRole('button', { name: '取消全部手动隐藏', exact: true }).click();
   await expect.poll(() => page.evaluate(async id => (await (await import('/src/lib/archive-db.ts')).getArchiveStory(id)).session.messages.map((m: any) => m.hidden), storyId)).toEqual([false, false, true, false, false]);
+  await page.keyboard.press('Escape');
+  if (!await page.getByRole('button', { name: '展开编辑', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: '正则 (1)', exact: true }).click();
+  }
   await page.getByRole('button', { name: '展开编辑', exact: true }).click();
   const count = page.getByLabel('最近楼层数', { exact: true }); await count.fill(''); await expect(count).toHaveValue('');
   await count.fill('50'); await count.press('Tab');
@@ -94,7 +101,7 @@ test('captures consecutive records from a saved message and imports them once in
     await db.saveArchiveStory(story); return { characterId: card.id, storyId: story.id };
   });
   await page.goto(`/story/${fixture.storyId}?view=read`);
-  await page.getByRole('button', { name: '收录第 0 楼为总结或日记', exact: true }).click();
+  await page.getByRole('button', { name: '收录第 0 楼', exact: true }).click();
   const dialog = page.getByRole('dialog'); await expect(dialog.getByLabel('记录正文')).toHaveValue('已生成的总结正文');
   for (let i = 1; i <= 3; i++) {
     await dialog.getByLabel('记录标题', { exact: true }).fill(`第${i}卷成果`);
@@ -105,7 +112,10 @@ test('captures consecutive records from a saved message and imports them once in
   }
   await expect(dialog).toHaveCount(0); await page.goto(`/character/${fixture.characterId}`);
   await page.getByRole('button', { name: '总结', exact: true }).click();
-  const selectRecords = async () => { for (let i = 1; i <= 3; i++) await page.getByRole('checkbox', { name: `选择记录 第${i}卷成果`, exact: true }).check(); };
+  const selectRecords = async () => {
+    await page.getByRole('tabpanel').getByRole('button', { name: '批量管理', exact: true }).click();
+    for (let i = 1; i <= 3; i++) await page.getByRole('checkbox', { name: `选择记录 第${i}卷成果`, exact: true }).check();
+  };
   await selectRecords(); await page.getByRole('button', { name: '加入世界书（3）', exact: true }).click();
   await expect(dialog.getByText(/新增条目默认禁用/)).toBeVisible();
   await dialog.getByRole('button', { name: '确认加入并保存', exact: true }).click(); await expect(dialog).toHaveCount(0);
