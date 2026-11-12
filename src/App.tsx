@@ -11,6 +11,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { THEME_KEYS, DEFAULT_THEME } from "@/lib/theme";
 import { RoleplayWorkspace } from '@/components/roleplay/RoleplayWorkspace';
 import { ApiConfigSyncObserver } from '@/components/ai-tools/ApiConfigSyncObserver';
+import { RouteErrorBoundary } from '@/components/AppErrorBoundary';
 
 // 路由级代码分割：每个页面单独打包，首屏只加载首页所需 chunk。
 // 页面按访问加载；避免启动时解析所有编辑器和大型依赖。
@@ -54,12 +55,13 @@ const Beautify = lazy(PAGE_LOADERS.beautify);
 const NotFound = lazy(PAGE_LOADERS.notFound);
 const App = () => {
   // Data-router blockers let the live editor finish its save before Back/search/navigation.
-  const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<Route element={<RoleplayWorkspace />}>
+  const [router] = useState(() => createBrowserRouter(createRoutesFromElements(<Route element={<RoleplayWorkspace />} errorElement={<RouteErrorBoundary />}>
     <Route path="/play/:id" element={null} />
     <Route path="/worlds" element={<WorldPlay />} />
     <Route path="/worlds/:id" element={<WorldPlay />} />
     <Route path="/gal/:id" element={<GalPlay />} />
     <Route element={<AppLayout />}>
+      <Route errorElement={<RouteErrorBoundary />}>
       <Route path="/" element={<Home />} />
       <Route path="/play" element={<ChatHub />} />
       <Route path="/library" element={<Library />} />
@@ -78,6 +80,7 @@ const App = () => {
       <Route path="/settings" element={<SettingsPage />} />
       <Route path="/ai-tools" element={<Navigate to="/settings" replace />} />
       <Route path="*" element={<NotFound />} />
+      </Route>
     </Route>
   </Route>)));
   return (
