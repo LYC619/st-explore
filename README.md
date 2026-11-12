@@ -6,7 +6,7 @@
 
 > SillyTavern 角色卡与聊天记录的**归档 · 编辑**工具。
 
-[![version](https://img.shields.io/badge/version-v0.9.5-orange)](https://github.com/LYC619/st-explore/releases)
+[![version](https://img.shields.io/badge/version-v0.9.9-orange)](https://github.com/LYC619/st-explore/releases)
 [![platform](https://img.shields.io/badge/platform-Web%20%7C%20Windows-blue)](https://github.com/LYC619/st-explore)
 [![stack](https://img.shields.io/badge/stack-React%2018%20%2B%20Tauri%202-4FC08D)](https://github.com/LYC619/st-explore)
 [![license](https://img.shields.io/badge/license-AGPL--3.0-green)](./LICENSE)
@@ -28,12 +28,15 @@
 
 ## 🌟 项目简介
 
-ST-Explore （拾忆）定位为 SillyTavern 用户的**离线归档与二次编辑工具**，只做两件事：
+ST-Explore（拾忆）想让更多人体会到 AI 角色扮演（AIRP）的乐趣。只做归档会抬高上手门槛，所以现在分成存档与回味、继续游玩两部分。
 
-**归档** —— 把散落在 `data/default-user` 目录下的角色卡、聊天存档、世界书、预设、正则等资源集中呈现。以角色卡为中心，附上评分、游玩时长、字数统计、标签体系、封面网格等元数据，方便回顾和查找。
+**存档与回味。** 把角色卡、聊天、世界书、预设收进自己掌控的明文文件库，阅读、整理、总结、写日记。数据主权参考 Obsidian：文件在你手里，来源只读。
 
-**编辑处理** —— 从 SillyTavern 导出聊天记录后，在此进行离线的批量编辑：楼层筛选、正则清洗、瘦身导出，以及基于 LLM 的分卷总结、角色日记、故事树生成等衍生操作。产物可再导入回 SillyTavern，或以 JSONL / JSON / TXT / Markdown 等格式导出。
+**游玩（实验中）。** 内嵌酒馆可以直接接着聊。原生玩法还在尝试，实验功能可能大改或撤回。
 
+### 继续游玩与实验玩法
+
+可以从 STE 打开内嵌酒馆，接着已有故事聊天。原生玩法目前尝试三个方向：人物卡做成陪伴，让角色对对话和互动动作做出反应；剧情卡做成 RPG，由程序结算数据、AI 负责导演；以及沙盒世界等其他玩法。这些方向仍在实验中，可能大改或撤回，不代表已完成或承诺的功能。
 
 ---
 
@@ -383,9 +386,7 @@ npm run lint                            # 代码检查
 
 ## 🗺 路线图
 
-- [x] 移动端适配（响应式布局）
-- [ ] Agent 化改造（故事分析、剧情推进、总结工作流的自动编排）
-- [ ] 界面美化（展示页阅读体验、正则工具页作为"自定义前端美化"重构）
+围绕两部分继续迭代：存档与回味侧重自己掌控的明文文件库及阅读、整理、总结、日记；游玩侧保留内嵌酒馆，并尝试人物陪伴、程序结算与 AI 导演分工的 RPG、沙盒世界等方向。实验玩法可能大改或撤回，具体取舍以实际体验为准。
 
 欢迎在 [Issues](https://github.com/LYC619/st-explore/issues) 提出建议或 PR。
 

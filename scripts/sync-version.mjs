@@ -10,6 +10,7 @@ const TARGETS = Object.freeze([
   'src-tauri/Cargo.lock',
   'src/components/GlobalSettings.tsx',
   'public/sw.js',
+  'README.md',
 ]);
 
 export function replaceExactlyOnce(text, expression, replacement, label) {
@@ -146,6 +147,16 @@ export async function syncVersion(root, mode = 'check') {
       /\bCACHE_VERSION\s*=\s*'[^']+'/,
       `CACHE_VERSION = 'v${version}'`,
       'Service Worker CACHE_VERSION',
+    ),
+  );
+
+  nextTexts.set(
+    'README.md',
+    replaceExactlyOnce(
+      sourceTexts.get('README.md'),
+      /https:\/\/img\.shields\.io\/badge\/version-v\d+\.\d+\.\d+-orange/,
+      `https://img.shields.io/badge/version-v${version}-orange`,
+      'README version badge',
     ),
   );
 

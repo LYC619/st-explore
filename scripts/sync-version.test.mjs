@@ -17,6 +17,7 @@ const filesFor = (root) => [
   'src-tauri/Cargo.lock',
   'src/components/GlobalSettings.tsx',
   'public/sw.js',
+  'README.md',
 ].map((file) => join(root, file));
 
 async function makeFixture({ eol = '\n', malformed = false } = {}) {
@@ -66,6 +67,7 @@ async function makeFixture({ eol = '\n', malformed = false } = {}) {
     malformed ? "export const APP_VERSION = 'v0.0.2';" : '',
   ].join('\n'));
   await write('public/sw.js', "const CACHE_VERSION = 'v0.0.1';\n");
+  await write('README.md', '[![version](https://img.shields.io/badge/version-v0.0.1-orange)](https://example.test/releases)\n');
   return root;
 }
 
@@ -93,6 +95,7 @@ test('check reports drift without writing and write is idempotent', async () => 
     assert.equal(JSON.parse(await readFile(join(root, 'src-tauri/tauri.conf.json'), 'utf8')).version, '1.2.3');
     assert.match(await readFile(join(root, 'src/components/GlobalSettings.tsx'), 'utf8'), /APP_VERSION = 'v1\.2\.3'/);
     assert.match(await readFile(join(root, 'public/sw.js'), 'utf8'), /CACHE_VERSION = 'v1\.2\.3'/);
+    assert.match(await readFile(join(root, 'README.md'), 'utf8'), /version-v1\.2\.3-orange/);
     const cargoLock = await readFile(join(root, 'src-tauri/Cargo.lock'), 'utf8');
     assert.match(cargoLock, /name = "third-party"\nversion = "8\.8\.8"/);
     assert.match(cargoLock, /name = "ste-explorer"\nversion = "1\.2\.3"/);
