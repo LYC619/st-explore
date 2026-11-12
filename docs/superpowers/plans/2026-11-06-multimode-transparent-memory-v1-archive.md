@@ -8,7 +8,7 @@
 
 日期：2026-11-06（Asia/Shanghai）。作者：Codex。审查对象：用户与主 Agent Antigravity。
 
-**状态：提案已编制，等待联合审查；未获实施批准。** 本任务只修改文档与共享阅读档案，不修改产品运行代码、依赖、版本或构建产物。用户已确认在当前仓库交接。审查入口见[审查与技术交接](../../maintenance/2026-11-06-multimode-review-handoff.md)。
+**状态：提案已编制，等待联合审查；未获实施批准。** 本任务只修改文档与共享阅读档案，不修改产品运行代码、依赖、版本或构建产物。用户已确认在当前仓库交接。审查入口见[审查与技术交接](../../private/maintenance/2026-11-06-multimode-review-handoff.md)。
 
 核对基线：分支 `codex/playtest-20261031`，HEAD `01686330ad5e64b2ec2f90e257dabe813afbf7f1`，`package.json` 版本 `0.9.8`。实际工作区有前批大量未提交修改及新增文件，本文依据**当前工作区代码**，不能仅检出该 HEAD 就假定接口相同。实施前重读 `docs/maintenance/CURRENT.md` 并复核差异。此前 0.9.8 的测试、打包及待补测状态不由本提案改变。
 
@@ -592,7 +592,7 @@ Antigravity 技术审查重点：ST布局适配是否影响上游虚拟列表/HT
 
 ## 13. 本次核对依据与未决技术验证
 
-- [项目当前状态](../../maintenance/CURRENT.md)、[此前路线讨论](../../maintenance/2026-11-04-product-roadmap-proposal.md)、[MVU成品工作流](../../maintenance/2026-11-04-mvu-frontend-workflow.md)。此前已作废的2026-09-12草稿只用于识别历史误区，不作为本设计实施依据。
+- [项目当前状态](../../maintenance/CURRENT.md)、[此前路线讨论](../../private/maintenance/2026-11-04-product-roadmap-proposal.md)、[MVU成品工作流](../../private/maintenance/2026-11-04-mvu-frontend-workflow.md)。此前已作废的2026-09-12草稿只用于识别历史误区，不作为本设计实施依据。
 - [扩展兼容](../../principles/extension-compatibility.md)、[ST导入边界](../../principles/sillytavern-import.md)、[移动端约定](../../mobile-adaptation.md)、[UI约定](../../ui-conventions.md)。
 - 当前源码模块及测试名称见第2节与第9～10节。已读关键实现与现有测试，未将“测试文件存在”等同于本次执行通过。
 - 仍待实施前短验证：固定ST构建中保留消息DOM的GAL布局接缝、可单步指定actor的群聊入口与必需路由、各已安装扩展可等待的完成信号、模型上下文费用上限的可估算程度。不能验证时按本提案的降级/暂停规则处理，不以假接口硬接。

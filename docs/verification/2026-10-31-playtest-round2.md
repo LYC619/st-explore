@@ -1,6 +1,6 @@
 # 2026-10-31 第二轮开发版实测修复
 
-后续状态：用户明确“收尾打包”后，本轮及前批维护已进入 0.9.6 本地双包，见[0.9.6 交付](2026-10-31-release.md)。以下记录保留实施时证据与未打包状态；本批源码仍未提交推送，新原生程序待用户复测。
+后续状态：用户明确“收尾打包”后，本轮及前批维护已进入 0.9.6 本地双包，见[0.9.6 交付](../private/verification/2026-10-31-release.md)。以下记录保留实施时证据与未打包状态；本批源码仍未提交推送，新原生程序待用户复测。
 
 Codex 主Agent集成；delete_performance实施扫描修复并只读审查UI/资源；preset_library实施概念布局；integration_review实施正则编辑入口与内嵌资源。基线HEAD `0168633`，当前分支`codex/playtest-20261031`，包含本日两批未提交源码，不代表打包或发布。前批输入与结果保留，新批最终src输入清单另存。
 
@@ -17,9 +17,9 @@ Codex 主Agent集成；delete_performance实施扫描修复并只读审查UI/资
 
 ## 证据入口
 
-- [扫描子任务](2026-10-31-playtest-round2-scan.md)：原实现8条陌生文件误报、真实角色删除弹窗失败／设置禁用的夹具，修复后未知文件原样保留；真正坏日志仍阻止清理。
-- [概念详情子任务](2026-10-31-playtest-round2-presets.md)：实际组件四页签、版本popover、chips、草稿、说明预览回归；既有按钮高度栅格和11px最小字号仍遵循。
-- [资源与正则子任务](2026-10-31-playtest-round2-resources.md)：实际AppLayout点击、资源队列／去重／冲突／未知字段与编辑器交接；无mock关键数据服务。
+- [扫描子任务](../private/verification/2026-10-31-playtest-round2-scan.md)：原实现8条陌生文件误报、真实角色删除弹窗失败／设置禁用的夹具，修复后未知文件原样保留；真正坏日志仍阻止清理。
+- [概念详情子任务](../private/verification/2026-10-31-playtest-round2-presets.md)：实际组件四页签、版本popover、chips、草稿、说明预览回归；既有按钮高度栅格和11px最小字号仍遵循。
+- [资源与正则子任务](../private/verification/2026-10-31-playtest-round2-resources.md)：实际AppLayout点击、资源队列／去重／冲突／未知字段与编辑器交接；无mock关键数据服务。
 - `scripts/smoke/playtest-20261031-chat.mjs`（STE_SMOKE_OUTPUT=.cache/playtest-round2）：居中、顺序、省略、搜索／楼层与备注既有路径，多宽度布局。
 - `scripts/smoke/playtest-20261031-round2-scan-regex.mjs`：真实设置检查并清空目录、坏日志折叠限高及重检、真实角色页操作→删除且故事转未绑定、实际EditorRail进入正则编辑主体。4组通过，pageerror为空。
 - `scripts/smoke/playtest-20261031-round2-concepts.mjs`：参考布局、旧版说明编辑预览、日期/模型上限/版本与草稿、正文/附件隔离、附件正则跳转、深浅主题及1024／800／720／390。STE_SMOKE_ZOOM=2使用独立Edge测试扩展实际setZoom(2)，确认devicePixelRatio=2、innerWidth=720；同一流程及聊天标题居中验证通过。

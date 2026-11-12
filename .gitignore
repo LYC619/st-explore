@@ -78,6 +78,9 @@ scripts/*
 # User workspace
 user/
 
+# Local private library records and unreviewed historical evidence
+docs/private/
+
 # Reference recycle bins
 _reference/回收站-*/
 

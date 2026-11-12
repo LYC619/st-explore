@@ -4,15 +4,15 @@
 
 > 当前状态（2026-11-07）：用户否决本轮成果，两轮实现均已回退。本文仅保留历史讨论，不再是执行依据；此前批准和技术测试不代表游玩体验认可。见[回退记录](../../verification/2026-11-07-multimode-rollback.md)。
 
-> 2026-11-07 执行更新：用户与Antigravity已联合批准本修订版并授权完成全部批次。Batch 1～4源码已实现，当前实现映射、验证证据、差异及平台未验项以[全批次交付](../../verification/2026-11-07-two-pillars.md)为准。下文保留11月6日规划快照中的拟议接口和验收目标；其“尚未实施/仅文档”描述不再代表当前状态。未打包、发布或推送。
+> 2026-11-07 执行更新：用户与Antigravity已联合批准本修订版并授权完成全部批次。Batch 1～4源码已实现，当前实现映射、验证证据、差异及平台未验项以[全批次交付](../../private/verification/2026-11-07-two-pillars.md)为准。下文保留11月6日规划快照中的拟议接口和验收目标；其“尚未实施/仅文档”描述不再代表当前状态。未打包、发布或推送。
 
 2026-11-06 · Codex · 修订版 v2 · 交接：用户与 Antigravity（当前仓库）。
 
-**状态：按用户最新构思完成重规划，本轮只改文档。** 旧 Batch 1 源码仍在工作区，用户已指出产品方向偏差，不能记作新方案实现或用户验收通过。先前 D1～D8 批准是历史事实；冲突的范围、默认值和批次编号由本文取代。历史见 [v1 快照](2026-11-06-multimode-transparent-memory-v1-archive.md)与[旧 Batch 1 验证](../../verification/2026-11-06-memory-choices.md)。
+**状态：按用户最新构思完成重规划，本轮只改文档。** 旧 Batch 1 源码仍在工作区，用户已指出产品方向偏差，不能记作新方案实现或用户验收通过。先前 D1～D8 批准是历史事实；冲突的范围、默认值和批次编号由本文取代。历史见 [v1 快照](2026-11-06-multimode-transparent-memory-v1-archive.md)与[旧 Batch 1 验证](../../private/verification/2026-11-06-memory-choices.md)。
 
 基线：`codex/playtest-20261031` / `01686330ad5e64b2ec2f90e257dabe813afbf7f1` / 0.9.8，依据包含大量未提交成果的当前工作区。旧正式包 `release/2026-11-06-startup-dark/` 不含旧 Batch 1，更不含本文重构。执行前重读 [CURRENT](../../maintenance/CURRENT.md)，保留其他改动。
 
-配套：[Batch 1 中枢收尾](2026-11-06-batch1-memory-choices.md)定义迁移、双视图和短事实；[Batch 2～4 实施准备](2026-11-06-native-play-milestones.md)定义舞台、HUD、群像的文件、接口和验证；[技术交接](../../maintenance/2026-11-06-multimode-review-handoff.md)记录有效决定与接缝风险。
+配套：[Batch 1 中枢收尾](2026-11-06-batch1-memory-choices.md)定义迁移、双视图和短事实；[Batch 2～4 实施准备](2026-11-06-native-play-milestones.md)定义舞台、HUD、群像的文件、接口和验证；[技术交接](../../private/maintenance/2026-11-06-multimode-review-handoff.md)记录有效决定与接缝风险。
 
 ## 1. 两大支柱与体验目标
 

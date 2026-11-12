@@ -31,7 +31,7 @@
 | S5 / 中 | 11月7日旧故障窗口正常关窗后15秒仍不退出；为保护编辑没有强杀。11月8日新窗口可以正常退出 | 保留窗口，未强制终止；记录行为 | 是否保存队列、未就绪iframe、生成状态或关闭事件拦截造成等待；正常关闭能否可靠完成。**未闭环** |
 | S6 / 中 | 11月7日主模型ID还在真实配置中；11月8日库内主模型ID变成临时默认项，工具模型仍指向原配置 | 两次状态都留证；未擅自改选另一服务 | 具体由哪次用户选择、默认迁移或程序写入导致变化。不能直接断言自动漂移，也不能忽略这一差异。**来源未确定** |
 
-优先级是审查顺序建议，不是已确认的严重性评级。较早的11月6日启动白屏已补深色底色，见[对应报告](../verification/2026-11-06-startup-dark.md)；没有证据认定与上述故障同源。用户已明确“旧版顶部菜单不重要”，不要把本次审查扩大为恢复已撤回菜单或重做多态玩法。
+优先级是审查顺序建议，不是已确认的严重性评级。较早的11月6日启动白屏已补深色底色，见[对应报告](../private/verification/2026-11-06-startup-dark.md)；没有证据认定与上述故障同源。用户已明确“旧版顶部菜单不重要”，不要把本次审查扩大为恢复已撤回菜单或重做多态玩法。
 
 ## 3. 关键事件顺序
 
@@ -73,7 +73,7 @@ Codex本轮排查的不足：多次重启改变了故障现场；初期侧重错
 - [最终包构建与验证清单](../../release/2026-11-07-chat-connection/build-manifest.json)、[补丁](../../release/2026-11-07-chat-connection/worktree-runtime.patch)
 - [最终生产浏览器结果](../../release/2026-11-07-chat-connection/browser/result.json)、[Windows超时](../../release/2026-11-07-chat-connection/native-timeout.json)、[Windows通过](../../release/2026-11-07-chat-connection/native-isolated.json)
 - `.cache/ai-config-1108/live-probe.json`：原生IPC和缓存摘要；`settings-visible.json`、`verified.json`：真实表单与文件不变证据。只含名称/ID/是否有密钥，不含密钥正文。
-- 原始截图已另存为[主模型缺失截图](../verification/fixtures/2026-11-08-stability-review/missing-main-profile.png)。其余含用户正文的诊断材料留本机`.cache/chat-load-1107/`，按需读取。
+- 原始截图已另存为[主模型缺失截图](../private/verification/fixtures/2026-11-08-stability-review/missing-main-profile.png)。其余含用户正文的诊断材料留本机`.cache/chat-load-1107/`，按需读取。
 - `scripts/smoke/playtest-20261107-chat-load.mjs`、`playtest-20261107-connection-native.mjs`可作复现起点；后者要求独立标识`com.ste.explorer.chat1107`的debug程序，不能直接换成正式标识运行。脚本会重建隔离测试资料。
 
 系统配置与`.cache/ai-config-1108/config-before-inspection.json`包含真实密钥，不复制进报告、Git或发布包；不要全量上传`.cache`。不清空配置“验证能重建”，也不以强杀真实窗口替代保存/退出问题排查。

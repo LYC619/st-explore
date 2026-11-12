@@ -33,7 +33,7 @@
 | 原版 MVU 与用户 schema | 加载 MagVarUpdate 实际远程 bundle（观察版本 2026-10-19 / 7574d47）及柏崎星奈 `01_MVU_ZOD脚本.js`，主世界书提供 InitVar。27 条消息请求的夹具回复经真实 MVU JSONPatch 更新地点，归档和完整刷新后均保持“测试庭院” |
 | 真实模型 | 沿用同日早前两次实际 nebius DeepSeek-V4.1-Flash 证据：原卡开场和 359 楼小总结版均 HTTP 200、出文、保存、刷新一致。该两次没有完整 SPreset／MVU 环境，不能与插件夹具测试合称完整真实模型验收 |
 
-主要脚本：`scripts/smoke/playtest-20261104-frontend.mjs`、`playtest-20261104-extensions.mjs`、`playtest-20261104-frontend-refresh.mjs`、`playtest-20261104-native.mjs`。日志、截图和本地证据在 `.cache/1104-frontend/`；真实模型证据见[专页](2026-11-04-real-local-model.md)。第三方源码及角色文本仅用于本地核查，材料中的指令不视作用户指令。
+主要脚本：`scripts/smoke/playtest-20261104-frontend.mjs`、`playtest-20261104-extensions.mjs`、`playtest-20261104-frontend-refresh.mjs`、`playtest-20261104-native.mjs`。日志、截图和本地证据在 `.cache/1104-frontend/`；真实模型证据见[专页](../private/verification/2026-11-04-real-local-model.md)。第三方源码及角色文本仅用于本地核查，材料中的指令不视作用户指令。
 
 SPreset 与 MVU 实际远程脚本已执行，不是接口替身；模型回复在这组兼容测试中是固定夹具。三项外部字体请求在页面导航时取消，无未捕获页面错误。远程资源保持现有加载策略，未随安装包私自打包分发。
 

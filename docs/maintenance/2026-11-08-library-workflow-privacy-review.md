@@ -68,6 +68,6 @@
 
 本批历史成果是77条新增、2条试点，55篇候选故事中14篇齐备、10篇部分、31篇未尝试。队列标签清空不等于完成了用户要求的全部故事；不依据旧内容分类改写成功数，也不重新读取故事来验证分类。
 
-已更新[操作规范](../guides/library-summary-diary-workflow.md)、[内置设计备忘](../superpowers/plans/2026-11-08-library-organizer-native-proposal.md)、仓库 `AGENTS.md`、当前状态和共享阅读档案。历史结果与执行记录保留并增加纠正入口，便于后续审查，不复制其中的私密材料。
+已更新[操作规范](../private/guides/library-summary-diary-workflow.md)、[内置设计备忘](../private/superpowers/plans/2026-11-08-library-organizer-native-proposal.md)、仓库 `AGENTS.md`、当前状态和共享阅读档案。历史结果与执行记录保留并增加纠正入口，便于后续审查，不复制其中的私密材料。
 
 本次验证范围为文档一致性、链接和本地阅读档案生成；未进行真实库内容测试、浏览器页面检查、生成调用、产品测试或打包。未来安全执行器与酒馆扩展出站验证仍待实施。
