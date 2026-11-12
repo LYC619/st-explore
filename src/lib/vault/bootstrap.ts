@@ -9,12 +9,13 @@ import { createVault } from './vault-backend';
 import { createTauriFs, isInvalidAppConfigError, isTauri } from './tauri-fs';
 import { hydrateApiProfilesFromSystem } from './sensitive-config';
 import { setCurrentVaultId } from './vault-scope';
+import { assertCompatibleVault, NewerVaultFormatError } from './vault-format';
 import {
   chooseAndActivateVault,
   loadVaultRegistry,
 } from './vault-registry-runtime';
 
-export type VaultBootState = 'web' | 'ready' | 'unset' | 'repair';
+export type VaultBootState = 'web' | 'ready' | 'unset' | 'repair' | 'newer';
 
 /** 启动时调用一次：返回 'web'(非客户端) / 'ready'(库已激活) / 'unset'(需要引导选库) */
 export async function bootVault(): Promise<VaultBootState> {
@@ -46,9 +47,11 @@ export async function bootVault(): Promise<VaultBootState> {
     if (!stat.exists || !stat.isDir) {
       throw new Error(`文件库根目录无效：${active.path}`);
     }
+    await assertCompatibleVault(fs);
     setActiveVault(createVault(fs));
     return 'ready';
   } catch (err) {
+    if (err instanceof NewerVaultFormatError) return 'newer';
     if (isInvalidAppConfigError(err)) {
       console.warn('应用配置损坏，需要先备份并修复', err);
       return 'repair';

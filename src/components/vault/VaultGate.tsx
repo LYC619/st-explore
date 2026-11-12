@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { bootVault, chooseVaultRoot, type VaultBootState } from '@/lib/vault/bootstrap';
 import { isInvalidAppConfigError, repairAppConfig } from '@/lib/vault/tauri-fs';
 import { VaultRecycleMaintenance } from './VaultRecycleMaintenance';
+import { NEWER_VAULT_MESSAGE } from '@/lib/vault/vault-format';
 
 export function VaultGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<VaultBootState | 'booting'>('booting');
@@ -80,12 +81,13 @@ export function VaultGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (state === 'unset') {
+  if (state === 'unset' || state === 'newer') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="max-w-md space-y-4 rounded-lg border p-8 text-center">
           <FolderOpen className="mx-auto h-10 w-10 text-primary" />
           <h1 className="text-xl font-semibold">选择你的 STE 库文件夹</h1>
+          {state === 'newer' && <p role="alert" className="text-sm text-destructive">{NEWER_VAULT_MESSAGE}</p>}
           <p className="text-sm text-muted-foreground">
             一个文件夹就是整个库：角色、故事、总结全部以普通文件存放，
             可以直接用资源管理器查看、网盘同步、手动备份。

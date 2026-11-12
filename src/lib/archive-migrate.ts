@@ -17,6 +17,8 @@ import { listCharacterIndex, listStoryIndex } from '@/lib/archive-index';
 import { migrateLegacyTags, NSFW_TAG } from '@/lib/tag-taxonomy';
 import { computeStoryProps } from '@/lib/story-meta';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
+import { ARCHIVE_SCHEMA_VERSION } from './archive-schema';
+export { ARCHIVE_SCHEMA_VERSION } from './archive-schema';
 
 export interface MigrationResult {
   /** 库里角色总数（弹窗条件：>0 才值得说明） */
@@ -27,8 +29,6 @@ export interface MigrationResult {
   storiesBackfilled: number;
   alreadyCurrent: boolean;
 }
-
-export const ARCHIVE_SCHEMA_VERSION = 2;
 
 export async function needsArchiveMigrationWith(getVersion: () => Promise<number>): Promise<boolean> {
   return await getVersion() < ARCHIVE_SCHEMA_VERSION;

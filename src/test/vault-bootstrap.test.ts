@@ -45,7 +45,7 @@ const registry: VaultRegistry = { version: 1, activeId: profile.id, vaults: [pro
 
 beforeEach(() => {
   vi.clearAllMocks();
-  bootMocks.createTauriFs.mockReturnValue({ stat: bootMocks.stat });
+  bootMocks.createTauriFs.mockReturnValue({ stat: bootMocks.stat, readText: async () => '{"schemaVersion":2}' });
   bootMocks.loadVaultRegistry.mockResolvedValue(registry);
 });
 

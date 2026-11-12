@@ -4,6 +4,7 @@ import { createVault } from './vault-backend';
 import { setActiveVault } from './active';
 import { hydrateApiProfilesFromSystem } from './sensitive-config';
 import { setCurrentVaultId } from './vault-scope';
+import { assertCompatibleVault } from './vault-format';
 import {
   activateVaultProfile,
   removeVaultProfile,
@@ -32,6 +33,7 @@ async function assertVaultDirectory(path: string): Promise<void> {
   }
   if (!stat.exists) throw new Error(`文件库目录不存在：${path}`);
   if (!stat.isDir) throw new Error(`文件库路径不是文件夹：${path}`);
+  await assertCompatibleVault(createTauriFs(path));
 }
 
 export async function registerAndActivateVault(path: string, name?: string): Promise<VaultProfile> {

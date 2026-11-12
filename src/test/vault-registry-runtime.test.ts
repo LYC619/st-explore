@@ -68,7 +68,7 @@ function registry(vaults = [oldVault, demoVault], activeId: string | null = oldV
 
 beforeEach(() => {
   vi.clearAllMocks();
-  runtimeMocks.createTauriFs.mockImplementation((path: string) => ({ path, stat: runtimeMocks.stat }));
+  runtimeMocks.createTauriFs.mockImplementation((path: string) => ({ path, stat: runtimeMocks.stat, readText: async () => '{"schemaVersion":2}' }));
   runtimeMocks.loadVaultRegistry.mockResolvedValue(registry());
   runtimeMocks.stat.mockResolvedValue({ exists: true, isDir: true });
 });
