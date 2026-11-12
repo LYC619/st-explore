@@ -2,9 +2,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { tavernFrontend } from "./scripts/tavern/vite-plugin.mjs";
+import { resolveBuildInfo } from "./scripts/build-info.mjs";
+
+const buildInfo = resolveBuildInfo();
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  define: { __STE_BUILD_INFO__: JSON.stringify(buildInfo) },
   server: {
     host: "::",
     port: 8080,
@@ -14,7 +18,12 @@ export default defineConfig({
       ignored: ["**/_reference/**", "**/vendor/**", "**/.cache/tavern/**"],
     },
   },
-  plugins: [tavernFrontend(), react()],
+  plugins: [tavernFrontend(), react(), {
+    name: 'ste-build-receipt',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'build-info.json', source: JSON.stringify(buildInfo, null, 2) + '\n' });
+    },
+  }],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

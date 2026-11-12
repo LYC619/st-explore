@@ -31,6 +31,7 @@ import { clearAllTempCache } from '@/lib/session-storage';
 import { getAllCharacters, getAllArchiveStories } from '@/lib/archive-db';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { resetAllTours } from '@/lib/tour-steps';
+import { BUILD_INFO, formatBuildInfo } from '@/lib/build-info';
 
 export const APP_VERSION = 'v0.9.9';
 
@@ -472,7 +473,7 @@ export function AboutSettingsPanel() {
         </h3>
         <div className="text-sm space-y-1">
           <p className="font-medium">ST Explorer</p>
-          <p className="text-muted-foreground text-xs">{APP_VERSION}</p>
+          <p className="text-muted-foreground text-xs break-words" data-build-identity>{formatBuildInfo(BUILD_INFO, APP_VERSION.slice(1))}</p>
           <a
             href="https://github.com/LYC619/st-explore"
             target="_blank"

@@ -8,7 +8,7 @@ const nodeStep = (name, args) => ({ name, command: process.execPath, args });
 export function verificationSteps(webOnly = false) {
   const steps = [
     nodeStep('version', ['scripts/sync-version.mjs', '--check']),
-    nodeStep('script-tests', ['--test', 'scripts/sync-version.test.mjs', 'scripts/verify.test.mjs']),
+    nodeStep('script-tests', ['--test', 'scripts/sync-version.test.mjs', 'scripts/verify.test.mjs', 'scripts/build-info.test.mjs']),
     nodeStep('lint', ['node_modules/eslint/bin/eslint.js', '.']),
     nodeStep('types-app', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.app.json', '--noEmit']),
     nodeStep('types-node', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.node.json', '--noEmit']),
