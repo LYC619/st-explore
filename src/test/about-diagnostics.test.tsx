@@ -12,20 +12,19 @@ function logButton(){return [...document.querySelectorAll('button')].find(b=>b.t
 afterEach(async()=>{if(root)await act(async()=>root!.unmount());root=undefined;document.body.innerHTML='';vi.clearAllMocks();});
 
 describe('native diagnostics in the actual about panel',()=>{
-  it('shows redirected configuration and opens only the dedicated log command',async()=>{
-    platform.get.mockResolvedValue({status:'redirected',nominalPath:'C:/synthetic/config',resolvedPath:'C:/synthetic/Packages/Test/LocalCache/config',packageIdentity:'Synthetic.Test',logAvailable:true});
+  it.each(['normal','redirected'])('keeps unvalidated %s signals out of the UI and opens the dedicated log command',async status=>{
+    platform.get.mockResolvedValue({status,nominalPath:'C:/synthetic/config',resolvedPath:'C:/synthetic/Packages/Test/LocalCache/config',packageIdentity:'Synthetic.Test',logAvailable:true});
     platform.open.mockResolvedValue(undefined);
     await renderPanel();
-    expect(document.body).toHaveTextContent('配置位置：被打包应用重定向');
-    await act(async()=>{document.querySelector('summary')!.click();});
-    expect(document.body).toHaveTextContent('实际位置：C:/synthetic/Packages');
+    expect(document.body).not.toHaveTextContent('配置位置：');
+    expect(document.body).not.toHaveTextContent('C:/synthetic');
     await act(async()=>{logButton().click();});
     expect(platform.open).toHaveBeenCalledWith();
   });
   it('does not present a failed environment lookup as normal',async()=>{
     platform.get.mockRejectedValue(new Error('synthetic failure'));
     await renderPanel();
-    expect(document.body).toHaveTextContent('配置位置：无法确认');
+    expect(document.body).not.toHaveTextContent('配置位置：');
     expect(logButton()).toBeDisabled();
   });
 });

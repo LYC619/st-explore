@@ -486,13 +486,8 @@ export function AboutSettingsPanel() {
           <p className="font-medium">ST Explorer</p>
           <p className="text-muted-foreground text-xs break-words" data-build-identity>{formatBuildInfo(BUILD_INFO, APP_VERSION.slice(1))}</p>
           {isTauri() && <div className="space-y-2 pt-2 text-xs">
-            <p data-config-location>配置位置：{!environment ? '检查中' : environment.status === 'normal' ? '正常' : environment.status === 'redirected' ? '被打包应用重定向' : '无法确认'}</p>
-            {environment && <details className="text-muted-foreground">
-              <summary className="cursor-pointer">查看配置位置</summary>
-              <p className="break-all">名义位置：{environment.nominalPath || '未知'}</p>
-              <p className="break-all">实际位置：{environment.resolvedPath || '未知'}</p>
-              {environment.packageIdentity && <p className="break-all">所属应用：{environment.packageIdentity}</p>}
-            </details>}
+            {/* Both environment signals missed Codex redirection in the isolated check.
+                Keep collecting diagnostics without presenting an unvalidated location verdict. */}
             <Button variant="outline" size="sm" disabled={!environment?.logAvailable} onClick={() => {
               void openLogDirectory().catch(() => toast({title:'无法打开日志文件夹',description:'请稍后重试。',variant:'destructive'}));
             }}>打开日志文件夹</Button>
