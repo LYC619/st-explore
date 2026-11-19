@@ -13,6 +13,20 @@ export default tseslint.config(
   // android/ 同理：Capacitor 生成的原生工程，里头的 JS 不受本项目规则管。
   { ignores: ["dist", "_reference", "vendor", ".cache", "release", "docs", "user", ".user", ".planning", ".superpowers", "src-tauri/target", "scripts", ".claude/worktrees", "android"] },
   {
+    ...js.configs.recommended,
+    files: ["src/tavern/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      globals: { ...globals.browser, toastr: "readonly", $: "readonly" },
+    },
+    rules: { ...js.configs.recommended.rules, "no-unused-vars": ["error", { caughtErrors: "none", argsIgnorePattern: "^_" }] },
+  },
+  {
+    // helper-host prepends the pinned lodash bundle inside the isolated frame.
+    files: ["src/tavern/helper-client.js"],
+    languageOptions: { globals: { _: "readonly" } },
+  },
+  {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {

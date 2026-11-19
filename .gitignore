@@ -87,8 +87,8 @@ user/
 # Local private library records and unreviewed historical evidence
 docs/private/
 
-# Reference recycle bins
-_reference/回收站-*/
+# Local reference material (not product source).
+/_reference/
 
 # 本地发布产物：安装包体积大，走 GitHub Release，不进提交
 release/

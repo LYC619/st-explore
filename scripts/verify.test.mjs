@@ -52,3 +52,14 @@ test('web gate is the prefix of the full gate and builds assets before Rust', ()
   assert.equal(web.at(-1).name, 'build');
   assert.deepEqual(full.slice(web.length).map(row => row.name), ['rust-tests', 'clippy']);
 });
+
+test('production tavern scripts reject undefined names while allowing their scoped host globals', async () => {
+  const { ESLint } = await import('eslint');
+  const eslint = new ESLint();
+  const [unknown] = await eslint.lintText('missingHostVariable();', { filePath: 'src/tavern/host-bootstrap.js' });
+  assert.ok(unknown.messages.some(message => message.ruleId === 'no-undef'));
+  const [injected] = await eslint.lintText('_.get({}, "key");', { filePath: 'src/tavern/helper-client.js' });
+  assert.equal(injected.errorCount, 0);
+  const [other] = await eslint.lintText('_.get({}, "key");', { filePath: 'src/tavern/host-bootstrap.js' });
+  assert.ok(other.messages.some(message => message.ruleId === 'no-undef'));
+});

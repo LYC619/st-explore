@@ -823,12 +823,28 @@ fn vault_open_path(
                 .reveal_item_in_dir(&target)
                 .map_err(|e| format!("在文件管理器中显示失败 {}: {e}", target.display()))
         } else {
+            validate_external_open(&target)?;
             // with 传 None = 系统默认关联程序；不指定程序名，免得替用户挑
             app.opener()
                 .open_path(target.to_string_lossy(), None::<&str>)
                 .map_err(|e| format!("调用外部程序失败 {}: {e}", target.display()))
         }
     })
+}
+
+/// Unknown formats remain available through reveal, never through shell execution.
+fn validate_external_open(path: &Path) -> Result<(), String> {
+    if path.is_dir() { return Ok(()); }
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
+    if matches!(extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp" | "avif" | "ico" | "tif" | "tiff"
+        | "mp3" | "wav" | "ogg" | "flac" | "m4a" | "aac" | "opus"
+        | "mp4" | "webm" | "mkv" | "mov" | "avi" | "m4v"
+        | "pdf" | "txt" | "md" | "json" | "jsonl" | "csv" | "log" | "html" | "htm" | "svg") {
+        Ok(())
+    } else {
+        Err(fs_mutation_error("unsafe-path", path, "此文件类型不能直接打开，请使用“在文件管理器中显示”后自行确认"))
+    }
 }
 
 #[tauri::command]
@@ -1244,6 +1260,25 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn external_open_rejects_scripts_shortcuts_and_unknown_formats() {
+        for extension in ["exe", "msi", "bat", "cmd", "ps1", "vbs", "vbe", "js", "jse", "wsf", "wsh",
+            "hta", "scr", "pif", "com", "lnk", "url", "reg", "dll", "cpl", "jar", "unknown", ""] {
+            let path = PathBuf::from(format!("synthetic.{extension}"));
+            let error = validate_external_open(&path).unwrap_err();
+            assert_eq!(mutation_code(&error), "unsafe-path");
+            assert!(error.contains("文件管理器"));
+        }
+        assert!(validate_external_open(Path::new("synthetic.PDF.exe")).is_err());
+        assert!(validate_external_open(Path::new("synthetic.CMD")).is_err());
+        for name in ["synthetic.PNG", "synthetic.pdf", "synthetic.mp4", "synthetic.html", "synthetic.jsonl", "synthetic.md"] {
+            assert!(validate_external_open(Path::new(name)).is_ok(), "{name}");
+        }
+        let directory = temp_root("external-open-directory");
+        assert!(validate_external_open(&directory).is_ok());
+        fs::remove_dir(directory).unwrap();
     }
 
     #[test]
@@ -2051,9 +2086,13 @@ mod tests {
         restore_authorized_roots(&roots, &config_dir).unwrap();
 
         assert!(authorized_rooted_path(&roots, configured.to_str().unwrap(), "").is_ok());
-        let persisted = fs::read_to_string(authorization_file(&config_dir)).unwrap();
-        let escaped_configured = configured.to_string_lossy().replace('\\', "\\\\");
-        assert!(persisted.contains(&escaped_configured));
+        let persisted: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(authorization_file(&config_dir)).unwrap(),
+        ).unwrap();
+        assert_eq!(persisted["roots"], serde_json::json!([fs::canonicalize(&configured).unwrap()]));
+        let restarted = AuthorizedRoots::default();
+        restore_authorized_roots(&restarted, &config_dir).unwrap();
+        assert!(authorized_rooted_path(&restarted, configured.to_str().unwrap(), "").is_ok());
         let _ = fs::remove_dir_all(&config_dir);
         let _ = fs::remove_dir_all(&configured);
     }
@@ -2072,9 +2111,13 @@ mod tests {
         let second_boot = AuthorizedRoots::default();
         restore_authorized_roots(&second_boot, &config_dir).unwrap();
         assert!(authorized_rooted_path(&second_boot, reconnecting.to_str().unwrap(), "").is_ok());
-        let persisted = fs::read_to_string(authorization_file(&config_dir)).unwrap();
-        let escaped_reconnecting = reconnecting.to_string_lossy().replace('\\', "\\\\");
-        assert!(persisted.contains(&escaped_reconnecting));
+        let persisted: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(authorization_file(&config_dir)).unwrap(),
+        ).unwrap();
+        assert_eq!(persisted["roots"], serde_json::json!([fs::canonicalize(&reconnecting).unwrap()]));
+        let restarted = AuthorizedRoots::default();
+        restore_authorized_roots(&restarted, &config_dir).unwrap();
+        assert!(authorized_rooted_path(&restarted, reconnecting.to_str().unwrap(), "").is_ok());
         let _ = fs::remove_dir_all(&config_dir);
     }
 }

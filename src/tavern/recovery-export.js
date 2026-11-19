@@ -14,6 +14,7 @@ export function captureRecoveryFile(st) {
         chat_metadata: { ...structuredClone(st.chat_metadata), ste_recovery: {
             version: 1, exportedAt, input: document.querySelector('#send_textarea')?.value ?? '',
         } } };
+    // eslint-disable-next-line no-control-regex -- Export filenames must exclude control characters.
     const name = String(st.getCurrentChatId() ?? '聊天').replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 80) || '聊天';
     return { fileName: name + '-恢复-' + exportedAt.replace(/[:.]/g, '-') + '.jsonl',
         text: [header, ...chat].map(row => JSON.stringify(row)).join('\n') + '\n' };
