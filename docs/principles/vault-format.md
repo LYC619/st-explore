@@ -18,7 +18,7 @@
 
 旧数据迁移由 `MigrationNotice` 调用 `runArchiveMigration`：角色标签与 NSFW 回填、故事字数／末消息时间回填，所有记录成功后才将 `tagMigrationVersion` 记为2并推进库兼容版本。没有此字段时，以 `min(schemaVersion, 2)` 推断旧进度；保存提前写入版本3时会先保留原迁移进度。因此迁移中断即使库版本已是3，下次仍能重试，已完成的记录不重复改写；既有格式2库也不会仅因当前兼容版本变成3而重扫标签。代码 `src/lib/archive-migrate.ts`、`src/lib/archive-db.ts` 与 `src/lib/vault/character-save.ts`；回归见 `archive-migrate.test.ts`、`vault-write-consistency.test.ts`。
 
-同运行时的库变更共享队列；原生进程还持有库占用标记，另一个使用同机制的进程无法同时读写或恢复该库。Windows用库规范路径摘要命名的系统对象，最后句柄释放即结束占用，不在受检查库内创建文件；非Windows使用系统临时目录中的锁文件，尚无本轮原生实测。此机制不约束外部编辑器、云盘或不支持占用标记的老程序，见 `src-tauri/src/library_lease.rs`。
+同运行时的库变更共享队列，运行资料的路径解析与读写也参与，避免父角色改名时写进旧目录；同库句柄共用独立的角色保存恢复队列，防止重复回滚同一清单。原生进程还持有库占用标记，另一个使用同机制的进程无法同时读写或恢复该库。Windows用库规范路径摘要命名的系统对象，最后句柄释放即结束占用，不在受检查库内创建文件；非Windows使用系统临时目录中的锁文件，尚无本轮原生实测。此机制不约束外部编辑器、云盘或不支持占用标记的老程序，见 `src-tauri/src/library_lease.rs`。
 
 ## 记录与目录
 
