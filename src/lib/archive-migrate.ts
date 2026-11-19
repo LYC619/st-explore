@@ -10,7 +10,7 @@ import {
   saveCharacter,
   getArchiveStory,
   saveArchiveStory,
-  getArchiveSchemaVersion,
+  getArchiveMigrationVersion,
   setArchiveSchemaVersion,
 } from '@/lib/archive-db';
 import { listCharacterIndex, listStoryIndex } from '@/lib/archive-index';
@@ -31,11 +31,11 @@ export interface MigrationResult {
 }
 
 export async function needsArchiveMigrationWith(getVersion: () => Promise<number>): Promise<boolean> {
-  return await getVersion() < ARCHIVE_SCHEMA_VERSION;
+  return await getVersion() < 2;
 }
 
 export async function needsArchiveMigration(): Promise<boolean> {
-  return needsArchiveMigrationWith(getArchiveSchemaVersion);
+  return needsArchiveMigrationWith(getArchiveMigrationVersion);
 }
 
 export interface ArchiveMigrationDependencies {
@@ -66,7 +66,7 @@ export function ensureStoryProps(s: ArchiveStory): { record: ArchiveStory; chang
 }
 
 export async function runArchiveMigrationWith(deps: ArchiveMigrationDependencies): Promise<MigrationResult> {
-  if (await deps.getSchemaVersion() >= ARCHIVE_SCHEMA_VERSION) {
+  if (await deps.getSchemaVersion() >= 2) {
     return {
       characterCount: 0,
       charactersMigrated: 0,
@@ -107,7 +107,7 @@ export async function runArchiveMigrationWith(deps: ArchiveMigrationDependencies
 
 export async function runArchiveMigration(): Promise<MigrationResult> {
   return runArchiveMigrationWith({
-    getSchemaVersion: getArchiveSchemaVersion,
+    getSchemaVersion: getArchiveMigrationVersion,
     setSchemaVersion: setArchiveSchemaVersion,
     // 只要 id：逐条 getCharacter/getStory 才是迁移的读取点，这里不必把整库拉进内存
     listCharacterIds: async () => (await listCharacterIndex()).map((c) => c.id),

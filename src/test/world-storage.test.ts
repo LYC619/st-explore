@@ -108,3 +108,22 @@ it('追加一轮只读取直接父提交，不重读全部历史正文', async (
   await repo.append(latest, stepWorld(latest.state), 'step');
   expect(bodies).toBeLessThanOrEqual(1);
 });
+
+it('opens history with bounded concurrent reads and stops at the first corrupt revision', async () => {
+  const base = createMemFs(), repo = new WorldRepo(base);
+  let latest = await repo.create('Synthetic history read measurement', createWorld(73));
+  for (let i = 0; i < 32; i++) latest = await repo.append(latest, stepWorld(latest.state), 'step');
+  let active = 0, peak = 0, reads = 0;
+  const fs = { ...base, async readText(path: string) {
+    active++; peak = Math.max(peak, active); reads++;
+    try { await new Promise(resolve => setTimeout(resolve, 2)); return await base.readText(path); }
+    finally { active--; }
+  } };
+  const opened = await new WorldRepo(fs).open(latest.worldId);
+  console.info(JSON.stringify({ measurement: 'world-history-read', revisions: opened.index.length, reads, peak }));
+  expect(opened.latest).toEqual(latest); expect(opened.warnings).toEqual([]);
+  expect(peak).toBeGreaterThan(1); expect(peak).toBeLessThanOrEqual(8);
+  await base.writeText(`世界/${latest.worldId}/000009.json`, '{broken');
+  const corrupt = await new WorldRepo(fs).open(latest.worldId);
+  expect(corrupt.latest?.revision).toBe(8); expect(corrupt.index).toHaveLength(9); expect(corrupt.warnings).toHaveLength(1);
+});

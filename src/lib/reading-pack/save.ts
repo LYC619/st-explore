@@ -29,15 +29,8 @@ function browserDownload(bytes: Uint8Array, fileName: string): void {
 
 export async function savePackBytes(bytes: Uint8Array, fileName: string, format = { label: '阅读包', extension: 'ste-reading' }): Promise<SavePackOutcome> {
   if (isTauri()) {
-    const { save } = await import('@tauri-apps/plugin-dialog');
-    const path = await save({
-      defaultPath: fileName,
-      filters: [{ name: format.label, extensions: [format.extension] }],
-    });
-    if (!path) return 'cancelled';
-    const { writeAbsBytes } = await import('@/lib/vault/tauri-fs');
-    await writeAbsBytes(path, bytes);
-    return 'saved';
+    const { saveBinaryExport } = await import('@/lib/vault/tauri-fs');
+    return await saveBinaryExport({ fileName, extension: format.extension, base64: bytesToBase64(bytes) }) ? 'saved' : 'cancelled';
   }
 
   if (isCapacitor()) {

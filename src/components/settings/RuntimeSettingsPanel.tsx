@@ -148,7 +148,7 @@ export function DirectorySettingsPanel() {
     try {
       const root = await pickDirectory(
         '选择 SillyTavern 目录（安装根目录或 data/default-user）',
-        { persistAuthorization: true },
+        { persistAuthorization: true, purpose: 'source' },
       );
       if (!root) return;
       const scan = await scanSTUserDir(createTauriFs(root));

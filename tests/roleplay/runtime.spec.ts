@@ -688,6 +688,37 @@ test('browser Back retains the current editor and explicit close flushes it', as
   expect(errors.filter(error => error.includes('blocker state'))).toEqual([]);
 });
 
+test('parked chat pauses idle status polling and resumes for background generation and return', async ({ page }) => {
+  const storyId = await seed(page);
+  await page.goto(`/story/${storyId}`);
+  await page.getByRole('button', { name: '开始游玩' }).click();
+  const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
+  await page.evaluate(() => {
+    const host = [...window.__STE_TAVERN_HOSTS__.values()][0], original = host.request.bind(host);
+    window.__statusPolls = 0;
+    host.request = (...args) => { if (args[0] === '/ste/runtime/status') window.__statusPolls++; return original(...args); };
+  });
+  const polls = () => page.evaluate(() => window.__statusPolls as number);
+  await expect.poll(polls).toBeGreaterThan(0);
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(new RegExp('/story/'));
+  await expect.poll(() => page.evaluate(() => [...window.__STE_TAVERN_HOSTS__.values()][0].isForeground())).toBe(false);
+  await page.waitForTimeout(200);
+  const parked = await polls(); await page.waitForTimeout(3300); expect(await polls()).toBe(parked);
+  await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
+  await expect.poll(polls).toBeGreaterThan(parked);
+  await tavern.locator('#send_textarea').fill('请求慢速回复'); await tavern.locator('#send_but').click();
+  await expect(tavern.locator('#chat')).toContainText('这是一段尚未完成的回复');
+  await page.evaluate(() => history.back());
+  await expect(page).toHaveURL(new RegExp('/story/'));
+  const generating = await polls(); await expect.poll(polls, { timeout: 5000 }).toBeGreaterThan(generating);
+  await page.getByRole('button', { name: /^返回聊天 ·/ }).click();
+  await tavern.locator('#mes_stop').click();
+  await page.getByRole('button', { name: '关闭聊天', exact: true }).click();
+  await expect(page.locator('iframe[title="SillyTavern 角色扮演"]')).toHaveCount(0);
+});
+
 test('a failed story write keeps the live chat open and retry preserves the edited prose', async ({ page }) => {
   const storyId = await seed(page);
   await page.goto(`/play/${storyId}`);

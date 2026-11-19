@@ -333,6 +333,12 @@ export async function getArchiveSchemaVersion(): Promise<number> {
   return (await archiveMetaRepo.get(ARCHIVE_SCHEMA_META_ID))?.schemaVersion ?? 1;
 }
 
+/** Journal compatibility can advance before an interrupted legacy tag migration finishes. */
+export async function getArchiveMigrationVersion(): Promise<number> {
+  const metadata = await archiveMetaRepo.get(ARCHIVE_SCHEMA_META_ID);
+  return typeof metadata?.tagMigrationVersion === 'number' ? metadata.tagMigrationVersion : Math.min(metadata?.schemaVersion ?? 1, 2);
+}
+
 export async function setArchiveSchemaVersion(schemaVersion: number): Promise<void> {
   const repo = getCurrentRepo<ArchiveMetaRecord>('archiveMeta');
   return metaWrites.enqueue(ARCHIVE_SCHEMA_META_ID, async () => {
@@ -341,6 +347,7 @@ export async function setArchiveSchemaVersion(schemaVersion: number): Promise<vo
       ...current,
       id: ARCHIVE_SCHEMA_META_ID,
       schemaVersion,
+      ...(schemaVersion >= 2 ? { tagMigrationVersion: 2 } : {}),
       updatedAt: Date.now(),
     });
   });

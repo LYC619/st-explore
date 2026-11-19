@@ -145,7 +145,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
     try {
       const selectedRoot = root ?? await pickDirectory(
         '选择 SillyTavern 目录（安装根目录或 data/default-user）',
-        { persistAuthorization: true },
+        { persistAuthorization: true, purpose: 'source' },
       );
       if (!selectedRoot || !controls.isCurrent() || controls.signal.aborted) return;
       const fs = createTauriFs(selectedRoot);

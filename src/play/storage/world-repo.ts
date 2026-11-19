@@ -66,10 +66,21 @@ export class WorldRepo {
     if (this.fs) {
       await this.safe(`${ROOT}/${id}`);
       const entries = (await this.fs.list(`${ROOT}/${id}`)).filter(e => /^\d{6}\.json$/.test(e.name)).sort((a,b) => a.name.localeCompare(b.name));
-      for (const entry of entries) {
-        this.guard(); if (entry.isDir || entry.isSymlink || entry.size > 1024*1024 || Number(entry.name.slice(0,6)) !== index.length) { warnings.push('存档文件不连续或不安全'); break; }
-        let raw: unknown; try { raw = JSON.parse(await this.fs.readText(`${ROOT}/${id}/${entry.name}`)); } catch { warnings.push('存档无法读取'); break; }
-        if (!consume(raw)) break;
+      // Read at most eight snapshots per IPC wave, then verify in revision order.
+      // No cache can conceal corruption; one unsafe revision still stops the chain.
+      scan: for (let offset = 0; offset < entries.length; offset += 8) {
+        const batch = await Promise.all(entries.slice(offset, offset + 8).map(async (entry, index) => {
+          if (entry.isDir || entry.isSymlink || entry.size > 1024 * 1024 || Number(entry.name.slice(0, 6)) !== offset + index) {
+            return { error: '存档文件不连续或不安全' };
+          }
+          try { return { raw: JSON.parse(await this.fs!.readText(`${ROOT}/${id}/${entry.name}`)) as unknown }; }
+          catch { return { error: '存档无法读取' }; }
+        }));
+        this.guard();
+        for (const entry of batch) {
+          if (entry.error) { warnings.push(entry.error); break scan; }
+          if (!consume(entry.raw)) break scan;
+        }
       }
     } else {
       const db = await openDB();
@@ -109,38 +120,9 @@ export class WorldRepo {
     this.guard(); return rows.sort((a, b) => b.updatedAt - a.updatedAt);
   }
   async load(id: string): Promise<WorldHistory> {
-    this.guard(); if (!validWorldId(id)) throw new Error('世界标识无效');
-    let raw: unknown[] = [];
-    const warnings: string[] = [];
-    if (this.fs) {
-      await this.safe(`${ROOT}/${id}`);
-      const entries = (await this.fs.list(`${ROOT}/${id}`)).filter(e => !e.isDir && !e.isSymlink && /^\d{6}\.json$/.test(e.name)).sort((a, b) => a.name.localeCompare(b.name));
-      for (const entry of entries) {
-        if (entry.size > 1024 * 1024 || raw.length > 2000) { warnings.push('存档超出本版容量限制'); break; }
-        try {
-          const commit = JSON.parse(await this.fs.readText(`${ROOT}/${id}/${entry.name}`));
-          if (commit?.revision !== Number(entry.name.slice(0, 6))) { warnings.push('存档文件名与版本不匹配'); break; }
-          raw.push(commit);
-        }
-        catch { warnings.push(`无法读取 ${entry.name}；保留最后完整版本`); break; }
-      }
-    } else {
-      const db = await openDB();
-      raw = await new Promise<WorldCommit[]>((resolve, reject) => {
-        const req = db.transaction('worldCommits').objectStore('worldCommits').index('worldId').getAll(id);
-        req.onsuccess = () => resolve(req.result.sort((a: WorldCommit, b: WorldCommit) => a.revision - b.revision)); req.onerror = () => reject(req.error);
-      });
-    }
     const commits: WorldCommit[] = [];
-    for (const c of raw) {
-      const previous = commits.at(-1);
-      if (!validCommit(c) || c.worldId !== id || c.revision !== commits.length || c.parent !== (previous?.hash ?? null)
-        || previous && c.state.tick !== previous.state.tick + (c.kind === 'step' ? 1 : 0)) {
-        warnings.push(`第 ${commits.length} 版损坏；可从最后完整版本另存分支`); break;
-      }
-      commits.push(c);
-    }
-    this.guard(); return { commits, warnings };
+    const { warnings } = await this.open(id, commit => { commits.push(commit); });
+    return { commits, warnings };
   }
   private async persist(commit: WorldCommit, expected: WorldCommit | null): Promise<WorldCommit> {
     this.guard(); if (!validCommit(commit)) throw new Error('提交校验失败');

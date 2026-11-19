@@ -14,7 +14,9 @@ export interface WorldTrace { id: string; actorId?: string; purpose: string; req
 export class WorldModelGateway {
   readonly traces: WorldTrace[] = [];
   constructor(private read: () => WorldIntelligence, private persist: (data: WorldIntelligence) => Promise<void>, private dependencies: WorldModelDependencies = {}) {}
-  async request(input: { purpose: WorldRequestReceipt['purpose']; actorId?: string; tick: number; system: string; context: Record<string, unknown>; factIds?: string[]; maxOutput?: number }, signal: AbortSignal): Promise<{ id: string; value: unknown }> {
+  async request(input: { purpose: WorldRequestReceipt['purpose']; actorId?: string; tick: number; system: string; context: Record<string, unknown>; factIds?: string[]; maxOutput?: number;
+    outcome?: (value: unknown) => WorldRequestReceipt['outcome'];
+  }, signal: AbortSignal): Promise<{ id: string; value: unknown }> {
     signal.throwIfAborted();
     const before = this.read(), profile = (this.dependencies.config ?? getAPIConfigForSelection)(before.settings);
     if (!profile) throw new Error('所选模型连接已不存在，请重新选择');
@@ -46,7 +48,10 @@ export class WorldModelGateway {
       let value: unknown;
       try { value = JSON.parse(content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch { throw new Error('模型没有遵循结构化输出，本轮已暂停；未自动重试'); }
       controller.signal.throwIfAborted();
-      await this.persist(settleBudget(this.read(), id, 'completed', usage, now() - started));
+      const data = settleBudget(this.read(), id, 'completed', usage, now() - started);
+      const receipt = data.receipts.find(receipt => receipt.id === id);
+      if (receipt && input.outcome) receipt.outcome = input.outcome(value);
+      await this.persist(data);
       return { id, value };
     } catch (error) {
       // The reservation was already durable before transport. Even if settlement

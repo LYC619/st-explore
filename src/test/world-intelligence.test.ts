@@ -20,6 +20,27 @@ function world() {
   return saveFact(state, { type: 'secret', subject: '沈砚', text: 'B_FACT_CANARY', visibility: 'private', owner: 'a1' });
 }
 describe('人物智能的实际请求与提交边界', () => {
+  it('persists reservation before each request and settles cost plus outcome in one snapshot', async () => {
+    const base = createMemFs(); let writes = 0, bytes = 0, sends = 0;
+    const fs = { ...base, async writeText(path: string, text: string) {
+      if (path.includes('/pending-')) { writes++; bytes += new TextEncoder().encode(text).length; }
+      await base.writeText(path, text);
+    } };
+    const repo = new WorldRepo(fs), first = await repo.create('Synthetic snapshot measurement', world());
+    writes = 0; bytes = 0;
+    const session = new WorldSession(repo, first, async (s, c, _signal, options) => stepWorld(s, c, options), { config, send: async () => {
+      sends++;
+      const disk = (await new WorldRepo(fs).open(first.worldId)).latest!;
+      expect(disk.state.intelligence!.receipts.at(-1)!.status).toBe('reserved');
+      return reply({ actionId: 'rest' });
+    } });
+    await session.step();
+    const latest = (await repo.open(first.worldId)).latest!;
+    console.info(JSON.stringify({ measurement: 'world-plan-storage', sends, snapshots: writes, bytes }));
+    expect(sends).toBe(4); expect(writes).toBe(9); // Four durable reservations + four settlements + one rule step.
+    expect(latest.state.tick).toBe(1);
+    expect(latest.state.intelligence!.receipts.every(receipt => receipt.status === 'completed' && receipt.outcome === 'accepted')).toBe(true);
+  });
   it('为推理模型预留可配置输出额度，截断正文只记账一次并停止', async () => {
     let data = intelligence(world()); data.settings.outputTokens = 1024; let sends = 0;
     const gateway = new WorldModelGateway(() => data, async next => { data = next; }, { config, send: async prepared => {

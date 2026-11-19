@@ -42,19 +42,6 @@ function browserDownload(name: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-async function selectTauriPath(suggestedName: string): Promise<string | null> {
-  const { save } = await import('@tauri-apps/plugin-dialog');
-  return save({
-    defaultPath: suggestedName,
-    filters: [{ name: 'Markdown', extensions: ['md'] }],
-  });
-}
-
-async function writeTauriText(path: string, content: string): Promise<void> {
-  const { writeAbsText } = await import('@/lib/vault/tauri-fs');
-  await writeAbsText(path, content);
-}
-
 export async function exportTextFile(
   input: TextFileExportInput,
   adapters: TextFileExportAdapters = {},
@@ -68,10 +55,14 @@ export async function exportTextFile(
       return 'downloaded';
     }
 
-    const path = await (adapters.selectPath ?? selectTauriPath)(name);
-    if (!path) return 'cancelled';
-    await (adapters.writeText ?? writeTauriText)(path, input.content);
-    return 'saved';
+    if (adapters.selectPath && adapters.writeText) {
+      const path = await adapters.selectPath(name);
+      if (!path) return 'cancelled';
+      await adapters.writeText(path, input.content);
+      return 'saved';
+    }
+    const { saveTextExport } = await import('@/lib/vault/tauri-fs');
+    return await saveTextExport({ fileName: name, extension: 'md', content: input.content }) ? 'saved' : 'cancelled';
   } catch {
     return 'failed';
   }

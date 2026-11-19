@@ -2,6 +2,7 @@
 import { lodash } from './lib.js';
 import { installDraftRecovery } from '/ste/draft-recovery.js';
 import { installProcessEvents } from '/ste/process-events.js';
+import { installStatusPolling } from '/ste/status-polling.js';
 import { captureRecoveryFile } from '/ste/recovery-export.js';
 import { installRegexAssets } from '/ste/regex-assets.js';
 import { installHelperHost } from '/ste/helper-host.js';
@@ -626,8 +627,7 @@ async function installRuntimeControls(st) {
     });
     st.eventSource.on(st.event_types.CHAT_CHANGED, () => refresh().catch(error => toastr.error(error.message)));
     await refresh();
-    const timer = setInterval(() => { void request('/ste/runtime/status').then(renderStatus).catch(() => {}); }, 1500);
-    window.addEventListener('pagehide', () => clearInterval(timer), { once: true });
+    installStatusPolling(host, () => request('/ste/runtime/status').then(renderStatus));
 }
 function installManagementControls() {
     const routes = [

@@ -81,6 +81,9 @@ export async function createTavernHost(options: TavernHostOptions) {
     meta: getCurrentRepo<ArchiveMetaRecord>('archiveMeta'),
   };
   let closed = false;
+  let foreground = true;
+  const activityListeners = new Set<() => void>();
+  const activityChanged = () => { for (const listener of activityListeners) listener(); };
   let worldTransformer = (text: string) => text;
   const isCurrent = () => !closed && getVaultEpoch() === vaultEpoch;
   const packageAdapter = createStoryPackageAdapter({ isCurrent });
@@ -409,6 +412,9 @@ export async function createTavernHost(options: TavernHostOptions) {
 
   return {
     processLog,
+    isForeground: () => foreground && !closed,
+    setForeground(value: boolean) { if (foreground !== value) { foreground = value; activityChanged(); } },
+    subscribeActivity(listener: () => void) { activityListeners.add(listener); return () => { activityListeners.delete(listener); }; },
     processEvent(kind: string, data: JsonObject = {}) {
       if (!isCurrent()) return undefined;
       if (kind === 'start') {
@@ -694,10 +700,11 @@ export async function createTavernHost(options: TavernHostOptions) {
               if (generation) throw new Error('已有生成尚未结束');
               generation = { fileName: String(locator.fileName), key: target.key, id: crypto.randomUUID(), release: beginStoryGeneration(target.storyId) };
               options.onGeneration?.(true);
+              activityChanged();
             } else {
               if (!generation || generation.key !== target.key) throw new Error('没有匹配的生成任务');
               try { await (await liveSession(target)).flush(); }
-              finally { generation.release(); generation = null; options.onGeneration?.(false); }
+              finally { generation.release(); generation = null; options.onGeneration?.(false); activityChanged(); }
             }
             return json(null);
           }
@@ -1007,6 +1014,7 @@ export async function createTavernHost(options: TavernHostOptions) {
     close() {
       generation?.release(); generation = null;
       closed = true;
+      activityChanged(); activityListeners.clear();
       unsubscribeVault();
       for (const controller of controllers.keys()) controller.abort();
       for (const live of sessions.values()) live.close();

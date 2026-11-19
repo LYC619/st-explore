@@ -36,6 +36,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   const [guideOpen, setGuideOpen] = useState(false);
   const [processOpen, setProcessOpen] = useState(false);
   const [processHost, setProcessHost] = useState<TavernHost>();
+  useEffect(() => { processHost?.setForeground?.(active); }, [active, processHost]);
   const [error, setError] = useState<string>();
   const [saveFailed, setSaveFailed] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -214,6 +215,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
         },
       });
       if (disposed) { host.close(); return; }
+      host.setForeground(activeRef.current);
       setProcessHost(host);
       const registration = registerTavernHost(host);
       remove = registration.remove;

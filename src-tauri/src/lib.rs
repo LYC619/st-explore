@@ -1,6 +1,6 @@
 use base64::Engine;
 use serde::Serialize;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -12,6 +12,7 @@ mod st_backup_import;
 mod st_import_cleanup;
 mod diagnostics;
 mod environment;
+mod library_lease;
 
 /// 文件库(FileVault)的 Rust 侧原语：列目录/读写文本与二进制/删除/改名 + 应用配置读写。
 /// 策略与映射逻辑全部在 TS 层（src/lib/vault/），这里保持薄且可单测。
@@ -22,6 +23,10 @@ struct AuthorizedRootSet {
     roots: HashSet<PathBuf>,
     persistent: HashSet<PathBuf>,
     temporary: HashSet<PathBuf>,
+    writable: HashSet<PathBuf>,
+    sources: HashSet<PathBuf>,
+    exports: HashSet<PathBuf>,
+    library_locks: HashMap<PathBuf, library_lease::LibraryLease>,
 }
 
 #[derive(Default)]
@@ -43,6 +48,7 @@ impl AuthorizedRoots {
             .lock()
             .map_err(|_| "文件访问授权状态已损坏".to_string())?;
         state.roots.insert(canonical.clone());
+        state.writable.insert(canonical.clone());
         if persistent {
             state.persistent.insert(canonical.clone());
         }
@@ -53,8 +59,22 @@ impl AuthorizedRoots {
         self.authorize_inner(root, false)
     }
 
+    fn authorize_export(&self, root: &Path) -> Result<PathBuf, String> {
+        let canonical = self.authorize(root)?;
+        self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?.exports.insert(canonical.clone());
+        Ok(canonical)
+    }
+
+    fn authorize_source(&self, root: &Path, persistent: bool) -> Result<PathBuf, String> {
+        let canonical = self.authorize_inner(root, persistent)?;
+        let mut state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        state.writable.remove(&canonical);
+        state.sources.insert(canonical.clone());
+        Ok(canonical)
+    }
+
     fn authorize_temporary(&self, root: &Path) -> Result<PathBuf, String> {
-        let canonical = self.authorize_inner(root, false)?;
+        let canonical = self.authorize_source(root, false)?;
         let mut state = self
             .state
             .lock()
@@ -81,11 +101,15 @@ impl AuthorizedRoots {
             .map_err(|e| format!("清理临时导入目录失败 {}: {e}", canonical.display()))?;
         state.temporary.remove(&canonical);
         state.roots.remove(&canonical);
+        state.sources.remove(&canonical);
+        state.writable.remove(&canonical);
         Ok(())
     }
 
     fn authorize_persistent(&self, root: &Path) -> Result<PathBuf, String> {
-        self.authorize_inner(root, true)
+        let canonical = self.authorize_inner(root, true)?;
+        self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?.exports.remove(&canonical);
+        Ok(canonical)
     }
 
     fn persistent_roots(&self) -> Result<Vec<PathBuf>, String> {
@@ -101,11 +125,16 @@ impl AuthorizedRoots {
     fn resolve_root(&self, root: &str) -> Result<PathBuf, String> {
         let canonical =
             fs::canonicalize(root).map_err(|e| format!("读取根目录失败 {root}: {e}"))?;
-        let state = self
+        let mut state = self
             .state
             .lock()
             .map_err(|_| "文件访问授权状态已损坏".to_string())?;
         if state.roots.contains(&canonical) {
+            if state.writable.contains(&canonical) && !state.sources.contains(&canonical) && !state.exports.contains(&canonical)
+                && !state.library_locks.contains_key(&canonical) {
+                let lock = acquire_library_lock(&canonical)?;
+                state.library_locks.insert(canonical.clone(), lock);
+            }
             Ok(canonical)
         } else {
             Err(format!("拒绝访问未授权目录: {root}"))
@@ -113,16 +142,65 @@ impl AuthorizedRoots {
     }
 
     fn ensure_contains(&self, path: &Path) -> Result<(), String> {
-        let state = self
+        let mut state = self
             .state
             .lock()
             .map_err(|_| "文件访问授权状态已损坏".to_string())?;
         if state.roots.iter().any(|root| path.starts_with(root)) {
+            let vaults = state.writable.iter().filter(|root| path.starts_with(root)
+                && !state.sources.contains(*root) && !state.exports.contains(*root)).cloned().collect::<Vec<_>>();
+            for root in vaults {
+                if !state.library_locks.contains_key(&root) {
+                    state.library_locks.insert(root.clone(), acquire_library_lock(&root)?);
+                }
+            }
             Ok(())
         } else {
             Err(format!("拒绝访问未授权路径: {}", path.display()))
         }
     }
+
+    fn ensure_writable(&self, path: &Path) -> Result<(), String> {
+        let mut state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        if state.sources.iter().any(|root| path.starts_with(root) || root.starts_with(path)) {
+            return Err("ST来源和临时导入目录只允许读取；聊天写回请使用专用入口".into());
+        }
+        if !state.writable.iter().any(|root| path.starts_with(root)) {
+            return Err("目录没有写入授权，请重新选择文件库或导出目录".into());
+        }
+        let vault = state.writable.iter().filter(|root| path.starts_with(root) && !state.exports.contains(*root))
+            .max_by_key(|root| root.components().count()).cloned();
+        if let Some(root) = vault {
+            if !state.library_locks.contains_key(&root) {
+                state.library_locks.insert(root.clone(), acquire_library_lock(&root)?);
+            }
+        }
+        Ok(())
+    }
+
+    fn has_grant(&self, path: &Path, source: bool) -> Result<bool, String> {
+        let canonical = match fs::canonicalize(path) { Ok(path) => path, Err(_) => return Ok(false) };
+        let state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        Ok(if source { state.sources.contains(&canonical) && !state.temporary.contains(&canonical) }
+            else { state.writable.contains(&canonical) && !state.sources.contains(&canonical) && !state.exports.contains(&canonical) })
+    }
+
+    fn revoke(&self, path: &Path) -> Result<(), String> {
+        let mut state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        let removed = state.roots.iter().filter(|root| same_root(root, path)).cloned().collect::<Vec<_>>();
+        for canonical in removed {
+            state.roots.remove(&canonical); state.persistent.remove(&canonical);
+            state.writable.remove(&canonical); state.sources.remove(&canonical);
+            state.exports.remove(&canonical); state.library_locks.remove(&canonical);
+        }
+        Ok(())
+    }
+}
+
+/// Hold one OS lease for a library throughout this process's use, including
+/// recovery and reads. A second STE process cannot recover an in-flight journal.
+fn acquire_library_lock(root: &Path) -> Result<library_lease::LibraryLease, String> {
+    library_lease::acquire(root)
 }
 
 #[derive(Serialize, Debug, PartialEq)]
@@ -430,11 +508,16 @@ const CONFIG_WRITABLE_KEYS: [&str; 7] = [
     "apiScopeByVault",    // 每个库用共享还是独立配置 { 库id: "shared" | "vault" }
 ];
 
+#[cfg(test)]
 fn config_set_impl(config_dir: &Path, key: &str, value: serde_json::Value) -> Result<(), String> {
     if !CONFIG_WRITABLE_KEYS.contains(&key) {
         return Err(format!("拒绝写入未知配置项: {key}"));
     }
     let _lock = lock_config(config_dir)?;
+    config_set_unlocked(config_dir, key, value)
+}
+
+fn config_set_unlocked(config_dir: &Path, key: &str, value: serde_json::Value) -> Result<(), String> {
     let file = config_file(config_dir);
     let mut map = if file.exists() {
         parse_config_object(&read_config_text(&file)?)?
@@ -542,7 +625,15 @@ fn authorized_mutation_path(
     let canonical = roots
         .resolve_root(root)
         .map_err(|error| fs_mutation_error("unsafe-path", Path::new(root), error))?;
-    rooted_path_from_canonical(canonical, relative)
+    let target = rooted_path_from_canonical(canonical, relative)?;
+    roots.ensure_writable(&target)?;
+    Ok(target)
+}
+
+fn authorized_writable_path(roots: &AuthorizedRoots, root: &str, relative: &str) -> Result<PathBuf, String> {
+    let target = authorized_rooted_path(roots, root, relative)?;
+    roots.ensure_writable(&target)?;
+    Ok(target)
 }
 
 #[cfg(test)]
@@ -561,6 +652,7 @@ fn authorized_rooted_path(
 
 fn authorized_read_absolute_path(roots: &AuthorizedRoots, path: &str) -> Result<PathBuf, String> {
     let requested = Path::new(path);
+    validate_absolute_ancestors(requested)?;
     if !requested.is_absolute() {
         return Err(format!("绝对路径无效: {path}"));
     }
@@ -576,7 +668,29 @@ fn authorized_read_absolute_path(roots: &AuthorizedRoots, path: &str) -> Result<
 }
 
 fn authorized_write_absolute_path(roots: &AuthorizedRoots, path: &str) -> Result<PathBuf, String> {
+    let target = authorized_absolute_target(roots, path)?;
+    roots.ensure_writable(&target)?;
+    Ok(target)
+}
+
+fn validate_absolute_ancestors(path: &Path) -> Result<(), String> {
+    if !path.is_absolute() || path.components().any(|part| matches!(part, Component::ParentDir | Component::CurDir)) {
+        return Err("必须使用不含跳转的绝对路径".into());
+    }
+    for ancestor in path.ancestors() {
+        match fs::symlink_metadata(ancestor) {
+            Ok(meta) if meta.file_type().is_symlink() || is_reparse_point(&meta) => return Err("绝对路径含链接或重解析点".into()),
+            Ok(_) => {},
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            Err(_) => return Err("无法核验绝对路径".into()),
+        }
+    }
+    Ok(())
+}
+
+fn authorized_absolute_target(roots: &AuthorizedRoots, path: &str) -> Result<PathBuf, String> {
     let requested = Path::new(path);
+    validate_absolute_ancestors(requested)?;
     if !requested.is_absolute() {
         return Err(format!("绝对路径无效: {path}"));
     }
@@ -597,39 +711,74 @@ fn authorized_write_absolute_path(roots: &AuthorizedRoots, path: &str) -> Result
     Ok(canonical_parent.join(file_name))
 }
 
-fn configured_root_values(config_dir: &Path) -> Result<Vec<PathBuf>, String> {
-    let file = config_file(config_dir);
-    if !file.exists() {
-        return Ok(Vec::new());
+fn authorized_writeback_path(roots: &AuthorizedRoots, path: &str) -> Result<PathBuf, String> {
+    let target = authorized_absolute_target(roots, path)?;
+    if target.extension().and_then(|s| s.to_str()).is_none_or(|s| !s.eq_ignore_ascii_case("jsonl")) {
+        return Err("ST写回仅允许JSONL聊天文件".into());
     }
-    let config = parse_config_object(&read_config_text(&file)?)?;
+    let state = roots.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+    if !state.sources.iter().any(|root| target.starts_with(root) && !state.temporary.contains(root))
+        || state.temporary.iter().any(|root| target.starts_with(root)) {
+        return Err("写回目标不在已授权的ST来源目录".into());
+    }
+    Ok(target)
+}
+
+fn config_roots(config: &serde_json::Value) -> Vec<(PathBuf, bool)> {
     let mut paths = Vec::new();
-    for key in ["vaultRoot", "stRoot"] {
-        if let Some(path) = config.get(key).and_then(serde_json::Value::as_str) {
-            paths.push(PathBuf::from(path));
+    for (key, source) in [("vaultRoot", false), ("stRoot", true)] {
+        if let Some(path) = config.get(key).and_then(serde_json::Value::as_str).filter(|p| !p.is_empty()) {
+            paths.push((PathBuf::from(path), source));
         }
     }
-    if let Some(vaults) = config
-        .get("vaultRegistry")
-        .and_then(|registry| registry.get("vaults"))
-        .and_then(serde_json::Value::as_array)
-    {
-        paths.extend(vaults.iter().filter_map(|item| {
-            item.get("path")
-                .and_then(serde_json::Value::as_str)
-                .map(PathBuf::from)
-        }));
+    if let Some(vaults) = config.get("vaultRegistry").and_then(|r| r.get("vaults")).and_then(serde_json::Value::as_array) {
+        paths.extend(vaults.iter().filter_map(|v| v.get("path").and_then(serde_json::Value::as_str).map(|p| (PathBuf::from(p), false))));
     }
-    Ok(paths)
+    paths
 }
 
 fn restore_configured_roots(roots: &AuthorizedRoots, config_dir: &Path) -> Result<(), String> {
-    for path in configured_root_values(config_dir)? {
+    let path = config_file(config_dir);
+    if !path.exists() { return Ok(()); }
+    for (path, source) in config_roots(&parse_config_object(&read_config_text(&path)?)?) {
         if path.is_dir() {
-            roots.authorize_persistent(&path)?;
+            if source { roots.authorize_source(&path, true)?; } else { roots.authorize_persistent(&path)?; }
         }
     }
     Ok(())
+}
+
+fn same_root(left: &Path, right: &Path) -> bool {
+    if let (Ok(left), Ok(right)) = (fs::canonicalize(left), fs::canonicalize(right)) { return left == right; }
+    let normalize = |path: &Path| {
+        let value = simplified_for_frontend(path).replace('\\', "/").trim_end_matches('/').to_string();
+        if cfg!(windows) { value.to_lowercase() } else { value }
+    };
+    normalize(left) == normalize(right)
+}
+
+fn config_set_authorized(roots: &AuthorizedRoots, config_dir: &Path, key: &str, value: serde_json::Value) -> Result<(), String> {
+    if !CONFIG_WRITABLE_KEYS.contains(&key) { return Err(format!("拒绝写入未知配置项: {key}")); }
+    let _lock = lock_config(config_dir)?;
+    if !["vaultRoot", "stRoot", "vaultRegistry"].contains(&key) { return config_set_unlocked(config_dir, key, value); }
+    let file = config_file(config_dir);
+    let previous = if file.exists() { parse_config_object(&read_config_text(&file)?)? } else { serde_json::json!({}) };
+    let before = config_roots(&previous);
+    let mut next = previous;
+    next.as_object_mut().ok_or("配置不是对象")?.insert(key.to_string(), value.clone());
+    let after = config_roots(&next);
+    for (path, source) in &after {
+        // Existing configured offline drives remain selectable. New paths and
+        // privilege changes require an exact grant from the native picker.
+        let existing = before.iter().any(|(old, role)| role == source && same_root(path, old));
+        if !existing && !roots.has_grant(path, *source)? { return Err("新增目录必须先通过系统目录选择器授权".into()); }
+    }
+    config_set_unlocked(config_dir, key, value)?;
+    for (path, source) in before {
+        if !after.iter().any(|(next, role)| *role == source && same_root(&path, next)) { roots.revoke(&path)?; }
+    }
+    restore_configured_roots(roots, config_dir)?;
+    persist_authorized_roots(roots, config_dir)
 }
 
 fn authorization_file(config_dir: &Path) -> PathBuf {
@@ -651,41 +800,12 @@ fn persist_authorized_roots(roots: &AuthorizedRoots, config_dir: &Path) -> Resul
 }
 
 fn restore_authorized_roots(roots: &AuthorizedRoots, config_dir: &Path) -> Result<(), String> {
-    let file = authorization_file(config_dir);
-    let mut should_persist = !file.exists();
-
-    // 持久清单是历史授权，配置是当前意图。两者取并集，保证库盘暂时离线
-    // 后重新连接时能自愈；清单损坏时也不能让整个应用失去文件访问能力。
-    if file.exists() {
-        match read_config_text(&file).and_then(|text| parse_config_object(&text)) {
-            Ok(value) => {
-                if let Some(paths) = value.get("roots").and_then(serde_json::Value::as_array) {
-                    for path in paths
-                        .iter()
-                        .filter_map(serde_json::Value::as_str)
-                        .map(PathBuf::from)
-                    {
-                        if path.is_dir() {
-                            roots.authorize_persistent(&path)?;
-                        }
-                    }
-                } else {
-                    should_persist = true;
-                }
-            }
-            Err(_) => {
-                should_persist = true;
-            }
-        }
-    }
-
-    let before_configured = roots.persistent_roots()?;
+    // Current configured roots define continuing access. Historical picker
+    // grants must not resurrect a library that the user removed.
+    // Configuration writes are checked against native picker grants above;
+    // existing/legacy config also preserves disconnected drives for reconnect.
     restore_configured_roots(roots, config_dir)?;
-    should_persist |= roots.persistent_roots()? != before_configured;
-    if should_persist {
-        persist_authorized_roots(roots, config_dir)?;
-    }
-    Ok(())
+    persist_authorized_roots(roots, config_dir)
 }
 
 #[tauri::command]
@@ -723,7 +843,7 @@ fn vault_write_text(
 ) -> Result<(), String> {
     diagnostics::command("vault_write_text", Some(path.clone()), || {
         write_bytes_atomic(
-            &authorized_rooted_path(&roots, &root, &path)?,
+            &authorized_writable_path(&roots, &root, &path)?,
             content.as_bytes(),
         )
     })
@@ -758,7 +878,7 @@ fn fingerprint_impl(path: &Path) -> Result<String, String> {
 #[tauri::command]
 async fn vault_fingerprint(roots: tauri::State<'_, AuthorizedRoots>, root: String, path: String) -> Result<String, String> {
     diagnostics::command_async("vault_fingerprint", Some(path.clone()), async {
-        let target = authorized_mutation_path(&roots, &root, &path)?;
+        let target = authorized_rooted_path(&roots, &root, &path)?;
         tauri::async_runtime::spawn_blocking(move || fingerprint_impl(&target)).await.map_err(|_| "文件校验任务失败".to_string())?
     }).await
 }
@@ -771,7 +891,7 @@ fn vault_write_binary(
     base64: String,
 ) -> Result<(), String> {
     diagnostics::command("vault_write_binary", Some(path.clone()), || {
-        write_binary_impl(&authorized_rooted_path(&roots, &root, &path)?, &base64)
+        write_binary_impl(&authorized_writable_path(&roots, &root, &path)?, &base64)
     })
 }
 
@@ -854,7 +974,7 @@ fn vault_remove_empty_dir(
     path: String,
 ) -> Result<bool, String> {
     diagnostics::command("vault_remove_empty_dir", Some(path.clone()), || {
-        remove_empty_dir_impl(&authorized_rooted_path(&roots, &root, &path)?)
+        remove_empty_dir_impl(&authorized_writable_path(&roots, &root, &path)?)
     })
 }
 
@@ -866,9 +986,10 @@ fn vault_rename(
     to: String,
 ) -> Result<(), String> {
     diagnostics::command("vault_rename", Some(from.clone()), || {
+        if from.is_empty() || to.is_empty() || from == ".ste-control" || to == ".ste-control" { return Err("不能移动库根或库控制目录".into()); }
         rename_impl(
-            &authorized_rooted_path(&roots, &root, &from)?,
-            &authorized_rooted_path(&roots, &root, &to)?,
+            &authorized_writable_path(&roots, &root, &from)?,
+            &authorized_writable_path(&roots, &root, &to)?,
         )
     })
 }
@@ -880,7 +1001,7 @@ fn vault_mkdir(
     path: String,
 ) -> Result<(), String> {
     diagnostics::command("vault_mkdir", Some(path.clone()), || {
-        let path = authorized_rooted_path(&roots, &root, &path)?;
+        let path = authorized_writable_path(&roots, &root, &path)?;
         fs::create_dir_all(&path).map_err(|e| format!("创建目录失败 {}: {e}", path.display()))
     })
 }
@@ -1006,6 +1127,7 @@ fn write_selected_export(selected: Option<PathBuf>, content: &[u8]) -> Result<bo
     if !path.is_absolute() {
         return Err("导出位置不是本机绝对路径".to_string());
     }
+    validate_absolute_ancestors(&path)?;
     if fs::symlink_metadata(&path).is_ok_and(|metadata| metadata.file_type().is_symlink()) {
         return Err("请选择普通文件，不能覆盖符号链接".to_string());
     }
@@ -1018,6 +1140,7 @@ fn text_export_label(extension: &str) -> Result<&'static str, String> {
         "json" => Ok("JSON 文件"),
         "jsonl" => Ok("SillyTavern 聊天文件"),
         "ste-play" => Ok("STE 完整故事包"),
+        "md" => Ok("Markdown 文件"),
         _ => Err("不支持的导出文件格式".to_string()),
     }
 }
@@ -1025,6 +1148,9 @@ fn text_export_label(extension: &str) -> Result<&'static str, String> {
 fn binary_export_label(extension: &str) -> Result<&'static str, String> {
     match extension {
         "png" => Ok("PNG 角色卡"),
+        "ste-reading" => Ok("STE 阅读包"),
+        "ste-world" => Ok("STE 世界包"),
+        "zip" => Ok("ZIP 文件"),
         _ => Err("不支持的导出文件格式".to_string()),
     }
 }
@@ -1082,7 +1208,7 @@ fn vault_write_abs_text(
 ) -> Result<(), String> {
     diagnostics::command("vault_write_abs_text", Some(path.clone()), || {
         write_bytes_atomic(
-            &authorized_write_absolute_path(&roots, &path)?,
+            &authorized_writeback_path(&roots, &path)?,
             content.as_bytes(),
         )
     })
@@ -1108,18 +1234,24 @@ async fn vault_pick_authorized_directory(
     roots: tauri::State<'_, AuthorizedRoots>,
     title: String,
     persistent: bool,
+    purpose: String,
 ) -> Result<Option<String>, String> {
     diagnostics::command_async("vault_pick_authorized_directory", None, async {
+        if !["vault", "source", "export"].contains(&purpose.as_str()) { return Err("未知目录用途".into()); }
         let Some(selected) = dialog_for(&app).set_title(title).blocking_pick_folder() else {
             return Ok(None);
         };
         let selected = selected
             .into_path()
             .map_err(|e| format!("目录选择结果不是本机路径: {e}"))?;
-        let canonical = if persistent {
+        let canonical = if purpose == "source" {
+            roots.authorize_source(&selected, persistent)?
+        } else if persistent {
             let canonical = roots.authorize_persistent(&selected)?;
             persist_authorized_roots(&roots, &app_config_dir(&app)?)?;
             canonical
+        } else if purpose == "export" {
+            roots.authorize_export(&selected)?
         } else {
             roots.authorize(&selected)?
         };
@@ -1146,7 +1278,7 @@ fn config_get(app: tauri::AppHandle, key: String) -> Result<Option<serde_json::V
 fn config_set(app: tauri::AppHandle, key: String, value: serde_json::Value) -> Result<(), String> {
     diagnostics::command("config_set", None, || {
         let count = diagnostics::value_count(&value);
-        config_set_impl(&app_config_dir(&app)?, &key, value)?;
+        config_set_authorized(&app.state::<AuthorizedRoots>(), &app_config_dir(&app)?, &key, value)?;
         diagnostics::config_result(&key, count, true);
         Ok(())
     })
@@ -1155,8 +1287,14 @@ fn config_set(app: tauri::AppHandle, key: String, value: serde_json::Value) -> R
 #[tauri::command]
 fn config_repair(app: tauri::AppHandle) -> Result<Option<String>, String> {
     diagnostics::command("config_repair", None, || {
-        config_repair_impl(&app_config_dir(&app)?)
-            .map(|backup| backup.map(|path| path.to_string_lossy().into_owned()))
+        let directory = app_config_dir(&app)?;
+        let backup = config_repair_impl(&directory)?;
+        if backup.is_some() {
+            let roots = app.state::<AuthorizedRoots>();
+            *roots.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())? = AuthorizedRootSet::default();
+            persist_authorized_roots(&roots, &directory)?;
+        }
+        Ok(backup.map(|path| path.to_string_lossy().into_owned()))
     })
 }
 
@@ -1621,6 +1759,7 @@ mod tests {
         let resolved = authorized_mutation_path(&roots, root.to_str().unwrap(), "opaque/child");
         let direct = rooted_path_from_canonical(fs::canonicalize(&root).unwrap(), "opaque");
         fs::remove_dir(&directory).unwrap();
+        drop(roots);
         fs::remove_dir(&root).unwrap();
         assert_eq!(mutation_code(&direct.unwrap_err()), "unsafe-path");
         assert_eq!(mutation_code(&resolved.unwrap_err()), "unsafe-path");
@@ -1704,13 +1843,15 @@ mod tests {
 
     #[test]
     fn export_formats_are_explicitly_allowlisted() {
-        for extension in ["json", "jsonl", "ste-play"] {
+        for extension in ["json", "jsonl", "ste-play", "md"] {
             assert!(text_export_label(extension).is_ok());
         }
         for extension in ["exe", "../json", "PNG", ""] {
             assert!(text_export_label(extension).is_err());
         }
         assert!(binary_export_label("png").is_ok());
+        assert!(binary_export_label("ste-reading").is_ok());
+        assert!(binary_export_label("zip").is_ok());
         assert!(binary_export_label("json").is_err());
     }
 
@@ -2052,7 +2193,7 @@ mod tests {
     }
 
     #[test]
-    fn persisted_and_configured_roots_are_merged_on_every_start() {
+    fn only_current_configured_roots_are_restored_on_every_start() {
         let config_dir = temp_root("authorized-migration");
         let migrated = temp_root("authorized-migration-original");
         let injected_later = temp_root("authorized-migration-injected");
@@ -2068,11 +2209,111 @@ mod tests {
         let second_boot = AuthorizedRoots::default();
         restore_authorized_roots(&second_boot, &config_dir).unwrap();
 
-        assert!(authorized_rooted_path(&second_boot, migrated.to_str().unwrap(), "").is_ok());
+        assert!(authorized_rooted_path(&second_boot, migrated.to_str().unwrap(), "").is_err());
         assert!(authorized_rooted_path(&second_boot, injected_later.to_str().unwrap(), "").is_ok());
         let _ = fs::remove_dir_all(&config_dir);
         let _ = fs::remove_dir_all(&migrated);
         let _ = fs::remove_dir_all(&injected_later);
+    }
+
+    #[test]
+    fn source_and_temporary_roots_are_read_only_even_under_a_writable_parent() {
+        let parent = temp_root("purpose-parent");
+        let source = parent.join("st");
+        let temporary = parent.join("temporary");
+        fs::create_dir_all(&source).unwrap(); fs::create_dir_all(&temporary).unwrap();
+        let roots = AuthorizedRoots::default();
+        roots.authorize(&parent).unwrap();
+        roots.authorize_source(&source, true).unwrap();
+        roots.authorize_temporary(&temporary).unwrap();
+        assert!(authorized_rooted_path(&roots, source.to_str().unwrap(), "").is_ok());
+        for root in [&source, &temporary] {
+            assert!(authorized_writable_path(&roots, root.to_str().unwrap(), "data.json").is_err());
+            assert!(authorized_mutation_path(&roots, root.to_str().unwrap(), "data.json").is_err());
+            assert!(authorized_write_absolute_path(&roots, root.join("data.json").to_str().unwrap()).is_err());
+        }
+        assert!(authorized_writable_path(&roots, parent.to_str().unwrap(), "st/data.json").is_err());
+        assert!(authorized_writable_path(&roots, parent.to_str().unwrap(), "temporary/data.json").is_err());
+        assert!(authorized_writable_path(&roots, parent.to_str().unwrap(), "own/data.json").is_ok());
+        assert!(authorized_writeback_path(&roots, source.join("chat.jsonl").to_str().unwrap()).is_ok());
+        assert!(authorized_writeback_path(&roots, source.join("data.json").to_str().unwrap()).is_err());
+        assert!(authorized_writeback_path(&roots, temporary.join("chat.jsonl").to_str().unwrap()).is_err());
+        assert!(authorized_writeback_path(&roots, parent.join("chat.jsonl").to_str().unwrap()).is_err());
+        let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn a_second_library_owner_cannot_read_or_recover_until_the_first_releases() {
+        let root = temp_root("library-lease");
+        let first = AuthorizedRoots::default(); let second = AuthorizedRoots::default();
+        first.authorize(&root).unwrap(); second.authorize(&root).unwrap();
+        assert!(authorized_rooted_path(&first, root.to_str().unwrap(), "").is_ok());
+        assert!(authorized_rooted_path(&second, root.to_str().unwrap(), "").unwrap_err().contains("STE_LIBRARY_IN_USE"));
+        assert!(authorized_write_absolute_path(&second, root.join("file.txt").to_str().unwrap()).is_err());
+        // Compatibility checks must never add files to a newer-format library.
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 0);
+        fs::write(root.join("file.txt"), "synthetic").unwrap();
+        assert!(authorized_read_absolute_path(&second, root.join("file.txt").to_str().unwrap()).unwrap_err().contains("STE_LIBRARY_IN_USE"));
+        drop(first);
+        assert!(authorized_rooted_path(&second, root.to_str().unwrap(), "").is_ok());
+        drop(second); let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn existing_offline_configuration_can_be_saved_without_a_new_picker_grant() {
+        let config = temp_root("offline-config-save");
+        let offline = config.join("disconnected");
+        config_set_impl(&config, "vaultRoot", serde_json::json!(offline)).unwrap();
+        let roots = AuthorizedRoots::default();
+        restore_authorized_roots(&roots, &config).unwrap();
+        config_set_authorized(&roots, &config, "vaultRegistry", serde_json::json!({"vaults":[{"id":"old", "path":offline}]})).unwrap();
+        fs::create_dir(&offline).unwrap();
+        let restarted = AuthorizedRoots::default(); restore_authorized_roots(&restarted, &config).unwrap();
+        assert!(authorized_rooted_path(&restarted, offline.to_str().unwrap(), "").is_ok());
+        drop(restarted); let _ = fs::remove_dir_all(config);
+    }
+
+    #[test]
+    fn root_configuration_requires_matching_picker_grants_and_revokes_removed_libraries() {
+        let config = temp_root("purpose-config");
+        let vault = temp_root("purpose-vault");
+        let source = temp_root("purpose-source");
+        let export = temp_root("purpose-export");
+        let roots = AuthorizedRoots::default();
+        assert!(config_set_authorized(&roots, &config, "vaultRoot", serde_json::json!(vault)).is_err());
+        roots.authorize_source(&source, true).unwrap();
+        roots.authorize_export(&export).unwrap();
+        for path in [&source, &export] {
+            assert!(config_set_authorized(&roots, &config, "vaultRoot", serde_json::json!(path)).is_err());
+        }
+        config_set_authorized(&roots, &config, "stRoot", serde_json::json!(source)).unwrap();
+        roots.authorize_persistent(&vault).unwrap();
+        config_set_authorized(&roots, &config, "vaultRegistry", serde_json::json!({"vaults":[{"id":"v", "path":vault}]})).unwrap();
+        config_set_authorized(&roots, &config, "vaultRegistry", serde_json::json!({"vaults":[]})).unwrap();
+        assert!(authorized_rooted_path(&roots, vault.to_str().unwrap(), "").is_err());
+        let reopened = AuthorizedRoots::default();
+        restore_authorized_roots(&reopened, &config).unwrap();
+        assert!(authorized_rooted_path(&reopened, vault.to_str().unwrap(), "").is_err());
+        assert!(authorized_writable_path(&reopened, source.to_str().unwrap(), "file").is_err());
+        for path in [config, vault, source, export] { let _ = fs::remove_dir_all(path); }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn absolute_paths_reject_an_ancestor_junction_even_when_its_target_is_authorized() {
+        let root = temp_root("absolute-ancestor");
+        let target = root.join("target"); let link = root.join("link");
+        fs::create_dir(&target).unwrap(); fs::write(target.join("chat.jsonl"), "{}").unwrap();
+        let output = std::process::Command::new("cmd").args(["/C", "mklink", "/J"])
+            .arg(&link).arg(&target).output().unwrap();
+        assert!(output.status.success());
+        let roots = AuthorizedRoots::default(); roots.authorize_source(&root, true).unwrap();
+        let requested = link.join("chat.jsonl");
+        assert!(authorized_read_absolute_path(&roots, requested.to_str().unwrap()).is_err());
+        assert!(authorized_writeback_path(&roots, requested.to_str().unwrap()).is_err());
+        assert!(write_selected_export(Some(requested), b"changed").is_err());
+        assert_eq!(fs::read_to_string(target.join("chat.jsonl")).unwrap(), "{}");
+        fs::remove_dir(link).unwrap(); let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -2090,6 +2331,7 @@ mod tests {
             &fs::read_to_string(authorization_file(&config_dir)).unwrap(),
         ).unwrap();
         assert_eq!(persisted["roots"], serde_json::json!([fs::canonicalize(&configured).unwrap()]));
+        drop(roots);
         let restarted = AuthorizedRoots::default();
         restore_authorized_roots(&restarted, &config_dir).unwrap();
         assert!(authorized_rooted_path(&restarted, configured.to_str().unwrap(), "").is_ok());
@@ -2115,6 +2357,7 @@ mod tests {
             &fs::read_to_string(authorization_file(&config_dir)).unwrap(),
         ).unwrap();
         assert_eq!(persisted["roots"], serde_json::json!([fs::canonicalize(&reconnecting).unwrap()]));
+        drop(second_boot);
         let restarted = AuthorizedRoots::default();
         restore_authorized_roots(&restarted, &config_dir).unwrap();
         assert!(authorized_rooted_path(&restarted, reconnecting.to_str().unwrap(), "").is_ok());

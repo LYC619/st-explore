@@ -56,6 +56,7 @@ export function createTauriFs(root: string): VaultFs {
     }
   };
   return {
+    mutationIdentity: `native:${root.replace(/^\\\\\?\\/, '').replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()}`,
     async list(dir): Promise<VaultEntry[]> {
       const entries = await invoke<RawEntry[]>('vault_list_dir', args(dir));
       return entries.map((e) => ({
@@ -126,7 +127,7 @@ export function saveTextExport(output: { fileName: string; extension: string; co
   return invoke('save_text_export', output);
 }
 
-export function saveBinaryExport(output: { fileName: string; extension: 'png'; base64: string }): Promise<boolean> {
+export function saveBinaryExport(output: { fileName: string; extension: string; base64: string }): Promise<boolean> {
   return invoke('save_binary_export', output);
 }
 
@@ -270,10 +271,11 @@ export function cleanupSTBackupImport(root: string): Promise<void> {
 /** 弹系统目录选择器；用户取消返回 null */
 export async function pickDirectory(
   title: string,
-  options: { persistAuthorization?: boolean } = {},
+  options: { persistAuthorization?: boolean; purpose?: 'vault' | 'source' | 'export' } = {},
 ): Promise<string | null> {
   return (await invoke<string | null>('vault_pick_authorized_directory', {
     title,
     persistent: options.persistAuthorization ?? false,
+    purpose: options.purpose ?? (options.persistAuthorization ? 'vault' : 'export'),
   })) ?? null;
 }

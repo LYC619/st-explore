@@ -6,7 +6,7 @@ import { setActiveVault } from '@/lib/vault/active';
 
 const host = vi.hoisted(() => {
   const records: never[] = [];
-  return { close: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), processLog: { snapshot: () => records, subscribe: () => () => {} } };
+  return { close: vi.fn(), setForeground: vi.fn(), flush: vi.fn().mockResolvedValue(undefined), processLog: { snapshot: () => records, subscribe: () => () => {} } };
 });
 const createHost = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/roleplay/tavern-host', () => ({ createTavernHost: createHost }));
@@ -44,10 +44,12 @@ it('keeps the same live iframe when navigating away and returning without stoppi
   expect(container.textContent).toContain('返回聊天');
   expect(container.querySelector('iframe')).toBe(frame);
   expect(frame?.closest('[aria-hidden="true"]')).not.toBeNull();
+  expect(host.setForeground).toHaveBeenLastCalledWith(false);
   expect(host.flush).not.toHaveBeenCalled(); expect(host.close).not.toHaveBeenCalled();
   await go('/play/one?branch=');
   expect(container.querySelector('iframe')).toBe(frame);
   expect(frame?.closest('[aria-hidden="true"]')).toBeNull(); expect(createHost).toHaveBeenCalledTimes(1);
+  expect(host.setForeground).toHaveBeenLastCalledWith(true);
 });
 
 it('saves before replacing a background chat and keeps it recoverable when saving fails', async () => {

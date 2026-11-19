@@ -13,12 +13,12 @@ export function fileStamp(stat: VaultStat): string | undefined {
 export class StorySummaryIndex {
   private previous = new Map<string, Entry>();
   private next = new Map<string, Entry>();
-  constructor(private fs: VaultFs) {}
+  constructor(private fs: VaultFs, private file = FILE) {}
   async load(): Promise<void> {
     try {
-      const stat = await this.fs.stat(FILE);
+      const stat = await this.fs.stat(this.file);
       if (!stat.exists || stat.size === undefined || stat.size > MAX_BYTES) return;
-      const text = await this.fs.readText(FILE);
+      const text = await this.fs.readText(this.file);
       if (text.length > MAX_BYTES) return;
       const data = JSON.parse(text);
       if (data?.schema !== 2 || !Array.isArray(data.entries) || data.entries.length > 100000) return;
@@ -49,7 +49,7 @@ export class StorySummaryIndex {
       })) return;
       const text = JSON.stringify({ schema: 2, entries: [...this.next] });
       if (new TextEncoder().encode(text).length > MAX_BYTES) return;
-      await this.fs.writeText(FILE, text);
+      await this.fs.writeText(this.file, text);
     } catch { /* Cache writes must never turn a readable library into a startup failure. */ }
     finally { this.previous.clear(); this.next.clear(); }
   }

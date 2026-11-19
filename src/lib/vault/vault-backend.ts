@@ -35,7 +35,8 @@ import { joinPath, parentDir, baseName } from './fs';
 import { safeName, ensureUnique } from './naming';
 import { serializeFrontmatter, parseFrontmatter } from './frontmatter';
 import { recoverCharacterJournals } from '@/lib/portrait-journal';
-import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { mutationCoordinator } from './mutation-coordinator';
+import { saveCharacterFiles, recoverCharacterSaves } from './character-save';
 import { sha256 } from 'js-sha256';
 import { executeFileRemoval, recoverFileMaintenance, moveRecordFile } from './file-maintenance';
 import { BoundedRecordCache, type FullCacheOptions } from './bounded-record-cache';
@@ -165,12 +166,33 @@ export interface VaultOptions {
 }
 
 export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBackend {
-  const publications = new KeyedSerialQueue();
+  const coordinator = mutationCoordinator(fs);
+  let observedRevision = coordinator.revision;
+  const mutate = <T>(task: () => Promise<T>): Promise<T> => coordinator.queue.enqueue('records', async () => {
+    try { await ensureIndex(); return await task(); }
+    catch (error) { resetIndex(); maintenanceRecovered = false; throw error; }
+    finally { observedRevision = ++coordinator.revision; }
+  });
   // ---- 索引：id → 相对路径 ----
   const idx = new Map<VaultStore, Map<string, string>>(VAULT_STORES.map((s) => [s, new Map()]));
   const of = (s: VaultStore) => idx.get(s)!;
   let indexReady: Promise<void> | null = null;
-  const ensureIndex = () => (indexReady ??= buildIndex());
+  function resetIndex() {
+    for (const [store, entries] of idx) {
+      for (const id of entries.keys()) invalidate(store, id, false);
+      entries.clear();
+    }
+    indexReady = null;
+  }
+  const ensureIndex = async () => {
+    if (observedRevision !== coordinator.revision) {
+      if (indexReady) await indexReady;
+      resetIndex();
+      maintenanceRecovered = false;
+      observedRevision = coordinator.revision;
+    }
+    return indexReady ??= buildIndex();
+  };
   let maintenanceRecovery: Promise<void> | null = null;
   let maintenanceRecovered = false;
   let presetRevision = 0;
@@ -179,7 +201,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
   async function recoverMaintenance(): Promise<void> {
     // Recover once per vault session; failed mutations reopen this gate.
     if (maintenanceRecovered) return;
-    const pending = maintenanceRecovery ??= recoverFileMaintenance(fs);
+    const pending = maintenanceRecovery ??= (async () => { await recoverCharacterSaves(fs); await recoverFileMaintenance(fs); })();
     try { await pending; maintenanceRecovered = true; }
     finally { if (maintenanceRecovery === pending) maintenanceRecovery = null; }
   }
@@ -421,18 +443,30 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
     // 3. 记录文件（总结 md + 故事树 json）：全部故事候选目录 + 临时/记录
     //    故事被删后遗留在原文件夹里的记录也要扫到，所以扫候选目录而非仅已索引的故事目录
     const summaryLabels = Object.values(SUMMARY_KIND_LABELS);
+    const identities = new StorySummaryIndex(fs, '.ste-control/index/record-identities-v2.json');
+    await identities.load();
     await mapLimit([...storyDirs, DIR_TEMP_RECORDS], IO_LIMIT, async (dir) => {
       for (const e of await fs.list(dir)) {
-        if (e.isDir) continue;
+        if (e.isDir || e.isSymlink) continue;
         const path = joinPath(dir, e.name);
-        if (e.name.endsWith('.md') && summaryLabels.some((l) => e.name.startsWith(l + '·'))) {
-          await scanMdFile(path, of('summaries'));
-        } else if (e.name.startsWith(TREE_PREFIX) && e.name.endsWith('.json')) {
-          const rec = await readJson(path);
-          if (rec && typeof rec.id === 'string') of('stories').set(rec.id, path);
+        const store = e.name.endsWith('.md') && summaryLabels.some((l) => e.name.startsWith(l + '·')) ? 'summaries'
+          : e.name.startsWith(TREE_PREFIX) && e.name.endsWith('.json') ? 'stories' : undefined;
+        if (!store) continue;
+        const stamp = fileStamp({ ...e, exists: true });
+        let identity = identities.get(path, stamp);
+        if (!identity) {
+          try {
+            const record = store === 'summaries' ? parseFrontmatter(await fs.readText(path)).fields : await readJson(path);
+            if (record && typeof record.id === 'string') {
+              identity = { id: record.id, updatedAt: 0 };
+              if (stamp && fileStamp(await fs.stat(path)) === stamp) identities.retain(path, stamp, identity);
+            }
+          } catch (error) { warnSkip(path, error); }
         }
+        if (identity) of(store).set(identity.id, path);
       }
     });
+    await identities.save();
     // 4. 资产
     await scanSteJsonDir(DIR_ASSET_WB, 'worldbooks');
     await scanSteJsonDir(DIR_ASSET_PRESET, 'presets');
@@ -604,34 +638,13 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
   }
 
   async function putCharacter(rec: ArchiveCharacter, derivedUnchanged = false): Promise<void> {
-    const m = of('characters');
-    const cur = m.get(rec.id);
+    const m = of('characters'), cur = m.get(rec.id);
     const stem = safeName(rec.name, '未命名角色');
-    let dir: string;
-    if (!cur) {
-      dir = joinPath(DIR_CHAR, await uniqueStem(DIR_CHAR, stem, ['']));
-      await fs.mkdir(dir);
-    } else {
-      // name 变化 → 文件夹 rename（用户放的立绘等一起搬）；目标被占 → ·N
-      dir = joinPath(DIR_CHAR, await uniqueStem(DIR_CHAR, stem, [''], [baseName(cur)]));
-      if (dir !== cur) {
-        await fs.rename(cur, dir);
-        fixupPrefixes(cur, dir);
-      }
-    }
-    m.set(rec.id, dir);
+    const dir = joinPath(DIR_CHAR, await uniqueStem(DIR_CHAR, stem, [''], cur ? [baseName(cur)] : []));
     const { pngBase64, ...profile } = rec;
-    await fs.writeText(joinPath(dir, FILE_PROFILE), toJson(profile));
-    // 卡片.png 是 pngBase64 的派生物：这次没碰它就不重写（否则每次访问角色页都整张卡重写一遍）。
-    // 文件夹刚改名时也得写——rename 已经把旧图带过来了，所以这里只看 pngBase64 有没有变。
-    if (derivedUnchanged) return;
-    const pngPath = joinPath(dir, FILE_CARD_PNG);
-    if (pngBase64) {
-      await fs.writeBinary(pngPath, pngBase64);
-    } else if ((await fs.stat(pngPath)).exists) {
-      // 记录不再带原图时同步删掉规格内的 卡片.png，否则 get 会把旧图读回来破坏往返
-      await fs.removeFile(pngPath);
-    }
+    await saveCharacterFiles(fs, { id: rec.id, from: cur, to: dir, profile: toJson(profile), png: pngBase64, derivedUnchanged });
+    if (cur && dir !== cur) fixupPrefixes(cur, dir);
+    m.set(rec.id, dir);
   }
 
   async function putStory(rec: ArchiveStory, derivedUnchanged = false): Promise<void> {
@@ -751,7 +764,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
     return toJson(st);
   }
 
-  function putRecord(store: VaultStore, rec: BaseRecord, opts?: PutOptions): Promise<void> {
+  async function putRecord(store: VaultStore, rec: BaseRecord, opts?: PutOptions): Promise<void> {
     switch (store) {
       case 'characters':
         return putCharacter(rec as ArchiveCharacter, opts?.derivedUnchanged);
@@ -789,10 +802,18 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         const r = rec as RatingTemplateItem;
         return putSingleFile(store, r.id, DIR_ASSET_TPL, TPL_RATING_PREFIX + safeName(r.title), '.json', toJson(r));
       }
-      case 'archiveMeta':
-        return fs.writeText(FILE_ARCHIVE_META, toJson(rec)).then(() => {
+      case 'archiveMeta': {
+        // A stale settings snapshot must not remove a newer storage-format gate.
+        const previous = (await fs.stat(FILE_ARCHIVE_META)).exists ? JSON.parse(await fs.readText(FILE_ARCHIVE_META)) : null;
+        const value = { ...rec } as BaseRecord & { schemaVersion?: number; tagMigrationVersion?: unknown };
+        if (value.tagMigrationVersion === undefined && previous?.tagMigrationVersion !== undefined) value.tagMigrationVersion = previous.tagMigrationVersion;
+        if (typeof previous?.schemaVersion === 'number' && previous.schemaVersion > (value.schemaVersion ?? 0)) {
+          value.schemaVersion = previous.schemaVersion;
+        }
+        return fs.writeText(FILE_ARCHIVE_META, toJson(value)).then(() => {
           of('archiveMeta').set(rec.id, FILE_ARCHIVE_META);
         });
+      }
     }
   }
 
@@ -847,10 +868,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         .filter((r): r is BaseRecord => r !== null)
         .sort((a, b) => b.updatedAt - a.updatedAt);
     };
-    return {
-      list: () => listWith(false),
-      listLight: () => listWith(true),
-      async get(id) {
+    const getWith = async (id: string) => {
         if (store === 'archiveMeta') {
           // Metadata lives at a fixed path. Session recovery is retried after failures.
           await recoverMaintenance();
@@ -862,8 +880,12 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
         const path = of(store).get(id);
         if (!path) return undefined;
         return (await readRecordCached(store, id, path)) ?? undefined;
-      },
-      async put(item, opts) {
+    };
+    return {
+      list: () => store === 'characters' ? coordinator.queue.read('records', () => listWith(false)) : listWith(false),
+      listLight: () => store === 'characters' ? coordinator.queue.read('records', () => listWith(true)) : listWith(true),
+      get: id => store === 'characters' ? coordinator.queue.read('records', () => getWith(id)) : getWith(id),
+      put(item, opts) { return mutate(async () => {
         await recoverMaintenance();
         await ensureIndex();
         if (store === 'characters') {
@@ -878,8 +900,8 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
           // file. The next get after put resolves must read the committed record.
           invalidate(store, item.id);
         }
-      },
-      async remove(id, options) {
+      }); },
+      remove(id, options) { return mutate(async () => {
         await recoverMaintenance();
         await ensureIndex();
         if (store === 'characters') {
@@ -907,7 +929,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
           throw error;
         }
         finally { invalidate(store, id); }
-      },
+      }); },
     };
   }
 
@@ -958,7 +980,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       return path ? (await readRecord(store as VaultStore, path)) as T | null ?? undefined : undefined;
     },
     publishPackageDependency(store, item, packageId, isCurrent) {
-      return publications.enqueue('records', async () => {
+      return mutate( async () => {
         const check = () => { if (isCurrent?.() === false) throw new Error('文件库已切换，故事包导入已停止'); };
         check();
         if (!['characters', 'worldbooks', 'presets', 'regexes'].includes(store) || !/^[a-f0-9]{64}$/.test(packageId)
@@ -997,7 +1019,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
       });
     },
     publishStoryDirectory(storyId, stagedDirectory, isCurrent) {
-      return publications.enqueue('records', async () => {
+      return mutate( async () => {
         const check = () => { if (isCurrent?.() === false) throw new Error('文件库已切换，故事发布已停止'); };
         check();
         if (!/^\.ste-control\/story-packages\/[a-f0-9]{64}\/story$/.test(stagedDirectory)) {

@@ -37,17 +37,16 @@ export async function intelligentStep(args: {
         privateNotes: observation.persona.privateNotes.slice(0, 1000), ambition: observation.persona.ambition.slice(0, 300) },
         memories: observation.memories.slice(0, 8), legalActions: observation.legalActions.slice(0, 32) };
       const reflect = baseData.settings.reflectionEvery > 0 && result.state.tick % baseData.settings.reflectionEvery === 0;
-      const { id, value } = await gateway.request({ purpose: 'plan', actorId: actor.id, tick: result.state.tick,
+      const isValid = (value: unknown): value is { actionId: string; facts?: unknown } => {
+        const output = value as { actionId?: unknown } | null;
+        return !!output && typeof output.actionId === 'string' && context.legalActions.some(a => a.id === output.actionId)
+          && availableActions(result.state, actor.id).some(a => a.id === output.actionId);
+      };
+      const { value } = await gateway.request({ purpose: 'plan', actorId: actor.id, tick: result.state.tick,
         system: '你是世界中的一个人物。只能使用提供的自身人设、所见与已知记忆，不知道远处人物的秘密。从 legalActions 中选择一个 id。当前规则数值优先于可能过时的文字记忆。不得发明行动、数值或改变规则。只返回 JSON：{"actionId":"合法id"' + (reflect ? ',"facts":["从已知事件提炼的短事实，最多3条，每条80字以内，作为待确认候选"]' : '') + '}。',
-        context, factIds: context.memories.map(m => m.id) }, signal);
-      const output = value as { actionId?: unknown; facts?: unknown };
-      const valid = output && typeof output.actionId === 'string' && context.legalActions.some(a => a.id === output.actionId)
-        && availableActions(result.state, actor.id).some(a => a.id === output.actionId);
-      const latest = args.current(), data = structuredClone(intelligence(latest.state));
-      const receipt = data.receipts.find(r => r.id === id); if (receipt) receipt.outcome = valid ? 'accepted' : 'rejected';
-      const state = withIntelligence(latest.state); state.intelligence = data;
-      args.accept(await args.repo.append(latest, { state, events: [] }, 'request'));
-      if (!valid) throw new Error(`${actor.name}的选择不在合法行动中，本轮已暂停；可重试或切换规则模式`);
+        context, factIds: context.memories.map(m => m.id), outcome: value => isValid(value) ? 'accepted' : 'rejected' }, signal);
+      if (!isValid(value)) throw new Error(`${actor.name}的选择不在合法行动中，本轮已暂停；可重试或切换规则模式`);
+      const output = value;
       choices[actor.id] = output.actionId as string;
       if (reflect && Array.isArray(output.facts)) proposals.push({ actorId: actor.id, texts: output.facts.filter((f): f is string => typeof f === 'string' && f.length <= 240) });
     }

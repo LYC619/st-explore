@@ -26,6 +26,8 @@ export interface VaultStat {
 }
 
 export interface VaultFs {
+  /** Stable identity shared by wrappers/handles for in-process mutation coordination. */
+  mutationIdentity?: object | string;
   /** 列目录（目录优先、按名排序）；目录不存在返回 []，不抛错 */
   list(dir: string): Promise<VaultEntry[]>;
   readText(path: string): Promise<string>;
@@ -102,6 +104,7 @@ export function createMemFs(): VaultFs & { dump(): Record<string, string> } {
   };
 
   return {
+    mutationIdentity: {},
     async list(dir) {
       const norm = normalizeRelPath(dir);
       if (!isDir(norm)) return [];

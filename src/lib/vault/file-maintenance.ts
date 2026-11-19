@@ -11,7 +11,7 @@ import { isSafeFileSegment, resolveAttachmentRelativePath } from './character-re
 import { parseFrontmatter } from './frontmatter';
 import { isRuntimePath, branchKey } from '@/lib/roleplay/paths';
 import { getActiveVault, getVaultEpoch } from './active';
-import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { withVaultMutation } from './mutation-coordinator';
 import { validWorldMedia } from '@/play/media/asset';
 import { validCommit } from '@/play/storage/world-commit';
 
@@ -46,7 +46,6 @@ interface Manifest {
 }
 const RETAINED = '.ste/retained';
 export const RECYCLE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-const cleanupQueues = new WeakMap<VaultFs, KeyedSerialQueue>();
 const operationIdPattern = /^[a-f0-9-]{36}$/i;
 const activeOperations = new WeakMap<VaultFs, Set<string>>();
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -63,7 +62,7 @@ const stagedPath = (manifest: Manifest, path: string) => `${RETAINED}/${manifest
 const manifestPath = (operationId: string) => `${RETAINED}/${operationId}/manifest.json`;
 
 /** Check every ancestor, not just the final file: stat follows links on some platforms. */
-async function assertSafePath(fs: VaultFs, path: string, allowMissing = false): Promise<void> {
+export async function assertSafePath(fs: VaultFs, path: string, allowMissing = false): Promise<void> {
   if (!safePath(path)) throw new Error(`不安全的库内路径：${path}`);
   let parent = '';
   const parts = path.split('/');
@@ -535,9 +534,7 @@ export async function listRetainedOperations(vault: VaultBackend): Promise<Retai
 /** Restore files with the same no-overwrite rename and restart recovery used by deletion. */
 export async function restoreRetainedOperation(vault: VaultBackend, operationId: string): Promise<void> {
   const epoch = getVaultEpoch(), fs = vault.fs;
-  let queue = cleanupQueues.get(fs);
-  if (!queue) { queue = new KeyedSerialQueue(); cleanupQueues.set(fs, queue); }
-  return queue.enqueue('cleanup', async () => {
+  return withVaultMutation(fs, async () => {
     let active = activeOperations.get(fs);
     if (!active) { active = new Set(); activeOperations.set(fs, active); }
     if (active.has(operationId)) throw new Error('此项仍在处理中，请稍后重试');
@@ -710,9 +707,7 @@ export async function cleanupVaultFiles(scan: FileMaintenanceScan, selectedPaths
 }
 
 function queueCleanup(scan: FileMaintenanceScan, selectedPaths: string[], expiredBefore?: number): Promise<FileCleanupResult> {
-  let queue = cleanupQueues.get(scan.vault.fs);
-  if (!queue) { queue = new KeyedSerialQueue(); cleanupQueues.set(scan.vault.fs, queue); }
-  return queue.enqueue('cleanup', () => cleanupFiles(scan, selectedPaths, expiredBefore));
+  return withVaultMutation(scan.vault.fs, () => cleanupFiles(scan, selectedPaths, expiredBefore));
 }
 
 async function cleanupFiles(scan: FileMaintenanceScan, selectedPaths: string[], expiredBefore?: number): Promise<FileCleanupResult> {

@@ -117,6 +117,7 @@ describe('vault file lifecycle', () => {
   it('reuses unchanged record facts between scans and rereads only changed files', async () => {
     const { fs, reads } = stampedFs(), vault = createVault(fs);
     for (const id of ['a', 'b', 'c']) await vault.repo<ArchiveCharacter>('characters').put(character(id));
+    reads.length = 0; // Measure scanning, excluding save-time integrity verification.
     await maintenance.scanVaultFiles(vault);
     const profiles = () => reads.splice(0).filter(path => path.endsWith('档案.json'));
     expect(profiles()).toHaveLength(3);
