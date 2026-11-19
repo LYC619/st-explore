@@ -35,14 +35,17 @@ struct AuthorizedRoots {
 }
 
 impl AuthorizedRoots {
-    fn authorize_inner(&self, root: &Path, persistent: bool) -> Result<PathBuf, String> {
+    fn canonical_directory(root: &Path) -> Result<PathBuf, String> {
         let metadata = fs::metadata(root)
             .map_err(|e| format!("授权目录不存在或无法访问 {}: {e}", root.display()))?;
         if !metadata.is_dir() {
             return Err(format!("授权路径不是文件夹: {}", root.display()));
         }
-        let canonical = fs::canonicalize(root)
-            .map_err(|e| format!("解析授权目录失败 {}: {e}", root.display()))?;
+        fs::canonicalize(root).map_err(|e| format!("解析授权目录失败 {}: {e}", root.display()))
+    }
+
+    fn authorize_inner(&self, root: &Path, persistent: bool) -> Result<PathBuf, String> {
+        let canonical = Self::canonical_directory(root)?;
         let mut state = self
             .state
             .lock()
@@ -60,17 +63,40 @@ impl AuthorizedRoots {
     }
 
     fn authorize_export(&self, root: &Path) -> Result<PathBuf, String> {
-        let canonical = self.authorize(root)?;
-        self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?.exports.insert(canonical.clone());
+        let canonical = Self::canonical_directory(root)?;
+        let mut state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        let is_library = state.writable.contains(&canonical) && !state.sources.contains(&canonical)
+            && !state.exports.contains(&canonical);
+        state.roots.insert(canonical.clone());
+        state.writable.insert(canonical.clone());
+        // Exporting into an existing library must not drop its library role,
+        // process lease, or protection against an overlapping source selection.
+        if !is_library { state.exports.insert(canonical.clone()); }
         Ok(canonical)
     }
 
     fn authorize_source(&self, root: &Path, persistent: bool) -> Result<PathBuf, String> {
-        let canonical = self.authorize_inner(root, persistent)?;
+        self.authorize_source_inner(root, persistent, false)
+    }
+
+    fn authorize_source_inner(&self, root: &Path, persistent: bool, protect_libraries: bool) -> Result<PathBuf, String> {
+        let canonical = Self::canonical_directory(root)?;
         let mut state = self.state.lock().map_err(|_| "文件访问授权状态已损坏".to_string())?;
+        // A picker grant precedes source scanning and may be abandoned. Reject
+        // conflicting roles before changing any existing library permission.
+        if protect_libraries && state.writable.iter().any(|library| !state.sources.contains(library)
+            && !state.exports.contains(library) && (canonical.starts_with(library) || library.starts_with(&canonical))) {
+            return Err("所选来源目录与已授权的STE文件库重叠，请选择独立的ST来源目录".into());
+        }
+        state.roots.insert(canonical.clone());
+        if persistent { state.persistent.insert(canonical.clone()); }
         state.writable.remove(&canonical);
         state.sources.insert(canonical.clone());
         Ok(canonical)
+    }
+
+    fn authorize_selected_source(&self, root: &Path, persistent: bool) -> Result<PathBuf, String> {
+        self.authorize_source_inner(root, persistent, true)
     }
 
     fn authorize_temporary(&self, root: &Path) -> Result<PathBuf, String> {
@@ -1245,7 +1271,7 @@ async fn vault_pick_authorized_directory(
             .into_path()
             .map_err(|e| format!("目录选择结果不是本机路径: {e}"))?;
         let canonical = if purpose == "source" {
-            roots.authorize_source(&selected, persistent)?
+            roots.authorize_selected_source(&selected, persistent)?
         } else if persistent {
             let canonical = roots.authorize_persistent(&selected)?;
             persist_authorized_roots(&roots, &app_config_dir(&app)?)?;
@@ -2240,6 +2266,50 @@ mod tests {
         assert!(authorized_writeback_path(&roots, temporary.join("chat.jsonl").to_str().unwrap()).is_err());
         assert!(authorized_writeback_path(&roots, parent.join("chat.jsonl").to_str().unwrap()).is_err());
         let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn export_selection_preserves_existing_library_role() {
+        let parent = temp_root("export-existing-library");
+        let vault = parent.join("library");
+        let export = parent.join("export");
+        fs::create_dir_all(&vault).unwrap(); fs::create_dir_all(&export).unwrap();
+        let roots = AuthorizedRoots::default();
+        roots.authorize_persistent(&vault).unwrap();
+        roots.authorize_export(&vault).unwrap();
+        assert!(roots.has_grant(&vault, false).unwrap());
+        assert!(roots.authorize_selected_source(&vault, true).is_err());
+        assert!(authorized_writable_path(&roots, vault.to_str().unwrap(), "synthetic.json").is_ok());
+        roots.authorize_export(&export).unwrap();
+        assert!(!roots.has_grant(&export, false).unwrap());
+        assert!(authorized_writable_path(&roots, export.to_str().unwrap(), "synthetic.json").is_ok());
+        drop(roots); let _ = fs::remove_dir_all(parent);
+    }
+
+    #[test]
+    fn selecting_source_cannot_change_an_overlapping_library_grant() {
+        let parent = temp_root("source-picker-library");
+        let vault = parent.join("library");
+        let child = vault.join("child");
+        let source = parent.join("source");
+        fs::create_dir_all(&child).unwrap(); fs::create_dir_all(&source).unwrap();
+        let roots = AuthorizedRoots::default();
+        roots.authorize_persistent(&vault).unwrap();
+        let target = fs::canonicalize(&vault).unwrap().join("synthetic.json");
+        assert!(roots.ensure_writable(&target).is_ok());
+        for selected in [&vault, &parent, &child] {
+            assert!(roots.authorize_selected_source(selected, true).is_err());
+            assert!(roots.has_grant(&vault, false).unwrap());
+            assert!(!roots.has_grant(selected, true).unwrap());
+            assert!(roots.ensure_writable(&target).is_ok());
+        }
+        roots.authorize_persistent(&vault).unwrap();
+        assert!(roots.ensure_writable(&target).is_ok());
+        roots.authorize_selected_source(&source, true).unwrap();
+        assert!(roots.has_grant(&source, true).unwrap());
+        assert!(roots.ensure_writable(&fs::canonicalize(&source).unwrap().join("synthetic.json")).is_err());
+        assert!(authorized_writeback_path(&roots, source.join("chat.jsonl").to_str().unwrap()).is_ok());
+        drop(roots); let _ = fs::remove_dir_all(parent);
     }
 
     #[test]

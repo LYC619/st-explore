@@ -5,6 +5,7 @@ import { isRuntimePath, runtimeFileId } from './paths';
 import { updateArchiveStory } from '@/lib/archive-db';
 import { getCurrentRepo } from '@/lib/repo';
 import type { ArchiveStory } from '@/types/archive';
+import { mutationCoordinator } from '@/lib/vault/mutation-coordinator';
 
 export interface RuntimeFile {
   id: string;
@@ -38,7 +39,7 @@ export function createRuntimeStore(storyId: string): RuntimeStore {
     check(path);
     return directory + '/' + path;
   }
-  const unlocked: RuntimeStore = {
+  const files: RuntimeStore = {
     storyId,
     async read(path) {
       check(path);
@@ -99,6 +100,20 @@ export function createRuntimeStore(storyId: string): RuntimeStore {
       return keys.map(key => { try { return JSON.parse(String(key))[1] as string; } catch { return ''; } })
         .filter(path => isRuntimePath(path) && (!prefix || path.startsWith(prefix + '/'))).sort();
     },
+  };
+  // Story locks do not cover parent-character moves. Resolve paths and finish
+  // sidecar IO under the shared library gate, including underStoryLock callers.
+  function inLibrary<T>(action: () => Promise<T>, writing = false): Promise<T> {
+    if (!vault) return action();
+    const { queue } = mutationCoordinator(vault.fs);
+    return writing ? queue.enqueue('records', action) : queue.read('records', action);
+  }
+  const unlocked: RuntimeStore = {
+    storyId,
+    read: path => inLibrary(() => files.read(path)),
+    write: (path, text) => inLibrary(() => files.write(path, text), true),
+    remove: path => inLibrary(() => files.remove(path), true),
+    list: prefix => inLibrary(() => files.list(prefix)),
   };
   async function inStory<T>(action: () => Promise<T>): Promise<T> {
     if (getVaultEpoch() !== epoch) throw new Error('文件库已切换');

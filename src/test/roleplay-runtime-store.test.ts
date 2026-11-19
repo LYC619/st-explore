@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { closeDB } from '@/lib/idb';
-import { buildStoryFromSession, saveArchiveStory, updateArchiveStory } from '@/lib/archive-db';
+import { buildStoryFromSession, saveArchiveStory, updateArchiveStory, saveCharacter, updateCharacter } from '@/lib/archive-db';
+import type { ArchiveCharacter } from '@/types/archive';
 import { getActiveVault, setActiveVault } from '@/lib/vault/active';
 import { createVault } from '@/lib/vault/vault-backend';
 import { createMemFs } from '@/lib/vault/fs';
@@ -72,4 +73,68 @@ it('serializes directory resolution and writing with a concurrent story rename',
   finally { unlock(); }
   await Promise.all([writing, rename]);
   expect(await store.read('memory/main/state.md')).toBe('改名前正在写入的记忆');
+});
+
+it.each(['public', 'underStoryLock'])('keeps %s runtime writes with the story when its parent character is renamed', async access => {
+  const base = createMemFs();
+  let hold = false, entered!: () => void, unlock!: () => void;
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { unlock = resolve; });
+  const fs = { ...base, async mkdir(path: string) {
+    if (hold && path.endsWith('/memory/main')) { hold = false; entered(); await gate; }
+    await base.mkdir(path);
+  } };
+  const vault = createVault(fs); setActiveVault(vault);
+  const character = { id: 'runtime-parent', name: 'Synthetic parent', card: { name: 'Synthetic parent' },
+    tags: [], status: '未开始', createdAt: 1, updatedAt: 1 } as ArchiveCharacter;
+  await saveCharacter(character);
+  const item = await story();
+  await updateArchiveStory(item.id, () => ({ characterId: character.id }));
+  const oldDirectory = await vault.pathOf('archiveStories', item.id);
+  const store = createRuntimeStore(item.id);
+  hold = true;
+  const writing = access === 'public' ? store.write('memory/main/state.md', 'synthetic memory')
+    : updateArchiveStory(item.id, async () => { await store.underStoryLock!.write('memory/main/state.md', 'synthetic memory'); return undefined; });
+  await reached;
+  let renamed = false;
+  const rename = updateCharacter(character.id, () => ({ name: 'Synthetic renamed' })).then(() => { renamed = true; });
+  try { await new Promise(resolve => setTimeout(resolve, 20)); expect(renamed).toBe(false); }
+  finally { unlock(); await Promise.all([writing, rename]); }
+  expect(await store.read('memory/main/state.md')).toBe('synthetic memory');
+  expect((await base.stat(oldDirectory!)).exists).toBe(false);
+  expect(await createVault(base).pathOf('archiveStories', item.id)).toContain('角色/Synthetic renamed/故事/');
+});
+
+it.each(['read', 'remove', 'list'] as const)('finishes runtime %s before a parent-character move', async operation => {
+  const base = createMemFs();
+  let hold = false, entered!: () => void, unlock!: () => void;
+  const reached = new Promise<void>(resolve => { entered = resolve; });
+  const gate = new Promise<void>(resolve => { unlock = resolve; });
+  async function pause(path: string, kind: 'stat' | 'list') {
+    if (hold && (operation === 'list' ? kind === 'list' && path.endsWith('/memory/main')
+      : kind === 'stat' && path.endsWith('/memory/main/state.md'))) {
+      hold = false; entered(); await gate;
+    }
+  }
+  const fs = { ...base,
+    async stat(path: string) { await pause(path, 'stat'); return base.stat(path); },
+    async list(path: string) { await pause(path, 'list'); return base.list(path); },
+  };
+  const vault = createVault(fs); setActiveVault(vault);
+  const character = { id: 'runtime-parent', name: 'Synthetic parent', card: { name: 'Synthetic parent' },
+    tags: [], status: '未开始', createdAt: 1, updatedAt: 1 } as ArchiveCharacter;
+  await saveCharacter(character);
+  const item = await story();
+  await updateArchiveStory(item.id, () => ({ characterId: character.id }));
+  const store = createRuntimeStore(item.id);
+  await store.write('memory/main/state.md', 'synthetic memory');
+  hold = true;
+  const pending = operation === 'list' ? store.list('memory/main') : store[operation]('memory/main/state.md');
+  await reached;
+  let renamed = false;
+  const rename = updateCharacter(character.id, () => ({ name: 'Synthetic renamed' })).then(() => { renamed = true; });
+  try { await new Promise(resolve => setTimeout(resolve, 20)); expect(renamed).toBe(false); }
+  finally { unlock(); await rename; }
+  expect(await pending).toEqual(operation === 'list' ? ['memory/main/state.md'] : operation === 'read' ? 'synthetic memory' : undefined);
+  expect(await store.read('memory/main/state.md')).toBe(operation === 'remove' ? null : 'synthetic memory');
 });

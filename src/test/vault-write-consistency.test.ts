@@ -204,6 +204,18 @@ describe('file vault write consistency', () => {
     expect((await base.stat('角色/Renamed')).exists).toBe(false);
   });
 
+  it('lets two library handles recover an interrupted rename without racing the rollback', async () => {
+    const { base, old, oldDir } = await interruptedRename();
+    const first = createVault({ ...base }), second = createVault({ ...base });
+    const recovered = await Promise.all([
+      first.repo('characters').get('c'), second.repo('characters').get('c'),
+    ]);
+    expect(recovered).toEqual([old, old]);
+    expect(await base.readText(`${oldDir}/user-note.txt`)).toBe('synthetic user file');
+    expect((await base.stat('角色/Renamed')).exists).toBe(false);
+    expect(Object.keys(base.dump()).filter(path => path.includes('/character-saves/'))).toEqual([]);
+  });
+
   it('blocks recovery if the target was externally changed and preserves both versions', async () => {
     const { base } = await interruptedRename();
     const changed = JSON.stringify({ ...character('c'), name: 'External change' });

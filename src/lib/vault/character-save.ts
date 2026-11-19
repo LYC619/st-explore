@@ -106,8 +106,14 @@ function validate(value: Manifest, operationId: string): void {
     || value.files.profile.after === null || value.files.png !== undefined && !pair(value.files.png)) throw failure();
 }
 
+/** Recovery mutates disk even when entered by a read; share its gate across handles.
+ * Keep it separate from the record gate because both readers and writers await it. */
+export function recoverCharacterSaves(fs: VaultFs): Promise<void> {
+  return mutationCoordinator(fs).queue.enqueue('character-recovery', () => recoverCharacterSavesUnlocked(fs));
+}
+
 /** Run before indexing or a new write. Unknown/changed files block rollback. */
-export async function recoverCharacterSaves(fs: VaultFs): Promise<void> {
+async function recoverCharacterSavesUnlocked(fs: VaultFs): Promise<void> {
   await assertSafePath(fs, ROOT, true);
   for (const entry of await fs.list(ROOT)) {
     if (!UUID.test(entry.name) || !entry.isDir || entry.isSymlink) throw failure();
