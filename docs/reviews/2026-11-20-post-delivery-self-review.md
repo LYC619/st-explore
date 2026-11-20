@@ -24,7 +24,7 @@
 - `root-before-export.log`：原导出授权破坏已存在库身份的断言失败；`root-after-export.log`确认修复后通过。
 - 第一轮完整verify在新增测试的异步回调返回`void`处被类型检查拦住；补充显式`return undefined`后启动最终完整检查，原失败日志保留，未绕开类型检查。
 - 最终完整`verify`退出0，全部11步通过：327个前端测试文件／2676项、63项宿主脚本、Rust66通过／1原有忽略，以及脚本检查、类型、lint、生产构建和Clippy。完整日志`full-verify-final.log`，分项日志`.cache/verify/2026-11-19T17-46-11-532Z/`。这轮验证覆盖最终产品与测试输入。
-- 远端源码提交与CI结果在交付后写入[执行记录](../maintenance/2026-11-19-review-hardening-execution.md)，具体状态以远端查询为准。
+- 用户明确授权本次收尾推送后，修复`d3e8584`及交接`e6354e4`已推送main；GitHub核对完整SHA一致，CI `44750929148`的Web与Windows Rust均成功。最后状态文档的核对证据位置见[执行记录](../maintenance/2026-11-19-review-hardening-execution.md)。
 
 子代理审查包括世界费用合并／历史验链、轮询及身份缓存，未报告其他确定问题。这不是所有场景无缺陷的保证。最后复核只读源码，未替代主会话测试。
 
