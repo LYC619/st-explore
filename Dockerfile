@@ -1,5 +1,5 @@
-# Build stage
-FROM node:20-alpine AS build
+# Build stage — aligned with CI (Node 22)
+FROM node:22-alpine AS build
 
 WORKDIR /app
 

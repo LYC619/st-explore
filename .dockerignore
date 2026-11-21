@@ -2,6 +2,14 @@ node_modules
 dist
 .git
 .gitignore
+.cache
+release
+src-tauri/target
+android/app/build
+android/build
+_reference
+.user
+.planning
 README.md
 Dockerfile
 .dockerignore

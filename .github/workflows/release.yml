@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify web gate
+        run: npm run verify:web
+
+  build-windows:
+    runs-on: windows-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - name: Build Windows Tauri installer and portable executable
+        run: npm run tauri:build -- --bundles nsis
+      - name: Stage Windows release artifacts and SHA256SUMS
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force -Path release-stage | Out-Null
+          $installer = Get-ChildItem "src-tauri/target/release/bundle/nsis/*-setup.exe" | Select-Object -First 1
+          if (-not $installer) { throw "Missing NSIS installer in src-tauri/target/release/bundle/nsis/" }
+          $portable = Get-Item "src-tauri/target/release/STE.exe"
+          Copy-Item $installer.FullName "release-stage/ST-Explorer-$tag-windows-x64-setup.exe"
+          Copy-Item $portable.FullName "release-stage/STE-$tag-windows-x64-portable.exe"
+          Copy-Item "dist/build-info.json" "release-stage/build-info.json"
+          $hashes = Get-ChildItem "release-stage" -File | Sort-Object Name | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$h  $($_.Name)"
+          }
+          $hashes | Set-Content -Encoding utf8NoBOM "release-stage/SHA256SUMS-windows.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: release-stage/*
+
+  build-android:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - name: Build web assets and sync Capacitor Android
+        run: npm run build && npx cap sync android
+      - name: Assemble Android APK (signed release if secrets exist, otherwise debug placeholder)
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          mkdir -p release-stage
+          cd android
+          chmod +x gradlew
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ] && [ -n "${ANDROID_KEYSTORE_PASSWORD:-}" ] && [ -n "${ANDROID_KEY_ALIAS:-}" ] && [ -n "${ANDROID_KEY_PASSWORD:-}" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$(pwd)/app/release.keystore" \
+              -Pandroid.injected.signing.store.password="$ANDROID_KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$ANDROID_KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$ANDROID_KEY_PASSWORD"
+            cp app/build/outputs/apk/release/app-release.apk "../release-stage/ST-Explorer-${TAG}-android-release.apk"
+            rm -f app/release.keystore
+          else
+            ./gradlew assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "../release-stage/ST-Explorer-${TAG}-android-debug.apk"
+            cat > "../release-stage/ANDROID-SIGNING-NOTICE.txt" <<'EOF'
+          Android release signing secrets (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD,
+          ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD) are not configured on this repository yet.
+          This draft release attaches an unsigned/debug-signed APK for verification only.
+          EOF
+          fi
+          cd ../release-stage
+          sha256sum ST-Explorer-${TAG}-android-*.apk > SHA256SUMS-android.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: release-stage/*
+
+  draft-release:
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-android]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Merge SHA256SUMS and verify checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          cat SHA256SUMS-windows.txt SHA256SUMS-android.txt > SHA256SUMS.txt
+          rm -f SHA256SUMS-windows.txt SHA256SUMS-android.txt
+          sha256sum -c SHA256SUMS.txt
+      - name: Create Draft GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            release-assets/ST-Explorer-*-windows-x64-setup.exe
+            release-assets/STE-*-windows-x64-portable.exe
+            release-assets/ST-Explorer-*-android-*.apk
+            release-assets/build-info.json
+            release-assets/SHA256SUMS.txt
+            release-assets/ANDROID-SIGNING-NOTICE.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
