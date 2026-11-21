@@ -113,6 +113,8 @@ const Home = () => {
   const [stConfigOpen, setStConfigOpen] = useState(false);
   /** 整页读失败：必须说出来，否则空态和「数据没了」长得一模一样 */
   const [loadFailed, setLoadFailed] = useState(false);
+  const [failedAssets, setFailedAssets] = useState<{ worldbooks?: boolean; presets?: boolean; regexes?: boolean }>({});
+  const assetCountDegraded = Boolean(failedAssets.worldbooks || failedAssets.presets || failedAssets.regexes);
   /**
    * 首屏骨架只在本次会话第一次进首页时出现。
    * 模块快照已经有数据时（从别的页回来）直接显示旧数据后台刷新，
@@ -123,7 +125,7 @@ const Home = () => {
   const characterRailRef = useRef<HTMLDivElement>(null);
   /** A6：已接入（stRoot 已配置）则不再显示接入卡；null = 还没查完，先不显示防闪烁 */
   const [stConnected, setStConnected] = useState<boolean | null>(null);
-  const emptyVault = !loadFailed && isEmptyVault({
+  const emptyVault = !loadFailed && !assetCountDegraded && isEmptyVault({
     characters: characters.length,
     stories: stories.length,
     worldbooks: assetCounts.worldbooks,
@@ -135,12 +137,13 @@ const Home = () => {
     const sequence = ++loadSequence.current;
     const isCurrent = () => getVaultEpoch() === scopeEpoch && sequence === loadSequence.current;
     try {
+      const nextFailedAssets: { worldbooks?: boolean; presets?: boolean; regexes?: boolean } = {};
       const [chars, allStories, wbs, presets, regexes] = await Promise.all([
         listCharacterIndex(),
         listStoryIndex(),
-        listAssetIndex('worldbooks').catch(() => []),
-        listAssetIndex('presets').catch(() => []),
-        listAssetIndex('regexes').catch(() => []),
+        listAssetIndex('worldbooks').catch(() => { nextFailedAssets.worldbooks = true; return null; }),
+        listAssetIndex('presets').catch(() => { nextFailedAssets.presets = true; return null; }),
+        listAssetIndex('regexes').catch(() => { nextFailedAssets.regexes = true; return null; }),
       ]);
       if (!isCurrent()) return;
       // 最近在看的故事：只列看过的（无记录的还谈不上「最近」），绑定与未绑定都算
@@ -150,7 +153,11 @@ const Home = () => {
         stories: allStories,
         recentStories: viewed,
         resources: {},
-        assetCounts: { worldbooks: wbs.length, presets: presets.length, regexes: regexes.length },
+        assetCounts: {
+          worldbooks: wbs ? wbs.length : homeSnapshot.assetCounts.worldbooks,
+          presets: presets ? presets.length : homeSnapshot.assetCounts.presets,
+          regexes: regexes ? regexes.length : homeSnapshot.assetCounts.regexes,
+        },
         loaded: true,
       };
       homeSnapshot = nextSnapshot;
@@ -158,6 +165,7 @@ const Home = () => {
       setStories(nextSnapshot.stories);
       setRecentStories(nextSnapshot.recentStories);
       setAssetCounts(nextSnapshot.assetCounts);
+      setFailedAssets(nextFailedAssets);
       setLoadFailed(false);
     } catch {
       if (!isCurrent()) return;
@@ -236,19 +244,19 @@ const Home = () => {
     {
       label: '世界书',
       description: '整理世界设定条目与角色关联',
-      count: assetCounts.worldbooks,
+      count: loadFailed || failedAssets.worldbooks ? '—' : assetCounts.worldbooks,
       onClick: () => navigate('/assets?tab=worldbook'),
     },
     {
       label: '预设',
       description: '复用提示词、顺序和生成参数',
-      count: assetCounts.presets,
+      count: loadFailed || failedAssets.presets ? '—' : assetCounts.presets,
       onClick: () => navigate('/presets'),
     },
     {
       label: '正则',
       description: '管理聊天清理与替换规则',
-      count: assetCounts.regexes,
+      count: loadFailed || failedAssets.regexes ? '—' : assetCounts.regexes,
       onClick: () => navigate('/assets?tab=regex'),
     },
   ];
@@ -343,6 +351,11 @@ const Home = () => {
                     />
                   ))}
                 </div>
+              ) : loadFailed && recentCharacters.length === 0 ? (
+                <div className="flex-1 min-h-0 rounded-xl bg-chrome p-6 flex flex-col items-center justify-center gap-1.5 text-center">
+                  <p className="text-sm text-muted-foreground">暂时无法显示角色列表</p>
+                  <p className="text-xs text-muted-foreground/70">请点上方「重试」重新读取你的收藏</p>
+                </div>
               ) : recentCharacters.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-chrome p-6 flex flex-col items-center justify-center gap-1.5 text-center">
                   <Users className="w-8 h-8 text-muted-foreground/40" />
@@ -393,6 +406,10 @@ const Home = () => {
               </div>
               {loading ? (
                 <StoryListSkeleton className={cn(!isMobile && 'flex-1 min-h-0')} count={isMobile ? 3 : 4} />
+              ) : loadFailed && recentStories.length === 0 ? (
+                <div className="flex-1 min-h-0 rounded-xl bg-elevated-strong p-5 text-center flex flex-col items-center justify-center">
+                  <p className="text-sm text-muted-foreground">暂时无法显示最近故事</p>
+                </div>
               ) : recentStories.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-elevated-strong p-5 text-center flex flex-col items-center justify-center">
                   <BookOpenText className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" />

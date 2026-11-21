@@ -12,8 +12,9 @@ import type { RemoveOptions } from '@/lib/repo';
  * 点卡 → 对应工具页 `?assetId=` 打开编辑。删除有确认。
  * 不设"快照"类别（2026-07-29 拍板：设计稿误解，待对接 ST 用户目录后再扩类别）。
  */
-import { useState, useEffect, useMemo, useCallback, useRef, type ChangeEvent } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore, type ChangeEvent } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import {
   Globe,
   Regex as RegexIcon,
@@ -153,6 +154,7 @@ const AssetLibrary = () => {
   const [regexes, setRegexes] = useState<RegexCollectionItem[]>([]);
   /** assetId → 引用它的角色名列表（绑定关系展示 + 删除提示） */
   const [refNames, setRefNames] = useState<Record<string, string[]>>({});
+  const [refLoadFailed, setRefLoadFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [toDelete, setToDelete] = useState<AssetLibraryRow | null>(null);
@@ -162,16 +164,19 @@ const AssetLibrary = () => {
 
   const load = useCallback(async () => {
     setLoadError(null);
+    setRefLoadFailed(false);
     setLoading(true);
     try {
+      let charIndexFailed = false;
       const [wbs, rs, chars] = await Promise.all([
         getAllWorldBooks(),
         getAllRegexCollections(),
-        // 引用名称是附加信息；索引失败不应抹掉已经成功读取的资产列表。
-        listCharacterIndex().catch(() => []),
+        // 引用名称是附加信息；索引失败不应抹掉已经成功读取的资产列表，但要给出可见降级提示。
+        listCharacterIndex().catch(() => { charIndexFailed = true; return []; }),
       ]);
       setWorldbooks(wbs);
       setRegexes(rs);
+      setRefLoadFailed(charIndexFailed);
       const names: Record<string, string[]> = {};
       for (const c of chars) {
         for (const ref of c.assets ?? []) (names[ref.assetId] ??= []).push(c.name);
@@ -386,6 +391,12 @@ const AssetLibrary = () => {
               ))}
             </div>
 
+            {!loading && !loadError && refLoadFailed && (
+              <div role="status" className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                <span>角色引用关系暂时没能读取出来，「已被引用 / 未被引用」筛选可能不完整。</span>
+                <Button size="sm" variant="outline" onClick={() => void load()}>重新读取</Button>
+              </div>
+            )}
             {loading ? (
               <p className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</p>
             ) : loadError ? (
@@ -477,7 +488,7 @@ const AssetLibrary = () => {
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
                           <span className="text-[9.5px] tracking-wide text-[color:var(--text-muted)]">引用角色</span>
-                          <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{refs.length}</span>
+                          <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{refLoadFailed ? '—' : refs.length}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
                           <span className="text-[9.5px] tracking-wide text-[color:var(--text-muted)]">STE 最后修改</span>
@@ -495,7 +506,7 @@ const AssetLibrary = () => {
                       <div className="flex items-center gap-1.5 flex-wrap text-[10.5px] text-[color:var(--text-muted)] min-h-5">
                         <Link2 className="w-3 h-3 shrink-0" />
                         {refs.length === 0 ? (
-                          <span>未被角色引用</span>
+                          <span>{refLoadFailed ? '引用状态暂未读出' : '未被角色引用'}</span>
                         ) : (
                           <>
                             {refs.slice(0, 2).map((n) => (
@@ -526,7 +537,9 @@ const AssetLibrary = () => {
         title={`删除「${toDelete?.title ?? ''}」？`}
         description={`条目将从列表移除。${(toDelete && (refNames[toDelete.id]?.length ?? 0) > 0)
           ? `该资产被 ${refNames[toDelete.id].length} 张角色卡引用，删除后角色页会显示“引用已失效”并可一键移除。`
-          : '该资产当前没有角色引用。'}`}
+          : refLoadFailed
+            ? '角色引用信息暂时未知。删除后若有角色引用，角色页会显示失效引用。'
+            : '该资产当前没有角色引用。'}`}
         onOpenChange={(open) => !open && setToDelete(null)}
         fileTarget={toDelete ? { store: tab === 'worldbook' ? 'worldbooks' : 'regexes', id: toDelete.id } : undefined}
         onConfirm={handleDelete}
@@ -537,6 +550,7 @@ const AssetLibrary = () => {
 
 export default function AssetLibraryRoute() {
   const [params] = useSearchParams();
+  const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
   if (params.get('tab') === 'preset') return <Navigate to={presetLibraryRedirect(params.toString())} replace />;
-  return <AssetLibrary />;
+  return <AssetLibrary key={epoch} />;
 }

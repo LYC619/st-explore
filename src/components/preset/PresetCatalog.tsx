@@ -214,6 +214,12 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
         </div>
         {batchMode && <div className="flex flex-wrap items-center gap-3 rounded-lg bg-[var(--brand-active-bg)] px-3 py-2 text-xs shrink-0"><label className="flex items-center gap-2"><Checkbox aria-label="选择当前筛选结果" checked={!!filtered.length && filtered.every(item => checked.includes(item.id))} onCheckedChange={value => setChecked(value ? filtered.map(item => item.id) : [])} />全选当前结果</label><span>已选 {checked.length} 份 · 点击卡片选择系列</span><Button size="sm" variant="outline" disabled={!checked.length || dirty} onClick={() => { setBulkOpen(true); setBulkErrors([]); }}>整理所选</Button><Button size="sm" variant="outline" disabled={!checked.length || busy} onClick={() => request(() => setDeleteIds([...checked]))}><Trash2 className="w-3.5 h-3.5 mr-1" />删除所选</Button></div>}
     {error && <p role="alert" className="text-sm text-destructive">{error}<Button variant="ghost" onClick={() => void load()}>重新读取</Button></p>}
+    {!loading && !error && references === null && (
+      <div role="status" className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground shrink-0">
+        <span>角色引用统计暂时未能读取，预设内容本身不受影响。</span>
+        <Button size="sm" variant="ghost" onClick={() => void load()}>重试</Button>
+      </div>
+    )}
     <div className={`flex-1 min-h-0 grid gap-4 ${view.selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]' : ''}`}>
       <div ref={scrollRef} className={`min-h-0 overflow-y-auto pb-3 pr-1 ${view.selected ? 'hidden xl:block' : ''}`} onScroll={e => { const scroll = e.currentTarget.scrollTop; setView(value => ({ ...value, scroll })); }}>
         {loading ? <p className="p-8 text-sm text-center text-muted-foreground">正在读取预设库…</p> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '选择作者的 JSON 和配套文件，模型与版本会先帮你识别。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}

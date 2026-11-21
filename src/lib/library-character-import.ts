@@ -21,6 +21,7 @@ export interface PreparedLibraryCharacterImport {
   fileName: string;
   kind: 'character-card' | 'blank-image';
   character: ArchiveCharacter;
+  warning?: string;
 }
 
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10] as const;
@@ -155,11 +156,15 @@ export async function prepareLibraryCharacterFile(file: File): Promise<PreparedL
       };
     }
     try {
-      const card = extractCharacterFromPngBuffer(buffer);
+      let warning: string | undefined;
+      const card = extractCharacterFromPngBuffer(buffer, {
+        onWarning: (msg) => { warning = msg; },
+      });
       return {
         fileName: file.name,
         kind: 'character-card',
         character: buildCharacterFromCard(card, bytesToBase64(new Uint8Array(buffer))),
+        ...(warning ? { warning } : {}),
       };
     } catch (error) {
       if (!isMissingCardMetadataError(error)) throw error;

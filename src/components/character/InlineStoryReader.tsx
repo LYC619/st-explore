@@ -21,7 +21,7 @@ import {
 } from '@/lib/archive-db';
 import { getDefaultExportSettings, normalizeAppearanceSettings } from '@/lib/session-storage';
 import { StoryDraftSaver, flushBeforeStoryTransition } from '@/lib/story-draft-save';
-import { useToast } from '@/hooks/use-toast';
+import { toast as globalToast, useToast } from '@/hooks/use-toast';
 import { useViewport } from '@/hooks/use-viewport';
 import { cn } from '@/lib/utils';
 import { LOADING_LABEL } from '@/lib/ui-copy';
@@ -126,7 +126,13 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
     return () => clearTimeout(t);
   }, [story, toast]);
   useEffect(() => () => {
-    void saverRef.current.flush().catch(() => {});
+    void saverRef.current.flush().catch((error: unknown) => {
+      globalToast({
+        title: '离开阅读器时保存进度未成功',
+        description: error instanceof Error ? error.message : '请检查文件库目录是否可写',
+        variant: 'destructive',
+      });
+    });
   }, []);
 
   // 加载 + 记 lastViewedAt（切换故事 id 时重挂）
@@ -179,7 +185,16 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         if (isCurrent()) setLoading(false);
       }
     })();
-    return () => { cancelled = true; void loadedSaver?.flush().catch(() => {}); };
+    return () => {
+      cancelled = true;
+      void loadedSaver?.flush().catch((error: unknown) => {
+        globalToast({
+          title: '切换故事时保存改动未成功',
+          description: error instanceof Error ? error.message : '请检查文件库目录是否可写',
+          variant: 'destructive',
+        });
+      });
+    };
   }, [storyId, initialBranchId, toast, retry]);
 
   const transitionAfterFlush = useCallback(async (transition: () => void) => {

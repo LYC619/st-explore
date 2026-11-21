@@ -35,6 +35,7 @@ import { StoryCardView } from '@/components/story-tree/StoryCardView';
 import { StoryTimeline } from '@/components/story-tree/StoryTimeline';
 import { StoryNodeEditor } from '@/components/story-tree/StoryNodeEditor';
 import { AIFillDialog } from '@/components/story-tree/AIFillDialog';
+import { toast } from '@/hooks/use-toast';
 
 /** 撤销栈上限：结构操作（增/删/移/AI 应用）才进栈，文本输入不进 */
 const UNDO_LIMIT = 50;
@@ -87,9 +88,18 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     latestRef.current = { nodes: nextNodes, title: nextTitle, dirty: true };
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
-      latestRef.current.dirty = false;
-      await saveStoryTree(buildItem(nextNodes, nextTitle));
-      onChanged();
+      try {
+        await saveStoryTree(buildItem(nextNodes, nextTitle));
+        latestRef.current.dirty = false;
+        onChanged();
+      } catch (error) {
+        latestRef.current.dirty = true;
+        toast({
+          title: '故事树自动保存未成功',
+          description: error instanceof Error ? error.message : '请检查文件库目录是否可写，稍后继续编辑会自动重试',
+          variant: 'destructive',
+        });
+      }
     }, 600);
   }, [buildItem, onChanged]);
 
@@ -97,7 +107,17 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const { nodes: n, title: t, dirty } = latestRef.current;
-    if (dirty) saveStoryTree(buildItem(n, t)).then(onChanged).catch(() => {});
+    if (dirty) {
+      saveStoryTree(buildItem(n, t))
+        .then(onChanged)
+        .catch((error: unknown) => {
+          toast({
+            title: '离开页面时故事树保存未成功',
+            description: error instanceof Error ? error.message : '请重新打开故事树检查最新改动',
+            variant: 'destructive',
+          });
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -246,14 +266,14 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
                   <Sparkles className="w-3.5 h-3.5" />AI 生成
                 </Button>
               )}
-              <Button variant="ghost" size="icon" title="撤销 (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
+              <Button variant="ghost" size="icon" aria-label="撤销" title="撤销 (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
                 <Undo2 className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" title="重做 (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo}>
+              <Button variant="ghost" size="icon" aria-label="重做" title="重做 (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo}>
                 <Redo2 className="w-4 h-4" />
               </Button>
               <Select value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
-                <SelectTrigger className="h-7 w-[92px] text-xs" title="切换视图">
+                <SelectTrigger aria-label="切换故事树视图" className="h-7 w-[92px] text-xs" title="切换视图">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -265,10 +285,10 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
               </Select>
               {viewMode === 'tree' && (
                 <>
-                  <Button variant="ghost" size="icon" title="全部展开" onClick={expandAll}>
+                  <Button variant="ghost" size="icon" aria-label="全部展开" title="全部展开" onClick={expandAll}>
                     <ChevronsUpDown className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" title="全部折叠" onClick={collapseAll}>
+                  <Button variant="ghost" size="icon" aria-label="全部折叠" title="全部折叠" onClick={collapseAll}>
                     <ChevronsDownUp className="w-4 h-4" />
                   </Button>
                 </>
@@ -296,6 +316,9 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
                 />
                 {query && (
                   <button
+                    type="button"
+                    aria-label="清空搜索"
+                    title="清空搜索"
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     onClick={() => setQuery('')}
                   >

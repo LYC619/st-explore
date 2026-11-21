@@ -102,11 +102,18 @@ function decodeBase64Utf8(b64: string): string {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
+function isPlainCardObject(value: unknown): value is STCharacterCard {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * 从 PNG 读取所有 tEXt chunk，返回 keyword→value(原始 base64 文本) 映射。
  * 同名 keyword 取最后一个（与 ST 实际行为一致）。
  */
 function readPngTextChunks(buffer: ArrayBuffer): Map<string, string> {
+  if (buffer.byteLength < 8) {
+    throw new Error('不是有效的 PNG 文件');
+  }
   const view = new DataView(buffer);
   for (let i = 0; i < 8; i++) {
     if (view.getUint8(i) !== PNG_SIGNATURE[i]) {
@@ -115,8 +122,16 @@ function readPngTextChunks(buffer: ArrayBuffer): Map<string, string> {
   }
   const chunks = new Map<string, string>();
   let offset = 8;
+  let sawIend = false;
   while (offset < buffer.byteLength) {
+    if (offset + 12 > buffer.byteLength) {
+      throw new Error('PNG 文件不完整或已损坏');
+    }
     const length = view.getUint32(offset);
+    const nextOffset = offset + 12 + length;
+    if (nextOffset > buffer.byteLength) {
+      throw new Error('PNG 文件不完整或已损坏');
+    }
     const typeBytes = new Uint8Array(buffer, offset + 4, 4);
     const type = String.fromCharCode(...typeBytes);
     if (type === 'tEXt') {
@@ -131,42 +146,88 @@ function readPngTextChunks(buffer: ArrayBuffer): Map<string, string> {
         chunks.set(keyword, value); // 后写覆盖前写 = 最后一个 wins
       }
     }
-    offset += 12 + length;
-    if (type === 'IEND') break;
+    offset = nextOffset;
+    if (type === 'IEND') {
+      sawIend = true;
+      break;
+    }
+  }
+  if (!sawIend) {
+    throw new Error('PNG 文件不完整或已损坏');
   }
   return chunks;
 }
 
+export interface ExtractCharacterPngOptions {
+  onWarning?: (warning: string) => void;
+}
+
+export class MissingCardMetadataError extends Error {
+  readonly code = 'MISSING_CARD_METADATA' as const;
+  constructor(message = 'PNG 文件中未找到角色卡数据（缺少 chara / ccv3 tEXt 块）') {
+    super(message);
+    this.name = 'MissingCardMetadataError';
+  }
+}
+
 /** 从 PNG 提取角色卡原始对象。ccv3 优先，回退 chara。 */
-export async function extractCharacterFromPng(file: File): Promise<STCharacterCard> {
-  return extractCharacterFromPngBuffer(await file.arrayBuffer());
+export async function extractCharacterFromPng(
+  file: File,
+  options?: ExtractCharacterPngOptions,
+): Promise<STCharacterCard> {
+  return extractCharacterFromPngBuffer(await file.arrayBuffer(), options);
 }
 
 /**
  * 同上，但直接吃 ArrayBuffer——客户端从文件库/ST 目录读出的 PNG 没有 File 对象
  * （2.0 阶段7.3 首次接入 ST 用），与 extractCharacterFromPng 共用同一套解析。
  */
-export function extractCharacterFromPngBuffer(buffer: ArrayBuffer): STCharacterCard {
+export function extractCharacterFromPngBuffer(
+  buffer: ArrayBuffer,
+  options?: ExtractCharacterPngOptions,
+): STCharacterCard {
   const chunks = readPngTextChunks(buffer);
 
+  let ccv3ParseFailed = false;
   const ccv3 = chunks.get('ccv3');
   if (ccv3) {
     try {
-      return JSON.parse(decodeBase64Utf8(ccv3)) as STCharacterCard;
+      const parsed = JSON.parse(decodeBase64Utf8(ccv3)) as unknown;
+      if (!isPlainCardObject(parsed)) throw new Error('invalid ccv3 payload');
+      return parsed;
     } catch {
-      // ccv3 损坏则回退 chara
+      ccv3ParseFailed = true;
     }
   }
   const chara = chunks.get('chara');
   if (chara) {
-    return JSON.parse(decodeBase64Utf8(chara)) as STCharacterCard;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(decodeBase64Utf8(chara));
+    } catch {
+      throw new Error('这张 PNG 角色卡内的人设数据已损坏，无法读取设定内容');
+    }
+    if (!isPlainCardObject(parsed)) {
+      throw new Error('这张 PNG 角色卡内的人设数据格式不正确');
+    }
+    if (ccv3ParseFailed) {
+      options?.onWarning?.('这张卡的 V3 扩展设定损坏，已自动回退读取 V2 基础设定（部分新字段可能缺失）');
+    }
+    return parsed;
   }
-  throw new Error('PNG 文件中未找到角色卡数据（缺少 chara / ccv3 tEXt 块）');
+  if (ccv3ParseFailed) {
+    throw new Error('这张 PNG 角色卡内的 V3 设定数据已损坏，无法读取人设内容');
+  }
+  throw new MissingCardMetadataError();
 }
 
-/** 判定「PNG 无卡元数据」错误：调用方以此区分可转空白卡的普通图片；文案变更时同步维护此处。 */
+/** 判定「PNG 无卡元数据」错误：调用方以此区分可转空白卡的普通图片。 */
 export function isMissingCardMetadataError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('缺少 chara / ccv3');
+  if (error instanceof MissingCardMetadataError) return true;
+  return error instanceof Error && (
+    (error as { code?: string }).code === 'MISSING_CARD_METADATA'
+    || error.message.includes('缺少 chara / ccv3')
+  );
 }
 
 /** 探测卡版本 */

@@ -678,6 +678,7 @@ const CharacterPage = () => {
             {/* 关联资产 tab（10.3c：宽抽屉预览 + 引用条目 + 导入/读取内置入口） */}
             <TabsContent value="assets" className="mt-3">
               <AssetSection
+                key={character.id}
                 character={character}
                 onAssetsChange={async (assets) => {
                   await patchCharacter({ assets });

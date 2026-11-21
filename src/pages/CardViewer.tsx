@@ -70,6 +70,7 @@ export default function CardViewer() {
   const [fileName, setFileName] = useState('character');
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
   const [savedItems, setSavedItems] = useState<CardItem[]>([]);
+  const [savedLoadError, setSavedLoadError] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<CardItem | null>(null);
   const [showTour, setShowTour] = useState(false);
   // 立绘显示用 URL：PNG 卡=原图 data URL；JSON 卡=avatar(若为 http/data URL)；否则 null（不显示）
@@ -78,7 +79,12 @@ export default function CardViewer() {
   const pngBytesRef = useRef<ArrayBuffer | null>(null);
 
   const refreshSaved = useCallback(async () => {
-    try { setSavedItems(await getAllCards()); } catch { /* ignore */ }
+    try {
+      setSavedItems(await getAllCards());
+      setSavedLoadError(false);
+    } catch {
+      setSavedLoadError(true);
+    }
   }, []);
 
   // 首次访问自动引导
@@ -105,9 +111,17 @@ export default function CardViewer() {
   }, []);
 
   const loadCardItem = useCallback((item: CardItem) => {
-    setCardState(item.card, item.title, item.pngBase64 ? base64ToAb(item.pngBase64) : null);
-    setCurrentItemId(item.id);
-  }, [setCardState]);
+    try {
+      setCardState(item.card, item.title, item.pngBase64 ? base64ToAb(item.pngBase64) : null);
+      setCurrentItemId(item.id);
+    } catch (error) {
+      toast({
+        title: '打开角色卡未成功',
+        description: error instanceof Error ? error.message : '这张已存卡片的图片或内容已损坏',
+        variant: 'destructive',
+      });
+    }
+  }, [setCardState, toast]);
 
   // URL 深链优先；无深链且没有待处理文件时，才恢复上次打开的角色卡。
   useEffect(() => {
@@ -127,12 +141,29 @@ export default function CardViewer() {
 
     if (restoreId) {
       getCard(restoreId).then((item) => {
-        if (!cancelled && item) loadCardItem(item);
-      }).catch(() => { /* ignore */ });
+        if (cancelled) return;
+        if (item) {
+          loadCardItem(item);
+        } else if (assetId) {
+          toast({
+            title: '没找到这张已存角色卡',
+            description: '它可能已被删除，你可以重新拖入或选择一张角色卡文件',
+            variant: 'destructive',
+          });
+        }
+      }).catch((err) => {
+        if (!cancelled) {
+          toast({
+            title: assetId ? '读取角色卡失败' : '恢复上次打开的角色卡失败',
+            description: err instanceof Error ? err.message : '请检查文件库连接，或从「已存角色卡」重新选择',
+            variant: 'destructive',
+          });
+        }
+      });
     }
 
     return () => { cancelled = true; };
-  }, [assetId, loadCardItem, refreshSaved]);
+  }, [assetId, loadCardItem, refreshSaved, toast]);
 
   useEffect(() => {
     try {
@@ -146,9 +177,12 @@ export default function CardViewer() {
     try {
       let raw: STCharacterCard;
       let png: ArrayBuffer | null = null;
+      let parseWarning: string | undefined;
       if (lower.endsWith('.png')) {
         png = await file.arrayBuffer();
-        raw = await extractCharacterFromPng(file);
+        raw = await extractCharacterFromPng(file, {
+          onWarning: (warning) => { parseWarning = warning; },
+        });
       } else if (lower.endsWith('.json')) {
         raw = parseCharacterCardJson(await file.text());
       } else {
@@ -166,7 +200,10 @@ export default function CardViewer() {
         await pruneAutoSavedCards(5);
         await refreshSaved();
       })().catch(() => { /* 自动历史失败不阻塞 */ });
-      toast({ title: '角色卡导入成功', description: png ? 'PNG 卡，可编辑并导出 PNG/JSON' : 'JSON 卡，可编辑并导出 JSON' });
+      toast({
+        title: parseWarning ? '角色卡已按兼容模式读入' : '角色卡导入成功',
+        description: parseWarning ?? (png ? 'PNG 卡，可编辑并导出 PNG/JSON' : 'JSON 卡，可编辑并导出 JSON'),
+      });
     } catch (e) {
       toast({ title: '解析失败', description: e instanceof Error ? e.message : '文件不是有效的角色卡', variant: 'destructive' });
     }
@@ -244,8 +281,16 @@ export default function CardViewer() {
   const handleExportPng = useCallback(() => {
     const edited = buildEditedCard();
     if (!edited || !pngBytesRef.current) return;
-    download(embedCharaInPngBlob(pngBytesRef.current, edited), `${sanitizeFilename(fileName)}.png`, 'image/png');
-  }, [buildEditedCard, fileName]);
+    try {
+      download(embedCharaInPngBlob(pngBytesRef.current, edited), `${sanitizeFilename(fileName)}.png`, 'image/png');
+    } catch (error) {
+      toast({
+        title: '导出 PNG 角色卡未成功',
+        description: error instanceof Error ? error.message : '原图数据可能已损坏，可先导出 JSON 备份人设',
+        variant: 'destructive',
+      });
+    }
+  }, [buildEditedCard, fileName, toast]);
 
   const handleSave = useCallback(async () => {
     const edited = buildEditedCard();
@@ -253,16 +298,24 @@ export default function CardViewer() {
     const id = currentItemId || generateCardId();
     const now = Date.now();
     const png = pngBytesRef.current;
-    await saveCard({
-      id, title: fileName, card: edited,
-      pngBase64: png ? abToBase64(png) : undefined,
-      createdAt: currentItemId ? (savedItems.find((s) => s.id === id)?.createdAt ?? now) : now,
-      updatedAt: now,
-      autoSaved: false,
-    });
-    setCurrentItemId(id);
-    await refreshSaved();
-    toast({ title: '已保存', description: '可在「已存角色卡」中查看；永久留存、纳入完整备份' });
+    try {
+      await saveCard({
+        id, title: fileName, card: edited,
+        pngBase64: png ? abToBase64(png) : undefined,
+        createdAt: currentItemId ? (savedItems.find((s) => s.id === id)?.createdAt ?? now) : now,
+        updatedAt: now,
+        autoSaved: false,
+      });
+      setCurrentItemId(id);
+      await refreshSaved();
+      toast({ title: '已保存', description: '可在「已存角色卡」中查看；永久留存、纳入完整备份' });
+    } catch (error) {
+      toast({
+        title: '保存角色卡未成功',
+        description: error instanceof Error ? error.message : '请检查存储空间或文件库目录是否可写，也可先点导出留存文件',
+        variant: 'destructive',
+      });
+    }
   }, [buildEditedCard, currentItemId, fileName, savedItems, refreshSaved, toast]);
 
   const handleDeleteItem = useCallback(async (options: RemoveOptions) => {
@@ -290,6 +343,12 @@ export default function CardViewer() {
         </PopoverTrigger>
         <PopoverContent className="w-80" align="end">
           <h4 className="text-sm font-medium mb-2">已存角色卡（{savedItems.length}）</h4>
+          {savedLoadError && (
+            <div role="alert" className="mb-2 flex items-center justify-between rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
+              <span>读取历史卡片未成功</span>
+              <button type="button" className="underline" onClick={() => void refreshSaved()}>重试</button>
+            </div>
+          )}
           <ScrollArea className="max-h-72">
             <div className="space-y-1">
               {savedItems.map((item) => (
@@ -301,7 +360,7 @@ export default function CardViewer() {
                   <button className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>删除</button>
                 </div>
               ))}
-              {savedItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">暂无</p>}
+              {!savedLoadError && savedItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">暂无</p>}
             </div>
           </ScrollArea>
         </PopoverContent>

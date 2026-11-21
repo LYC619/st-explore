@@ -98,7 +98,7 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
         }
 
         if (messages.length === 0) {
-          throw new Error('角色卡中没有可导入的消息内容（无 first_mes）');
+          throw new Error('角色卡里还没有填写开场白，暂时没有可导入的对话内容');
         }
 
         const session: ChatSession = {
@@ -119,28 +119,84 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
       // TXT 对话导入时的强制命名：user=用户选中的姓名，char=第一位非用户说话人
       let txtUser: string | undefined;
       let txtChar: string | undefined;
-      const isTxt = file.name.endsWith('.txt');
+      const lowerName = file.name.toLowerCase();
+      const isTxt = lowerName.endsWith('.txt');
+      let skippedCorruptLines = 0;
+
+      const isStJsonObject = (val: unknown): val is Record<string, unknown> => (
+        typeof val === 'object'
+        && val !== null
+        && !Array.isArray(val)
+        && (
+          'user_name' in val
+          || 'character_name' in val
+          || 'chat_metadata' in val
+          || 'mes' in val
+          || 'is_user' in val
+          || 'create_date' in val
+        )
+      );
 
       if (isTxt && !forceTxtFormat) {
-        // Check if it's actually JSONL (ST exports .txt as JSONL sometimes)
-        const firstLine = content.trim().split('\n')[0];
+        const nonEmptyLines = content
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter(Boolean);
+        const firstLine = nonEmptyLines[0] ?? '';
+        let handledAsStructured = false;
         try {
-          JSON.parse(firstLine);
-          // It's JSONL disguised as .txt
-          const result = parseJsonl(content);
-          messages = result.messages;
-          metadata = result.metadata;
+          const parsedFirst = JSON.parse(firstLine);
+          if (isStJsonObject(parsedFirst)) {
+            const result = parseJsonl(content);
+            if (result.messages.length > 0) {
+              messages = result.messages;
+              metadata = result.metadata;
+              skippedCorruptLines = result.diagnostics.invalidLines;
+              handledAsStructured = true;
+            }
+          }
         } catch {
-          // It's a real TXT file, ask for format
+          // 可能是缩进多行 JSON 改了 .txt 后缀：先尝试整体 JSON 解析
+          const trimmed = content.trim();
+          if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+            try {
+              const jsonResult = parseJson(content);
+              if (jsonResult.messages.length > 0) {
+                messages = jsonResult.messages;
+                metadata = jsonResult.metadata;
+                handledAsStructured = true;
+              }
+            } catch {
+              // 不是合法多行 JSON，继续检查是否为首行损坏的 JSONL
+            }
+          }
+
+          if (!handledAsStructured) {
+            const sampleLines = nonEmptyLines.slice(1, 6);
+            const jsonObjectLines = sampleLines.filter((line) => line.startsWith('{') && line.endsWith('}'));
+            if (jsonObjectLines.length >= 2 && jsonObjectLines.some((line) => /"(?:mes|is_user|user_name|chat_metadata)"/.test(line))) {
+              const recovered = parseJsonl(nonEmptyLines.slice(1).join('\n'));
+              if (recovered.messages.length > 0) {
+                messages = recovered.messages;
+                metadata = recovered.metadata;
+                skippedCorruptLines = recovered.diagnostics.invalidLines + 1;
+                handledAsStructured = true;
+              } else {
+                throw new Error('这份文件看起来是酒馆导出的聊天记录，但内部格式已损坏，无法读取消息');
+              }
+            } else if (firstLine.startsWith('{') && /"(?:user_name|character_name|chat_metadata|mes)"/.test(content.slice(0, 800))) {
+              throw new Error('这份聊天记录的 JSON 行格式不完整（可能复制或下载时被截断），请重新导出后再试');
+            }
+          }
+        }
+
+        if (!handledAsStructured) {
           setPendingTxtFile(file);
-          // ponytail: 预扫描只取前两位说话人做默认值——ST 导出首楼通常是角色开场白，
-          // 故第 1 位预填角色、第 2 位预填用户；猜反了用户在输入框里对调即可，最终以输入框为准。
           const stats = scanTxtSpeakerStats(content);
           setDialogueCharName(stats[0]?.name ?? 'AI');
           setDialogueUserName(stats[1]?.name ?? 'User');
           setSpeakerStats([...stats].sort((a, b) => b.count - a.count));
-          // 默认只勾预填的这两位：噪音前缀通常只出现几次，一股勾上就又是满屏假角色
-          setPickedSpeakers(new Set(stats.slice(0, 2).map(s => s.name)));
+          setPickedSpeakers(new Set(stats.slice(0, 2).map((s) => s.name)));
           setTxtFormatDialog(true);
           return;
         }
@@ -154,28 +210,44 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
         } else {
           messages = parseTxtNovel(content);
         }
-      } else if (file.name.endsWith('.jsonl')) {
+      } else if (lowerName.endsWith('.jsonl')) {
         const result = parseJsonl(content);
         messages = result.messages;
         metadata = result.metadata;
-      } else if (file.name.endsWith('.json')) {
+        skippedCorruptLines = result.diagnostics.invalidLines;
+      } else if (lowerName.endsWith('.json')) {
         const result = parseJson(content);
         messages = result.messages;
         metadata = result.metadata;
       } else {
         // Auto-detect
         if (content.trim().startsWith('[') || content.trim().startsWith('{')) {
-          const result = parseJson(content);
-          messages = result.messages;
-          metadata = result.metadata;
+          try {
+            const result = parseJson(content);
+            messages = result.messages;
+            metadata = result.metadata;
+          } catch {
+            const result = parseJsonl(content);
+            messages = result.messages;
+            metadata = result.metadata;
+            skippedCorruptLines = result.diagnostics.invalidLines;
+          }
         } else {
           const result = parseJsonl(content);
           messages = result.messages;
           metadata = result.metadata;
+          skippedCorruptLines = result.diagnostics.invalidLines;
         }
       }
 
       if (messages.length === 0) throw new Error('文件里没有找到可导入的消息（可能格式不符或内容为空）');
+
+      if (skippedCorruptLines > 0) {
+        toast({
+          title: `已恢复可用对话（跳过 ${skippedCorruptLines} 行损坏内容）`,
+          description: '原文件中部分行可能被截断，其余有效楼层均已正常读入',
+        });
+      }
 
       // Compute swipes statistics
       let swipesRemoved = 0;

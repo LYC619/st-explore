@@ -1,13 +1,9 @@
 /**
- * 角色卡主页 · 关联资产 tab（阶段5 引用制；10.3c 宽抽屉预览 + 引用条目 + 导入/读取内置入口）。
- * 列表：三类资产（世界书/预设/正则，引用制）+ 引用摘录（quotes）
- *   + 关联文件（attachments，0830 条目 6：发布页 html、同人视频这类任意文件，客户端专有）；
- * 点条目开右侧宽抽屉逐条预览，明确点「在编辑器中打开」才进工具区（带角色上下文 → 写时复制）。
- *
- * 关联文件的预览分档见 lib/attachment-store：图片/JSON/文本内部预览（html 只给源码，
- * 不内嵌渲染、不执行脚本），音视频与其他二进制交给系统默认程序。
+ * 角色卡主页 · 关联资产 tab：
+ * 三类资产（世界书/预设/正则，引用制）+ 引用摘录（quotes）+ 关联文件（attachments）。
+ * 右侧预览抽屉与删除确认弹窗拆至 AssetPreviewSheet。
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Globe,
@@ -22,26 +18,17 @@ import {
   Search,
   Paperclip,
   ExternalLink,
-  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import {
-  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
-} from '@/components/ui/sheet';
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import type {
   ArchiveCharacter,
   AssetKind,
   AssetRef,
-  DerivedAssetMeta,
   QuoteAsset,
   STAssetRelation,
 } from '@/types/archive';
@@ -64,29 +51,7 @@ import {
   type AttachmentView,
 } from '@/lib/attachment-store';
 import { formatArchiveBytes } from '@/lib/vault/other-assets';
-import { AttachmentPreview } from '@/components/character/AttachmentPreview';
-
-/** 抽屉里的一条预览（世界书条目/提示词块/正则规则/引用段落） */
-interface AssetEntry {
-  title?: string;
-  /** 触发词/正则等（mono 小字） */
-  keys?: string;
-  body?: string;
-}
-
-/** 列表统一视图：三类资产 + 引用摘录 + 关联文件 */
-interface AssetView {
-  kind: AssetKind | 'quote' | 'file';
-  id: string;
-  title: string;
-  updatedAt: number;
-  derived?: DerivedAssetMeta;
-  entries: AssetEntry[];
-  count: number;
-  relations?: STAssetRelation[];
-  /** kind='file' 专有：附件的路径、档位与缺失状态 */
-  file?: AttachmentView;
-}
+import { AssetPreviewSheet, type AssetView } from './AssetPreviewSheet';
 
 const PREVIEW_LIMIT = 8;
 
@@ -105,45 +70,66 @@ const KIND_META: Record<AssetView['kind'], { label: string; icon: typeof Globe; 
   file: { label: '文件', icon: Paperclip, toolPath: '', unit: '' },
 };
 
-/** 引用制的三类资产：有派生/共享区分，能进工具区处理。quote 和 file 都不是。 */
 function isLibraryAsset(kind: AssetView['kind']): kind is AssetKind {
   return kind !== 'quote' && kind !== 'file';
 }
 
 interface AssetSectionProps {
   character: ArchiveCharacter;
-  /** 引用增删后回写角色档案 */
   onAssetsChange: (assets: AssetRef[]) => Promise<void>;
-  /** 引用摘录变更回写 */
   onQuotesChange: (quotes: QuoteAsset[]) => Promise<void>;
-  /** 关联文件变更回写（patch 由 attachment-store 生成，含删文件的副作用） */
   onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter>;
-  /** 重扫卡内嵌世界书/正则入库挂关联（与操作抽屉同一动作） */
   onReadEmbedded: () => Promise<void>;
-  /** 打开统一导入弹窗（预选世界书类） */
   onOpenImport: () => void;
 }
 
-export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatch, onReadEmbedded, onOpenImport }: AssetSectionProps) {
+export function AssetSection({
+  character,
+  onAssetsChange,
+  onQuotesChange,
+  onPatch,
+  onReadEmbedded,
+  onOpenImport,
+}: AssetSectionProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [library, setLibrary] = useState<AssetView[]>([]);
+  const [libraryLoaded, setLibraryLoaded] = useState(false);
+  const [failedKinds, setFailedKinds] = useState<ReadonlySet<AssetKind>>(() => new Set());
+  const [attachmentLoadFailed, setAttachmentLoadFailed] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState('');
   const [preview, setPreview] = useState<AssetView | null>(null);
   const [quoteToDelete, setQuoteToDelete] = useState<QuoteAsset | null>(null);
   const [fileToDelete, setFileToDelete] = useState<AttachmentView | null>(null);
-  const [deleteAttachmentFile, setDeleteAttachmentFile] = useState(false);
-  useEffect(() => { setDeleteAttachmentFile(false); }, [fileToDelete?.id]);
   const [deletingFile, setDeletingFile] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentView[]>([]);
+  const loadSeqRef = useRef(0);
+  const attachSeqRef = useRef(0);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  useEffect(() => {
+    setPreview(null);
+    setAddOpen(false);
+    setQuoteToDelete(null);
+    setFileToDelete(null);
+    setAttachments([]);
+  }, [character.id]);
 
   const loadLibrary = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    const failed = new Set<AssetKind>();
     const [wbs, presets, regexes] = await Promise.all([
-      getAllWorldBooks().catch(() => []),
-      getAllPresets().catch(() => []),
-      getAllRegexCollections().catch(() => []),
+      getAllWorldBooks().catch(() => { failed.add('worldbook'); return []; }),
+      getAllPresets().catch(() => { failed.add('preset'); return []; }),
+      getAllRegexCollections().catch(() => { failed.add('regex'); return []; }),
     ]);
+    if (!mountedRef.current || seq !== loadSeqRef.current) return;
     const views: AssetView[] = [
       ...wbs.map((w): AssetView => {
         const entries = Object.values<WorldBookEntry>(w.worldbook?.entries ?? {});
@@ -175,23 +161,35 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
         count: r.rules.length,
       })),
     ];
+    setFailedKinds(failed);
     setLibrary(views);
+    setLibraryLoaded(true);
   }, []);
 
   useEffect(() => {
     void loadLibrary();
   }, [loadLibrary, character.assets]);
 
-  // 附件视图要过一次磁盘（核对文件还在不在、体积多少），所以不能直接从 character 派生
-  useEffect(() => {
-    let cancelled = false;
-    void loadAttachmentViews(character)
-      .then((next) => { if (!cancelled) setAttachments(next); })
-      .catch(() => { if (!cancelled) setAttachments([]); });
-    return () => { cancelled = true; };
+  const reloadAttachments = useCallback(async () => {
+    const seq = ++attachSeqRef.current;
+    setAttachmentLoadFailed(false);
+    try {
+      const next = await loadAttachmentViews(character);
+      if (!mountedRef.current || seq !== attachSeqRef.current) return;
+      setAttachments(next);
+    } catch {
+      if (!mountedRef.current || seq !== attachSeqRef.current) return;
+      setAttachments([]);
+      setAttachmentLoadFailed(true);
+    }
   }, [character]);
 
-  const refs = character.assets ?? [];
+  useEffect(() => {
+    void reloadAttachments();
+    return () => { attachSeqRef.current += 1; };
+  }, [reloadAttachments]);
+
+  const refs = useMemo(() => character.assets ?? [], [character.assets]);
   const quotes = character.quotes ?? [];
   const linked: AssetView[] = refs.flatMap((ref): AssetView[] => {
     const asset = library.find((a) => a.kind === ref.kind && a.id === ref.assetId);
@@ -205,7 +203,6 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
       count: quotePreview.count,
     };
   });
-  // 两者都是环境能力，渲染期取即可：一次会话里不会从网页版切成客户端
   const canAttach = attachmentsSupported();
   const canOpenExternally = externalOpenSupported();
   const fileViews = attachments.map((file): AssetView => ({
@@ -213,21 +210,22 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
     entries: [], count: 0, file,
   }));
   const items = [...linked, ...quoteViews, ...fileViews];
-  // 引用里有、库里已删的（提示失效引用可移除）
-  const broken = refs.filter((ref) => !library.some((a) => a.kind === ref.kind && a.id === ref.assetId));
+  const broken = libraryLoaded
+    ? refs.filter((ref) => !failedKinds.has(ref.kind) && !library.some((a) => a.kind === ref.kind && a.id === ref.assetId))
+    : [];
   const unresolved = character.unresolvedAssets ?? [];
-  const linkable = library.filter((a) => !refs.some((r) => r.kind === a.kind && r.assetId === a.id));
+  const linkable = useMemo(
+    () => library.filter((a) => !refs.some((r) => r.kind === a.kind && r.assetId === a.id)),
+    [library, refs],
+  );
 
-  // 添加引用面板：按名字搜 + 按类分组。资产库一多，一条 flat 列表根本找不到东西。
   const addGroups = useMemo(() => {
     const q = addQuery.trim().toLowerCase();
     const hit = q ? linkable.filter((a) => a.title.toLowerCase().includes(q)) : linkable;
     return (['worldbook', 'preset', 'regex'] as const)
       .map((kind) => ({ kind, assets: hit.filter((a) => a.kind === kind) }))
       .filter((g) => g.assets.length > 0);
-    // linkable 每次渲染都是新数组，用它当依赖等于不记忆；库和引用变了才要重算
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addQuery, library, refs]);
+  }, [addQuery, linkable]);
 
   const handleAdd = async (a: AssetView) => {
     try {
@@ -261,7 +259,6 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
     navigate(`${KIND_META[a.kind].toolPath}?assetId=${encodeURIComponent(a.id)}&characterId=${encodeURIComponent(character.id)}`);
   };
 
-  /** 交给系统默认程序 / 在文件管理器里定位。失败原因原样给出来（多半是没有关联程序）。 */
   const handleOpenExternally = async (file: AttachmentView, reveal: boolean) => {
     try {
       await openAttachmentExternally(file.characterId, file.id, reveal);
@@ -274,7 +271,6 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
     }
   };
 
-  /** 删附件：文件进回收站 + 撤记录，一起走 attachment-store 的 patch */
   const handleDeleteFile = async (file: AttachmentView, deleteFile = true) => {
     if (deletingFile || file.characterId !== character.id) return;
     setDeletingFile(true);
@@ -282,18 +278,20 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
       await removeAttachment(file.characterId, file.id, deleteFile, (_id, updater) => onPatch(updater));
       setFileToDelete(null);
       if (preview?.kind === 'file' && preview.file?.id === file.id) setPreview(null);
-      toast({ title: `已移除关联文件「${file.title}」`, description: deleteFile ? (getActiveVault()?.fs.trashFile ? '文件已放进系统回收站' : '文件已删除') : '已移除记录，文件未删除' });
+      toast({
+        title: `已移除关联文件「${file.title}」`,
+        description: deleteFile ? (getActiveVault()?.fs.trashFile ? '文件已放进系统回收站' : '文件已删除') : '已移除记录，文件未删除',
+      });
     } catch (error) {
       toast({
         title: '移除关联文件失败',
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
-      // A file deletion may have succeeded before metadata failed. Refresh its missing state.
       const refreshed = await loadAttachmentViews(character).catch(() => null);
       if (refreshed) {
         setAttachments(refreshed);
-        setFileToDelete(refreshed.find(item => item.id === file.id) ?? null);
+        setFileToDelete(refreshed.find((item) => item.id === file.id) ?? null);
       }
     } finally {
       setDeletingFile(false);
@@ -321,12 +319,24 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
           </PopoverTrigger>
           <PopoverContent className="w-[26rem] p-3" align="end">
             <p className="text-sm font-medium mb-2">从资产库选择</p>
-            {linkable.length === 0 ? (
+            {!libraryLoaded ? (
+              <p className="text-xs text-muted-foreground">正在读取资产库…</p>
+            ) : linkable.length === 0 && failedKinds.size > 0 ? (
+              <div className="space-y-2 text-xs text-muted-foreground">
+                <p>部分资产目录（{[...failedKinds].map((k) => KIND_META[k].label).join('、')}）暂时没能读取出来。</p>
+                <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>重新读取</Button>
+              </div>
+            ) : linkable.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 资产库里没有可关联的条目。先在处理区的世界书/预设/正则工具里保存资产。
               </p>
             ) : (
               <div className="space-y-2">
+                {failedKinds.size > 0 && (
+                  <p className="text-[11px] text-[color:var(--status-warn)]">
+                    注：{[...failedKinds].map((k) => KIND_META[k].label).join('、')}暂未读取成功，仅列出已读出的资产。
+                  </p>
+                )}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                   <Input
@@ -338,8 +348,6 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
                     autoFocus
                   />
                 </div>
-                {/* ScrollArea 的 viewport 是 h-full，只给 max-h 等于没给高度：内容超了直接被裁掉，
-                    滚不动（0830 反馈条目 5）。定高才有可滚的视口。 */}
                 <ScrollArea className="h-72 -mx-1 px-1">
                   {addGroups.length === 0 ? (
                     <p className="py-6 text-center text-xs text-muted-foreground">没有匹配「{addQuery}」的资产</p>
@@ -355,6 +363,7 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
                             return (
                               <button
                                 key={`${a.kind}-${a.id}`}
+                                type="button"
                                 className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent/40 text-sm text-left"
                                 onClick={() => void handleAdd(a)}
                               >
@@ -378,7 +387,22 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
         </Popover>
       </div>
 
-      {items.length === 0 && broken.length === 0 && unresolved.length === 0 ? (
+      {failedKinds.size > 0 && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-[color:var(--text-body)]">
+          <span>
+            部分资产目录（{[...failedKinds].map((k) => KIND_META[k].label).join('、')}）暂时没能读取出来，对应关联不会误标为失效。
+          </span>
+          <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>重新读取</Button>
+        </div>
+      )}
+      {attachmentLoadFailed && (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-[color:var(--text-body)]">
+          <span>关联文件状态暂时没能读取出来，原文件仍保存在库里。</span>
+          <Button variant="outline" size="sm" onClick={() => void reloadAttachments()}>重新读取</Button>
+        </div>
+      )}
+
+      {items.length === 0 && broken.length === 0 && unresolved.length === 0 && failedKinds.size === 0 && !attachmentLoadFailed ? (
         <p className="text-xs text-muted-foreground">
           还没有关联资产。角色用到的世界书/预设/正则可以在这里挂引用；在角色上下文里修改共享资产时，
           会自动生成「资产名_{character.name}」的派生副本，不影响其他角色。摘录、语料片段可从「导入资产」进来
@@ -393,8 +417,17 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
             return (
               <div
                 key={`${a.kind}-${a.id}`}
-                className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:border-primary/40 transition-colors cursor-pointer"
+                role="button"
+                tabIndex={0}
+                className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:border-primary/40 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => setPreview(a)}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setPreview(a);
+                  }
+                }}
                 title="点击查看条目预览"
               >
                 <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -490,126 +523,28 @@ export function AssetSection({ character, onAssetsChange, onQuotesChange, onPatc
         </div>
       )}
 
-      {/* 宽抽屉：条目预览（设计稿 side wide）；明确点「在编辑器中打开」才进工具区 */}
-      <Sheet open={!!preview} onOpenChange={(v) => { if (!v) setPreview(null); }}>
-        <SheetContent side="right" className="w-full sm:max-w-xl flex flex-col">
-          {preview && (
-            <>
-              <SheetHeader>
-                <SheetDescription>
-                  {KIND_META[preview.kind].label}
-                  {preview.derived && ' · 派生副本'}
-                  {' · '}
-                  {formatFullTime(preview.updatedAt)}
-                </SheetDescription>
-                <SheetTitle>{preview.title}</SheetTitle>
-                <SheetDescription>
-                  {preview.file
-                    ? `${preview.file.path} · ${formatArchiveBytes(preview.file.actualSize)}`
-                    : `共 ${preview.count} 个${KIND_META[preview.kind].unit}`}
-                </SheetDescription>
-              </SheetHeader>
-              <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-2.5 mt-2">
-                {preview.file ? (
-                  <AttachmentPreview file={preview.file} />
-                ) : (
-                  <>
-                    {preview.entries.map((e, i) => (
-                      <div key={i} className="rounded-lg border border-border bg-card px-3 py-2.5">
-                        {e.title && <p className="text-sm font-medium mb-1">{e.title}</p>}
-                        {e.keys && <p className="text-xs text-muted-foreground font-mono mb-1.5 break-all">{e.keys}</p>}
-                        {e.body && <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">{e.body}</p>}
-                      </div>
-                    ))}
-                    {preview.count > preview.entries.length && (
-                      <p className="text-xs text-muted-foreground/70 text-center pb-2">
-                        …还有 {preview.count - preview.entries.length} 个{KIND_META[preview.kind].unit}，在编辑器中查看全部
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                <Button variant="outline" onClick={() => setPreview(null)}>关闭</Button>
-                {isLibraryAsset(preview.kind) && (
-                  <Button onClick={() => openEditor(preview)}>
-                    <Wrench className="w-4 h-4 mr-1.5" />
-                    在编辑器中打开
-                  </Button>
-                )}
-                {preview.file && !preview.file.missing && canOpenExternally && (
-                  <>
-                    <Button variant="outline" onClick={() => void handleOpenExternally(preview.file!, true)}>
-                      <FolderOpen className="w-4 h-4 mr-1.5" />
-                      在文件管理器中显示
-                    </Button>
-                    <Button onClick={() => void handleOpenExternally(preview.file!, false)}>
-                      <ExternalLink className="w-4 h-4 mr-1.5" />
-                      用外部程序打开
-                    </Button>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* 引用删除确认（真删数据，与移除资产引用不同） */}
-      <AlertDialog open={!!quoteToDelete} onOpenChange={(v) => !v && setQuoteToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>删除引用「{quoteToDelete?.title}」？</AlertDialogTitle>
-            <AlertDialogDescription>引用是这张卡自己的摘录数据，删除后无法恢复。</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (quoteToDelete) {
-                  const target = quoteToDelete;
-                  void onQuotesChange(quotes.filter((q) => q.id !== target.id))
-                    .then(() => {
-                      setQuoteToDelete(null);
-                      toast({ title: `已删除引用「${target.title}」` });
-                    })
-                    .catch(() => {});
-                }
-              }}
-            >
-              删除
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* 关联文件移除确认：文件进回收站，与「移除资产引用」不同，说清楚动的是真文件 */}
-      <AlertDialog open={!!fileToDelete} onOpenChange={(v) => !v && !deletingFile && setFileToDelete(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>移除关联文件「{fileToDelete?.title}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fileToDelete?.missing ? '文件已缺失，仅移除这张卡上的附件记录。' : '记录会从这张卡上移除。不勾选时，附件文件保留在原位置，可在设置的文件检查中查看。'}
-              <br />
-              <span className="font-mono text-[11px] break-all">{fileToDelete?.resolvedPath ?? fileToDelete?.path}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {!fileToDelete?.missing && <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={deleteAttachmentFile} disabled={deletingFile} onChange={event => setDeleteAttachmentFile(event.target.checked)} />
-            同时删除 STE 库内文件
-          </label>}
-          {deleteAttachmentFile && <p className="text-xs text-muted-foreground">{getActiveVault()?.fs.trashFile ? '文件将移入系统回收站。' : '当前平台不支持系统回收站，文件将永久删除。'}</p>}
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFile}>取消</AlertDialogCancel>
-            <AlertDialogAction disabled={deletingFile} onClick={(event) => {
-              event.preventDefault();
-              if (fileToDelete) void handleDeleteFile(fileToDelete, !fileToDelete.missing && deleteAttachmentFile);
-            }}>
-              {fileToDelete?.missing ? '仅移除失效记录' : '移除'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <AssetPreviewSheet
+        preview={preview}
+        onClosePreview={() => setPreview(null)}
+        kindLabels={KIND_META}
+        canOpenExternally={canOpenExternally}
+        onOpenEditor={openEditor}
+        onOpenExternally={(file, reveal) => { void handleOpenExternally(file, reveal); }}
+        quoteToDelete={quoteToDelete}
+        onCloseQuoteDelete={() => setQuoteToDelete(null)}
+        onConfirmQuoteDelete={(target) => {
+          void onQuotesChange(quotes.filter((q) => q.id !== target.id))
+            .then(() => {
+              setQuoteToDelete(null);
+              toast({ title: `已删除引用「${target.title}」` });
+            })
+            .catch(() => {});
+        }}
+        fileToDelete={fileToDelete}
+        deletingFile={deletingFile}
+        onCloseFileDelete={() => setFileToDelete(null)}
+        onConfirmFileDelete={(file, deletePhysical) => { void handleDeleteFile(file, deletePhysical); }}
+      />
     </div>
   );
 }

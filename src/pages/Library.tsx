@@ -35,16 +35,7 @@ import { CharacterListRow } from '@/components/library/CharacterListRow';
 import { CharacterActionsMenu } from '@/components/library/CharacterActionsMenu';
 import { Button } from '@/components/ui/button';
 import { CharacterGridSkeleton, RefreshIndicator } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { LibraryWebExportConfirmDialog } from '@/components/library/LibraryWebExportConfirmDialog';
 import { useToast } from '@/hooks/use-toast';
 import { useLibraryViewPrefs } from '@/hooks/use-library-view-prefs';
 import { useLibrarySelection } from '@/hooks/use-library-selection';
@@ -52,10 +43,13 @@ import {
   getHideUnusedLibraryTags,
   LIBRARY_DISPLAY_SETTINGS_EVENT,
 } from '@/lib/local-settings';
-import { downloadCharacterFile } from '@/lib/character-file';
-import { downloadCharactersInBatch, WEB_BATCH_DOWNLOAD_LIMIT } from '@/lib/character-web-download';
-import { exportCharactersToDirectory } from '@/lib/character-batch-export';
-import { createTauriFs, isTauri, pickDirectory } from '@/lib/vault/tauri-fs';
+import {
+  exportBatchCharactersToDesktop,
+  exportSingleCharacterFromLibrary,
+  isTauri,
+  runWebBatchCharacterDownload,
+  WEB_BATCH_DOWNLOAD_LIMIT,
+} from '@/lib/library-export-actions';
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
 import {
   CHARACTER_TYPES,
@@ -287,12 +281,14 @@ const Library = () => {
 
       const failed = pendingImport.failures.length + failedDuringSave;
       const blankCount = pendingImport.items.filter((item) => item.kind === 'blank-image').length;
+      const warningMessages = pendingImport.items.flatMap((item) => item.warning ? [`${item.fileName}：${item.warning}`] : []);
       await load();
       setPendingImport(null);
       toast({
         title: `导入完成：成功 ${ok} 张${failed ? `，失败 ${failed} 张` : ''}`,
         description: [
-          blankCount > 0 ? `其中 ${blankCount} 张普通图片已创建为空白 V2 角色卡。` : undefined,
+          blankCount > 0 ? `其中 ${blankCount} 张普通图片已转为空白角色卡。` : undefined,
+          warningMessages.length > 0 ? warningMessages[0] : undefined,
           firstSaveError ? `失败原因：${firstSaveError}` : undefined,
         ].filter(Boolean).join(' ') || undefined,
         variant: failed > 0 && ok === 0 ? 'destructive' : undefined,
@@ -326,23 +322,14 @@ const Library = () => {
     }
   };
 
-  /** 网页版：串行发起下载并据实报告结果（超出上限的先经确认，只下前一批） */
   const runWebExport = async (targets: ArchiveCharacter[]) => {
     setBatchExporting(true);
     try {
-      const result = await downloadCharactersInBatch(targets);
-      if (result.failed.length === 0) {
-        toast({
-          title: `已请求下载 ${result.downloaded.length} 张角色卡`,
-          description: '浏览器可能会询问是否允许多个下载文件。',
-        });
-        return;
-      }
+      await runWebBatchCharacterDownload(targets, toast);
+    } catch (error) {
       toast({
-        title: result.downloaded.length > 0
-          ? `已请求下载 ${result.downloaded.length} 张，${result.failed.length} 张失败`
-          : `下载失败：${result.failed.length} 张均未开始`,
-        description: result.failed.slice(0, 3).map((f) => `${f.name}：${f.error}`).join('\n'),
+        title: '下载未成功',
+        description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
     } finally {
@@ -350,12 +337,10 @@ const Library = () => {
     }
   };
 
-  /** 客户端选择一个目录后等待真实写入结果；网页版保留浏览器下载降级。 */
   const handleBatchExport = async () => {
     const targets = characters.filter((c) => selection.selected.has(c.id));
     if (targets.length === 0 || batchExporting) return;
     if (!isTauri()) {
-      // 超过上限先问一句：浏览器连续下载几十个文件会开始拦截，闷头发起等于静默丢文件
       if (targets.length > WEB_BATCH_DOWNLOAD_LIMIT) {
         setPendingWebExport(targets);
         return;
@@ -366,33 +351,10 @@ const Library = () => {
 
     setBatchExporting(true);
     try {
-      const root = await pickDirectory('选择角色卡导出文件夹');
-      if (!root) {
-        toast({ title: '已取消导出', description: '没有写入任何文件。' });
-        return;
-      }
-      const result = await exportCharactersToDirectory(targets, createTauriFs(root));
-      if (result.failed.length === 0) {
-        toast({
-          title: `已导出 ${result.exported.length} 张角色卡`,
-          description: `保存到：${root}`,
-        });
-        return;
-      }
-      const detail = result.failed
-        .slice(0, 3)
-        .map((item) => `${item.fileName}：${item.error}`)
-        .join('\n');
-      toast({
-        title: result.exported.length > 0
-          ? `已导出 ${result.exported.length} 张，${result.failed.length} 张失败`
-          : `导出失败：${result.failed.length} 张均未写入`,
-        description: detail,
-        variant: 'destructive',
-      });
+      await exportBatchCharactersToDesktop(targets, toast);
     } catch (error) {
       toast({
-        title: '导出失败',
+        title: '导出未成功',
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -402,34 +364,7 @@ const Library = () => {
   };
 
   const handleSingleExport = async (character: ArchiveCharacter) => {
-    if (!isTauri()) {
-      try {
-        const result = await downloadCharacterFile(character);
-        if (result !== 'cancelled') toast({ title: result === 'shared' ? '已分享角色卡' : `已请求下载「${displayCharacterName(character)}」` });
-      } catch (error) {
-        toast({ title: '导出失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
-      }
-      return;
-    }
-    try {
-      const root = await pickDirectory('选择角色卡导出文件夹');
-      if (!root) {
-        toast({ title: '已取消导出', description: '没有写入任何文件。' });
-        return;
-      }
-      const result = await exportCharactersToDirectory([character], createTauriFs(root));
-      if (result.failed.length === 0) {
-        toast({ title: `已导出「${displayCharacterName(character)}」`, description: `保存到：${root}` });
-      } else {
-        toast({ title: '导出失败', description: result.failed[0]?.error, variant: 'destructive' });
-      }
-    } catch (error) {
-      toast({
-        title: '导出失败',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    }
+    await exportSingleCharacterFromLibrary(character, toast);
   };
 
   const managedTagOptions = useMemo(
@@ -834,30 +769,11 @@ const Library = () => {
         fileTargets={pendingDelete?.map(c => ({ store: 'characters', id: c.id }))}
         onConfirm={handleConfirmDelete} confirmLabel="删除" />
 
-      <AlertDialog open={!!pendingWebExport} onOpenChange={(open) => !open && setPendingWebExport(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>网页版一次最多下载 {WEB_BATCH_DOWNLOAD_LIMIT} 张</AlertDialogTitle>
-            <AlertDialogDescription>
-              你选了 {pendingWebExport?.length ?? 0} 张。浏览器连续下载几十个文件会开始拦截，
-              继续将只下载前 {WEB_BATCH_DOWNLOAD_LIMIT} 张，其余请分批再来一次。
-              <span className="block mt-2">要一次导出整库，请用客户端——它是选一个文件夹直接写入，没有这个限制。</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                const batch = (pendingWebExport ?? []).slice(0, WEB_BATCH_DOWNLOAD_LIMIT);
-                setPendingWebExport(null);
-                void runWebExport(batch);
-              }}
-            >
-              下载前 {WEB_BATCH_DOWNLOAD_LIMIT} 张
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <LibraryWebExportConfirmDialog
+        targets={pendingWebExport}
+        onClose={() => setPendingWebExport(null)}
+        onConfirmBatch={(batch) => { void runWebExport(batch); }}
+      />
     </AppLayout>
   );
 };

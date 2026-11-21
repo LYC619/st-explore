@@ -26,7 +26,7 @@ import { StoryTreeWorkspace } from '@/components/organize/StoryTreeWorkspace';
 import { BindStoryDialog } from '@/components/chat/BindStoryDialog';
 import ReaderView from '@/components/reader/ReaderView';
 import NovelView from '@/components/reader/NovelView';
-import { useToast } from '@/hooks/use-toast';
+import { toast as globalToast, useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
@@ -87,8 +87,12 @@ const StoryWorkspace = () => {
   const [story, setStory] = useState<ArchiveStory | null>(null);
   const [character, setCharacter] = useState<ArchiveCharacter | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRetry, setLoadRetry] = useState(0);
   const [branchId, setBranchId] = useState<string | null>(null);
   const locationState = location.state as StoryWorkspaceLocationState | null;
+  const latestLocationStateRef = useRef(locationState);
+  latestLocationStateRef.current = locationState;
   const queryView = searchParams.get('view');
   // 角色页「导出/去处理区生成」带初始视图和来源脉络跳入（10.3b）
   const [view, setView] = useState<WorkspaceView>(() => {
@@ -144,12 +148,24 @@ const StoryWorkspace = () => {
   useEffect(() => {
     if (!story || !saverRef.current.isDirty()) return;
     const t = setTimeout(() => {
-      void saverRef.current.flush().catch(() => {});
+      void saverRef.current.flush().catch((error: unknown) => {
+        toast({
+          title: '保存故事未成功',
+          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          variant: 'destructive',
+        });
+      });
     }, 600);
     return () => clearTimeout(t);
-  }, [story]);
+  }, [story, toast]);
   useEffect(() => () => {
-    void saverRef.current.flush().catch(() => {});
+    void saverRef.current.flush().catch((error: unknown) => {
+      globalToast({
+        title: '离开页面时保存故事未成功',
+        description: error instanceof Error ? error.message : '请重新打开故事检查最新改动',
+        variant: 'destructive',
+      });
+    });
   }, []);
 
   // 加载故事 + 角色；记录 lastViewedAt（排序依据，不动 updatedAt）
@@ -158,16 +174,20 @@ const StoryWorkspace = () => {
     let cancelled = false;
     const epoch = getVaultEpoch();
     let loadedSaver: StoryDraftSaver | undefined;
+    setLoading(true);
+    setLoadError(null);
     (async () => {
       try {
         const s = await getArchiveStory(id);
         if (cancelled || epoch !== getVaultEpoch()) return;
         if (!s) {
+          storyRef.current = null;
           setStory(null);
           return;
         }
         setEditorStoryId(s.id);
-        const requestedBranchId = (location.state as { branchId?: string | null } | null)?.branchId;
+        const navState = latestLocationStateRef.current;
+        const requestedBranchId = navState?.branchId;
         const restoredBranchId = resolveInitialBranchId(s, requestedBranchId);
         setBranchId(restoredBranchId);
         const viewedAt = Date.now();
@@ -183,23 +203,64 @@ const StoryWorkspace = () => {
         saverRef.current = loadedSaver;
         saverRef.current.queueMutation(s.id, viewPatch);
         let withView: ArchiveStory = { ...s, ...viewPatch(s) };
-        const sourceFloor = (location.state as StoryWorkspaceLocationState | null)?.sourceFloor;
+        const sourceFloor = navState?.sourceFloor;
         const sourceLine = getBranchLine(withView, restoredBranchId);
-        if (Number.isSafeInteger(sourceFloor) && sourceFloor! >= 0 && sourceLine && sourceFloor! < sourceLine.session.messages.length)
+        if (Number.isSafeInteger(sourceFloor) && sourceFloor! >= 0 && sourceLine && sourceFloor! < sourceLine.session.messages.length) {
           withView = updateBranchLine(withView, restoredBranchId, { lastFloor: sourceFloor });
+          saverRef.current.queueMutation(s.id, (cur) => updateBranchLine(cur, restoredBranchId, { lastFloor: sourceFloor }));
+        }
         storyRef.current = withView;
         setStory(withView);
         setLoading(false);
         if (withView.characterId) {
-          const c = await getCharacter(withView.characterId);
+          const c = await getCharacter(withView.characterId).catch(() => null);
           if (!cancelled) setCharacter(c ?? null);
+        } else {
+          setCharacter(null);
+        }
+      } catch (error) {
+        if (!cancelled && epoch === getVaultEpoch()) {
+          storyRef.current = null;
+          setStory(null);
+          const msg = error instanceof Error ? error.message : '请检查文件库目录是否可读后重试';
+          setLoadError(msg);
+          toast({
+            title: '读取故事失败',
+            description: msg,
+            variant: 'destructive',
+          });
         }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; void loadedSaver?.flush().catch(() => {}); };
-  }, [id, location.state]);
+    return () => {
+      cancelled = true;
+      void loadedSaver?.flush().catch((error: unknown) => {
+        globalToast({
+          title: '切换故事时保存改动未成功',
+          description: error instanceof Error ? error.message : '请重新打开原故事检查最新改动',
+          variant: 'destructive',
+        });
+      });
+    };
+  }, [id, loadRetry, toast]);
+
+  // 同故事 id 下通过导航传入新的 branchId / sourceFloor 时原地定位，不重拉磁盘覆盖未保存草稿
+  useEffect(() => {
+    const current = storyRef.current;
+    if (!current || current.id !== id || !locationState) return;
+    const nextBranch = locationState.branchId !== undefined
+      ? resolveInitialBranchId(current, locationState.branchId)
+      : branchId;
+    if (nextBranch !== branchId) setBranchId(nextBranch);
+    const sf = locationState.sourceFloor;
+    const targetLine = getBranchLine(current, nextBranch);
+    if (Number.isSafeInteger(sf) && sf! >= 0 && targetLine && sf! < targetLine.session.messages.length && targetLine.lastFloor !== sf) {
+      mutateStory((cur) => updateBranchLine(cur, nextBranch, { lastFloor: sf }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, location.key]);
 
   // 当前脉络（主线或分支）的数据切片
   const line = story ? getBranchLine(story, branchId) : undefined;
@@ -311,6 +372,22 @@ const StoryWorkspace = () => {
     return (
       <AppLayout>
         <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">{LOADING_LABEL}</div>
+      </AppLayout>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <AppLayout>
+        <div role="alert" className="flex flex-col min-h-[50vh] items-center justify-center gap-3 text-center px-4">
+          <BookOpen className="w-12 h-12 text-muted-foreground/50" />
+          <p className="text-sm text-destructive">读取故事失败：{loadError}</p>
+          <p className="text-xs text-muted-foreground">这不是故事被删了，数据仍保存在库里，请重试读取。</p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setLoadRetry((v) => v + 1)}>重试读取</Button>
+            <Button variant="ghost" onClick={() => navigate('/library')}>返回角色库</Button>
+          </div>
+        </div>
       </AppLayout>
     );
   }

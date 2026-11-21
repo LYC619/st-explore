@@ -43,7 +43,7 @@ import {
   getDefaultExportSettings,
   saveSettings,
 } from '@/lib/session-storage';
-import { useToast } from '@/hooks/use-toast';
+import { toast as globalToast, useToast } from '@/hooks/use-toast';
 import {
   buildEditorChatPath,
   getEditorStoryId,
@@ -81,6 +81,7 @@ const Index = () => {
   const [novelStory, setNovelStory] = useState<ArchiveStory | null>(null);
   const [novelOpen, setNovelOpen] = useState(false);
   const [allStories, setAllStories] = useState<StoryIndexEntry[]>([]);
+  const [storiesLoadFailed, setStoriesLoadFailed] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StoryIndexEntry | null>(null);
   const [copyingStory, setCopyingStory] = useState<string | null>(null);
   // 处理区入口交接来的文件（挂载时取一次，交给 ChatImporter 自动解析）
@@ -96,8 +97,9 @@ const Index = () => {
   const refreshStories = useCallback(async () => {
     try {
       setAllStories(await listStoryIndex());
+      setStoriesLoadFailed(false);
     } catch {
-      setAllStories([]);
+      setStoriesLoadFailed(true);
     }
   }, []);
 
@@ -144,8 +146,14 @@ const Index = () => {
         return;
       }
       hydrateStory(story, pointer, routeBranchId);
-    }).catch(() => {
-      if (!cancelled && routeStoryId) toast({ title: '故事加载失败', variant: 'destructive' });
+    }).catch((err) => {
+      if (!cancelled) {
+        toast({
+          title: routeStoryId ? '故事加载失败' : '读取上次编辑的故事没成功',
+          description: err instanceof Error ? err.message : '可以从下方暂存列表重新选择故事打开',
+          variant: 'destructive',
+        });
+      }
     });
     return () => { cancelled = true; };
   }, [handoffFile, hydrateStory, routeStoryId, routeBranchId, showTour, toast]);
@@ -227,14 +235,34 @@ const Index = () => {
     });
   }, [currentStoryId, currentBranchId, favorites, markers, session, settings]);
 
+  const latestPersistRef = useRef(persistCurrentStory);
+  latestPersistRef.current = persistCurrentStory;
+
   useEffect(() => {
     if (!session || !currentStoryId) return;
     if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current);
     storySyncTimerRef.current = setTimeout(() => {
-      void persistCurrentStory().catch(error => { toast({ title: '聊天处理内容尚未保存', description: error instanceof Error ? error.message : '保存失败，请重试', variant: 'destructive' }); });
+      void persistCurrentStory().catch((error) => {
+        toast({
+          title: '聊天处理内容尚未保存',
+          description: error instanceof Error ? error.message : '保存失败，请重试',
+          variant: 'destructive',
+        });
+      });
     }, 800);
     return () => { if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current); };
   }, [currentStoryId, persistCurrentStory, session, toast]);
+
+  useEffect(() => () => {
+    if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current);
+    void latestPersistRef.current().catch((error: unknown) => {
+      globalToast({
+        title: '离开页面时保存暂存故事未成功',
+        description: error instanceof Error ? error.message : '请回到聊天处理页检查最新改动',
+        variant: 'destructive',
+      });
+    });
+  }, []);
 
   const handleImport = async (newSession: ChatSession, stats?: ImportStats) => {
     setSession(newSession);
@@ -261,7 +289,7 @@ const Index = () => {
           : stats.swipesBytesEstimate < 1024 * 1024
             ? `${(stats.swipesBytesEstimate / 1024).toFixed(1)} KB`
             : `${(stats.swipesBytesEstimate / (1024 * 1024)).toFixed(1)} MB`;
-        description = `导入 ${stats.totalMessages} 楼 · 发现 ${stats.swipesRemoved} 条 swipes（约 ${sizeStr}），导出时将自动清除`;
+        description = `导入 ${stats.totalMessages} 楼 · 发现 ${stats.swipesRemoved} 条多余备选回复（约 ${sizeStr}），导出时将自动精简`;
       }
       toast({ title: '导入成功', description });
     } catch (error) {
@@ -362,6 +390,10 @@ const Index = () => {
         setNovelStory(story ?? null);
       } catch {
         setNovelStory(null);
+        toast({
+          title: '未能读取当前故事的润色存档',
+          description: '小说视图已按预览模式打开，暂不支持写入润色记录',
+        });
       }
     } else {
       setNovelStory(null);
@@ -391,6 +423,12 @@ const Index = () => {
             </div>
 
             {/* 未绑定暂存列表：书架退役后，临时聊天的唯一入口 */}
+            {storiesLoadFailed && (
+              <div role="alert" className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-sm">
+                <span>暂存记录列表读取没成功，原有记录仍保存在库里。</span>
+                <Button variant="outline" size="sm" onClick={() => void refreshStories()}>重新读取</Button>
+              </div>
+            )}
             {unboundStories.length > 0 && (
               <div className="mt-8">
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">未绑定的暂存记录</h3>
@@ -398,8 +436,17 @@ const Index = () => {
                   {unboundStories.map((story) => (
                     <div
                       key={story.id}
-                      className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border card-elevated cursor-pointer hover:border-primary/50 transition-colors"
+                      role="button"
+                      tabIndex={0}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border card-elevated cursor-pointer hover:border-primary/50 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       onClick={() => void handleOpenStory(story)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          void handleOpenStory(story);
+                        }
+                      }}
                     >
                       <MessageSquare className="w-4 h-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">

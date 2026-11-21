@@ -35,16 +35,7 @@ progress.md
 # 一起翻出来，那批是有意不进仓库的。
 !.planning/mobile-client-design/progress.md
 
-# 参考资料：samples/ 与 st-source/（二进制/大文件/源码）不纳入仓库，
-# 但 st-docs/ 下的文字文档与顶层 *.md 要经 git 同步（含 Lovable 产出）。
-# git 无法在被忽略的目录内反选，故这里只忽略具体子内容、不忽略 _reference 目录本身。
-_reference/samples/
-_reference/st-source/
-_reference/projects/
-_reference/_archived-deadcode/
-_reference/summary/
-_reference/故事树优化参考/
-_reference/故事树优化.zip
+# 本地参考资料目录统一不入库（已由下方 /_reference/ 覆盖）
 
 # bun 锁文件：本项目用 npm(package-lock.json)，bun.lock 由 Lovable 环境产生，不纳入仓库
 bun.lock
@@ -81,8 +72,14 @@ scripts/*
 *复测清单*.md
 *.tsbuildinfo
 
-# User workspace
+# User workspace & shared local reading archive
 user/
+/.user/
+
+# Local cleanup archive & local research workspace
+/_archive/
+/.local/
+/.ccgui/
 
 # Local private library records and unreviewed historical evidence
 docs/private/

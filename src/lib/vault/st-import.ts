@@ -488,19 +488,20 @@ export async function scanSTUserDir(
   const quickReplyScan = await scanArchiveDir('QuickReplies');
   if (quickReplyScan) {
     let replyCount = 0;
+    let corruptedReplyFiles = 0;
     for (const file of quickReplyScan.files) {
       if (!file.path.toLowerCase().endsWith('.json')) continue;
       try {
         const json = JSON.parse(await fs.readText(file.path)) as { qrList?: unknown };
         if (Array.isArray(json.qrList)) replyCount += json.qrList.length;
       } catch {
-        // 文件仍会原样归档；损坏的集合只是不参与条目数统计。
+        corruptedReplyFiles += 1;
       }
     }
     addArchive({
       kind: 'quick-replies',
       label: '快速回复',
-      description: `${quickReplyScan.files.length} 套快速回复${replyCount ? ` · ${replyCount} 条内容` : ''}`,
+      description: `${quickReplyScan.files.length} 套快速回复${replyCount ? ` · ${replyCount} 条内容` : ''}${corruptedReplyFiles ? ` · ${corruptedReplyFiles} 个文件格式异常（仍原样归档）` : ''}`,
       itemCount: quickReplyScan.files.length,
       rootPath: quickReplyScan.rootPath,
       files: quickReplyScan.files,
