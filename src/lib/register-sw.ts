@@ -39,6 +39,7 @@ export function registerServiceWorker(): void {
     } catch {
       return; // 注册失败：应用照常运行，只是没有离线缓存
     }
+    if (!registration) return;
 
     const acceptUpdate = (waiting: ServiceWorker) => {
       // 只在用户主动接受时才监听接管并重载（一次性），避开首装 claim 触发的 controllerchange
