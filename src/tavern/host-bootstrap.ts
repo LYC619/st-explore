@@ -764,7 +764,7 @@ window.__STE_TAVERN_READY__ = () => { void loadUpstream('/script.js').then(async
     if (!installedHelper) await installHelperControls(await installHelperHost(host, st));
     window.__STE_TAVERN_STARTUP__('启动中：准备扩展管理控件…');
     await installExtensionControls(host, st); await installPackageControls(host); installManagementControls(); host.ready();
-}).catch(error => { window.__STE_TAVERN_STARTUP__(errorMessage(error) || String(error), true); toastr.error(errorMessage(error)); console.error(error); }); };
+}).catch(error => { window.__STE_TAVERN_STARTUP__(errorMessage(error) || String(error), true); toastr.error(errorMessage(error)); console.error('Tavern startup failed:', error instanceof Error ? error.name : 'UnknownError'); }); };
 // Blob module linking serves the user-installed browser build in WebViews as well as the browser.
 // Imported ST modules still resolve to the original, single module instance in this iframe.
 const extensionUrls = new Map<string, string>();

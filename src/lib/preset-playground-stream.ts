@@ -2,6 +2,7 @@ import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import { sendCompletion } from './roleplay/provider';
 import { monitorCompletion, type CompletionOutcome } from './roleplay/completion-monitor';
 import { waitForAbort } from './roleplay/abort';
+import { LLMError, statusCategory } from './llm/errors';
 
 /** Uses the roleplay transport (including native HTTP) and validates terminal SSE using its shared monitor. */
 export async function streamPresetPlayground(config: APIConfig, request: Record<string, unknown>, parentSignal: AbortSignal, onText: (text: string) => void, options: { idleTimeoutMs?: number; onReasoning?: () => void } = {}): Promise<string> {
@@ -27,8 +28,8 @@ async function consumePresetStream(config: APIConfig, request: Record<string, un
   });
   const response = await waitForAbort(pending, signal);
   if (!response.ok) {
-    const body = await waitForAbort(response.json().catch(() => null), signal);
-    throw new Error(body?.error?.message || `模型请求失败（HTTP ${response.status}）`);
+    await response.body?.cancel().catch(() => {});
+    throw new LLMError(statusCategory(response.status), { attempts: 1, status: response.status });
   }
   let outcome: CompletionOutcome | undefined;
   const streaming = response.headers.get('content-type')?.includes('text/event-stream') ?? false;

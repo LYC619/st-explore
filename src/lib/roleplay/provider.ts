@@ -3,6 +3,8 @@ import { parse as parseYaml } from 'yaml';
 import { isTauri } from '@/lib/runtime';
 import { postProcessPrompt } from './prompt-post-processing';
 import { reportDiagnostic } from '@/lib/diagnostics';
+import { detectProviderProtocol, resolveProviderAdapter } from '@/lib/llm/providers';
+import type { ChatCompletionMessage, SamplingParams, StructuredOutputSchema } from '@/lib/llm/types';
 
 const COMPLETION_FIELDS = new Set([
   'messages', 'temperature', 'top_p', 'frequency_penalty', 'presence_penalty',
@@ -31,6 +33,16 @@ export function customHeaders(value: unknown): Record<string, string> {
   return result;
 }
 
+function toChatMessages(messages: unknown[]): ChatCompletionMessage[] {
+  return messages.map(item => {
+    const record = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const rawRole = record.role;
+    const role: ChatCompletionMessage['role'] = rawRole === 'system' || rawRole === 'assistant' ? rawRole : 'user';
+    const content = typeof record.content === 'string' ? record.content : '';
+    return { role, content };
+  });
+}
+
 /** The final provider envelope. Cache validation uses this same function as the transport. */
 export function prepareCompletion(profile: APIConfig, request: Record<string, unknown>): {
   url: string; body: Record<string, unknown>; headers: Record<string, string>;
@@ -42,20 +54,72 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
   }
   if (!Array.isArray(request.messages)) throw new Error('模型请求缺少消息数组');
   if (request.enable_web_search || request.request_images) throw new Error('当前连接尚未接入联网搜索或模型生图选项');
+  const protocol = detectProviderProtocol(profile);
+  const processedMessages = postProcessPrompt(request.messages, request.custom_prompt_post_processing, request);
+  const extraHeaders = customHeaders(request.custom_include_headers);
+  const include = yaml(request.custom_include_body);
+  if (include != null && (typeof include !== 'object' || Array.isArray(include))) {
+    throw new Error('自定义请求体 YAML 必须是键值对象');
+  }
+  const exclude = yaml(request.custom_exclude_body);
+  // Some older preset exports use {} for an empty list. Nonempty maps are still invalid.
+  const emptyExclusion = exclude && typeof exclude === 'object' && !Array.isArray(exclude) && !Object.keys(exclude).length;
+  if (exclude != null && !emptyExclusion && (!Array.isArray(exclude) || exclude.some(key => typeof key !== 'string'))) {
+    throw new Error('排除字段 YAML 必须是字段名列表');
+  }
+
+  if (protocol !== 'openai') {
+    const adapter = resolveProviderAdapter(profile);
+    const params: SamplingParams = {};
+    if (typeof request.temperature === 'number') params.temperature = request.temperature;
+    if (typeof request.top_p === 'number') params.top_p = request.top_p;
+    if (typeof request.max_tokens === 'number') params.max_tokens = request.max_tokens;
+    const schemaInput = request.json_schema as { name?: unknown; strict?: unknown; value?: unknown } | undefined;
+    const responseSchema: StructuredOutputSchema | undefined = schemaInput && schemaInput.value && typeof schemaInput.value === 'object'
+      ? {
+        name: typeof schemaInput.name === 'string' && schemaInput.name ? schemaInput.name : 'response',
+        strict: typeof schemaInput.strict === 'boolean' ? schemaInput.strict : true,
+        schema: schemaInput.value as Record<string, unknown>,
+      }
+      : undefined;
+    const native = adapter.buildRequest({
+      config: profile,
+      messages: toChatMessages(processedMessages),
+      params,
+      stream: request.stream === true,
+      responseSchema,
+    });
+    const body: Record<string, unknown> = { ...native.body };
+    if (include != null) {
+      for (const [key, value] of Object.entries(include as Record<string, unknown>)) {
+        if (['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error('自定义请求体包含无效字段');
+        body[key] = value;
+      }
+    }
+    if (exclude != null && !emptyExclusion) {
+      for (const key of exclude as string[]) delete body[key];
+    }
+    if (protocol === 'anthropic') body.model = profile.model;
+    const headers = { ...extraHeaders, ...native.headers };
+    const promptProcessing = typeof request.custom_prompt_post_processing === 'string' && request.custom_prompt_post_processing
+      && !(include && typeof include === 'object' && Object.hasOwn(include, 'messages'))
+      ? { mode: request.custom_prompt_post_processing,
+        names: { user_name: request.user_name, char_name: request.char_name, group_names: request.group_names }, sourceMessages: structuredClone(request.messages) } : undefined;
+    return { url: native.url, body, headers, ...(promptProcessing ? { promptProcessing } : {}) };
+  }
+
   const body: Record<string, unknown> = { model: profile.model };
   for (const [key, value] of Object.entries(request)) {
     if (COMPLETION_FIELDS.has(key) && value !== undefined) body[key] = value;
   }
-  body.messages = postProcessPrompt(request.messages, request.custom_prompt_post_processing, request);
+  body.messages = processedMessages;
   // ST sends the requested probability count; Chat Completions uses a boolean + count.
   if (typeof request.logprobs === 'number' && request.logprobs > 0) {
     body.logprobs = true;
     body.top_logprobs = request.logprobs;
   }
-  const include = yaml(request.custom_include_body);
   if (include != null) {
-    if (typeof include !== 'object' || Array.isArray(include)) throw new Error('自定义请求体 YAML 必须是键值对象');
-    for (const [key, value] of Object.entries(include)) {
+    for (const [key, value] of Object.entries(include as Record<string, unknown>)) {
       if (['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error('自定义请求体包含无效字段');
       body[key] = value;
     }
@@ -64,17 +128,13 @@ export function prepareCompletion(profile: APIConfig, request: Record<string, un
     const schema = request.json_schema as { name?: unknown; strict?: unknown; value?: unknown };
     body.response_format = { type: 'json_schema', json_schema: { name: schema.name, strict: schema.strict ?? true, schema: schema.value } };
   }
-  const exclude = yaml(request.custom_exclude_body);
-  // Some older preset exports use {} for an empty list. Nonempty maps are still invalid.
-  const emptyExclusion = exclude && typeof exclude === 'object' && !Array.isArray(exclude) && !Object.keys(exclude).length;
   if (exclude != null && !emptyExclusion) {
-    if (!Array.isArray(exclude) || exclude.some(key => typeof key !== 'string')) throw new Error('排除字段 YAML 必须是字段名列表');
-    for (const key of exclude) delete body[key];
+    for (const key of exclude as string[]) delete body[key];
   }
   // A profile reference is the only authoritative model selection.
   body.model = profile.model;
   if (!Array.isArray(body.messages)) throw new Error('自定义请求不能移除消息数组');
-  const headers = { ...customHeaders(request.custom_include_headers), 'Content-Type': 'application/json',
+  const headers = { ...extraHeaders, 'Content-Type': 'application/json',
     ...(profile.apiKey ? { Authorization: `Bearer ${profile.apiKey}` } : {}) };
   const promptProcessing = typeof request.custom_prompt_post_processing === 'string' && request.custom_prompt_post_processing
     && !(include && typeof include === 'object' && Object.hasOwn(include, 'messages'))

@@ -1,3 +1,5 @@
+export type ProviderProtocol = 'openai' | 'anthropic' | 'gemini';
+
 export interface ChatCompletionMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -9,6 +11,11 @@ export interface SamplingParams {
     presence_penalty?: number;
     max_tokens?: number;
 }
+export interface StructuredOutputSchema {
+    name: string;
+    strict?: boolean;
+    schema: Record<string, unknown>;
+}
 export type CompletionWarning = 'truncated';
 export const COMPLETION_WARNING = '回复因长度限制被截断，已保留收到的内容；保存前请检查。';
 export interface CallOptions {
@@ -16,6 +23,7 @@ export interface CallOptions {
     onWarning?: (warning: CompletionWarning) => void;
     signal?: AbortSignal;
     params?: SamplingParams;
+    responseSchema?: StructuredOutputSchema;
     purpose?: 'probe';
     maxRetries?: number;
     firstByteMs?: number;

@@ -293,7 +293,7 @@ export function createVault(fs: VaultFs, options: VaultOptions = {}): VaultBacke
     if (notify) notifyRecordChanged(store, id);
   }
 
-  const warnSkip = (path: string, err: unknown) => console.warn(`[vault] 跳过无法读取的文件 ${path}:`, err);
+  const warnSkip = (_path: string, err: unknown) => console.warn('[vault] 跳过无法读取的文件:', err instanceof Error ? err.name : 'UnknownError');
 
   /** 目录整体改名后，把所有 store 里位于旧前缀下的索引路径同步搬过去 */
   function fixupPrefixes(from: string, to: string): void {

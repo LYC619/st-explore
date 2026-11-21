@@ -859,6 +859,6 @@ export async function moveRecordFile(fs: VaultFs, from: string, to: string, cont
     }
   }
   // Once the target is committed, cleanup errors must not make callers retry the logical move.
-  await finishRecordMove(fs, move, true).catch(error => console.warn('[vault] 移动已提交，恢复记录待清理', error));
+  await finishRecordMove(fs, move, true).catch(error => console.warn('[vault] 移动已提交，恢复记录待清理', error instanceof Error ? error.name : 'UnknownError'));
   } finally { active.delete(operationId); }
 }

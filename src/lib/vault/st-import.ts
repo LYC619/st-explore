@@ -419,7 +419,7 @@ export async function scanSTUserDir(
     } catch (err) {
       throwIfAborted(controls.signal);
       relationships = { status: 'invalid', settingsPath, globalWorldbooks: [], characterWorldbooks: [] };
-      console.warn(`[st-import] settings.json 解析失败，跳过世界书关系与全局正则:`, err);
+      console.warn('[st-import] settings.json 解析失败，跳过世界书关系与全局正则:', err instanceof Error ? err.name : 'UnknownError');
     }
   }
 
@@ -871,7 +871,7 @@ export async function importSelected(
       summary.worldbooks++;
       detail({ status: 'imported', kind: '世界书', name: wb.name, sourcePath: src, target: '资产/世界书' });
     } catch (err) {
-      console.warn(`[st-import] 世界书解析失败，跳过 ${wb.path}:`, err);
+      console.warn('[st-import] 世界书解析失败，跳过条目:', err instanceof Error ? err.name : 'UnknownError');
       summary.failed++;
       detail({ status: 'failed', kind: '世界书', name: wb.name, sourcePath: src });
     }
@@ -1067,7 +1067,7 @@ export async function importSelected(
         });
         if (saved) storyBySource.set(srcKey, saved);
       } catch (err) {
-        console.warn(`[st-import] 已有聊天的关系刷新失败，保留原关系 ${chat.path}:`, err);
+        console.warn('[st-import] 已有聊天的关系刷新失败，保留原关系:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: '聊天关系', name: chat.name, sourcePath: src });
       }
@@ -1094,7 +1094,7 @@ export async function importSelected(
       summary.stories++;
       detail({ status: 'imported', kind: '聊天', name: chat.name, sourcePath: src, target: characterId ? '角色故事' : '临时故事' });
     } catch (err) {
-      console.warn(`[st-import] 聊天解析失败，跳过 ${chat.path}:`, err);
+      console.warn('[st-import] 聊天解析失败，跳过条目:', err instanceof Error ? err.name : 'UnknownError');
       summary.failed++;
       detail({ status: 'failed', kind: '聊天', name: chat.name, sourcePath: src });
     }
@@ -1118,7 +1118,7 @@ export async function importSelected(
         primaryOverride = typeof value === 'string' && value.trim() ? value.trim() : null;
       } catch (err) {
         reconcilePrimary = false;
-        console.warn(`[st-import] 已有角色卡的主绑定刷新失败，保留原关系 ${c.pngPath}:`, err);
+        console.warn('[st-import] 已有角色卡的主绑定刷新失败，保留原关系:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: '角色卡关系', name: c.name, sourcePath: src });
       }
@@ -1145,7 +1145,7 @@ export async function importSelected(
         summary.characters++;
         detail({ status: 'imported', kind: '角色卡', name: c.name, sourcePath: src, target: '角色档案' });
       } catch (err) {
-        console.warn(`[st-import] 角色卡解析失败，其聊天降级为未绑定导入 ${c.pngPath}:`, err);
+        console.warn('[st-import] 角色卡解析失败，其聊天降级为未绑定导入:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: '角色卡', name: c.name, sourcePath: src });
       }
@@ -1194,7 +1194,7 @@ export async function importSelected(
       summary.presets++;
       detail({ status: 'imported', kind: '预设', name: p.name, sourcePath: src, target: '资产/预设' });
     } catch (err) {
-      console.warn(`[st-import] 预设解析失败，跳过 ${p.path}:`, err);
+      console.warn('[st-import] 预设解析失败，跳过条目:', err instanceof Error ? err.name : 'UnknownError');
       summary.failed++;
       detail({ status: 'failed', kind: '预设', name: p.name, sourcePath: src });
     }
@@ -1220,7 +1220,7 @@ export async function importSelected(
         summary.regexes++;
         detail({ status: 'imported', kind: '全局正则', name: 'ST 全局正则', sourcePath: src, target: '资产/正则' });
       } catch (err) {
-        console.warn(`[st-import] 全局正则解析失败，跳过 ${plan.regex.path}:`, err);
+        console.warn('[st-import] 全局正则解析失败，跳过条目:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: '全局正则', name: 'ST 全局正则', sourcePath: src });
       }
@@ -1242,7 +1242,7 @@ export async function importSelected(
         summary.archiveBytes += file.size;
         detail({ status: 'archived', kind: group.label, name: file.relativePath, sourcePath: src, target });
       } catch (err) {
-        console.warn(`[st-import] 原样归档失败 ${file.path}:`, err);
+        console.warn('[st-import] 原样归档失败:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: group.label, name: file.relativePath, sourcePath: src, target });
       }
@@ -1259,7 +1259,7 @@ export async function importSelected(
         summary.archiveBytes += file.size;
         detail({ status: 'archived', kind: group.label, name: file.relativePath, sourcePath: src, target });
       } catch (err) {
-        console.warn(`[st-import] 安全清单归档失败 ${file.relativePath}:`, err);
+        console.warn('[st-import] 安全清单归档失败:', err instanceof Error ? err.name : 'UnknownError');
         summary.failed++;
         detail({ status: 'failed', kind: group.label, name: file.relativePath, sourcePath: src, target });
       }
@@ -1286,7 +1286,7 @@ export async function importSelected(
         summary,
       }, null, 2));
     } catch (err) {
-      console.warn('[st-import] 写入导入说明/清单失败:', err);
+      console.warn('[st-import] 写入导入说明/清单失败:', err instanceof Error ? err.name : 'UnknownError');
       summary.failed++;
       detail({ status: 'failed', kind: '导入清单', name: '说明/SillyTavern 最近一次导入.json' });
     }

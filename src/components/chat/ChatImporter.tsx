@@ -224,7 +224,7 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
       };
       onImport(session, importStats);
     } catch (e) {
-      console.error('Import error:', e);
+      console.error('Import error:', e instanceof Error ? e.name : 'UnknownError');
       const msg = e instanceof Error ? e.message : '文件解析失败，请检查格式';
       setError(msg);
       toast({ title: '导入失败', description: msg, variant: 'destructive' });

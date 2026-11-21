@@ -88,7 +88,7 @@ export function parseJsonl(content: string): {
       });
     } catch {
       diagnostics.invalidLines++;
-      console.warn('Failed to parse line:', line);
+      console.warn('Failed to parse JSONL line at index:', i);
     }
   }
   return { messages, metadata, diagnostics };

@@ -265,7 +265,7 @@ const Index = () => {
       }
       toast({ title: '导入成功', description });
     } catch (error) {
-      console.error('Auto-save failed:', error);
+      console.error('Auto-save failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({ title: '自动暂存失败', variant: 'destructive' });
     }
   };
@@ -347,7 +347,7 @@ const Index = () => {
       });
       navigate(buildEditorChatPath(story.id) + (currentBranchId ? '&branch=' + encodeURIComponent(currentBranchId) : ''), { replace: true });
     } catch (error) {
-      console.error('Bind failed:', error);
+      console.error('Bind failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({ title: '绑定失败', variant: 'destructive' });
     }
   };

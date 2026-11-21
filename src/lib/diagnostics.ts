@@ -33,6 +33,10 @@ export function sanitizeDiagnostic(value: DiagnosticEvent): DiagnosticEvent {
     elapsedMs:numeric(value.elapsedMs),count:numeric(value.count),attempt:numeric(value.attempt),status:numeric(value.status)};
 }
 
+export function safeErrorTag(error: unknown): string {
+  return error instanceof Error ? (error.name || 'Error') : 'UnknownError';
+}
+
 export function diagnosticForError(error: unknown, operation = 'error', location?: string): DiagnosticEvent {
   // Even unquoted parse errors may contain private text. Keep only a known error type and hashed callsite.
   const name = error instanceof Error ? error.name : '';

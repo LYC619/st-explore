@@ -2,7 +2,8 @@ import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import { providerFetch } from '@/lib/roleplay/provider';
 import { reportDiagnostic } from '@/lib/diagnostics';
 import { embeddedCategory, LLMError, statusCategory } from './errors';
-import type { CallOptions, ChatCompletionMessage, CompletionResult, FetchTransport } from './types';
+import { resolveProviderAdapter, type ProviderAdapter } from './providers';
+import type { CallOptions, ChatCompletionMessage, CompletionResult, FetchTransport, ProviderProtocol } from './types';
 const ABORTED = Symbol('llm-aborted');
 const DEFAULTS = { firstByteMs: 300000, idleMs: 180000, totalMs: 600000 };
 const MAX_RETRY_WAIT = 300000;
@@ -46,22 +47,12 @@ function retryAfter(value: string | null): number | undefined {
     const date = Date.parse(value);
     return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
 }
-function bodyFor(config: APIConfig, messages: ChatCompletionMessage[], options: CallOptions): Record<string, unknown> {
-    const body: Record<string, unknown> = { model: config.model, messages, temperature: options.params?.temperature ?? 0.7 };
-    for (const key of ['top_p', 'frequency_penalty', 'presence_penalty', 'max_tokens'] as const) {
-        if (options.params?.[key] !== undefined)
-            body[key] = options.params[key];
-    }
-    if (options.onChunk)
-        body.stream = true;
-    return body;
-}
 export function createLLMClient({ transport = providerFetch, random = Math.random, defaults = DEFAULTS }: {
     transport?: FetchTransport;
     random?: () => number;
     defaults?: Partial<typeof DEFAULTS>;
 } = {}) {
-    async function attempt(url: string, init: RequestInit, options: CallOptions, number: number, model?: string): Promise<CompletionResult> {
+    async function attempt(adapter: ProviderAdapter, url: string, init: RequestInit, options: CallOptions, number: number, model?: string): Promise<CompletionResult> {
         const controller = new AbortController();
         const stop = () => controller.abort();
         options.signal?.addEventListener('abort', stop, { once: true });
@@ -82,7 +73,7 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
             if (!response.ok)
                 throw failure(statusCategory(status), { retryAfterMs: retryAfter(response.headers.get('Retry-After')) });
             if (!stream || response.headers.get('content-type')?.includes('application/json')) {
-                let data: Record<string, unknown>;
+                let data: unknown;
                 try {
                     data = await abortable(response.json(), controller.signal);
                 }
@@ -91,86 +82,64 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
                         throw error;
                     throw failure('parse');
                 }
-                if (!data || typeof data !== 'object')
-                    throw failure('parse');
-                if (data.error)
-                    throw failure(embeddedCategory(data.error));
-                const choice = (data.choices as Array<{
-                    message?: {
-                        content?: unknown;
-                        refusal?: unknown;
-                    };
-                    finish_reason?: unknown;
-                    error?: unknown;
-                }> | undefined)?.[0];
-                if (choice?.error)
-                    throw failure(embeddedCategory(choice.error));
-                if (choice?.finish_reason === 'content_filter' || choice?.message?.refusal)
+                const parsed = adapter.parseJsonResponse(data);
+                if (parsed.error)
+                    throw failure(parsed.error);
+                if (parsed.blocked)
                     throw failure('blocked');
-                const content = choice?.message?.content;
-                if (content != null && typeof content !== 'string')
-                    throw failure('parse');
-                text = typeof content === 'string' ? content : '';
+                text = parsed.text;
                 if (!text.trim())
                     throw failure('empty');
                 if (controller.signal.aborted)
                     throw ABORTED;
                 options.onChunk?.(text);
-                return { text, truncated: choice?.finish_reason === 'length', attempts: number, status, malformedLines: 0 };
+                return { text, truncated: parsed.truncated, attempts: number, status, malformedLines: 0 };
             }
             if (!response.body)
                 throw failure('empty');
             reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '', doneMarker = false, finish: string | undefined, parsedLines = 0, receivedBytes = false;
+            let buffer = '', currentEvent: string | undefined, doneMarker = false, finished = false, truncated = false, parsedLines = 0, receivedBytes = false;
             const consume = (raw: string) => {
                 if (controller.signal.aborted)
                     throw ABORTED;
                 const line = raw.trimEnd();
+                if (!line) {
+                    currentEvent = undefined;
+                    return;
+                }
+                if (line.startsWith('event:')) {
+                    currentEvent = line.slice(6).trim() || undefined;
+                    return;
+                }
                 if (!line.startsWith('data:'))
                     return;
                 const payload = line.slice(5).trim();
                 if (!payload)
                     return;
-                if (payload === '[DONE]') {
+                const chunk = adapter.parseStreamEvent({ event: currentEvent, data: payload });
+                if (chunk.done) {
                     doneMarker = true;
+                    if (chunk.finished) finished = true;
+                    if (chunk.truncated) truncated = true;
                     return;
                 }
-                let data: Record<string, unknown>;
-                try {
-                    data = JSON.parse(payload);
-                }
-                catch {
-                    malformedLines++;
-                    return;
-                }
-                if (!data || typeof data !== 'object') {
+                if (chunk.malformed) {
                     malformedLines++;
                     return;
                 }
                 parsedLines++;
-                if (data.error)
-                    throw failure(embeddedCategory(data.error));
-                const choice = (data.choices as Array<{
-                    delta?: {
-                        content?: unknown;
-                        refusal?: unknown;
-                    };
-                    finish_reason?: unknown;
-                    error?: unknown;
-                }> | undefined)?.[0];
-                if (choice?.error)
-                    throw failure(embeddedCategory(choice.error));
-                if (choice?.finish_reason === 'content_filter' || choice?.delta?.refusal)
+                if (chunk.error)
+                    throw failure(chunk.error);
+                if (chunk.blocked)
                     throw failure('blocked');
-                if (typeof choice?.finish_reason === 'string')
-                    finish = choice.finish_reason;
-                const content = choice?.delta?.content;
-                if (content != null && typeof content !== 'string')
-                    throw failure('parse');
-                if (typeof content === 'string' && content) {
-                    text += content;
-                    options.onChunk?.(content);
+                if (chunk.finished)
+                    finished = true;
+                if (chunk.truncated)
+                    truncated = true;
+                if (chunk.delta) {
+                    text += chunk.delta;
+                    options.onChunk?.(chunk.delta);
                 }
             };
             while (!doneMarker) {
@@ -197,9 +166,9 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
                 throw failure(receivedBytes ? 'parse' : 'empty');
             if (!text.trim())
                 throw failure('empty');
-            if (!doneMarker && !finish)
+            if (!doneMarker && !finished)
                 throw failure('interrupted');
-            return { text, truncated: finish === 'length', attempts: number, status, malformedLines };
+            return { text, truncated, attempts: number, status, malformedLines };
         }
         catch (error) {
             if (options.signal?.aborted)
@@ -225,20 +194,27 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
             throw new LLMError('cancelled', { attempts: 0 });
         if (!isLLMConfigured(config))
             throw new LLMError('invalid_request', { attempts: 0 });
-        const headers = { 'Content-Type': 'application/json', ...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}) };
-        const init = { method: 'POST', headers, body: JSON.stringify(bodyFor(config, messages, options)) };
+        const adapter = resolveProviderAdapter(config);
+        const prepared = adapter.buildRequest({
+            config,
+            messages,
+            params: options.params,
+            stream: !!options.onChunk,
+            responseSchema: options.responseSchema,
+        });
+        const init: RequestInit = { method: prepared.method, headers: prepared.headers, body: JSON.stringify(prepared.body) };
         const maxRetries = options.purpose === 'probe' ? 0 : Math.min(3, Math.floor(duration(options.maxRetries, 3)));
         let gatewayRetries = 0;
         for (let number = 1;; number++) {
             const started = Date.now();
             try {
-                return await attempt(config.apiUrl, init, options, number, config.model);
+                return await attempt(adapter, prepared.url, init, options, number, config.model);
             }
             catch (error) {
                 const failure = error instanceof LLMError ? error : new LLMError('network', { attempts: number });
                 if (failure.category === 'cancelled')
                     throw failure;
-                reportDiagnostic({ event: 'model', operation: 'request', category: failure.category, host: new URL(config.apiUrl).hostname, model: config.model, status: failure.status, attempt: number, elapsedMs: Date.now() - started });
+                reportDiagnostic({ event: 'model', operation: 'request', category: failure.category, host: new URL(prepared.url).hostname, model: config.model, status: failure.status, attempt: number, elapsedMs: Date.now() - started });
                 const status = failure.status;
                 const retryable = failure.category === 'network' || (status !== undefined && [408, 425, 429].includes(status)) || (status !== undefined && status >= 500);
                 const gateway = status === 504 || status === 524;
@@ -259,26 +235,29 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
             }
         }
     }
-    async function models(baseUrl: string, apiKey: string, signal?: AbortSignal): Promise<string[]> {
+    async function models(baseUrl: string, apiKey: string, signal?: AbortSignal, protocol?: ProviderProtocol): Promise<string[]> {
         const started = Date.now();
-        const url = baseUrl.replace(/\/v1\/chat\/completions\/?$/, '/v1/models');
         const controller = new AbortController();
         const stop = () => controller.abort();
         let timedOut = false;
         const timer = setTimeout(() => { timedOut = true; stop(); }, 30000);
         signal?.addEventListener('abort', stop, { once: true });
         let status: number | undefined;
+        let url = baseUrl;
         try {
             if (signal?.aborted)
                 throw ABORTED;
             try {
-                if (!['http:', 'https:'].includes(new URL(url).protocol))
+                if (!['http:', 'https:'].includes(new URL(baseUrl).protocol))
                     throw Error();
             }
             catch {
                 throw new LLMError('invalid_request', { attempts: 0 });
             }
-            const response = await abortable(transport(url, { headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {}, signal: controller.signal }), controller.signal);
+            const adapter = resolveProviderAdapter({ apiUrl: baseUrl, protocol });
+            const request = adapter.buildModelsRequest(baseUrl, apiKey);
+            url = request.url;
+            const response = await abortable(transport(url, { headers: request.headers, signal: controller.signal }), controller.signal);
             status = response.status;
             if (!response.ok)
                 throw new LLMError(statusCategory(status), { attempts: 1, status });
@@ -293,11 +272,10 @@ export function createLLMClient({ transport = providerFetch, random = Math.rando
             }
             if (data?.error)
                 throw new LLMError(embeddedCategory(data.error), { attempts: 1, status });
-            if (!Array.isArray(data?.data))
+            const parsedModels = adapter.parseModelsResponse(data);
+            if (!parsedModels)
                 throw new LLMError('parse', { attempts: 1, status });
-            return [...new Set<string>(data.data.flatMap((item: {
-                    id?: unknown;
-                }) => typeof item?.id === 'string' && item.id.trim() ? [item.id] : []))].sort();
+            return parsedModels;
         }
         catch (error) {
             if (signal?.aborted)

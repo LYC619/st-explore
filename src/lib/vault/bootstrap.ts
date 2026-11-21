@@ -53,11 +53,11 @@ export async function bootVault(): Promise<VaultBootState> {
   } catch (err) {
     if (err instanceof NewerVaultFormatError) return 'newer';
     if (isInvalidAppConfigError(err)) {
-      console.warn('应用配置损坏，需要先备份并修复', err);
+      console.warn('应用配置损坏，需要先备份并修复', err instanceof Error ? err.name : 'UnknownError');
       return 'repair';
     }
     // 配置读取失败（文件损坏等）：回引导页让用户重选，而不是卡在加载态
-    console.warn('文件库启动失败，回到选库引导', err);
+    console.warn('文件库启动失败，回到选库引导', err instanceof Error ? err.name : 'UnknownError');
     return 'unset';
   }
 }

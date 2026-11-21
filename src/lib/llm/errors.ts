@@ -52,12 +52,16 @@ export function statusCategory(status: number): LLMErrorCategory {
 }
 export function embeddedCategory(value: unknown): LLMErrorCategory {
     const error = value && typeof value === 'object' ? value as Record<string, unknown> : {};
-    const hints = typeof value === 'string' ? value : [error.code, error.type, error.message].filter(v => typeof v === 'string').join(' ');
-    if (/content[_ -]?filter|content[_ -]?policy|safety|moderation|blocked|安全|审核|拦截/i.test(hints))
+    const hints = typeof value === 'string'
+        ? value
+        : [error.code, error.status, error.type, error.message].filter(v => typeof v === 'string' || typeof v === 'number').map(String).join(' ');
+    if (/content[_ -]?filter|content[_ -]?policy|safety|moderation|blocked|prohibited[_ -]?content|recitation|blocklist|spii|refusal|安全|审核|拦截/i.test(hints))
         return 'blocked';
-    if (/rate[_ -]?limit|quota/i.test(hints))
+    if (/rate[_ -]?limit|quota|resource[_ -]?exhausted|429/i.test(hints))
         return 'rate_limit';
-    if (/authentication|invalid[_ -]?api[_ -]?key|permission/i.test(hints))
+    if (/authentication|invalid[_ -]?api[_ -]?key|api[_ -]?key[_ -]?invalid|permission|unauthenticated|forbidden|401|403/i.test(hints))
         return 'permission';
+    if (/invalid[_ -]?request|invalid[_ -]?argument|bad[_ -]?request|400/i.test(hints))
+        return 'invalid_request';
     return 'service';
 }

@@ -1,10 +1,34 @@
 import type { APIConfig } from '@/components/ai-tools/api-profiles';
 import { createLLMClient } from './client';
-import type { CallOptions, ChatCompletionMessage, CompletionWarning } from './types';
+import type { CallOptions, ChatCompletionMessage, CompletionWarning, ProviderProtocol } from './types';
 export { createLLMClient, isLLMConfigured } from './client';
-export { LLMError, LLM_MESSAGES, isLLMCancelled } from './errors';
+export { LLMError, LLM_MESSAGES, isLLMCancelled, statusCategory, embeddedCategory } from './errors';
 export { COMPLETION_WARNING } from './types';
-export type { CallOptions, ChatCompletionMessage, SamplingParams, CompletionWarning, CompletionResult, FetchTransport } from './types';
+export {
+    detectProviderProtocol,
+    resolveProviderAdapter,
+    openaiAdapter,
+    anthropicAdapter,
+    geminiAdapter,
+} from './providers';
+export type {
+    ProviderAdapter,
+    ProviderRequestInput,
+    ProviderHttpRequest,
+    ParsedCompletionJson,
+    ParsedStreamChunk,
+    ProviderModelsRequest,
+} from './providers';
+export type {
+    CallOptions,
+    ChatCompletionMessage,
+    SamplingParams,
+    StructuredOutputSchema,
+    ProviderProtocol,
+    CompletionWarning,
+    CompletionResult,
+    FetchTransport,
+} from './types';
 const client = createLLMClient();
 export async function callOpenAIMessages(config: APIConfig, messages: ChatCompletionMessage[], options: CallOptions = {}): Promise<string> {
     const result = await client.complete(config, messages, options);
@@ -15,4 +39,4 @@ export async function callOpenAIMessages(config: APIConfig, messages: ChatComple
 export function callOpenAI(config: APIConfig, prompt: string, systemPrompt: string, onChunk?: (text: string) => void, signal?: AbortSignal, onWarning?: (warning: CompletionWarning) => void): Promise<string> {
     return callOpenAIMessages(config, [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }], { onChunk, signal, onWarning });
 }
-export function fetchModels(url: string, key: string, signal?: AbortSignal): Promise<string[]> { return client.models(url, key, signal); }
+export function fetchModels(url: string, key: string, signal?: AbortSignal, protocol?: ProviderProtocol): Promise<string[]> { return client.models(url, key, signal, protocol); }

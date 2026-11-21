@@ -64,7 +64,7 @@ it('only sends on action, compiles the chosen assets into the real request and n
 it('retries a failed turn without duplicating its user message', async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(new Response('{"error":{"message":"fixture unavailable"}}', { status: 503 })).mockImplementationOnce(async () => response('重试成功'));
   vi.stubGlobal('fetch', fetcher); await fixture(); await fill('一条问题'); await click('发送');
-  await settle(() => expect(document.querySelector('[role="alert"]')?.textContent).toContain('fixture unavailable'));
+  await settle(() => { const alert = document.querySelector('[role="alert"]')?.textContent ?? ''; expect(alert).toContain('HTTP 503'); expect(alert).not.toContain('fixture unavailable'); });
   await click('重试本轮'); await settle(() => expect(document.querySelector('[role="log"]')?.textContent).toContain('重试成功'));
   const options = fetcher.mock.calls[1][1] as RequestInit;
   expect(JSON.parse(String(options.body)).messages.filter((message: { role: string }) => message.role === 'user')).toHaveLength(1);

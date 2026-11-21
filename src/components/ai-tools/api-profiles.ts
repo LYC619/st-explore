@@ -20,6 +20,7 @@ export interface APIConfig {
   apiKey: string;
   apiUrl: string;
   model: string;
+  protocol?: 'openai' | 'anthropic' | 'gemini';
 }
 
 /** 一个 API 提供商配置（OpenAI 兼容）。模型列表属于该提供商的元数据。 */
@@ -36,7 +37,7 @@ export interface ApiModelSelection { profileId: string; model: string }
 /** Keyless custom/local services remain supported; an empty OpenAI default cannot authenticate. */
 export function isApiProfileConfigured(profile: ApiProfile): boolean {
   return !!profile.model.trim() && !!profile.apiUrl.trim()
-    && (!!profile.apiKey.trim() || !/^https?:\/\/api\.openai\.com(?:[:/]|$)/i.test(profile.apiUrl.trim()));
+    && (!!profile.apiKey.trim() || !/^https?:\/\/(?:api\.openai\.com|api\.anthropic\.com|generativelanguage\.googleapis\.com)(?:[:/]|$)/i.test(profile.apiUrl.trim()));
 }
 
 export function normalizeModelNames(values: unknown): string[] {
