@@ -53,13 +53,28 @@ test('web gate is the prefix of the full gate and builds assets before Rust', ()
   assert.deepEqual(full.slice(web.length).map(row => row.name), ['rust-tests', 'clippy']);
 });
 
-test('production tavern scripts reject undefined names while allowing their scoped host globals', async () => {
+test('production tavern TypeScript modules are linted for unused symbols and typecheck scoped globals', async () => {
   const { ESLint } = await import('eslint');
   const eslint = new ESLint();
-  const [unknown] = await eslint.lintText('missingHostVariable();', { filePath: 'src/tavern/host-bootstrap.js' });
-  assert.ok(unknown.messages.some(message => message.ruleId === 'no-undef'));
-  const [injected] = await eslint.lintText('_.get({}, "key");', { filePath: 'src/tavern/helper-client.js' });
-  assert.equal(injected.errorCount, 0);
-  const [other] = await eslint.lintText('_.get({}, "key");', { filePath: 'src/tavern/host-bootstrap.js' });
-  assert.ok(other.messages.some(message => message.ruleId === 'no-undef'));
+  const [unused] = await eslint.lintText('const staleValue = 1;\nexport const kept = 2;\n', { filePath: 'src/tavern/host-bootstrap.ts' });
+  assert.ok(unused.messages.some(message => message.ruleId === '@typescript-eslint/no-unused-vars'));
+  const ts = (await import('typescript')).default;
+  const parsed = ts.readConfigFile('tsconfig.app.json', ts.sys.readFile);
+  const config = ts.parseJsonConfigFileContent(parsed.config, ts.sys, process.cwd());
+  const host = ts.createCompilerHost(config.options);
+  const origGetSourceFile = host.getSourceFile.bind(host);
+  const virtualFile = join(process.cwd(), 'src/tavern/host-bootstrap.ts').replace(/\\/g, '/');
+  host.getSourceFile = (fileName, languageVersion, ...rest) => {
+    if (fileName.replace(/\\/g, '/') === virtualFile) {
+      return ts.createSourceFile(fileName, 'missingHostVariable();\n_.get({}, "key");\n', languageVersion);
+    }
+    return origGetSourceFile(fileName, languageVersion, ...rest);
+  };
+  const program = ts.createProgram(config.fileNames, config.options, host);
+  const diagnostics = ts.getSemanticDiagnosticsForFile
+    ? []
+    : program.getSemanticDiagnostics(program.getSourceFile(virtualFile));
+  const messages = diagnostics.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n'));
+  assert.ok(messages.some(m => m.includes('missingHostVariable')), 'undefined globals must fail typecheck');
+  assert.ok(messages.some(m => m.includes("'_'")), 'lodash global _ must not leak outside helper-client.ts');
 });

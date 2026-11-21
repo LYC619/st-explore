@@ -1,27 +1,47 @@
+import type { Host } from './bridge-types.js';
+import type { EventMap, UpstreamState, WorldEntry } from './upstream.js';
+import type { STRawMessage } from '../types/chat';
+
+export interface ProcessEventsHandle {
+    current(): string | undefined;
+    response(id: string | null | undefined, type: string | undefined): void;
+}
+
+interface ActiveTurn {
+    id?: string;
+    type: string;
+    received?: boolean;
+}
+
+type ProcessHost = Pick<Host, 'processEvent'>;
+type ProcessState = Pick<UpstreamState, 'chat' | 'event_types' | 'eventSource'>;
+
 /** Observe public ST lifecycle events without changing their order or message contents. */
-export function installProcessEvents(host, st) {
-    let active;
-    let awaitingReceipt = new WeakMap();
-    const emit = (kind, data = {}) => host.processEvent(kind, { id: active?.id, ...data });
-    const on = (name, listener) => {
-        if (st.event_types[name]) st.eventSource.on(st.event_types[name], (...args) => {
+export function installProcessEvents(host: ProcessHost, st: ProcessState): ProcessEventsHandle {
+    let active: ActiveTurn | undefined;
+    let awaitingReceipt = new WeakMap<STRawMessage, ActiveTurn>();
+    const emit = (kind: Parameters<ProcessHost['processEvent']>[0], data: Record<string, unknown> = {}) =>
+        host.processEvent(kind, { id: active?.id, ...data });
+    const on = <K extends keyof EventMap>(name: K, listener: (...args: EventMap[K]) => void) => {
+        const eventName = st.event_types[name];
+        if (eventName) st.eventSource.on(eventName, (...args: EventMap[K]) => {
             try { listener(...args); } catch { /* Diagnostics cannot block ST's lifecycle. */ }
         });
     };
     on('GENERATION_AFTER_COMMANDS', (type, _options, dryRun) => {
         if (!dryRun && !['quiet', 'impersonate'].includes(type)) active = { id: host.processEvent('start', { type }), type };
     });
-    on('WORLD_INFO_ACTIVATED', entries => {
+    on('WORLD_INFO_ACTIVATED', (entries: WorldEntry[]) => {
         if (active) emit('world', { detail: entries.map(entry => ({ world: entry.world, uid: entry.uid, name: entry.comment, constant: entry.constant })) });
     });
     on('MESSAGE_RECEIVED', (index, type) => {
         const message = st.chat[index];
-        const turn = awaitingReceipt.get(message) ?? active;
+        const turn = (message ? awaitingReceipt.get(message) : undefined) ?? active;
         if (!turn || type === 'first_message' || turn.type !== type || !message || message.is_user) return;
         awaitingReceipt.delete(message);
         turn.received = true;
         window.__STE_STAMP_CHAT__(st.chat);
-        const identity = message.extra?.ste_runtime;
+        const identity = message.extra?.ste_runtime as { messageId?: string; candidateId?: string } | undefined;
         if (!identity) return;
         emit('bind', { id: turn.id, messageId: identity.messageId, candidateId: identity.candidateId, floor: index });
         emit('processed', { id: turn.id, detail: { content: message.mes, variables: message.variables?.[message.swipe_id ?? 0] } });
@@ -38,6 +58,6 @@ export function installProcessEvents(host, st) {
     on('CHAT_CHANGED', () => { active = undefined; awaitingReceipt = new WeakMap(); });
     return {
         current: () => active?.id,
-        response(id, type) { if (id && !['quiet', 'impersonate'].includes(type)) active = { ...active, id, type }; },
+        response(id, type) { if (id && type && !['quiet', 'impersonate'].includes(type)) active = { ...active, id, type }; },
     };
 }

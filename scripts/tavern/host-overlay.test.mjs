@@ -117,7 +117,7 @@ async function startupFlushFixture({ ready = false, chat = undefined, dirty = fa
   // A module still waiting on the frame's load event never settles its import.
   const importSt = () => { imports++; return evaluated ? Promise.resolve(st) : new Promise(() => {}); };
   new Function('window', 'importSt', 'stModule', '$', 'flushBaiBai', 'host',
-    text.slice(start, end).replace("import('./script.js')", 'importSt()'))
+    text.slice(start, end).replace("loadUpstream('/script.js')", 'importSt()'))
     (win, importSt, ready ? st : undefined, () => node, async () => {}, { flush: async () => { flushes++; } });
   return { flush: win.__STE_TAVERN_FLUSH__, writes: () => writes, flushes: () => flushes, imports: () => imports };
 }
@@ -169,4 +169,17 @@ test('supplies real default settings/presets and default media through explicit 
 
 test('host output cannot escape the project cache', async () => {
   await assert.rejects(createHostAssets(source, '../outside'), /Unsafe Tavern cache/);
+});
+
+
+test('transpiled TypeScript bridge modules emit valid browser ESM without dangling parent imports', async () => {
+  const bootstrap = (await readAsset(assets.get('/tauri-main.js'))).toString();
+  assert.match(bootstrap, /from ['"]\/ste\/upstream\.js['"]/);
+  assert.doesNotMatch(bootstrap, /from ['"]\.\//);
+  for (const name of ['protocol', 'upstream', 'draft-recovery', 'recovery-export', 'regex-assets', 'helper-client', 'helper-messages', 'helper-host', 'helper-controls', 'helper-status', 'package-controls', 'extension-controls', 'process-events', 'status-polling']) {
+    const asset = assets.get(`/ste/${name}.js`);
+    assert.ok(asset, `missing /ste/${name}.js`);
+    const text = (await readAsset(asset)).toString();
+    assert.doesNotMatch(text, /from ['"]\.\.\//, `/ste/${name}.js must not import outside /ste/ at runtime`);
+  }
 });

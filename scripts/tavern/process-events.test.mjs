@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installProcessEvents } from '../../src/tavern/process-events.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { transpileTavernModule } from './host-overlay.mjs';
+
+const moduleCode = (await transpileTavernModule(fileURLToPath(new URL('../../src/tavern/process-events.ts', import.meta.url)))).toString('utf8');
+const { installProcessEvents } = await import(`data:text/javascript;base64,${Buffer.from(moduleCode, 'utf8').toString('base64')}`);
+void path;
 
 function fixture() {
     const listeners = new Map(), calls = [];

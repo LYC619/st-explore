@@ -1,14 +1,16 @@
+import type { RawMessage, PublicMessage } from './protocol.js';
+import { isRecord } from './protocol.js';
 /** Pure projections of the upstream ST objects. They never own a second chat store. */
-export function helperMessageSource(message) {
+export function helperMessageSource(message: RawMessage): string {
     return JSON.stringify([message.extra?.ste_runtime?.messageId, message.extra?.ste_runtime?.candidateId,
         message.swipe_id ?? 0, message.mes, message.is_user === true, message.is_system === true]);
 }
-function publicExtra(extra) {
+function publicExtra(extra: Record<string, unknown> | undefined): Record<string, unknown> {
     const copy = structuredClone(extra ?? {});
     delete copy.ste_runtime;
     return copy;
 }
-export function helperMessages(chat) {
+export function helperMessages(chat: RawMessage[]): PublicMessage[] {
     return chat.map((message, message_id) => {
         const index = message.swipe_id ?? 0, swipes = message.swipes ?? [message.mes ?? ''];
         const role = message.is_user ? 'user' : message.extra?.ste_runtime?.role === 'system' || ['narrator', 'system', 'comment'].includes(message.extra?.type) ? 'system' : 'assistant';
@@ -18,17 +20,17 @@ export function helperMessages(chat) {
             swipes_info: swipes.map((_, i) => { const info = structuredClone(message.swipe_info?.[i] ?? {}); info.extra = publicExtra(info.extra); return info; }) };
     });
 }
-function dictionary(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('楼层变量与 extra 必须是 JSON 对象');
+function dictionary(value: unknown): Record<string, unknown> {
+    if (!isRecord(value)) throw new Error('楼层变量与 extra 必须是 JSON 对象');
     return structuredClone(value);
 }
-export function prepareHelperMessageChanges(chat, patches, sources, baselines = []) {
+export function prepareHelperMessageChanges(chat: RawMessage[], patches: unknown[], sources: string[], baselines: Pick<PublicMessage, 'data' | 'extra'>[] = []): { id: number; message: RawMessage }[] {
     if (!Array.isArray(patches) || patches.length > 100) throw new Error('每次最多修改 100 条消息');
-    const seen = new Set(), fields = new Set(['message_id', 'message', 'data', 'extra', 'is_hidden']);
+    const seen = new Set<number>(), fields = new Set(['message_id', 'message', 'data', 'extra', 'is_hidden']);
     return patches.map(patch => {
-        if (!patch || typeof patch !== 'object' || Object.keys(patch).some(key => !fields.has(key))) throw new Error('暂不支持此消息字段；可修改 message、data、extra、is_hidden');
+        if (!isRecord(patch) || Object.keys(patch).some(key => !fields.has(key))) throw new Error('暂不支持此消息字段；可修改 message、data、extra、is_hidden');
         const id = patch.message_id;
-        if (!Number.isInteger(id) || id < 0 || id >= chat.length || seen.has(id)) throw new Error('消息编号无效或重复');
+        if (typeof id !== 'number' || !Number.isInteger(id) || id < 0 || id >= chat.length || seen.has(id)) throw new Error('消息编号无效或重复');
         seen.add(id);
         if (sources[id] !== helperMessageSource(chat[id])) throw new Error('楼层或候选已变化，请读取最新消息后重试');
         const message = structuredClone(chat[id]), index = message.swipe_id ?? 0;

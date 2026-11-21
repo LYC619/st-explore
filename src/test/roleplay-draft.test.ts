@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { ChatSession } from '@/types/chat';
 import { checkpointDraft, recoverDraft } from '@/lib/roleplay/draft';
-import { captureRecoveryFile } from '@/tavern/recovery-export.js';
+import { captureRecoveryFile } from '@/tavern/recovery-export.ts';
 
 const base: ChatSession = { id: 's', title: '雨夜', createdAt: 1, user: { name: '我' }, character: { name: '林' },
   messages: [{ id: 'g', role: 'assistant', content: '请进。' }] };

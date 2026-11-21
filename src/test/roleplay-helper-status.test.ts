@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { helperScriptStatus } from '@/tavern/helper-status.js';
+import { helperScriptStatus } from '@/tavern/helper-status.ts';
 
 describe('current helper execution status', () => {
   it('distinguishes enabled configuration from actual runtime readiness', () => {

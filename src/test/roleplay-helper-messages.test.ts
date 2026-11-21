@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { helperMessages, helperMessageSource, prepareHelperMessageChanges } from '../tavern/helper-messages.js';
+import { helperMessages, helperMessageSource, prepareHelperMessageChanges } from '../tavern/helper-messages.ts';
 
 function sample() {
   return [{ name: '林', mes: '原文', is_user: false, is_system: false, swipes: ['原文', '另一页'], swipe_id: 0,
@@ -26,8 +26,8 @@ describe('helper operations on the genuine ST chat', () => {
     const [{ message }] = prepareHelperMessageChanges(chat, [{ message_id: 0, message: '手工修订', data: { trust: 3 }, extra: { ste_runtime: { turnId: 'forged' }, custom: 1 } }], chat.map(helperMessageSource), helperMessages(chat));
     expect(message.swipes).toEqual(['手工修订', '另一页']);
     expect(message.variables).toEqual([{ trust: 3 }, { trust: 2 }]);
-    expect(message.extra.ste_runtime).toEqual({ messageId: 'm1', candidateId: 'c1' });
-    expect(message.swipe_info[0].extra.ste_runtime.turnId).toBeUndefined();
+    expect(message.extra?.ste_runtime).toEqual({ messageId: 'm1', candidateId: 'c1' });
+    expect(message.swipe_info?.[0]?.extra?.ste_runtime?.turnId).toBeUndefined();
     expect(chat[0].mes).toBe('原文');
   });
   it('refuses stale data and extra fields even when the prose and candidate are unchanged', () => {

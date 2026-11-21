@@ -20,7 +20,7 @@ import { assertStoryIdle } from '@/lib/story-activity';
 import { Blob as NodeBlob } from 'node:buffer';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
 import { stScriptToRule } from '@/lib/st-regex-interop';
-import regexOverlaySource from '@/tavern/regex-assets.js?raw';
+import { filterEmbeddedRegexScripts } from '@/tavern/regex-assets';
 import { saveLibraryTagPreferences } from '@/lib/archive-db';
 import { normalizeLibraryTagPreferences } from '@/lib/library-tag-preferences';
 
@@ -400,8 +400,8 @@ describe('real Tavern host contracts', () => {
       expect(snapshot.suppressedEmbeddedScripts).toEqual([script]);
       const renderedSource = { ...script, id: hasId ? 'source-rule' : 'upstream-assigned-id' };
       const independent = { ...script, id: 'ordinary-independent' };
-      const filter = new Function(regexOverlaySource.replace(/^export /gm, '') + '; return filterEmbeddedRegexScripts;')();
-      const ordinary = filter([renderedSource, independent], snapshot);
+      const ordinary = filterEmbeddedRegexScripts([renderedSource, independent], snapshot);
+
       expect(ordinary).toEqual([independent]);
       expect(snapshot.embeddedScripts).toHaveLength(1);
       expect(snapshot.globalScripts).toHaveLength(1);

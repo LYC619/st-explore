@@ -1,6 +1,7 @@
+import type { StatusHost, PollPage } from './bridge-types';
 /** Poll only while the retained chat is visible or generating; never overlap requests. */
-export function installStatusPolling(host, poll, page = window, delay = 1500) {
-    let timer, stopped = false, pending = false, refreshAgain = false;
+export function installStatusPolling(host: StatusHost, poll: () => Promise<unknown>, page: PollPage = window, delay = 1500): () => void {
+    let timer: number | undefined, stopped = false, pending = false, refreshAgain = false;
     const needed = () => !stopped && (host.isGenerating() || (host.isForeground() && page.document.visibilityState !== 'hidden'));
     const clear = () => { if (timer !== undefined) page.clearTimeout(timer); timer = undefined; };
     async function run() {

@@ -1,8 +1,24 @@
 import { createContext, runInContext } from 'node:vm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import clientSource from '../tavern/helper-client.js?raw';
-import hostSource from '../tavern/helper-host.js?raw';
-import messagesSource from '../tavern/helper-messages.js?raw';
+import type { HelperHostController } from '../tavern/helper-host';
+import { installHelperHost } from '../tavern/helper-host';
+
+const mockUpstreamState = {
+  extension_settings: { variables: { global: {} as Record<string, unknown> } },
+  executeSlashCommandsWithOptions: vi.fn(),
+};
+
+vi.mock('../tavern/upstream.js', async () => {
+  const actual = await vi.importActual<typeof import('../tavern/upstream')>('../tavern/upstream');
+  return {
+    ...actual,
+    loadUpstream: vi.fn(async (name: string) => {
+      if (name === '/scripts/extensions.js') return { extension_settings: mockUpstreamState.extension_settings };
+      if (name === '/scripts/slash-commands.js') return { executeSlashCommandsWithOptions: mockUpstreamState.executeSlashCommandsWithOptions };
+      throw new Error(`Unexpected upstream import: ${name}`);
+    }),
+  };
+});
 
 type Variables = { count: number };
 type VariableScope = { type: 'chat' | 'script' | 'message'; message_id?: number };
@@ -15,34 +31,11 @@ type ClientApi = {
   generate(options: { user_input: string }): Promise<string>;
   generateRaw(options: { user_input: string }): Promise<string>;
 };
-type Settings = {
-  schema: number;
-  scripts: { id: string; name: string; content: string; enabled: boolean; grants: string[]; data: Variables }[];
-  html: { enabled: boolean; grants: string[] };
-};
-type HostApi = {
-  readonly settings: Settings;
-  readonly records: { frame: HTMLIFrameElement; token: string }[];
-  configure(settings: Settings): Promise<void>;
-  flush(): Promise<void>;
-  button(scriptId: string, name: string): Promise<void>;
-};
-
-// Run the production sources, adapting only ES module loading. The host's two
-// absolute imports belong to the upstream Tavern, which is absent in unit tests.
-const helperClient = new Function(clientSource.replace('export function helperClient', 'return function helperClient'))();
-const messageModule = new Function(`${messagesSource.replace(/^export /gm, '')}\nreturn { helperMessages, helperMessageSource, prepareHelperMessageChanges };`)();
-const installHelperHost = new Function('helperClient', 'messageModule', 'loadModule', `
-  const { helperMessages, helperMessageSource, prepareHelperMessageChanges } = messageModule;
-  ${hostSource.replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '').replaceAll('await import(', 'await loadModule(')}
-  return installHelperHost;
-`)(helperClient, messageModule, async (name: string) => {
-  if (name === '/scripts/extensions.js') return { extension_settings: { variables: { global: {} } } };
-  if (name === '/scripts/slash-commands.js') return { executeSlashCommandsWithOptions: vi.fn() };
-  throw new Error(`Unexpected upstream import: ${name}`);
-}) as (host: unknown, st: unknown) => Promise<HostApi>;
+type Settings = HelperHostController['settings'];
 
 beforeEach(() => {
+  mockUpstreamState.extension_settings = { variables: { global: {} } };
+  mockUpstreamState.executeSlashCommandsWithOptions.mockReset();
   document.body.innerHTML = '<div id="sheld"><div id="chat"></div><div id="form_sheld"></div></div>';
   vi.stubGlobal('IntersectionObserver', class {
     observe() {}
@@ -63,39 +56,49 @@ afterEach(() => {
 });
 
 async function bridge(generate = async () => 'response', scriptPatch: Partial<Settings['scripts'][number]> = {}) {
-  let persisted: { chatKey: string; revision: number; settings: Settings } = {
-    chatKey: 'story:main', revision: 1,
+  let persisted: { chatKey: string; revision: string; settings: Settings } = {
+    chatKey: 'story:main', revision: '1',
     settings: {
       schema: 1,
-      scripts: [{ id: 'counter', name: 'Counter', content: '', enabled: true, grants: ['read', 'write', 'generate'], data: { count: 0 }, ...scriptPatch }],
+      scripts: [{
+        type: 'script', id: 'counter', name: 'Counter', content: '', enabled: true,
+        grants: ['read', 'write', 'generate'], info: '', data: { count: 0 },
+        button: { enabled: false, buttons: [] }, ...scriptPatch,
+      }],
       html: { enabled: false, grants: [] },
     },
   };
   let failSave = false;
   const host = {
     isGenerating: () => false,
-    request: vi.fn(async (path: string, body?: { settings: Settings }) => {
+    request: vi.fn(async (path: string, body?: unknown) => {
       if (path === '/ste/helpers') return Response.json(structuredClone(persisted));
-      if (path !== '/ste/helpers/save' || !body) throw new Error(`Unexpected host request: ${path}`);
+      const payload = body as { settings: Settings } | undefined;
+      if (path !== '/ste/helpers/save' || !payload) throw new Error(`Unexpected host request: ${path}`);
       if (failSave) {
         failSave = false;
         return Response.json({ error: { message: 'simulated disk failure' } }, { status: 500 });
       }
-      persisted = { ...persisted, revision: persisted.revision + 1, settings: structuredClone(body.settings) };
+      persisted = { ...persisted, revision: String(Number(persisted.revision) + 1), settings: structuredClone(payload.settings) };
       return Response.json(structuredClone(persisted));
     }),
   };
   const events: Record<string, ((...args: unknown[]) => unknown)[]> = {};
-  const listen = (name: string, listener: (...args: unknown[]) => unknown) => { (events[name] ??= []).push(listener); };
+  const listen = <T extends unknown[] = unknown[]>(name: string, listener: (...args: T) => unknown) => { (events[name] ??= []).push(listener as (...args: unknown[]) => unknown); };
   const st = {
     chat: [{ name: 'Character', mes: 'original', is_user: false, swipe_id: 0, variables: [{ count: 0 }],
       extra: { ste_runtime: { messageId: 'm1', candidateId: 'c1' } } }],
-    chat_metadata: { variables: { count: 0 } },
+    chat_metadata: { variables: { count: 0 } } as Record<string, unknown>,
     name1: 'User', name2: 'Character',
     getCurrentChatId: () => 'main',
     event_types: { CHAT_CHANGED: 'chat-changed' },
-    eventSource: { events, makeFirst: listen, on: listen },
+    eventSource: { events, makeFirst: listen, on: listen, emit: vi.fn(async () => {}) },
     saveChatConditional: vi.fn(async () => {}),
+    cancelPendingSettingsSave: vi.fn(),
+    saveSettings: vi.fn(async () => true),
+    reloadCurrentChat: vi.fn(async () => {}),
+    updateMessageBlock: vi.fn(),
+    substituteParams: vi.fn((text: string) => text),
     generateQuietPrompt: vi.fn(generate),
     generateRaw: vi.fn(generate),
     stopGeneration: vi.fn(),
@@ -144,7 +147,7 @@ function gate() {
 
 describe('helper writes across the real client and host bridge', () => {
   it.each(['inline', 'floating'] as const)('renders only the built-in status widget in a bounded, collapsible %s container and removes it when disabled', async mode => {
-    const { helper } = await bridge(undefined, { id: 'ste-beautify-status', data: { count: 0, ste_widget: { mode } } as Variables });
+    const { helper } = await bridge(undefined, { id: 'ste-beautify-status', data: { count: 0, ste_widget: { mode } } });
     const widget = document.querySelector<HTMLElement>(`[data-ste-widget="${mode}"]`);
     expect(widget).not.toBeNull();
     const record = helper.records[0]; expect(widget!.contains(record.frame)).toBe(true); expect(record.frame.closest('[hidden]')).toBeNull();
@@ -156,7 +159,7 @@ describe('helper writes across the real client and host bridge', () => {
     expect(document.querySelector('[data-ste-widget]')).toBeNull();
   });
   it('keeps generic scripts hidden even when they carry widget metadata', async () => {
-    const { helper } = await bridge(undefined, { data: { count: 0, ste_widget: { mode: 'floating' } } as Variables });
+    const { helper } = await bridge(undefined, { data: { count: 0, ste_widget: { mode: 'floating' } } });
     expect(document.querySelector('[data-ste-widget]')).toBeNull(); expect(helper.records[0].frame.closest('[hidden]')).not.toBeNull();
   });
   it('restores the saved script snapshot after a failed write even when the script consumes its flush error', async () => {

@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { installStatusPolling } from '../../src/tavern/status-polling.js';
+import { fileURLToPath } from 'node:url';
+import { transpileTavernModule } from './host-overlay.mjs';
+
+const moduleCode = (await transpileTavernModule(fileURLToPath(new URL('../../src/tavern/status-polling.ts', import.meta.url)))).toString('utf8');
+const { installStatusPolling } = await import(`data:text/javascript;base64,${Buffer.from(moduleCode, 'utf8').toString('base64')}`);
 
 function fixture(poll) {
     const timers = new Map(), listeners = new Set(), visibility = new Map(), events = new Map();

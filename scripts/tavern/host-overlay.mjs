@@ -1,7 +1,30 @@
 import path from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import ts from 'typescript';
 import { readAsset, safeRelativePath, sha256, sourceAssetEntries } from './source.mjs';
 import { prepareCacheDirectory } from './cache.mjs';
+
+export async function transpileTavernModule(filePath, { rewriteLocalToSte = false } = {}) {
+  const sourceText = await readFile(filePath, 'utf8');
+  const result = ts.transpileModule(sourceText, {
+    fileName: filePath,
+    reportDiagnostics: true,
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+      verbatimModuleSyntax: false,
+    },
+  });
+  const errors = (result.diagnostics ?? []).filter(d => d.category === ts.DiagnosticCategory.Error);
+  if (errors.length) {
+    throw new Error(`Tavern TypeScript transpile failed for ${filePath}: ${ts.flattenDiagnosticMessageText(errors[0].messageText, '\n')}`);
+  }
+  let output = result.outputText;
+  if (rewriteLocalToSte) {
+    output = output.replace(/(from\s+['"])\.\/([^'"]+\.js)(['"])/g, '$1/ste/$2$3');
+  }
+  return Buffer.from(output, 'utf8');
+}
 
 function replaceOnce(text, before, after) {
   if (text.split(before).length !== 2) throw new Error(`Upstream host seam changed: ${before}`);
@@ -30,8 +53,9 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     const text = (await readAsset(original)).toString('utf8');
     overlays.push({ asset: await generated(url, await transform(text)), expectedSha256: original.sha256 });
   }
-  await override('/tauri-main.js', () => readFile(path.join(source.projectRoot, 'src/tavern/host-bootstrap.js')));
-  for (const name of ['draft-recovery.js', 'recovery-export.js', 'regex-assets.js', 'helper-client.js', 'helper-messages.js', 'helper-host.js', 'helper-controls.js', 'helper-status.js', 'package-controls.js', 'extension-controls.js', 'process-events.js', 'status-polling.js']) additions.push(await generated('/ste/' + name, await readFile(path.join(source.projectRoot, 'src/tavern/' + name))));
+  await override('/tauri-main.js', () => transpileTavernModule(path.join(source.projectRoot, 'src/tavern/host-bootstrap.ts'), { rewriteLocalToSte: true }));
+  for (const name of ['protocol', 'upstream', 'draft-recovery', 'recovery-export', 'regex-assets', 'helper-client', 'helper-messages', 'helper-host', 'helper-controls', 'helper-status', 'package-controls', 'extension-controls', 'process-events', 'status-polling']) additions.push(await generated('/ste/' + name + '.js', await transpileTavernModule(path.join(source.projectRoot, 'src/tavern/' + name + '.ts'))));
+
   additions.push(await generated('/ste/helper-lodash.js', await readFile(path.join(source.projectRoot, 'node_modules/lodash/lodash.min.js'))));
   await override('/scripts/tauritavern/agent/agent-generation-router.js', () =>
     '// STE runs its tool Agent at the final transport boundary. The writer uses the ordinary ST path.\n'
