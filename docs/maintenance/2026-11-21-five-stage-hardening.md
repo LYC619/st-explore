@@ -33,3 +33,14 @@
 ### 阶段五（Antigravity）
 - `Dockerfile` 升级至 `node:22-alpine` 并完善 `.dockerignore`；新增 `.github/workflows/release.yml`（`v*` 标签触发，先过 `verify:web`，并行构建 Windows NSIS/免安装与 Android APK，校验并合并 `SHA256SUMS.txt` 后创建 Draft Release）；对照 `CHANGELOG.md`（至 v0.9.9）与 `src/pages/` 同步重写 `README.md`。
 - 本机未安装 `docker` CLI，Docker 构建产物通过 `npm run build` 核验 `dist/`（含 `index.html`、`build-info.json`、`tavern.html`、`tauri-main.js`、`ste/*.js`），容器镜像实跑留待有 Docker 环境验证。
+
+## 推送、远端 CI 与本地双包交付（2026-11-22）
+
+- 经用户授权代为执行工程交付：已快进推送 `main` 至 `origin`（`d4d79b8..689b19e`）。
+- 远端 GitHub Actions CI `44932865934` 全部通过：`web`（Ubuntu Node 22，`verify:web` + `cap sync android`）、`e2e`（Ubuntu Node 22，无头 Chromium 生产 Web E2E）、`rust`（Windows，`cargo test --lib` + `cargo clippy --lib -- -D warnings`）。
+- 本地补跑验证全部通过：`npx cap sync android`、真实内嵌酒馆 Playwright 回归（`archive-workflow.spec.ts` + `playtest-controls.spec.ts`，7/7 通过）。
+- 已通过 `npm run release:pack -- five-stage-hardening` 生成本地 Windows 双包（仅构建、未运行正式程序）：
+  - 目录：`release/2026-11-22-five-stage-hardening/`（`commit: 689b19e723b5`，`dirty: false`）
+  - 安装版：`ST-Explorer-0.9.9-2026-11-22-five-stage-hardening-setup.exe`（SHA256 `460b2dfcfb941b327776ed6837d6b624c65a194ec415f946acd863dd7c9617e2`）
+  - 免安装版：`STE-0.9.9-2026-11-22-five-stage-hardening-portable.exe`（SHA256 `23a259ffe6ac72a1519d75322e9fb744fb112395bc062800d70d5846203038b9`）
+- 尚未打 `v*` 标签或发布 GitHub Release；仅留给用户的部分为实际使用体验验收（真实模型、桌面日常使用、可选 Android 真机）。
