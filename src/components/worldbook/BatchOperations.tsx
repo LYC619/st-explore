@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { CheckSquare, X, Trash2, TextCursorInput, MapPin, Zap, ToggleLeft, ToggleRight, MoreHorizontal, CheckCheck, XCircle, FolderInput } from 'lucide-react';
+import { X, Trash2, TextCursorInput, MapPin, Zap, ToggleLeft, ToggleRight, MoreHorizontal, CheckCheck, XCircle, FolderInput } from 'lucide-react';
 import { POSITION_LABELS, ROLE_LABELS } from '@/types/worldbook';
 
 interface BatchOperationsProps {

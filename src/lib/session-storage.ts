@@ -4,7 +4,6 @@ import { getArchiveStory } from '@/lib/archive-db';
 
 const SESSION_KEY = 'st-beautifier-session';
 const SETTINGS_KEY = 'st-beautifier-settings';
-const MARKERS_KEY = 'st-beautifier-markers';
 const CUSTOM_REGEX_KEY = 'st-beautifier-custom-regex';
 const BUILTIN_STATES_KEY = 'st-beautifier-builtin-states';
 const REGEX_PRESETS_KEY = 'st-beautifier-regex-presets';

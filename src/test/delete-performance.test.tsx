@@ -93,7 +93,7 @@ it('ignores unrelated broken files while retaining unknown target files and inte
 });
 
 it('does not remove a replacement record that has another identity at the indexed target path', async () => {
-  const { fs, vault } = await fixture(1, 0);
+  const { fs } = await fixture(1, 0);
   const path = '角色/性能测试角色/故事/故事0/故事.json';
   const current = JSON.parse(await fs.readText(path));
   await fs.writeText(path, JSON.stringify({ ...current, id: 'replacement' }));

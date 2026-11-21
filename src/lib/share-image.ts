@@ -153,7 +153,6 @@ export async function renderShareImage(
   const coverH = 198;
   const headerH = cover ? coverH + pad * 2 : 150 + pad;
 
-  type Op = { y: number; draw: (ctx: CanvasRenderingContext2D) => void };
   const measureCanvas = document.createElement('canvas');
   const mctx = measureCanvas.getContext('2d')!;
 

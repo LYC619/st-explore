@@ -1,7 +1,7 @@
 import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { IdCard, Upload, Save, History, Download, FileJson, Image } from 'lucide-react';
+import { IdCard, Upload, Save, History, FileJson, Image } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { HelpCard } from '@/components/HelpCard';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';

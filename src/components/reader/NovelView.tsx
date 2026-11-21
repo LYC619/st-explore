@@ -12,8 +12,22 @@ import type { RemoveOptions } from '@/lib/repo';
  */
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  X, Settings, List, Sparkles, Loader2, Square, EyeOff, Eye, Feather, BookOpenCheck,
-  ChevronLeft, ChevronRight, Bookmark, BookmarkCheck, Trash2, ArrowLeft, Share as ShareIcon,
+  X,
+  Settings,
+  List,
+  Sparkles,
+  Loader2,
+  Square,
+  EyeOff,
+  Eye,
+  Feather,
+  BookOpenCheck,
+  ChevronLeft,
+  ChevronRight,
+  Bookmark,
+  BookmarkCheck,
+  Trash2,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';

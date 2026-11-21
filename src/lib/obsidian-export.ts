@@ -5,8 +5,7 @@
  */
 
 import type { SummaryItem, SummaryKind } from '@/types/summary';
-import { SUMMARY_KIND_LABELS } from '@/types/summary';
-import type { StoryTree, StoryNode } from '@/types/story-tree';
+import type { StoryTree } from '@/types/story-tree';
 import { childrenOf, nodePath } from '@/lib/story-tree-model';
 import {
   exportTextFile,

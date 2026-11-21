@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ToastAction } from '@/components/ui/toast';
 import { useToast } from '@/hooks/use-toast';
-import type { NormalizedPreset, OrderEntry, PromptBlock, PromptOrderGroup } from '@/types/preset';
+import type { NormalizedPreset, OrderEntry, PromptBlock } from '@/types/preset';
 import { blockDisplayName } from '@/types/preset';
 import {
   collectReferencedIds, isUnreferenced, isEmptyDisabled,

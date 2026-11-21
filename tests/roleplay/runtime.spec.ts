@@ -203,7 +203,7 @@ test('Agent mode automatically reads green lore, freezes actual provider context
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const storyId = await seed(page);
-  await page.evaluate(async ({ storyId, endpoint }) => {
+  await page.evaluate(async ({ endpoint }) => {
     const db = await import('/src/lib/archive-db.ts');
     const profiles = await import('/src/components/ai-tools/api-profiles.ts');
     profiles.persistProfiles([

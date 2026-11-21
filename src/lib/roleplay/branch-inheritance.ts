@@ -98,7 +98,7 @@ function parsePlan(text: string, parent: BranchRuntimeParent): InheritancePlan {
 
 /** Complete this before runtime reads/saves, outside any existing updateArchiveStory callback. */
 export async function ensureBranchRuntime(options: BranchInheritanceOptions): Promise<BranchInheritanceResult> {
-  const { storyId, branchId, stories, worldbooks } = options;
+  const { storyId, branchId, stories } = options;
   const store = options.store.underStoryLock ?? options.store, epoch = getVaultEpoch();
   if (store.storyId !== storyId || !validId(storyId) || (branchId !== null && !validId(branchId))) throw new Error('分支继承与故事不匹配');
   function check() {

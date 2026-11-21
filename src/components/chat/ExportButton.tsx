@@ -90,7 +90,7 @@ function downloadBlob(name: string, content: string, mime: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ExportButton({ session, settings, markers = [], onSettingsChange, onExported }: ExportButtonProps & { 'data-tour'?: string }) {
+export function ExportButton({ session, settings, markers = [], onExported }: ExportButtonProps & { 'data-tour'?: string }) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 

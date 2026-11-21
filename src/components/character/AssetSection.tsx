@@ -23,7 +23,6 @@ import {
   Paperclip,
   ExternalLink,
   FolderOpen,
-  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,7 +58,6 @@ import { getActiveVault } from '@/lib/vault/active';
 import {
   attachmentsSupported,
   externalOpenSupported,
-  isMediaAttachment,
   loadAttachmentViews,
   openAttachmentExternally,
   removeAttachment,

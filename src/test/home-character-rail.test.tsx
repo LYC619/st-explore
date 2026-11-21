@@ -17,6 +17,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArchiveCharacter } from '@/types/archive';
 import type { StoryIndexEntry } from '@/lib/archive-index';
+import { formatFullTime, formatListTime } from '@/lib/time-display';
 
 const navigate = vi.hoisted(() => vi.fn());
 const listCharacterIndex = vi.hoisted(() => vi.fn().mockResolvedValue([]));
@@ -118,6 +119,20 @@ afterEach(() => {
 });
 
 describe('首页最近角色横滑列', () => {
+  it('呈现展示名与最近查看时间，未查看时回退到更新时间', async () => {
+    const viewed = new Date(2026, 0, 2, 3, 4).getTime();
+    const updated = new Date(2026, 0, 1, 5, 6).getTime();
+    await renderHome([
+      mkCharacter('named', { displayMeta: { name: '合成展示名' }, lastViewedAt: viewed, updatedAt: updated }),
+      mkCharacter('fallback', { updatedAt: updated }),
+    ]);
+    expect(cardOf('named').querySelector('[title="合成展示名"]')?.textContent).toBe('合成展示名');
+    for (const [id, time] of [['named', viewed], ['fallback', updated]] as const) {
+      const label = cardOf(id).querySelector(`[title="${formatFullTime(time)}"]`);
+      expect(label?.textContent).toContain(formatListTime(time));
+    }
+  });
+
   it('按最近查看排序，没查看过的按更新时间垫后，最多 12 张', async () => {
     await renderHome([
       mkCharacter('old', { lastViewedAt: 100, updatedAt: 9999 }),

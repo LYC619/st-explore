@@ -83,7 +83,7 @@ it('keeps failed note inputs and retries with the entity captured when the edito
   expect(changed.mock.calls[0][0].updatedAt).toBeGreaterThan(1);
 });
 it('saves rating and labels through the shared domain, including the rating tier', async () => {
-  api.updateCharacter.mockImplementation(async (id, update) => ({ ...characters[0], ...await update(characters[0]) }));
+  api.updateCharacter.mockImplementation(async (_id, update) => ({ ...characters[0], ...await update(characters[0]) }));
   await render(); await click('编辑评分和标签'); await input('评分', '8'); await input('标签', '人物/少女'); await click('保存评分和标签');
   expect(changed).toHaveBeenCalledWith(expect.objectContaining({ rating: 8, tags: expect.arrayContaining(['人物/少女', '评价/精品']) }));
   expect(changed.mock.calls[0][0].updatedAt).toBeGreaterThan(1);

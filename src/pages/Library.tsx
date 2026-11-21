@@ -63,7 +63,6 @@ import {
   deleteCharacter,
   getLibraryTagPreferences,
   saveLibraryTagPreferences,
-  updateArchiveStory,
 } from '@/lib/archive-db';
 import { listCharacterIndex, toCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { readLibraryReturnState, writeLibraryReturnState } from '@/lib/library-return-state';

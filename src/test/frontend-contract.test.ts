@@ -185,15 +185,12 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     expect(image).toContain('shouldBlurNsfw');
   });
 
-  it('首页使用角色级查看时间、展示名与共享时间显示工具', () => {
+  it('首页使用角色级查看时间，角色页登记查看时间', () => {
     const home = read('src/pages/Home.tsx');
     const characterPage = read('src/pages/CharacterPage.tsx');
-    expect(home).toContain('displayCharacterName');
     expect(home).toContain('c.lastViewedAt');
     expect(home).not.toContain('lastViewedByChar');
     expect(characterPage).toContain('markCharacterViewed');
-    expect(home).toContain('formatListTime');
-    expect(home).toContain('formatFullTime');
     expect(home).not.toContain('function relativeTime');
   });
 

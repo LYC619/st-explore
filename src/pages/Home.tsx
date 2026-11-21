@@ -9,8 +9,15 @@
 import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Users, ArrowRight, BookOpenText, KeyRound, ChevronRight,
-  MessagesSquare, BookOpen, IdCard, SlidersHorizontal, MessageSquare,
+  Users,
+  ArrowRight,
+  BookOpenText,
+  KeyRound,
+  ChevronRight,
+  MessagesSquare,
+  BookOpen,
+  IdCard,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { isTauri, getAppConfig } from '@/lib/vault/tauri-fs';
 import { cn } from '@/lib/utils';
@@ -23,13 +30,9 @@ import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
 import { CharacterPortrait } from '@/components/library/CharacterPortrait';
 import { CharacterTile } from '@/components/library/CharacterTile';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { listAssetIndex } from '@/lib/asset-index';
-import { introOf } from '@/lib/character-intro';
-import { displayCharacterName } from '@/lib/library-query';
-import { formatListTime, formatFullTime } from '@/lib/time-display';
 import {
   EDITOR_TOOL_COPY,
   horizontalWheelDelta,
