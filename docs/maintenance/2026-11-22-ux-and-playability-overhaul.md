@@ -80,6 +80,6 @@
 | 生产构建 Web E2E（`playwright.production.config.ts`） | **7/7 全部通过** | 覆盖 `closeout.spec.ts` 与 `core-regression.spec.ts`（桌面 `1360px` 与手机 `390px`） |
 | 内嵌酒馆与整理流 E2E（`playwright.roleplay.config.ts`） | **16/16 全部通过** | 覆盖 `archive-workflow.spec.ts`、`library-finalize.spec.ts`、`playtest-controls.spec.ts`、`organizing-tags.spec.ts` |
 | 真实浏览器双视口巡检（Edge Chromium） | **11/11 视图通过** | `1440×900`（深色 + `cream` 浅色）与 `390×844` 手机视口截图核查通过，无横向溢出、无控制台错误 |
-| 原生 Tauri 桌面安装包 / 免安装版 | **本轮未重打包** | 改动位于 `refactor/ux-and-polish` 分支；`main` 最新双包仍为 `release/2026-11-22-five-stage-hardening/`（`689b19e723b5`） |
+| 原生 Tauri 桌面安装包 / 免安装版 | **已产出免安装体验包** | 按用户要求在 `refactor/ux-and-polish` 分支（`29b8076de473`，`dirty: false`）通过 `--portable-only` 构建 `release/2026-11-22-ux-and-polish/STE-0.9.9-2026-11-22-ux-and-polish-portable.exe`（SHA256 `0132c9493b6ba30cf5e95da113cc65ae0ae6782955ab4c010b46e900364210ac`，Agent 未运行正式程序）；尚未构建 NSIS 安装版或合入 `main` |
 | Android 真机 | **本轮未验证** | 仅验证浏览器 `390×844` 窄屏与粗指针热区样式，无 Android 真机实测 |
 | 用户实际体验认可 | **待用户验收** | 待用户审阅分支效果并确认手感与文案后，再决定是否合入 `main` 及构建新一批桌面双包 |
