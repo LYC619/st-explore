@@ -26,7 +26,7 @@ async function execute(command, args, { cwd, env, logPath } = {}) {
   return output.trim();
 }
 
-export async function packRelease(tag, { root = projectRoot, now = new Date(), collect = collectBuildInfo, execute: run = execute } = {}) {
+export async function packRelease(tag, { root = projectRoot, now = new Date(), collect = collectBuildInfo, execute: run = execute, portableOnly = false } = {}) {
   if (typeof tag !== 'string' || tag.length > 48 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(tag)) throw new Error('标签只允许小写字母、数字及中间的短横线，最多48字符');
   root = path.resolve(root);
   const releaseRoot = path.join(root, 'release');
@@ -60,7 +60,8 @@ export async function packRelease(tag, { root = projectRoot, now = new Date(), c
       ['cargo', 'cargo', ['--version']], ['rustc', 'rustc', ['--version']], ['tauri', process.execPath, [tauriCli, '--version']],
     ]) toolchains[name] = await run(command, args, commandOptions);
     console.log(`正在打包 ${label}，构建日志：${path.join(directory, 'build.log')}`);
-    await run(process.execPath, [tauriCli, 'build', '--bundles', 'nsis'], { ...commandOptions, logPath: path.join(directory, 'build.log') });
+    const buildArgs = portableOnly ? [tauriCli, 'build', '--no-bundle'] : [tauriCli, 'build', '--bundles', 'nsis'];
+    await run(process.execPath, buildArgs, { ...commandOptions, logPath: path.join(directory, 'build.log') });
 
     const frontendText = await readFile(path.join(root, 'dist/build-info.json'), 'utf8');
     if (json(JSON.parse(frontendText)) !== json(buildInfo)) throw new Error('前端构建清单与冻结清单不一致');
@@ -71,10 +72,11 @@ export async function packRelease(tag, { root = projectRoot, now = new Date(), c
     const after = collect(root, { now });
     if (after.commit !== buildInfo.commit || json(after.dirtyFiles) !== json(buildInfo.dirtyFiles)) throw new Error('打包期间源码提交或改动清单变化，请保留证据后换标签重试');
     const artifacts = [];
-    for (const [kind, source, file] of [
-      ['installer', path.join(target, `release/bundle/nsis/${config.productName}_${buildInfo.version}_x64-setup.exe`), `ST-Explorer-${buildInfo.version}-${label}-setup.exe`],
+    const targets = [
+      ...(!portableOnly ? [['installer', path.join(target, `release/bundle/nsis/${config.productName}_${buildInfo.version}_x64-setup.exe`), `ST-Explorer-${buildInfo.version}-${label}-setup.exe`]] : []),
       ['portable', executable, `STE-${buildInfo.version}-${label}-portable.exe`],
-    ]) {
+    ];
+    for (const [kind, source, file] of targets) {
       const destination = path.join(directory, file);
       await copyFile(source, destination);
       const bytes = await readFile(destination);
@@ -91,10 +93,10 @@ export async function packRelease(tag, { root = projectRoot, now = new Date(), c
     const completedAt = new Date().toISOString();
     const manifest = { schema: 1, status: 'packaged-not-run', label, startedAt, completedAt, buildInfo,
       dirtyScope: 'Only shipped source and build inputs listed in buildInfo.inputPaths; documentation, tests and reference files excluded.',
-      toolchains, buildSettings: { identifier: config.identifier, platform: 'windows-x64', codegenUnits: 256, bundle: 'nsis' }, artifacts };
+      toolchains, buildSettings: { identifier: config.identifier, platform: 'windows-x64', codegenUnits: 256, bundle: portableOnly ? 'none' : 'nsis' }, artifacts };
     await writeFile(path.join(directory, 'build-manifest.json'), json(manifest), { flag: 'wx' });
     await writeFile(executionPath, json({ status: 'packaged-not-run', startedAt, completedAt }));
-    console.log(`双包及构建清单已生成：${directory}`);
+    console.log(`${portableOnly ? '免安装版' : '双包'}及构建清单已生成：${directory}`);
     return { directory, manifest };
   } catch (error) {
     await writeFile(executionPath, json({ status: 'failed', startedAt, failedAt: new Date().toISOString(), reason: error.message }));
@@ -104,6 +106,9 @@ export async function packRelease(tag, { root = projectRoot, now = new Date(), c
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('此打包入口目前仅支持 Windows x64');
-  if (process.argv.length !== 3) throw new Error('Usage: npm run release:pack -- <标签>');
-  await packRelease(process.argv[2]);
+  const cliArgs = process.argv.slice(2);
+  const portableOnly = cliArgs.includes('--portable-only');
+  const positional = cliArgs.filter(arg => arg !== '--portable-only');
+  if (positional.length !== 1) throw new Error('Usage: npm run release:pack -- <标签> [--portable-only]');
+  await packRelease(positional[0], { portableOnly });
 }

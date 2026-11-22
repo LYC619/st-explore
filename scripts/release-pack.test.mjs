@@ -67,3 +67,26 @@ test('failed builds keep evidence and cannot create a completed manifest or over
   await assert.rejects(readFile(path.join(dir, 'build-manifest.json')), { code: 'ENOENT' });
   await assert.rejects(packRelease('fixture', options), /已存在/);
 });
+
+test('supports portableOnly mode with --no-bundle and records single portable artifact', async () => {
+  const root = await fixture(), calls = [];
+  const execute = async (command, args, options) => {
+    calls.push({ command, args });
+    if (!args.includes('build')) return 'synthetic-tool 1.0';
+    assert.ok(args.includes('--no-bundle'));
+    const receiptText = await readFile(options.env.STE_BUILD_INFO_FILE, 'utf8');
+    await mkdir(path.join(root, 'dist'), { recursive: true });
+    await writeFile(path.join(root, 'dist/build-info.json'), receiptText);
+    const target = options.env.CARGO_TARGET_DIR;
+    await mkdir(path.join(target, 'release'), { recursive: true });
+    await writeFile(path.join(target, 'release/STE.exe'), 'synthetic portable:' + receiptText.replace(/[\r\n]/g, ''));
+    return '';
+  };
+  const result = await packRelease('fixture', { root, now, execute, collect: () => info, portableOnly: true });
+  const manifest = JSON.parse(await readFile(path.join(result.directory, 'build-manifest.json'), 'utf8'));
+  assert.equal(manifest.buildSettings.bundle, 'none');
+  assert.equal(manifest.artifacts.length, 1);
+  assert.equal(manifest.artifacts[0].kind, 'portable');
+  const bytes = await readFile(path.join(result.directory, manifest.artifacts[0].file));
+  assert.equal(manifest.artifacts[0].sha256, createHash('sha256').update(bytes).digest('hex'));
+});
