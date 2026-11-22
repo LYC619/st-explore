@@ -175,6 +175,21 @@ export function focusDetachedTavernWindow(): boolean {
   }
 }
 
+function isTauriRuntime(): boolean {
+  return typeof window !== 'undefined' && ('__TAURI_INTERNALS__' in window || '__TAURI__' in window);
+}
+
+/**
+ * 异步创建/校验故事前的独立窗口预约：
+ * - 普通浏览器：必须在同步点击调用栈内先打开窗口，避免异步 DB 操作后被浏览器弹窗拦截器拒绝；
+ * - Tauri 桌面端：由 Rust `on_new_window` 托管，无需抢同步激活，延后到故事准备与 `<Roleplay />`
+ *   模块预热完成后再建窗，彻底避开 WebView2 新建窗口与自定义协议资源请求的并发竞争。
+ */
+export function reserveDetachedWindowForAsyncAction(forceDetached = false): DetachedWindowReservation | null {
+  if (isTauriRuntime()) return null;
+  return preopenDetachedTavernWindow(forceDetached);
+}
+
 export function preopenDetachedTavernWindow(forceDetached = false): DetachedWindowReservation | null {
   if (typeof window === 'undefined') return null;
   if (!forceDetached && getPreferredTavernWindowMode() !== 'detached') return null;
@@ -204,14 +219,14 @@ export function preopenDetachedTavernWindow(forceDetached = false): DetachedWind
       doc.head.prepend(base);
     }
     doc.body.style.margin = '0';
-    doc.body.style.overflow = 'hidden';
+    doc.body.style.overflow = 'clip';
     container = doc.getElementById(DETACHED_ROOT_ID);
     if (!container) {
       container = doc.createElement('div');
       container.id = DETACHED_ROOT_ID;
       container.style.height = '100dvh';
-      container.style.width = '100vw';
-      container.style.overflow = 'hidden';
+      container.style.width = '100%';
+      container.style.overflow = 'clip';
       doc.body.innerHTML = '';
       doc.body.appendChild(container);
     }

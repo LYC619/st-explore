@@ -12,12 +12,12 @@ import {
   Quote as QuoteIcon,
   Plus,
   X,
+  Wrench,
   PackageOpen,
   Download,
   Search,
   Paperclip,
   ExternalLink,
-  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -418,7 +418,7 @@ export function AssetSection({
       {embeddedSummary.total > 0 && (
         <div
           data-embedded-card-assets
-          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-3.5 py-2.5 text-xs text-[color:var(--text-body)]"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/25 bg-[var(--brand-active-bg)] px-3.5 py-2.5 text-xs text-[color:var(--text-body)]"
         >
           <div className="space-y-0.5">
             <p className="font-medium text-[color:var(--text-primary)]">
@@ -460,23 +460,21 @@ export function AssetSection({
             const meta = KIND_META[a.kind];
             const Icon = meta.icon;
             const isOwnDerived = a.derived?.characterId === character.id;
-            const libraryAsset = isLibraryAsset(a.kind);
             return (
               <div
                 key={`${a.kind}-${a.id}`}
                 role="button"
                 tabIndex={0}
                 className="flex items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:border-primary/40 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => (libraryAsset ? openEditor(a) : setPreview(a))}
+                onClick={() => setPreview(a)}
                 onKeyDown={(e) => {
                   if (e.target !== e.currentTarget) return;
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault();
-                    if (libraryAsset) openEditor(a);
-                    else setPreview(a);
+                    setPreview(a);
                   }
                 }}
-                title={libraryAsset ? `点击直接打开${meta.label}大屏编辑` : '点击查看条目预览'}
+                title="点击查看条目预览"
               >
                 <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                 <span className="min-w-0 truncate font-medium" title={a.title}>{a.title}</span>
@@ -486,7 +484,7 @@ export function AssetSection({
                     文件缺失
                   </Badge>
                 )}
-                {libraryAsset && (
+                {isLibraryAsset(a.kind) && (
                   a.derived ? (
                     <Badge variant="secondary" className="h-4 px-1 text-[11px] shrink-0" title={isOwnDerived ? '本角色的派生副本' : '其他角色的派生副本'}>
                       派生{isOwnDerived ? '' : '(他人)'}
@@ -506,16 +504,15 @@ export function AssetSection({
                 <span className="ml-auto text-xs text-muted-foreground shrink-0 hidden sm:inline" title={formatFullTime(a.updatedAt)}>
                   {formatListTime(a.updatedAt)}
                 </span>
-                {libraryAsset && (
+                {isLibraryAsset(a.kind) && (
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label={`速览${a.title}`}
-                    title="在右侧抽屉快速预览条目"
-                    onClick={(e) => { e.stopPropagation(); setPreview(a); }}
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={(e) => { e.stopPropagation(); openEditor(a); }}
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    <Wrench className="w-3.5 h-3.5 mr-1" />
+                    处理
                   </Button>
                 )}
                 {a.file && !a.file.missing && canOpenExternally && (

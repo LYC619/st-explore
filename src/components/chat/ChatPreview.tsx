@@ -31,8 +31,6 @@ export interface ChatPreviewProps {
   fontSize: number;
   regexRules: RegexRule[];
   markers?: ChapterMarker[];
-  favoritesSet?: ReadonlySet<string>;
-  onToggleFavorite?: (messageId: string) => void;
   characterAvatarUrl?: string;
   currentAnchorFloor?: number;
   onMessageClick?: (messageId: string, messageIndex: number) => void;
@@ -67,8 +65,6 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     fontSize,
     regexRules,
     markers = [],
-    favoritesSet,
-    onToggleFavorite,
     characterAvatarUrl,
     currentAnchorFloor = 0,
     onMessageClick,
@@ -415,8 +411,6 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     userName={session.user.name}
                     charName={session.character.name}
                     characterAvatarUrl={characterAvatarUrl}
-                    isFavorited={favoritesSet?.has(message.id) ?? false}
-                    onToggleFavorite={onToggleFavorite}
                     onMessageClick={onMessageClick}
                     onEditMessage={onEditMessage}
                     onSwipeSelect={onSwipeSelect}

@@ -9,7 +9,10 @@ import { displayCharacterName } from '@/lib/library-query';
 import { getAllSummaries } from '@/lib/summary-db';
 import { scopedKey } from '@/lib/vault/vault-scope';
 import { getVaultEpoch } from '@/lib/vault/active';
-import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
+import { buildEditorChatPath, setEditorStoryId } from '@/lib/editor-story-context';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
+import { launchRoleplayTarget } from '@/lib/roleplay/detached-window';
+import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 import { useViewport } from '@/hooks/use-viewport';
 import { useToast } from '@/hooks/use-toast';
 import { isPlainSingleKeyShortcut } from '@/lib/keyboard-shortcuts';
@@ -229,31 +232,28 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
             onJumpToRecordFloor={jumpToRecordFloor}
             onCharacterChange={onCharacterChange}
             onStoriesChange={onStoriesChange}
-            onOpenEditor={id => void transition(() => navigate(`/story/${id}`))}
+            onOpenEditor={id => void transition(() => {
+              setEditorStoryId(id);
+              navigate(buildEditorChatPath(id));
+            })}
             onOpenChat={(sid, bid) => {
               if (transitionLock.current) return;
-              const reservation = preopenDetachedTavernWindow();
               void transition(async () => {
                 const epoch = getVaultEpoch();
                 try {
-                  const m = await import('@/lib/roleplay/open-story');
-                  const target = await m.prepareStoryPlay(sid, bid);
-                  if (!mounted.current || epoch !== getVaultEpoch()) {
-                    reservation?.cancelIfUnused();
-                    return;
-                  }
+                  const [target] = await Promise.all([
+                    prepareStoryPlay(sid, bid),
+                    preloadRoleplayPage(),
+                  ]);
+                  if (!mounted.current || epoch !== getVaultEpoch()) return;
                   launchRoleplayTarget({
                     storyId: target.storyId,
                     branchId: target.branchId,
                     navigate,
-                    reservation,
                   });
                 } catch (err) {
-                  reservation?.cancelIfUnused();
                   toast({ title: '暂时未能进入聊天', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
                 }
-              }).finally(() => {
-                reservation?.cancelIfUnused();
               });
             }}
             readerRef={readerRef}

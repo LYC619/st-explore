@@ -5,7 +5,7 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
-import { DEFAULT_PAPER_WIDTH, PAPER_WIDTH_FULL } from '@/lib/session-storage';
+import { PAPER_WIDTH_ADAPTIVE, PAPER_WIDTH_FULL } from '@/lib/session-storage';
 import type { ThemeStyle, ExportSettings, PrefixMode } from '@/types/chat';
 
 const FONT_OPTIONS = [
@@ -100,23 +100,44 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-sm">阅读宽度</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {settings.paperWidth >= PAPER_WIDTH_FULL ? '铺满可用宽度' : `${settings.paperWidth}px`}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground tabular-nums mr-1">
+                  {settings.paperWidth <= 0
+                    ? '自适应'
+                    : settings.paperWidth >= PAPER_WIDTH_FULL
+                      ? '铺满可用宽度'
+                      : `${settings.paperWidth}px`}
                 </span>
-                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
-                  <Switch
-                    checked={settings.paperWidth >= PAPER_WIDTH_FULL}
-                    onCheckedChange={(checked) => updateSetting('paperWidth', checked ? PAPER_WIDTH_FULL : DEFAULT_PAPER_WIDTH)}
-                    aria-label="铺满可用宽度"
-                  />
+                <button
+                  type="button"
+                  onClick={() => updateSetting('paperWidth', PAPER_WIDTH_ADAPTIVE)}
+                  aria-pressed={settings.paperWidth <= 0}
+                  className={`tap-target rounded px-2 py-0.5 text-xs border transition-colors ${
+                    settings.paperWidth <= 0
+                      ? 'border-primary bg-primary/10 text-primary font-medium'
+                      : 'border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  自适应
+                </button>
+                <button
+                  type="button"
+                  onClick={() => updateSetting('paperWidth', settings.paperWidth >= PAPER_WIDTH_FULL ? PAPER_WIDTH_ADAPTIVE : PAPER_WIDTH_FULL)}
+                  aria-pressed={settings.paperWidth >= PAPER_WIDTH_FULL}
+                  aria-label="铺满可用宽度"
+                  className={`tap-target rounded px-2 py-0.5 text-xs border transition-colors ${
+                    settings.paperWidth >= PAPER_WIDTH_FULL
+                      ? 'border-primary bg-primary/10 text-primary font-medium'
+                      : 'border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
                   铺满
-                </label>
+                </button>
               </div>
             </div>
             {settings.paperWidth < PAPER_WIDTH_FULL && (
               <Slider
-                value={[Math.min(Math.max(settings.paperWidth, 480), 1400)]}
+                value={[settings.paperWidth <= 0 ? 840 : Math.min(Math.max(settings.paperWidth, 480), 1400)]}
                 onValueChange={([value]) => updateSetting('paperWidth', value)}
                 min={480}
                 max={1400}

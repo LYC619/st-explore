@@ -62,8 +62,11 @@ import {
   saveLibraryTagPreferences,
 } from '@/lib/archive-db';
 import { listCharacterIndex, toCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
+import { buildEditorChatPath, setEditorStoryId } from '@/lib/editor-story-context';
 import { readLibraryReturnState, writeLibraryReturnState } from '@/lib/library-return-state';
-import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
+import { launchRoleplayTarget, reserveDetachedWindowForAsyncAction } from '@/lib/roleplay/detached-window';
+import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { scopedKey } from '@/lib/vault/vault-scope';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
@@ -452,10 +455,9 @@ const Library = () => {
     playBusyRef.current = true;
     setStartingStoryId(storyId);
     const epoch = getVaultEpoch();
-    const reservation = preopenDetachedTavernWindow();
+    const reservation = reserveDetachedWindowForAsyncAction();
     try {
-      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
-      const target = await prepareStoryPlay(storyId);
+      const [target] = await Promise.all([prepareStoryPlay(storyId), preloadRoleplayPage()]);
       if (epoch !== getVaultEpoch()) {
         reservation?.cancelIfUnused();
         return;
@@ -578,22 +580,25 @@ const Library = () => {
     if (selection.batchMode) selection.clickCharacter(c, shiftKey);
     else navigate(`/character/${c.id}`);
   };
+  const openReminisceStory = useCallback((storyId: string) => {
+    setEditorStoryId(storyId);
+    navigate(buildEditorChatPath(storyId));
+  }, [navigate]);
+
   const menuFor = (
     c: ArchiveCharacter,
     triggerClassName: string,
     iconClassName?: string,
-    hasQuickPills = false,
   ) => {
     const latestId = latestStoryByChar[c.id];
     return (
       <CharacterActionsMenu
         onOpen={() => navigate(`/character/${c.id}`)}
         onContinueChat={latestId ? () => { void continueStoryFromCard(latestId); } : undefined}
-        onReminisceStory={latestId ? () => navigate(`/story/${encodeURIComponent(latestId)}`) : undefined}
+        onReminisceStory={latestId ? () => openReminisceStory(latestId) : undefined}
         onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
         onExport={() => void handleSingleExport(c)}
         onDelete={() => setPendingDelete([c])}
-        hasQuickPills={hasQuickPills}
         triggerClassName={triggerClassName}
         iconClassName={iconClassName}
       />
@@ -617,10 +622,6 @@ const Library = () => {
       onTypeChange={(value) => setTypeFilter(value as TypeFilter)}
       onTagToggle={toggleTagFilter}
       onUncategorizedExpandedChange={setUncategorizedExpanded}
-      onClearAll={() => {
-        setTypeFilter('all');
-        setTagFilters({});
-      }}
     />
   );
 
@@ -657,7 +658,7 @@ const Library = () => {
           onFontScaleChange={prefs.setFontScale}
           fileInputRef={fileInputRef}
           onPickFiles={handleImportFiles}
-          storyPackageTools={<StoryPackageTools compact />}
+          storyPackageTools={<StoryPackageTools />}
           reviewFilters={!isCompact && (
             <Button variant="outline" size="sm" aria-expanded={reviewFiltersOpen} onClick={() => setReviewFiltersOpen((open) => !open)}>
               <ListFilter className="w-4 h-4 mr-1.5" />筛选
@@ -772,14 +773,12 @@ const Library = () => {
                               actions={menuFor(
                                 c,
                                 'hover-reveal tap-target w-6 h-6 rounded-full bg-[rgba(0,0,0,0.65)] backdrop-blur-sm text-white/80 flex items-center justify-center',
-                                undefined,
-                                prefs.cardWidth >= CARD_W_COMPACT,
                               )}
                               quickAction={prefs.cardWidth >= CARD_W_COMPACT ? (
                                 <CharacterQuickPills
                                   hasStory={Boolean(latestStoryByChar[c.id])}
                                   busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id])}
-                                  onReminisce={() => navigate(`/story/${encodeURIComponent(latestStoryByChar[c.id])}`)}
+                                  onReminisce={() => openReminisceStory(latestStoryByChar[c.id])}
                                   onContinueChat={() => { void continueStoryFromCard(latestStoryByChar[c.id]); }}
                                   onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
                                 />

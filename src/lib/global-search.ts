@@ -54,7 +54,7 @@ export function buildSearchEntries(input: BuildInput): SearchEntry[] {
       id: s.id,
       title: s.title,
       sub: s.characterId ? charName.get(s.characterId) : '未绑定',
-      path: `/story/${s.id}`,
+      path: `/chat?storyId=${encodeURIComponent(s.id)}`,
     })),
     ...input.worldbooks.map<SearchEntry>((w) => ({
       kind: 'worldbook', id: w.id, title: w.title, path: `/worldbook?assetId=${w.id}`,

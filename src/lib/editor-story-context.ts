@@ -87,27 +87,28 @@ export function buildEditorStoryPath(storyId: string, view: EditorStoryView): st
   return `/story/${encodeURIComponent(id)}?view=${view}`;
 }
 
-export function buildStoryReadPath(
+export function buildEditorChatPath(
   storyId: string,
   options?: { branchId?: string | null; floor?: number },
 ): string {
   const id = normalizeStoryId(storyId);
   if (!id) throw new Error('故事 ID 无效');
   const params = new URLSearchParams();
+  params.set('storyId', id);
   if (options?.branchId !== undefined) {
     params.set('branch', options.branchId ?? '');
   }
   if (typeof options?.floor === 'number' && Number.isSafeInteger(options.floor) && options.floor >= 0) {
     params.set('floor', String(options.floor));
   }
-  const query = params.toString();
-  return `/story/${encodeURIComponent(id)}${query ? `?${query}` : ''}`;
+  return `/chat?${params.toString()}`;
 }
 
-export function buildEditorChatPath(storyId: string): string {
-  const id = normalizeStoryId(storyId);
-  if (!id) throw new Error('故事 ID 无效');
-  return `/chat?storyId=${encodeURIComponent(id)}`;
+export function buildStoryReadPath(
+  storyId: string,
+  options?: { branchId?: string | null; floor?: number },
+): string {
+  return buildEditorChatPath(storyId, options);
 }
 
 /** 显式路由最高优先；共享记忆其次；旧聊天指针只作为迁移兜底。 */
@@ -120,7 +121,7 @@ export function resolveEditorStoryId(
 
 export function editorStoryPathForNavKey(key: string, storyId: string | null): string | null {
   if (!storyId) return null;
-  if (key === 'chat') return buildStoryReadPath(storyId);
+  if (key === 'chat') return buildEditorChatPath(storyId);
   if (key === 'summary') return buildEditorStoryPath(storyId, getEditorSummaryKind(storyId) ?? 'volume');
   if (key === 'story-tree') return buildEditorStoryPath(storyId, 'tree');
   return null;

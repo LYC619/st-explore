@@ -34,7 +34,10 @@ import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
-import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
+import { launchRoleplayTarget } from '@/lib/roleplay/detached-window';
+import { prepareStoryPlay } from '@/lib/roleplay/open-story';
+import { buildEditorChatPath, setEditorStoryId } from '@/lib/editor-story-context';
 import { listAssetIndex } from '@/lib/asset-index';
 import {
   EDITOR_TOOL_COPY,
@@ -229,27 +232,28 @@ const Home = () => {
     if (!cur || t > cur.t) latestStoryByChar[s.characterId] = { id: s.id, t };
   }
 
+  const openStoryInEditor = (storyId: string) => {
+    setEditorStoryId(storyId);
+    navigate(buildEditorChatPath(storyId));
+  };
+
   const continueStoryFromHome = async (storyId: string) => {
     if (playBusyRef.current) return;
     playBusyRef.current = true;
     setStartingStoryId(storyId);
     const epoch = getVaultEpoch();
-    const reservation = preopenDetachedTavernWindow();
     try {
-      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
-      const target = await prepareStoryPlay(storyId);
-      if (epoch !== getVaultEpoch()) {
-        reservation?.cancelIfUnused();
-        return;
-      }
+      const [target] = await Promise.all([
+        prepareStoryPlay(storyId),
+        preloadRoleplayPage(),
+      ]);
+      if (epoch !== getVaultEpoch()) return;
       launchRoleplayTarget({
         storyId: target.storyId,
         branchId: target.branchId,
         navigate,
-        reservation,
       });
     } catch (err) {
-      reservation?.cancelIfUnused();
       toast({
         title: '暂时未能进入聊天',
         description: err instanceof Error ? err.message : String(err),
@@ -449,7 +453,7 @@ const Home = () => {
                         <CharacterQuickPills
                           hasStory={Boolean(latestStoryByChar[c.id])}
                           busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id].id)}
-                          onReminisce={() => navigate(`/story/${encodeURIComponent(latestStoryByChar[c.id].id)}`)}
+                          onReminisce={() => openStoryInEditor(latestStoryByChar[c.id].id)}
                           onContinueChat={() => { void continueStoryFromHome(latestStoryByChar[c.id].id); }}
                           onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
                         />
@@ -502,12 +506,12 @@ const Home = () => {
                         key={s.id}
                         role="button"
                         tabIndex={0}
-                        onClick={() => navigate(`/story/${encodeURIComponent(s.id)}`)}
+                        onClick={() => openStoryInEditor(s.id)}
                         onKeyDown={(e) => {
                           if (e.target !== e.currentTarget) return;
                           if (e.key === 'Enter' || e.key === ' ') {
                             e.preventDefault();
-                            navigate(`/story/${encodeURIComponent(s.id)}`);
+                            openStoryInEditor(s.id);
                           }
                         }}
                         className="group flex h-full min-h-0 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg bg-chrome px-3 py-2 text-left transition-colors hover:bg-elevated-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--brand-hairline)]"

@@ -40,7 +40,7 @@ describe('当前编辑故事上下文', () => {
 
   it('为全局编辑区导航提供同一故事的三个视图', () => {
     expect(buildEditorChatPath('abc')).toBe('/chat?storyId=abc');
-    expect(editorStoryPathForNavKey('chat', 'abc')).toBe('/story/abc');
+    expect(editorStoryPathForNavKey('chat', 'abc')).toBe('/chat?storyId=abc');
     expect(editorStoryPathForNavKey('summary', 'abc')).toBe('/story/abc?view=volume');
     expect(editorStoryPathForNavKey('story-tree', 'abc')).toBe('/story/abc?view=tree');
     expect(editorDestinationPath('summary', 'abc', '/tools?focus=summary')).toBe('/story/abc?view=volume');

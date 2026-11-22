@@ -1022,8 +1022,8 @@ test('independent split-screen Tavern window shares the live VaultBackend while 
   await page.getByRole('button', { name: '独立窗口', exact: true }).click();
   const popup = await popupPromise;
 
-  // Main window automatically returns to the story reader with live read-only sync banner and zero taskDock pill
-  await expect(page).toHaveURL(new RegExp(`/story/${storyId}`));
+  // Main window automatically returns to the /chat?storyId=... reader with live read-only sync banner and zero taskDock pill
+  await expect(page).toHaveURL(new RegExp(`/chat\\?storyId=${storyId}`));
   await expect(page.locator('[data-detached-sync-banner]')).toContainText('正在独立酒馆窗口对话中');
   await expect(page.getByRole('button', { name: /^返回聊天 ·/ })).toHaveCount(0);
 

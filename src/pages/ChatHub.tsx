@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
   CircleHelp,
-  Compass,
   ExternalLink,
   MessageCircle,
   Plus,
@@ -19,6 +18,7 @@ import { StoryListSkeleton } from '@/components/ui/skeleton';
 import { RoleplayGuide } from '@/components/roleplay/RoleplayGuide';
 import { ChatHubStoryRow } from '@/components/roleplay/ChatHubStoryRow';
 import { NewChatPickerDialog } from '@/components/roleplay/NewChatPickerDialog';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
 import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { listAssetIndex } from '@/lib/asset-index';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
@@ -29,7 +29,7 @@ import {
   focusDetachedTavernWindow,
   getPreferredTavernWindowMode,
   launchRoleplayTarget,
-  preopenDetachedTavernWindow,
+  reserveDetachedWindowForAsyncAction,
   setPreferredTavernWindowMode,
   setRoleplayOpenChat,
   type TavernWindowMode,
@@ -45,7 +45,7 @@ import { renameArchiveStory } from '@/lib/story-rename';
 import { executeDeleteAction } from '@/lib/destructive-action';
 import { characterChatTags, getChatTagOptions, normalizeLibraryTagPreferences } from '@/lib/library-tag-preferences';
 import { scopedKey } from '@/lib/vault/vault-scope';
-import { buildStoryReadPath, setEditorStoryId } from '@/lib/editor-story-context';
+import { buildEditorChatPath, setEditorStoryId } from '@/lib/editor-story-context';
 import { useViewport } from '@/hooks/use-viewport';
 import { useToast } from '@/hooks/use-toast';
 
@@ -169,6 +169,10 @@ export default function ChatHub() {
   const filteredCharacters = characters.filter((character) => [displayCharacterName(character), character.name, character.subtitle ?? '']
     .some((value) => value.toLocaleLowerCase().includes(cardQuery)));
 
+  useEffect(() => {
+    void preloadRoleplayPage();
+  }, []);
+
   const toggleWindowMode = () => {
     const next: TavernWindowMode = windowMode === 'detached' ? 'inline' : 'detached';
     setPreferredTavernWindowMode(next);
@@ -176,6 +180,7 @@ export default function ChatHub() {
   };
 
   const openChat = (storyId: string, forceMode?: TavernWindowMode) => {
+    void preloadRoleplayPage();
     launchRoleplayTarget({
       storyId,
       fromChats: true,
@@ -186,7 +191,7 @@ export default function ChatHub() {
 
   const openReader = (storyId: string) => {
     setEditorStoryId(storyId);
-    navigate(buildStoryReadPath(storyId));
+    navigate(buildEditorChatPath(storyId));
   };
 
   const openModels = () => {
@@ -205,9 +210,9 @@ export default function ChatHub() {
     if (starting) return;
     setStarting(characterId);
     setStartError(undefined);
-    const reservation = preopenDetachedTavernWindow();
+    const reservation = reserveDetachedWindowForAsyncAction();
     try {
-      const storyId = await startCharacterStory(characterId);
+      const [storyId] = await Promise.all([startCharacterStory(characterId), preloadRoleplayPage()]);
       if (mounted.current) {
         setPickerOpen(false);
         launchRoleplayTarget({ storyId, fromChats: true, navigate, reservation });
@@ -343,21 +348,18 @@ export default function ChatHub() {
           </div>
         </header>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] px-3.5 py-2 text-xs">
-          <div className="flex min-w-0 items-center gap-2">
-            <Compass className="h-3.5 w-3.5 shrink-0 text-brand" />
-            <span className="font-serif font-medium text-[color:var(--text-primary)]">山海之间</span>
-            <span className="hidden sm:inline text-[color:var(--text-muted)]">· 原生世界沙盘（无需配置模型，走进地图追踪十二位行旅）</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => navigate('/worlds')}
-            className="tap-target inline-flex items-center gap-1 font-medium text-brand hover:underline"
-          >
-            <span>进入沙盘</span>
-            <ArrowRight className="h-3.5 w-3.5" />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/worlds')}
+          className="group flex min-h-28 w-full items-center justify-between gap-4 rounded-xl border border-[color:var(--brand-hairline)] bg-gradient-to-r from-[var(--brand-active-bg-strong)] to-[var(--bg-elevated)] px-6 py-5 text-left text-[color:var(--text-primary)] transition-colors hover:border-brand"
+        >
+          <span>
+            <span className="mb-1 block text-xs tracking-[0.2em] text-brand">原生世界 · 无需配置模型</span>
+            <span className="block font-serif text-2xl">山海之间</span>
+            <span className="mt-1 block text-sm text-[color:var(--text-muted)]">走进地图，追踪十二位行旅。下一场雨，会改变谁的路？</span>
+          </span>
+          <ArrowRight className="h-6 w-6 shrink-0 text-brand transition-transform group-hover:translate-x-1" />
+        </button>
 
         <section aria-label="已有聊天" className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">

@@ -47,6 +47,7 @@ import {
   normalizeAppearanceSettings,
 } from '@/lib/session-storage';
 import {
+  buildEditorChatPath,
   buildEditorStoryPath,
   buildStoryReadPath,
   isSummarySurfaceKind,
@@ -61,12 +62,13 @@ import { LOADING_LABEL } from '@/lib/ui-copy';
 import { useViewport } from '@/hooks/use-viewport';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { subscribeRecordChanges } from '@/lib/repo/changes';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
 import {
   focusDetachedTavernWindow,
   launchRoleplayTarget,
-  preopenDetachedTavernWindow,
   useRoleplaySessionState,
 } from '@/lib/roleplay/detached-window';
+import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 
 const RAIL_COLLAPSED_STORAGE_KEY = 'ste-story-rail-collapsed';
 
@@ -424,27 +426,24 @@ const StoryWorkspace = () => {
     const resolvedBranch = targetBranchId !== undefined
       ? resolveInitialBranchId(current, targetBranchId)
       : branchId;
-    if (resolvedBranch !== branchId) {
-      setBranchId(resolvedBranch);
-    }
     const targetLine = getBranchLine(current, resolvedBranch);
     const clamped = targetLine && targetLine.session.messages.length > 0
       ? Math.min(Math.max(0, targetFloor), targetLine.session.messages.length - 1)
       : Math.max(0, targetFloor);
     mutateStory((cur) => updateBranchLine(cur, resolvedBranch, { lastFloor: clamped }));
-    setSpotlightFloor(clamped);
-    setView('read');
-    setSearchParams((prev) => {
-      const copy = new URLSearchParams(prev);
-      copy.set('view', 'read');
-      if (copy.has('branch') || targetBranchId !== undefined) {
-        copy.set('branch', resolvedBranch ?? '');
-      }
-      copy.delete('floor');
-      return copy;
-    }, { replace: true });
-    setTimeout(() => workbenchRef.current?.scrollToFloor(clamped), 180);
-  }, [branchId, mutateStory, setSearchParams]);
+    void saverRef.current.flush()
+      .then(() => {
+        setEditorStoryId(current.id);
+        navigate(buildEditorChatPath(current.id, { branchId: resolvedBranch, floor: clamped }));
+      })
+      .catch((error) => {
+        toastRef.current({
+          title: '保存故事未成功，已取消跳转',
+          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          variant: 'destructive',
+        });
+      });
+  }, [branchId, mutateStory, navigate]);
 
   const handleImportBranch = async (files: FileList | null) => {
     if (isLiveInDetachedTavern || !files || files.length === 0 || !story) return;
@@ -626,23 +625,19 @@ const StoryWorkspace = () => {
     playBusyRef.current = true;
     setPlayBusy(true);
     const epoch = getVaultEpoch();
-    const reservation = preopenDetachedTavernWindow();
     try {
       await saverRef.current.flush();
-      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
-      const target = await prepareStoryPlay(story.id, branchId);
-      if (epoch !== getVaultEpoch()) {
-        reservation?.cancelIfUnused();
-        return;
-      }
+      const [target] = await Promise.all([
+        prepareStoryPlay(story.id, branchId),
+        preloadRoleplayPage(),
+      ]);
+      if (epoch !== getVaultEpoch()) return;
       launchRoleplayTarget({
         storyId: target.storyId,
         branchId: target.branchId,
         navigate,
-        reservation,
       });
     } catch (error) {
-      reservation?.cancelIfUnused();
       toast({
         title: '保存未完成，暂未进入聊天',
         description: error instanceof Error ? error.message : String(error),
@@ -683,7 +678,24 @@ const StoryWorkspace = () => {
             storyTitle={story.title}
             backLabel={backLabel}
             onBack={() => navigate(backTarget)}
-            onRead={() => changeView('read')}
+            onRead={() => {
+              if (organizeView) {
+                void saverRef.current.flush()
+                  .then(() => {
+                    setEditorStoryId(story.id);
+                    navigate(buildEditorChatPath(story.id, { branchId }));
+                  })
+                  .catch((error) => {
+                    toast({
+                      title: '当前故事尚未保存成功，已取消跳转',
+                      description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+                      variant: 'destructive',
+                    });
+                  });
+                return;
+              }
+              changeView('read');
+            }}
             hideReadAction={view === 'read'}
             onExpandRail={!organizeView && !isCompact && railCollapsed ? () => toggleRailCollapsed(false) : undefined}
             currentStoryId={story.id}

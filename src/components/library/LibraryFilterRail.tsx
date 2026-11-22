@@ -8,7 +8,6 @@ import {
   LayoutGrid,
   Sparkles,
   UserRound,
-  X,
   type LucideIcon,
 } from 'lucide-react';
 import { HelpHint } from '@/components/HelpHint';
@@ -32,7 +31,6 @@ interface LibraryFilterRailProps {
   onTypeChange: (value: string) => void;
   onTagToggle: (category: TagCategory, raw: string) => void;
   onUncategorizedExpandedChange: (expanded: boolean) => void;
-  onClearAll?: () => void;
   /**
    * 装在窄屏左抽屉里：宽度由抽屉给，去掉右边框和拖宽手柄
    * （抽屉本身可以左滑关闭，再放一个横向拖拽的热区只会互相抢手势）。
@@ -104,7 +102,6 @@ export function LibraryFilterRail({
   onTypeChange,
   onTagToggle,
   onUncategorizedExpandedChange,
-  onClearAll,
   embedded = false,
 }: LibraryFilterRailProps) {
   const railRef = useRef<HTMLElement>(null);
@@ -114,10 +111,10 @@ export function LibraryFilterRail({
   const [railWidth, setRailWidth] = useState(() => {
     try {
       const saved = Number(localStorage.getItem('ste-library-filter-width'));
-      if (saved === 224 || saved === 336) return 248;
-      return saved >= 200 && saved <= 420 ? saved : 248;
+      if (saved === 224) return 336;
+      return saved >= 200 && saved <= 420 ? saved : 336;
     } catch {
-      return 248;
+      return 336;
     }
   });
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -149,15 +146,6 @@ export function LibraryFilterRail({
   // 抽屉里固定走双列：宽度大约 300px，单列标签会拉成一条条长条，翻起来更累。
   const wide = embedded || railWidth >= 240;
   const showUncategorized = unclassifiedCount > 0 || sections.uncategorized.total > 0;
-  const activeTagChips = (Object.entries(activeTags) as Array<[TagCategory, string[] | undefined]>).flatMap(
-    ([category, raws]) =>
-      (raws ?? []).map((raw) => ({
-        category,
-        raw,
-        label: raw.includes('/') ? raw.slice(raw.indexOf('/') + 1) : raw,
-      })),
-  );
-  const hasActiveFilter = activeType !== 'all' || activeTagChips.length > 0;
 
   const handleScroll = () => {
     setScrolling(true);
@@ -178,54 +166,6 @@ export function LibraryFilterRail({
       )}
       style={embedded ? undefined : { width: railWidth }}
     >
-      {hasActiveFilter && (
-        <div
-          data-library-active-filters
-          className="mb-2 shrink-0 rounded-lg border border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-2.5 py-1.5"
-        >
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-[11px] font-medium text-brand">已启用筛选</span>
-            <button
-              type="button"
-              onClick={() => {
-                if (onClearAll) onClearAll();
-                else {
-                  if (activeType !== 'all') onTypeChange('all');
-                  activeTagChips.forEach((chip) => onTagToggle(chip.category, chip.raw));
-                }
-              }}
-              className="tap-target text-[11px] font-medium text-brand hover:underline"
-            >
-              一键清空
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {activeType !== 'all' && (
-              <button
-                type="button"
-                onClick={() => onTypeChange('all')}
-                className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-canvas)] px-2 py-0.5 text-[11px] text-[color:var(--text-primary)] hover:text-brand"
-                title="点击移除类型筛选"
-              >
-                <span>{activeType === 'none' ? '未分类' : activeType}</span>
-                <X className="h-2.5 w-2.5" />
-              </button>
-            )}
-            {activeTagChips.map((chip) => (
-              <button
-                key={`${chip.category}:${chip.raw}`}
-                type="button"
-                onClick={() => onTagToggle(chip.category, chip.raw)}
-                className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-canvas)] px-2 py-0.5 text-[11px] text-[color:var(--text-primary)] hover:text-brand"
-                title={`点击移除标签筛选 ${chip.raw}`}
-              >
-                <span className="max-w-28 truncate">{chip.label}</span>
-                <X className="h-2.5 w-2.5 shrink-0" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       <section
         data-library-type-panel
         className="mb-2.5 shrink-0 rounded-lg border border-[color:var(--hairline-inner)] bg-[var(--bg-elevated)] px-2 pb-2 pt-2"
@@ -388,7 +328,7 @@ export function LibraryFilterRail({
           aria-valuemax={420}
           aria-valuenow={railWidth}
           title="拖动调整标签栏宽度；窄栏为单列，常规宽度为双列"
-          className="absolute inset-y-0 right-0 z-10 flex w-1 cursor-col-resize items-center justify-center hover:bg-[color:var(--brand-hairline)]"
+          className="absolute inset-y-0 right-0 z-10 flex w-1 cursor-col-resize items-center justify-center hover:bg-[var(--brand)]/30"
           onMouseDown={(event) => {
             event.preventDefault();
             draggingRef.current = true;

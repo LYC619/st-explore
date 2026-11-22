@@ -8,9 +8,15 @@ import { duplicateArchiveStory } from '@/lib/story-maintenance';
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Link2, MessageSquare, Trash2, Clock, BookOpenCheck } from 'lucide-react';
+import { Link2, MessageSquare, Trash2, Clock, BookOpenCheck, ExternalLink, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { AppLayout } from '@/components/AppLayout';
 import { ChatImporter, type ImportStats } from '@/components/chat/ChatImporter';
 import { ChatWorkbench } from '@/components/chat/ChatWorkbench';
@@ -23,7 +29,7 @@ import { HOME_TOUR_STEPS, isTourCompleted, setTourCompleted } from '@/lib/tour-s
 import { DemoData } from '@/components/DemoData';
 import { demoSession } from '@/lib/demo-session';
 import type { ChatSession, ExportSettings, ChapterMarker } from '@/types/chat';
-import { listStoryIndex, toStoryIndex, type StoryIndexEntry } from '@/lib/archive-index';
+import { listCharacterIndex, listStoryIndex, toStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
   buildStoryFromSession,
@@ -49,7 +55,6 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import {
   buildEditorChatPath,
-  buildStoryReadPath,
   getEditorStoryId,
   resolveEditorStoryId,
   setEditorStoryId,
@@ -58,6 +63,16 @@ import { pickRecentEditorStories } from '@/lib/home-layout';
 import { executeDeleteAction } from '@/lib/destructive-action';
 import { stableJson } from '@/lib/roleplay/fingerprint';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
+import { getVaultEpoch } from '@/lib/vault/active';
+import { subscribeRecordChanges } from '@/lib/repo/changes';
+import { preloadRoleplayPage } from '@/components/roleplay/RoleplayWorkspace';
+import {
+  focusDetachedTavernWindow,
+  launchRoleplayTarget,
+  reserveDetachedWindowForAsyncAction,
+  useRoleplaySessionState,
+} from '@/lib/roleplay/detached-window';
+import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 
 const Index = () => {
   const navigate = useNavigate();
@@ -66,7 +81,11 @@ const Index = () => {
   const toastRef = useRef(toast);
   toastRef.current = toast;
   const routeStoryId = searchParams.get('storyId');
-  const routeBranchId = searchParams.get('branch') || null;
+  const hasBranchParam = searchParams.has('branch');
+  const routeBranchId = hasBranchParam ? (searchParams.get('branch') || null) : undefined;
+  const rawFloorParam = searchParams.get('floor');
+  const routeFloor = rawFloorParam !== null && /^\d+$/.test(rawFloorParam) ? Number(rawFloorParam) : undefined;
+  const roleplaySession = useRoleplaySessionState();
   const [showTour, setShowTour] = useState(false);
   const [session, setSession] = useState<ChatSession | null>(null);
   const [settings, setSettings] = useState<ExportSettings>(getDefaultExportSettings);
@@ -76,9 +95,14 @@ const Index = () => {
   const [currentFloor, setCurrentFloor] = useState(0);
   // 从指针恢复会话时要跳回的楼层，交给 ChatWorkbench 挂载后消费
   const [restoreFloor, setRestoreFloor] = useState<number | undefined>(undefined);
+  const [highlightedFloor, setHighlightedFloor] = useState<number | null>(null);
   // 当前会话对应的归档故事 id（兼容旧指针字段 currentBookId）。
   const [currentStoryId, setCurrentStoryId] = useState<string | null>(null);
   const [currentBranchId, setCurrentBranchId] = useState<string | null>(null);
+  const [loadedStory, setLoadedStory] = useState<ArchiveStory | null>(null);
+  const [allCharacters, setAllCharacters] = useState<CharacterIndexEntry[]>([]);
+  const [playBusy, setPlayBusy] = useState(false);
+  const playBusyRef = useRef(false);
   const settingsRef = useRef(settings); settingsRef.current = settings;
   const savedDraft = useRef<{ storyId: string; branchId: string | null; session: ChatSession;
     markers: ChapterMarker[]; favorites: string[]; settings: ExportSettings }>();
@@ -93,23 +117,48 @@ const Index = () => {
   // 处理区入口交接来的文件（挂载时取一次，交给 ChatImporter 自动解析）
   const [handoffFile] = useState<File | null>(() => takePendingToolFile('chat'));
 
+  const isLiveInDetachedTavern = Boolean(
+    currentStoryId && roleplaySession.detached && roleplaySession.openChat?.id === currentStoryId,
+  );
+
   const recentStories = useMemo(() => pickRecentEditorStories(allStories), [allStories]);
   const unboundStories = useMemo(() => allStories.filter((story) => !story.characterId), [allStories]);
   const currentStory = useMemo(
     () => allStories.find((story) => story.id === currentStoryId) ?? null,
     [allStories, currentStoryId],
   );
+  const boundCharacterId = loadedStory?.characterId ?? currentStory?.characterId;
+  const boundCharacter = useMemo(
+    () => (boundCharacterId ? allCharacters.find((c) => c.id === boundCharacterId) : undefined),
+    [allCharacters, boundCharacterId],
+  );
+
+  useEffect(() => {
+    if (highlightedFloor === null) return undefined;
+    const t = setTimeout(() => setHighlightedFloor(null), 3500);
+    return () => clearTimeout(t);
+  }, [highlightedFloor]);
 
   const refreshStories = useCallback(async () => {
     try {
-      setAllStories(await listStoryIndex());
+      const [stories, chars] = await Promise.all([
+        listStoryIndex(),
+        listCharacterIndex().catch(() => [] as CharacterIndexEntry[]),
+      ]);
+      setAllStories(stories);
+      setAllCharacters(chars);
       setStoriesLoadFailed(false);
     } catch {
       setStoriesLoadFailed(true);
     }
   }, []);
 
-  const hydrateStory = useCallback((story: ArchiveStory, pointer = loadSessionPointer(), requestedBranchId: string | null = null) => {
+  const hydrateStory = useCallback((
+    story: ArchiveStory,
+    pointer = loadSessionPointer(),
+    requestedBranchId?: string | null,
+    requestedFloor?: number,
+  ) => {
     const branchId = resolveInitialBranchId(story, requestedBranchId);
     const line = getBranchLine(story, branchId) ?? getBranchLine(story, null)!;
     const markers = line.markers ?? [];
@@ -118,6 +167,7 @@ const Index = () => {
       normalizeAppearanceSettings(story.settings ?? settingsRef.current),
     );
     savedDraft.current = { storyId: story.id, branchId, session: line.session, markers, favorites, settings };
+    setLoadedStory(story);
     setCurrentBranchId(branchId);
     setSession(line.session);
     setMarkers(markers);
@@ -125,9 +175,47 @@ const Index = () => {
     setSettings(settings);
     setCurrentStoryId(story.id);
     setEditorStoryId(story.id);
-    const lastFloor = branchId === null && pointer?.currentBookId === story.id ? pointer.lastFloor : line.lastFloor;
-    setRestoreFloor(typeof lastFloor === 'number' && lastFloor > 0 ? lastFloor : undefined);
+    if (typeof requestedFloor === 'number' && requestedFloor >= 0) {
+      const clamped = line.session.messages.length > 0
+        ? Math.min(requestedFloor, line.session.messages.length - 1)
+        : requestedFloor;
+      setRestoreFloor(clamped);
+      setHighlightedFloor(clamped);
+    } else {
+      const lastFloor = branchId === null && pointer?.currentBookId === story.id ? pointer.lastFloor : line.lastFloor;
+      setRestoreFloor(typeof lastFloor === 'number' && lastFloor > 0 ? lastFloor : undefined);
+      setHighlightedFloor(null);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!isLiveInDetachedTavern || !currentStoryId) return undefined;
+    let alive = true;
+    const syncLatest = () => {
+      const epoch = getVaultEpoch();
+      void getArchiveStory(currentStoryId)
+        .then((latest) => {
+          if (!alive || !latest || epoch !== getVaultEpoch()) return;
+          const line = getBranchLine(latest, currentBranchId) ?? getBranchLine(latest, null);
+          if (!line) return;
+          setLoadedStory(latest);
+          setSession(line.session);
+          setMarkers(line.markers ?? []);
+          setFavorites(line.favorites ?? []);
+        })
+        .catch((err) => {
+          console.warn('[Index] 实时同步独立窗口最新楼层未成功:', err);
+        });
+    };
+    syncLatest();
+    const off = subscribeRecordChanges((change) => {
+      if (change.store === 'archiveStories' && change.id === currentStoryId) syncLatest();
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [currentBranchId, currentStoryId, isLiveInDetachedTavern]);
 
   // Auto-start tour for first-time visitors; an explicit or remembered story always wins.
   useEffect(() => {
@@ -155,7 +243,7 @@ const Index = () => {
         if (routeStoryId) toast({ title: '找不到这条故事', variant: 'destructive' });
         return;
       }
-      hydrateStory(story, pointer, routeBranchId);
+      hydrateStory(story, pointer, routeBranchId, routeFloor);
     }).catch((err) => {
       if (!cancelled) {
         toast({
@@ -166,7 +254,7 @@ const Index = () => {
       }
     });
     return () => { cancelled = true; };
-  }, [handoffFile, hydrateStory, routeStoryId, routeBranchId, showTour, toast]);
+  }, [handoffFile, hydrateStory, routeStoryId, routeBranchId, routeFloor, showTour, toast]);
 
   useEffect(() => { void refreshStories(); }, [refreshStories]);
 
@@ -218,7 +306,7 @@ const Index = () => {
   const storySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveQueue = useRef(new KeyedSerialQueue());
   const persistCurrentStory = useCallback(async () => {
-    if (!session || !currentStoryId) return;
+    if (!session || !currentStoryId || isLiveInDetachedTavern) return;
     return saveQueue.current.enqueue('editor', async () => {
       const base = savedDraft.current;
       if (!base || base.storyId !== currentStoryId || base.branchId !== currentBranchId) return;
@@ -314,6 +402,7 @@ const Index = () => {
 
   const handleReset = () => {
     savedDraft.current = undefined;
+    setLoadedStory(null);
     setCurrentBranchId(null);
     setSession(null);
     setMarkers([]);
@@ -321,6 +410,7 @@ const Index = () => {
     setCurrentStoryId(null);
     setEditorStoryId(null);
     setRestoreFloor(undefined);
+    setHighlightedFloor(null);
     clearSessionState();
     // 清掉 ?storyId，否则加载 effect 在刷新/重挂时会按显式路由复活刚关闭的会话
     navigate('/chat', { replace: true });
@@ -333,9 +423,6 @@ const Index = () => {
       toast({ title: '当前故事保存失败，已取消切换', variant: 'destructive' });
       return;
     }
-    // story 来自挂载时的 allStories 快照。点当前故事时路由不变、加载 effect 不重跑，
-    // 用陈旧快照 hydrate 会在 800ms 后被自动落库写回，覆盖本次会话的全部编辑；
-    // 因此必须以刚 persist 过的库内数据为准。读失败时中止切换，绝不用陈旧快照顶替。
     let fresh: ArchiveStory | null = null;
     try {
       fresh = await getArchiveStory(story.id) ?? null;
@@ -346,13 +433,69 @@ const Index = () => {
       toast({ title: '故事读取失败，已取消切换', variant: 'destructive' });
       return;
     }
-    if (fresh.characterId) {
-      setEditorStoryId(fresh.id);
-      navigate(buildStoryReadPath(fresh.id));
-      return;
-    }
     hydrateStory(fresh);
     navigate(buildEditorChatPath(story.id));
+  };
+
+  const handleSwitchBranch = async (nextBranchId: string | null) => {
+    if (!currentStoryId) return;
+    try {
+      await persistCurrentStory();
+      const fresh = await getArchiveStory(currentStoryId);
+      if (!fresh) return;
+      await updateArchiveStory(currentStoryId, (cur) => ({
+        ...cur,
+        lastViewedBranchId: nextBranchId ?? undefined,
+      })).catch(() => undefined);
+      hydrateStory(fresh, loadSessionPointer(), nextBranchId);
+      navigate(buildEditorChatPath(currentStoryId, { branchId: nextBranchId }), { replace: true });
+    } catch (error) {
+      toast({
+        title: '切换分支未成功',
+        description: error instanceof Error ? error.message : '请先保存当前改动后重试',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const runContinuePlay = async () => {
+    if (!currentStoryId) return;
+    if (isLiveInDetachedTavern) {
+      focusDetachedTavernWindow();
+      return;
+    }
+    if (playBusyRef.current) return;
+    playBusyRef.current = true;
+    setPlayBusy(true);
+    const epoch = getVaultEpoch();
+    const reservation = reserveDetachedWindowForAsyncAction();
+    try {
+      await persistCurrentStory();
+      const [target] = await Promise.all([
+        prepareStoryPlay(currentStoryId, currentBranchId),
+        preloadRoleplayPage(),
+      ]);
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({
+        storyId: target.storyId,
+        branchId: target.branchId,
+        navigate,
+        reservation,
+      });
+    } catch (error) {
+      reservation?.cancelIfUnused();
+      toast({
+        title: '暂时未能进入聊天',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      playBusyRef.current = false;
+      setPlayBusy(false);
+    }
   };
 
   const handleDeleteUnbound = async (options: RemoveOptions) => {
@@ -385,6 +528,7 @@ const Index = () => {
         favorites,
         settings,
       });
+      setLoadedStory(story);
       setCurrentStoryId(story.id);
       setEditorStoryId(story.id);
       setAllStories((current) => [toStoryIndex(story), ...current.filter((item) => item.id !== story.id)]);
@@ -392,7 +536,7 @@ const Index = () => {
         title: `已绑定到「${character.name}」`,
         description: carried > 0 ? `${carried} 条总结/故事树已一并带走` : undefined,
       });
-      navigate(`/story/${encodeURIComponent(story.id)}${currentBranchId ? `?branch=${encodeURIComponent(currentBranchId)}` : ''}`, { replace: true });
+      navigate(buildEditorChatPath(story.id, currentBranchId ? { branchId: currentBranchId } : undefined), { replace: true });
     } catch (error) {
       console.error('Bind failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({
@@ -512,11 +656,25 @@ const Index = () => {
         </div>
       ) : (
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          {isLiveInDetachedTavern && (
+            <div
+              role="status"
+              data-detached-sync-banner
+              className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-4 py-2 text-xs text-[color:var(--text-primary)]"
+            >
+              <span>当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）</span>
+              <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />聚焦酒馆窗口
+              </Button>
+            </div>
+          )}
           {/* 工作态不再放最近故事栏（用户拍板：只在导入前需要）；切故事走全局菜单/窄工具栏 */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ChatWorkbench
               key={`${currentStoryId ?? 'preview'}:${currentBranchId ?? 'main'}`}
-              characterId={currentStory?.characterId}
+              readerMode={isLiveInDetachedTavern}
+              characterId={boundCharacterId}
+              highlightedFloor={highlightedFloor}
               recordContext={currentStoryId ? {
                 storyId: currentStoryId,
                 branchId: currentBranchId,
@@ -534,21 +692,81 @@ const Index = () => {
               initialFloor={restoreFloor}
               onReset={handleReset}
               titleBadge={
-                <Badge
-                  variant="outline"
-                  className="shrink-0 text-muted-foreground"
-                  title={currentStory?.characterId ? '这条故事已经绑定角色卡' : '这条故事尚未绑定角色卡'}
-                >
-                  {currentStory?.characterId ? '已绑定' : '未绑定'}
-                </Badge>
+                <div className="inline-flex items-center gap-1.5 flex-wrap">
+                  {boundCharacterId ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/character/${encodeURIComponent(boundCharacterId)}`)}
+                      className="tap-target inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-foreground hover:border-primary/40 hover:text-primary transition-colors"
+                      title="打开所属角色主页"
+                    >
+                      <span>{boundCharacter?.displayMeta?.name || boundCharacter?.name || '角色主页'}</span>
+                    </button>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 text-muted-foreground"
+                      title="这条故事尚未绑定角色卡"
+                    >
+                      未绑定
+                    </Badge>
+                  )}
+                  {(loadedStory?.branches?.length ?? 0) > 0 && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="tap-target inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          title="切换故事主线或分支"
+                        >
+                          <GitBranch className="w-3 h-3" />
+                          <span>
+                            {currentBranchId
+                              ? (loadedStory?.branches?.find((b) => b.id === currentBranchId)?.name ?? '分支')
+                              : '主线'}
+                          </span>
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuItem
+                          className={currentBranchId === null ? 'bg-primary/10 text-primary' : ''}
+                          onClick={() => { void handleSwitchBranch(null); }}
+                        >
+                          主线（{loadedStory?.session.messages.length ?? 0} 楼）
+                        </DropdownMenuItem>
+                        {(loadedStory?.branches ?? []).map((b) => (
+                          <DropdownMenuItem
+                            key={b.id}
+                            className={currentBranchId === b.id ? 'bg-primary/10 text-primary' : ''}
+                            onClick={() => { void handleSwitchBranch(b.id); }}
+                          >
+                            {b.name}（{b.session.messages.length} 楼）
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+                </div>
               }
               toolbarExtras={
                 <>
+                  {boundCharacterId && currentStoryId && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={playBusy}
+                      onClick={() => { void runContinuePlay(); }}
+                      title="接着当前剧情进入酒馆继续聊"
+                    >
+                      <MessageSquare className="w-4 h-4 mr-1.5" />
+                      {isLiveInDetachedTavern ? '聚焦酒馆' : '继续聊天'}
+                    </Button>
+                  )}
                   <Button variant="outline" size="sm" onClick={handleOpenNovel} title="小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）">
                     <BookOpenCheck className="w-4 h-4 mr-1.5" />
                     小说视图
                   </Button>
-                  {!currentStory?.characterId && (
+                  {!boundCharacterId && (
                     <Button variant="outline" size="sm" onClick={() => setBindDialogOpen(true)}>
                       <Link2 className="w-4 h-4 mr-1.5" />
                       绑定到角色

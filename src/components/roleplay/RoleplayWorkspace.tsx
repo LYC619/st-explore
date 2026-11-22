@@ -9,7 +9,9 @@ import {
   useRoleplaySessionState,
 } from '@/lib/roleplay/detached-window';
 
-const Roleplay = lazy(() => import('@/pages/Roleplay'));
+const loadRoleplayModule = () => import('@/pages/Roleplay');
+export const preloadRoleplayPage = loadRoleplayModule;
+const Roleplay = lazy(loadRoleplayModule);
 
 /** One live chat per vault, rendered inline on `/play/:id` or portaled into a same-origin detached split-screen window. */
 export function RoleplayWorkspace() {

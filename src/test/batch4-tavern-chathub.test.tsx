@@ -20,6 +20,7 @@ import {
   launchRoleplayTarget,
   preopenDetachedTavernWindow,
   registerDetachedCloseFlushHandler,
+  reserveDetachedWindowForAsyncAction,
   setPreferredTavernWindowMode,
   setRoleplayOpenChat,
 } from '@/lib/roleplay/detached-window';
@@ -105,7 +106,22 @@ describe('Batch 4 detached Tavern split-screen window & ChatHub slimdown', () =>
     expect(navSpy).toHaveBeenCalledWith('/play/story-1?branch=&from=chats');
   });
 
-  it('ChatHub hides permanent onboarding clutter, shows compact 山海之间 entry, and supports inline rename & preset binding', async () => {
+  it('defers window.open during async prep inside Tauri runtime so WebView2 asset fetches never race NewWindowRequested', () => {
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+    setPreferredTavernWindowMode('detached');
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    try {
+      const reservation = reserveDetachedWindowForAsyncAction();
+      expect(reservation).toBeNull();
+      expect(openSpy).not.toHaveBeenCalled();
+    } finally {
+      delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    }
+  });
+
+  it('ChatHub hides permanent onboarding clutter, shows prominent 山海之间 hero banner, and supports inline rename & preset binding', async () => {
     const char = buildCharacterFromCard({ name: '七濑胡桃', first_mes: '早安！' });
     await saveCharacter(char);
     const story = buildStoryFromSession({
@@ -138,10 +154,12 @@ describe('Batch 4 detached Tavern split-screen window & ChatHub slimdown', () =>
       expect(container.textContent).toContain('放学后的雨天');
     });
 
-    // Onboarding billboard removed; compact help icon button present
+    // Onboarding billboard removed; compact help icon button present; prominent 山海之间 hero restored
     expect(container.textContent).not.toContain('第一次在 STE 续聊？');
     expect(container.querySelector('button[aria-label="续聊使用帮助"]')).not.toBeNull();
+    expect(container.textContent).toContain('原生世界 · 无需配置模型');
     expect(container.textContent).toContain('山海之间');
+    expect(container.textContent).toContain('走进地图，追踪十二位行旅。下一场雨，会改变谁的路？');
 
     // Quick reader jump button exists on the row
     expect(container.querySelector('button[aria-label="去阅读整理 放学后的雨天"]')).not.toBeNull();

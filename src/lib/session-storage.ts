@@ -9,13 +9,16 @@ const CUSTOM_REGEX_KEY = 'st-beautifier-custom-regex';
 const BUILTIN_STATES_KEY = 'st-beautifier-builtin-states';
 const REGEX_PRESETS_KEY = 'st-beautifier-regex-presets';
 
+export const PAPER_WIDTH_ADAPTIVE = 0;
 export const PAPER_WIDTH_FULL = 9999;
-export const DEFAULT_PAPER_WIDTH = 860;
+export const DEFAULT_PAPER_WIDTH = PAPER_WIDTH_ADAPTIVE;
 
 export interface GlobalReadingAppearance {
   theme: ExportSettings['theme'];
   fontSize: number;
   paperWidth: number;
+  paperWidthConfigured?: boolean;
+  regexSidebarOpen?: boolean;
   showTimestamp: boolean;
   showAvatar: boolean;
   showModel: boolean;
@@ -231,6 +234,8 @@ export function loadGlobalReadingAppearance(): GlobalReadingAppearance {
     theme: 'elegant',
     fontSize: 15,
     paperWidth: DEFAULT_PAPER_WIDTH,
+    paperWidthConfigured: false,
+    regexSidebarOpen: true,
     showTimestamp: true,
     showAvatar: true,
     showModel: true,
@@ -242,10 +247,17 @@ export function loadGlobalReadingAppearance(): GlobalReadingAppearance {
     const raw = localStorage.getItem(GLOBAL_APPEARANCE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<GlobalReadingAppearance>;
+      const resolvedPaperWidth = typeof parsed.paperWidth === 'number'
+        ? (parsed.paperWidth >= PAPER_WIDTH_FULL || parsed.paperWidth <= 0 || parsed.paperWidthConfigured
+          ? parsed.paperWidth
+          : PAPER_WIDTH_ADAPTIVE)
+        : defaults.paperWidth;
       return {
         theme: parsed.theme ?? defaults.theme,
         fontSize: typeof parsed.fontSize === 'number' ? parsed.fontSize : defaults.fontSize,
-        paperWidth: typeof parsed.paperWidth === 'number' ? parsed.paperWidth : defaults.paperWidth,
+        paperWidth: resolvedPaperWidth,
+        paperWidthConfigured: Boolean(parsed.paperWidthConfigured),
+        regexSidebarOpen: typeof parsed.regexSidebarOpen === 'boolean' ? parsed.regexSidebarOpen : true,
         showTimestamp: typeof parsed.showTimestamp === 'boolean' ? parsed.showTimestamp : defaults.showTimestamp,
         showAvatar: typeof parsed.showAvatar === 'boolean' ? parsed.showAvatar : defaults.showAvatar,
         showModel: typeof parsed.showModel === 'boolean' ? parsed.showModel : defaults.showModel,

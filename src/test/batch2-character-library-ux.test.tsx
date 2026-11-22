@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CharacterHeader } from '@/components/character/CharacterHeader';
 import { CharacterCardEditSection } from '@/components/character/CharacterCardEditSection';
 import { NotesBrowser } from '@/components/character/NotesBrowser';
+import { StoryListSection } from '@/components/character/StoryListSection';
 import { LibraryFilterRail } from '@/components/library/LibraryFilterRail';
 import { editsFromNormalized } from '@/lib/card-export';
+import { buildStoryFromSession } from '@/lib/archive-db';
 import { normalizeCharacterCard } from '@/lib/adapters/st';
 import { buildLibraryFilterSections, buildManagedTagOptions, normalizeLibraryTagPreferences } from '@/lib/library-tag-preferences';
 import { createMemFs } from '@/lib/vault/fs';
@@ -17,7 +19,7 @@ import type { WorldBookItem } from '@/types/worldbook';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-describe('Batch 2 character detail & library slimdown', () => {
+describe('Batch 2 character detail & restored high-frequency story/filter controls', () => {
   let host: HTMLDivElement | null = null;
   let root: Root | null = null;
   let vault: VaultBackend;
@@ -177,8 +179,7 @@ describe('Batch 2 character detail & library slimdown', () => {
     expect(host!.textContent).toContain('一句简短的玩卡心得');
   });
 
-  it('LibraryFilterRail defaults to 248px and exposes sticky active filter strip with one-click clear', async () => {
-    const onClearAll = vi.fn();
+  it('LibraryFilterRail preserves custom draggable width without ugly top clear-all strip, and StoryListSection keeps inline Processing/Export/Rename/Copy', async () => {
     const sections = buildLibraryFilterSections(
       buildManagedTagOptions(['人物/少女'], normalizeLibraryTagPreferences(undefined)),
       false,
@@ -196,18 +197,50 @@ describe('Batch 2 character detail & library slimdown', () => {
           onTypeChange={vi.fn()}
           onTagToggle={vi.fn()}
           onUncategorizedExpandedChange={vi.fn()}
-          onClearAll={onClearAll}
         />,
       );
     });
 
     const rail = host!.querySelector<HTMLElement>('[data-library-filter-rail]')!;
-    expect(rail.style.width).toBe('248px');
-    const activeStrip = host!.querySelector('[data-library-active-filters]');
-    expect(activeStrip).not.toBeNull();
-    expect(activeStrip!.textContent).toContain('少女');
-    const clearBtn = Array.from(activeStrip!.querySelectorAll('button')).find((b) => b.textContent?.includes('一键清空'));
-    await act(async () => { clearBtn!.click(); });
-    expect(onClearAll).toHaveBeenCalledTimes(1);
+    expect(rail).not.toBeNull();
+    expect(host!.querySelector('[data-library-active-filters]')).toBeNull();
+    expect(host!.querySelector('[aria-label="调整标签栏宽度"]')).not.toBeNull();
+
+    const story = buildStoryFromSession({
+      id: 'st-row-1',
+      title: '初始故事名',
+      character: { name: '胡桃' },
+      user: { name: '你' },
+      messages: [{ id: 'm1', role: 'assistant', content: '你好' }],
+      createdAt: 1,
+    }, 'char-1');
+    const onProcess = vi.fn();
+    const onCopy = vi.fn();
+    const onRenameStory = vi.fn().mockResolvedValue(undefined);
+
+    await act(async () => {
+      root!.render(
+        <StoryListSection
+          stories={[story]}
+          onRead={vi.fn()}
+          onProcess={onProcess}
+          onExport={vi.fn()}
+          onDelete={vi.fn()}
+          onCopy={onCopy}
+          onPatchStory={vi.fn()}
+          onRenameStory={onRenameStory}
+        />,
+      );
+    });
+
+    expect(host!.textContent).toContain('阅读');
+    expect(host!.textContent).toContain('处理');
+    expect(host!.textContent).toContain('导出');
+    expect(host!.textContent).toContain('复制故事');
+    expect(host!.querySelector('[aria-label="重命名故事"]')).not.toBeNull();
+
+    const processBtn = Array.from(host!.querySelectorAll('button')).find((b) => b.textContent?.includes('处理'))!;
+    await act(async () => { processBtn.click(); });
+    expect(onProcess).toHaveBeenCalledWith(story.id);
   });
 });

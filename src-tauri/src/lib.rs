@@ -1372,6 +1372,48 @@ pub fn run() {
             app.manage(roots);
             app.manage(st_backup_import::ImportCancel::default());
             std::thread::spawn(st_import_cleanup::cleanup_stale_imports);
+            if let Some(main_cfg) = app.config().app.windows.first() {
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                {
+                    let app_handle = app.handle().clone();
+                    let seq = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                    let blank_url: tauri::Url = "about:blank".parse().expect("valid about:blank url");
+                    tauri::WebviewWindowBuilder::from_config(app, main_cfg)?
+                        .on_new_window(move |url, features| {
+                            let allowed = url.as_str() == "about:blank"
+                                || url.scheme() == "tauri"
+                                || url.host_str() == Some("tauri.localhost")
+                                || (cfg!(dev) && url.host_str() == Some("localhost"));
+                            if !allowed {
+                                return tauri::webview::NewWindowResponse::Deny;
+                            }
+                            let id = seq.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                            let label = format!("tavern-detached-{id}");
+                            let builder = tauri::WebviewWindowBuilder::new(
+                                &app_handle,
+                                label,
+                                tauri::WebviewUrl::External(blank_url.clone()),
+                            )
+                            .window_features(features)
+                            .title("ST Explorer · 独立酒馆对话")
+                            .min_inner_size(720.0, 560.0)
+                            .resizable(true)
+                            .decorations(true)
+                            .on_document_title_changed(|window, title| {
+                                let _ = window.set_title(&title);
+                            });
+                            match builder.build() {
+                                Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+                                Err(_) => tauri::webview::NewWindowResponse::Deny,
+                            }
+                        })
+                        .build()?;
+                }
+                #[cfg(any(target_os = "android", target_os = "ios"))]
+                {
+                    tauri::WebviewWindowBuilder::from_config(app, main_cfg)?.build()?;
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1407,7 +1449,21 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application");
-    app.run(|_, event| {
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Destroyed,
+            ..
+        } = &event
+        {
+            if label == "main" {
+                for (win_label, win) in app_handle.webview_windows() {
+                    if win_label.starts_with("tavern-detached-") {
+                        let _ = win.destroy();
+                    }
+                }
+            }
+        }
         if matches!(event, tauri::RunEvent::Exit) {
             diagnostics::record(diagnostics::event(diagnostics::EventKind::Vault, "close"));
             diagnostics::flush();

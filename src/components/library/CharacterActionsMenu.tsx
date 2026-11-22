@@ -15,8 +15,6 @@ interface CharacterActionsMenuProps {
   onOpenGreetings?: () => void;
   onExport: () => void;
   onDelete: () => void;
-  /** 桌面卡面已有快捷胶囊时隐藏重复项（触屏仍保留完整菜单） */
-  hasQuickPills?: boolean;
   /** 触发按钮的类名：卡面上是悬浮圆钮，列表行里是方钮 */
   triggerClassName: string;
   iconClassName?: string;
@@ -33,11 +31,9 @@ export function CharacterActionsMenu({
   onOpenGreetings,
   onExport,
   onDelete,
-  hasQuickPills = false,
   triggerClassName,
   iconClassName,
 }: CharacterActionsMenuProps) {
-  const hideOnHoverDesktop = hasQuickPills ? '[@media(hover:hover)]:hidden' : '';
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -46,32 +42,29 @@ export function CharacterActionsMenu({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-        <DropdownMenuItem className={hideOnHoverDesktop} onClick={onOpen}>
+        <DropdownMenuItem onClick={onOpen}>
           <ExternalLink className="w-3.5 h-3.5 mr-2" />
           打开角色主页
         </DropdownMenuItem>
         {onContinueChat && (
-          <DropdownMenuItem className={hideOnHoverDesktop} onClick={onContinueChat}>
+          <DropdownMenuItem onClick={onContinueChat}>
             <MessageSquare className="w-3.5 h-3.5 mr-2 text-brand" />
             接着上次续聊
           </DropdownMenuItem>
         )}
         {onReminisceStory && (
-          <DropdownMenuItem className={hideOnHoverDesktop} onClick={onReminisceStory}>
+          <DropdownMenuItem onClick={onReminisceStory}>
             <BookOpen className="w-3.5 h-3.5 mr-2" />
             回味最近故事
           </DropdownMenuItem>
         )}
         {onOpenGreetings && (
-          <DropdownMenuItem
-            className={!onContinueChat && !onReminisceStory ? hideOnHoverDesktop : ''}
-            onClick={onOpenGreetings}
-          >
+          <DropdownMenuItem onClick={onOpenGreetings}>
             <Sparkles className="w-3.5 h-3.5 mr-2" />
             赏玩开场白
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator className={onOpenGreetings && (onContinueChat || onReminisceStory) ? '' : hideOnHoverDesktop} />
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onExport}>
           <Upload className="w-3.5 h-3.5 mr-2" />
           导出角色卡

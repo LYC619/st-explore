@@ -1,21 +1,14 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
 import { createStoryPackageAdapter, readStoryPackage, type StoryPackageAdapter, type StoryPackagePreview } from '@/lib/roleplay/story-package';
 import { saveStoryPackageFile } from '@/lib/roleplay/export-package-file';
 
 const actionNames = { create: '新增', identical: '已有相同内容', conflict: '存在冲突' };
 const kindNames = { story: '故事', character: '角色', worldbook: '世界书', preset: '预设', regex: '正则' };
-export function StoryPackageTools({ storyId, compact = false }: { storyId?: string; compact?: boolean }) {
+export function StoryPackageTools({ storyId }: { storyId?: string }) {
   const { toast } = useToast(), navigate = useNavigate();
   const file = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState<string>();
@@ -46,23 +39,7 @@ export function StoryPackageTools({ storyId, compact = false }: { storyId?: stri
   }
   return <div className="flex flex-wrap items-center gap-2">
     {storyId && <Button size="sm" variant="outline" disabled={busy} onClick={() => void exportStory()}>导出完整故事包</Button>}
-    {compact ? (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="outline" disabled={busy} aria-label="更多导入选项" title="更多导入选项（导入完整故事包）">
-            <ChevronDown className="h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => file.current?.click()}>
-            <Package className="mr-2 h-4 w-4" />
-            导入完整故事包 (.ste-play)
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    ) : (
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => file.current?.click()}>导入故事包</Button>
-    )}
+    <Button size="sm" variant="outline" disabled={busy} onClick={() => file.current?.click()}>导入故事包</Button>
     <input ref={file} aria-label="选择完整故事包" type="file" accept=".ste-play" hidden onChange={event => {
       const selected = event.target.files?.[0]; event.target.value = ''; if (selected) void preview(selected);
     }} />

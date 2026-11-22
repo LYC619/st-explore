@@ -19,6 +19,7 @@ const entries = buildSearchEntries({
 describe('global-search', () => {
   it('拍平各库并给出跳转路径与次要说明', () => {
     expect(entries.find((e) => e.id === 'c1')?.path).toBe('/character/c1');
+    expect(entries.find((e) => e.id === 's1')?.path).toBe('/chat?storyId=s1');
     expect(entries.find((e) => e.id === 's1')?.sub).toBe('奏枝');
     expect(entries.find((e) => e.id === 's2')?.sub).toBe('未绑定');
     expect(entries.find((e) => e.id === 'w1')?.path).toBe('/worldbook?assetId=w1');

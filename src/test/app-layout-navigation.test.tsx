@@ -363,7 +363,7 @@ describe('编辑区窄工具栏与侧栏共用当前故事', () => {
     expect(location()).toBe('/story/st_9?view=tree');
 
     await act(async () => { railButton('聊天处理').click(); });
-    expect(location()).toBe('/story/st_9');
+    expect(location()).toBe('/chat?storyId=st_9');
   });
 
   it('侧栏子项和窄工具栏用同一个当前故事，不会一个进故事一个进选择页', async () => {

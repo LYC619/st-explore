@@ -193,6 +193,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
       theme: next.theme,
       fontSize: next.fontSize,
       paperWidth: next.paperWidth,
+      paperWidthConfigured: next.paperWidth > 0 && next.paperWidth < PAPER_WIDTH_FULL,
       showTimestamp: next.showTimestamp,
       showAvatar: next.showAvatar,
       showModel: next.showModel !== false,
@@ -205,7 +206,15 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   const [markerDialogOpen, setMarkerDialogOpen] = useState(false);
   const [messageEditDialogOpen, setMessageEditDialogOpen] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<{ id: string; index: number } | null>(null);
-  const [regexSidebarOpen, setRegexSidebarOpen] = useState(false);
+  const [regexSidebarOpen, setRegexSidebarOpenState] = useState(() => (
+    !readerMode && !isCompact ? initialAppearance.regexSidebarOpen !== false : false
+  ));
+  const setRegexSidebarOpen = useCallback((next: boolean) => {
+    setRegexSidebarOpenState(next);
+    if (!readerMode && !isCompact) {
+      saveGlobalReadingAppearance({ regexSidebarOpen: next });
+    }
+  }, [isCompact, readerMode]);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const [toolbarHeight, setToolbarHeight] = useState(0);
 
@@ -390,8 +399,6 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     setFloorCount(floors.length);
   }, []);
 
-  const favoritesSet = useMemo(() => new Set(favorites), [favorites]);
-
   const favoriteItems = useMemo<FavoriteItem[]>(() => {
     const byId = new Map(session.messages.map((m, idx) => [m.id, { msg: m, rawFloor: idx }]));
     return favorites
@@ -512,6 +519,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   const canStepPrev = visibleFloors.length > 1 && currentFloor > minVisibleFloor;
   const canStepNext = visibleFloors.length > 1 && currentFloor < maxVisibleFloor;
   const fullPaperWidth = settings.paperWidth >= PAPER_WIDTH_FULL;
+  const adaptivePaperWidth = settings.paperWidth <= 0;
 
   return (
     <div className="flex flex-col">
@@ -658,9 +666,15 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                 onJumpToMessageId={jumpToMessageId}
                 stickyTop={readerStickyTop + toolbarHeight + 8}
               />
-              <div className={`flex min-w-0 flex-1 justify-center py-3 ${readerMode ? 'px-1' : 'pr-3'}`}>
+              <div className={`flex min-w-0 flex-1 justify-center py-3 ${readerMode ? 'px-1' : 'px-1 sm:pr-3'}`}>
                 <div
-                  style={fullPaperWidth ? { width: '100%', maxWidth: '100%' } : { width: settings.paperWidth, maxWidth: '100%' }}
+                  style={
+                    fullPaperWidth
+                      ? { width: '100%', maxWidth: '100%' }
+                      : adaptivePaperWidth
+                        ? { width: '100%', maxWidth: 'min(100%, 960px)' }
+                        : { width: settings.paperWidth, maxWidth: '100%' }
+                  }
                   className="shadow-warm rounded-lg overflow-hidden animate-fade-in"
                 >
                   <ChatPreview
@@ -673,8 +687,6 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                     fontSize={settings.fontSize}
                     regexRules={settings.regexRules}
                     markers={markers}
-                    favoritesSet={favoritesSet}
-                    onToggleFavorite={handleToggleFavorite}
                     characterAvatarUrl={characterAvatarUrl}
                     currentAnchorFloor={currentFloor}
                     onMessageClick={readerMode ? undefined : handleMessageClick}

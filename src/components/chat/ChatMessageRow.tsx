@@ -1,4 +1,4 @@
-import { memo, useRef, useState } from 'react';
+import { memo, useRef } from 'react';
 import {
   Bookmark,
   BookmarkPlus,
@@ -7,18 +7,9 @@ import {
   ChevronRight,
   EyeOff,
   MessageSquareDashed,
-  MoreHorizontal,
-  NotebookPen,
   Pencil,
-  Star,
   User,
 } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
 import { parseRegex } from '@/lib/regex-processor';
@@ -77,8 +68,6 @@ function formatTime(timestamp?: number): string {
 
 export interface MessageRowProps {
   onCaptureMessage?: (messageId: string, content: string) => void;
-  onToggleFavorite?: (messageId: string) => void;
-  isFavorited?: boolean;
   characterAvatarUrl?: string;
   message: ProcessedMessage;
   marker?: ChapterMarker;
@@ -124,8 +113,6 @@ export const MessageRow = memo(function MessageRow({
   onUnhideMessage,
   onHideMessage,
   onCaptureMessage,
-  onToggleFavorite,
-  isFavorited = false,
   characterAvatarUrl,
 }: MessageRowProps) {
   const captureText = useRef('');
@@ -141,8 +128,6 @@ export const MessageRow = memo(function MessageRow({
     : undefined;
   const speakerName = message.name || (isUser ? userName : charName);
 
-  const [hasCapturedSnippet, setHasCapturedSnippet] = useState(false);
-
   const readSelectedSnippet = () => {
     const selection = window.getSelection();
     const rowRoot = rowRef.current;
@@ -151,10 +136,6 @@ export const MessageRow = memo(function MessageRow({
     }
     return '';
   };
-
-  const hasSecondaryActions = Boolean(
-    onCaptureMessage || onEditMessage || (onHideMessage && !message.hidden && !message.ooc),
-  );
 
   return (
     <div>
@@ -301,38 +282,50 @@ export const MessageRow = memo(function MessageRow({
           </div>
 
           {!editMode && (
-            <div className="flex shrink-0 items-center gap-1.5" data-message-actions>
-              {onToggleFavorite && (
+            <div className="flex shrink-0 items-center gap-1" data-message-actions>
+              {onCaptureMessage && (
+                <button
+                  type="button"
+                  className="tap-target h-7 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                  aria-label={`收录第 ${realFloor} 楼`}
+                  onMouseDown={(event) => {
+                    captureText.current = readSelectedSnippet();
+                    event.preventDefault();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCaptureMessage(message.id, captureText.current || message.content);
+                    captureText.current = '';
+                  }}
+                >
+                  收录
+                </button>
+              )}
+              {onHideMessage && !message.hidden && !message.ooc && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className={`tap-target flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-                        isFavorited
-                          ? 'text-primary hover:bg-primary/10'
-                          : 'hover-reveal text-muted-foreground hover:bg-primary/10 hover:text-primary'
-                      }`}
-                      aria-label={isFavorited ? `取消收藏第 ${realFloor} 楼` : `收藏第 ${realFloor} 楼`}
-                      aria-pressed={isFavorited}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleFavorite(message.id);
+                      className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      aria-label={`隐藏第 ${realFloor} 楼`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onHideMessage(message.id, realFloor);
                       }}
                     >
-                      <Star className={`h-3.5 w-3.5 ${isFavorited ? 'fill-primary text-primary' : ''}`} />
+                      <EyeOff className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>{isFavorited ? '取消收藏本楼' : '收藏本楼'}</TooltipContent>
+                  <TooltipContent>隐藏本楼</TooltipContent>
                 </Tooltip>
               )}
-
               {onEditMessage && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       data-tour="msg-edit-pencil"
-                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary [@media(hover:none)]:hidden"
+                      className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
                       aria-label={`编辑第 ${realFloor} 楼`}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -344,56 +337,6 @@ export const MessageRow = memo(function MessageRow({
                   </TooltipTrigger>
                   <TooltipContent>编辑本楼</TooltipContent>
                 </Tooltip>
-              )}
-
-              {hasSecondaryActions && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`第 ${realFloor} 楼更多操作`}
-                      onPointerDown={() => {
-                        const snippet = readSelectedSnippet();
-                        captureText.current = snippet;
-                        setHasCapturedSnippet(Boolean(snippet));
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreHorizontal className="h-3.5 w-3.5" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-44">
-                    {onEditMessage && (
-                      <DropdownMenuItem
-                        onSelect={() => onEditMessage(message.id, realFloor)}
-                      >
-                        <Pencil className="mr-2 h-3.5 w-3.5" />
-                        编辑本楼
-                      </DropdownMenuItem>
-                    )}
-                    {onCaptureMessage && (
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          onCaptureMessage(message.id, captureText.current || message.content);
-                          captureText.current = '';
-                          setHasCapturedSnippet(false);
-                        }}
-                      >
-                        <NotebookPen className="mr-2 h-3.5 w-3.5" />
-                        {hasCapturedSnippet ? '收录选中片段' : '收录进总结或备注'}
-                      </DropdownMenuItem>
-                    )}
-                    {onHideMessage && !message.hidden && !message.ooc && (
-                      <DropdownMenuItem
-                        onSelect={() => onHideMessage(message.id, realFloor)}
-                      >
-                        <EyeOff className="mr-2 h-3.5 w-3.5" />
-                        隐藏本楼
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
               )}
             </div>
           )}
