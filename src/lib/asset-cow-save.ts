@@ -14,17 +14,11 @@ import { planCowSave, buildDerivedMeta, type CowAssetLike, type CowPlan } from '
 import { updateCharacterAssetReference } from '@/lib/character-asset-ref';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { getVaultEpoch } from '@/lib/vault/active';
+import { getPresetTags, isVersionScopedPresetTag } from '@/lib/preset-tag-values';
 import type { PresetItem } from '@/types/preset';
 
 const cowWrites = new KeyedSerialQueue();
 
-/**
- * 编辑器当前内容：一条记录里除 id / title / 时间 / derived 之外的全部字段。
- * 载荷（worldbook / preset / rules）与 `autoSaved: false` 这类标志都从这里进来。
- *
- * 来源字段（sourcePath / sourceModifiedAt / embedded / stGlobal…）**故意不在这里**：
- * 派生副本从零构造，不继承原资产的来源信息——副本不是从那个 ST 文件导入来的。
- */
 export type CowSaveContent<T extends CowAssetLike> = Omit<
   T,
   'id' | 'title' | 'derived' | 'createdAt' | 'updatedAt'
@@ -46,8 +40,9 @@ export interface CowSaveParams<T extends CowAssetLike> {
   reload: () => Promise<T[]>;
   characterId: string;
   characterName: string;
-  /** 编辑器里的当前标题（只在原地更新时生效） */
+  /** 编辑器里的当前标题（默认只在原地更新时生效；显式重命名时传 titleExplicit=true 一并写入派生副本） */
   title: string;
+  titleExplicit?: boolean;
   content: CowSaveContent<T>;
   /** Build a batch edit from the reloaded destination, inside the same COW queue. */
   prepareContent?: (target: T) => CowSaveContent<T> | Promise<CowSaveContent<T>>;
@@ -60,12 +55,6 @@ export interface CowSaveParams<T extends CowAssetLike> {
   validateReference?: (current: ArchiveCharacter, targetId: string) => void;
 }
 
-/**
- * 在角色上下文里保存一条资产：按写时复制决策落库，并把该角色的引用切到落库目标。
- * 原资产在 redirect / copy 两条分支上一个字节都不会被写。
- *
- * 读不出库内数据、或这条资产已经不在库里时**抛错**，调用方负责报给用户。
- */
 export async function saveAssetWithCow<T extends CowAssetLike>(
   params: CowSaveParams<T>,
 ): Promise<CowSaveResult> {
@@ -81,10 +70,6 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
 
   params.assertCurrent?.();
 
-  // 落库前重读。挂载期的那份快照可能已经被别处改过（另一个标签页、一次导入、
-  // 批量操作），拿它展开写回等于把别人的改动抹掉；该角色新建的派生副本也只有
-  // 重读才看得见，否则会重复新建。读不出来就中止，绝不用陈旧快照顶替——
-  // 与 Index.tsx 切故事时「以刚 persist 的库内数据为准」是同一条规矩。
   const all = await reload();
   params.assertCurrent?.();
   const base = all.find((a) => a.id === baseId);
@@ -103,7 +88,6 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
   let item: T;
 
   if (plan.action === 'update') {
-    // 原地更新：无派生关系，或这条本就是该角色的副本
     targetId = plan.targetId;
     title = params.title;
     item = {
@@ -114,23 +98,20 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
       updatedAt: now,
     } as T;
   } else if (plan.action === 'redirect') {
-    // 该角色此前已建过副本：更新那一份，标题沿用副本自己的（不拿编辑器里的名字覆盖）
     const copy = all.find((a) => a.id === plan.targetId);
     if (!copy) throw new Error(`找不到派生副本 ${plan.targetId}`);
     targetId = copy.id;
-    title = copy.title;
+    title = params.titleExplicit && params.title.trim() ? params.title.trim() : copy.title;
     item = {
       ...copy,
       ...content,
+      title,
       derived: copy.derived ? { ...copy.derived, updatedAt: now } : copy.derived,
       updatedAt: now,
     } as T;
   } else {
-    // 首次在该角色上下文改共享资产：从零构造派生副本，不继承来源字段
     targetId = params.newId();
-    title = plan.copyTitle;
-    // content 恰好是 T 去掉下面这五个字段，补齐即成 T；
-    // 但 TS 不会把 Omit<T,K> 与补回的 K 重新合成泛型 T，只能在这里断言
+    title = params.titleExplicit && params.title.trim() ? params.title.trim() : plan.copyTitle;
     item = {
       ...content,
       id: targetId,
@@ -143,9 +124,20 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
       const original = base as unknown as PresetItem;
       const copy = item as unknown as PresetItem;
       copy.packageFiles = structuredClone(original.packageFiles);
-      if (original.catalog) copy.catalog = {
-        ...original.catalog, series: original.catalog.series || original.title, originId: original.id, variant: [original.catalog.variant, 'DIY'].filter(Boolean).join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now,
-      };
+      if (original.catalog) {
+        const cleanTags = getPresetTags(original.catalog).filter(tag => !isVersionScopedPresetTag(tag));
+        copy.catalog = {
+          ...original.catalog,
+          series: original.catalog.series || original.title,
+          originId: original.id,
+          variant: [original.catalog.variant, 'DIY'].filter(Boolean).join(' · '),
+          tags: cleanTags,
+          favorite: false,
+          status: 'testing',
+          notes: '',
+          updatedAt: now,
+        };
+      }
     }
   }
 
@@ -153,8 +145,6 @@ async function persistAssetWithCow<T extends CowAssetLike>(params: CowSaveParams
   params.assertCurrent?.();
   await save(item);
   params.assertCurrent?.();
-  // 引用切换走角色写入队列，避免用旧角色快照覆盖其他字段。
-  // 资产已经落库后若角色被删除或写入失败，不能把这次操作报告为成功。
   try {
     const updatedCharacter = params.validateReference
       ? await updateCharacterAssetReference(characterId, kind, base.id, targetId, now, current => params.validateReference!(current, targetId))

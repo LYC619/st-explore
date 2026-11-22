@@ -91,7 +91,7 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
               <SelectContent>
                 {groups.map((g, i) => (
                   <SelectItem key={i} value={String(i)}>
-                    分组 {i + 1}（ID {g.character_id}，{g.order.filter((o) => o.enabled).length}/{g.order.length} 启用）
+                    {g.character_id === 100001 ? '默认主组' : g.character_id === 100000 ? '通用组' : `扩展组 ${i + 1}`}（{g.order.filter((o) => o.enabled).length}/{g.order.length} 启用）
                   </SelectItem>
                 ))}
               </SelectContent>

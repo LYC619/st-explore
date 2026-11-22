@@ -17,9 +17,10 @@ import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { AssetGridSkeleton } from '@/components/ui/skeleton';
 import { isPlainSingleKeyShortcut } from '@/lib/keyboard-shortcuts';
-import { PresetBulkEdit, applyPresetBulkPatch, type PresetBulkPatch } from './PresetBulkEdit';
+import { PresetBulkEdit } from './PresetBulkEdit';
+import { applyPresetBulkPatch, type PresetBulkPatch } from '@/lib/preset-bulk-patch';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
-import { getPresetPresentation, presetSeriesKey } from '@/lib/preset-presentation';
+import { comparePresetVersions, getPresetPresentation, presetSeriesKey } from '@/lib/preset-presentation';
 import { defaultPresetTags, getPresetTagOptions, loadPresetTags, presetTagParts } from '@/lib/preset-tags';
 import { PresetTagManager } from './PresetTagManager';
 import { PresetCollection } from './PresetCollection';
@@ -69,6 +70,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
   const [dirty, setDirty] = useState(false), [detailRevision, setDetailRevision] = useState(0);
   const [pending, setPending] = useState<(() => void) | null>(null);
   const [importSeed, setImportSeed] = useState<Catalog | null>(null);
+  const [importDirty, setImportDirty] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [tagPreferences, setTagPreferences] = useState(defaultPresetTags);
@@ -97,11 +99,13 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     seenRequestedId.current = id;
     setParams(current => { const next = new URLSearchParams(current); if (id) next.set('presetId', id); else next.delete('presetId'); return next; }, { replace: true });
   };
-  const load = useCallback(async (refresh = false) => {
+  const load = useCallback(async (refresh: boolean | 'migrate' = false) => {
     const ticket = ++sequence.current;
     try {
       let migrationError = '';
-      if (refresh && !refreshing.current) refreshing.current = refreshPresetFiles({ migrateLegacy: true });
+      if (refresh && !refreshing.current) {
+        refreshing.current = refreshPresetFiles({ migrateLegacy: refresh === 'migrate' });
+      }
       const refreshTask = refreshing.current;
       if (refreshTask) try { await refreshTask; }
       catch (error) { migrationError = error instanceof Error ? error.message : String(error); }
@@ -120,7 +124,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     finally { if (mounted.current && ticket === sequence.current) setLoading(false); }
   }, [epoch]);
   useEffect(() => {
-    void load(true);
+    void load('migrate');
     const focus = () => { if (document.visibilityState !== 'hidden') void load(true); };
     window.addEventListener('focus', focus);
     const off = subscribeRecordChanges(change => { if (change.store === 'presets' || change.store === 'characters' || change.store === 'archiveMeta') void load(); });
@@ -163,9 +167,10 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
       && (!view.referenced || !references || (view.referenced === 'yes' ? !!references[item.id]?.length : !references[item.id]?.length));
   }).sort((a, b) => {
     const pa = getPresetPresentation(a), pb = getPresetPresentation(b);
-    return view.sort === 'updated' ? Math.max(b.updatedAt, b.catalog?.updatedAt ?? 0) - Math.max(a.updatedAt, a.catalog?.updatedAt ?? 0)
+    return view.sort === 'updated'
+      ? Math.max(b.updatedAt, b.catalog?.updatedAt ?? 0) - Math.max(a.updatedAt, a.catalog?.updatedAt ?? 0)
       : (pa.series || pa.displayName).localeCompare(pb.series || pb.displayName, 'zh-CN', { numeric: true })
-      || (pb.version ?? '').localeCompare(pa.version ?? '', 'zh-CN', { numeric: true });
+      || comparePresetVersions(pb.version, pa.version);
   }), [items, references, view, onlyDiy]);
   const filterCount = [view.author, view.model, view.tag, view.query.trim(), view.favorite ? '1' : '', onlyDiy ? '1' : ''].filter(Boolean).length;
   const selected = items.find(item => item.id === view.selected);
@@ -178,7 +183,16 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
         if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，剩余修改已停止');
         await updatePreset(id, latest => {
           const catalog = applyPresetBulkPatch({ ...latest.catalog, tags: getPresetTags(latest.catalog), ...(Object.keys(patch.models).length ? { models: getPresetPresentation(latest).models } : {}) }, patch);
-          return { ...latest, autoSaved: false, catalog: normalizePresetCatalog({ ...catalog, ...patch.items?.[id], updatedAt: Date.now() }) };
+          const rowPatch = patch.items?.[id];
+          return {
+            ...latest,
+            autoSaved: false,
+            catalog: normalizePresetCatalog({
+              ...catalog,
+              ...(rowPatch ? { ...rowPatch, versionConfirmed: true } : {}),
+              updatedAt: Date.now(),
+            }),
+          };
         });
       } catch (e) { failedIds.push(id); failures.push(`${items.find(item => item.id === id)?.title ?? id}：${e instanceof Error ? e.message : String(e)}`); }
     }
@@ -188,7 +202,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     void load();
   };
   return <div className="flex flex-col h-full min-h-0 min-w-0 px-4 py-4 md:px-6 gap-4" data-preset-catalog>
-    <PresetDraftBoundary dirty={dirty || !!importSeed || bulkOpen} />
+    <PresetDraftBoundary dirty={dirty || importDirty || bulkOpen} />
     <header className="flex flex-wrap items-center gap-3 shrink-0" data-preset-toolbar>
       <div className="flex items-baseline gap-2 shrink-0"><h1 className="font-serif text-xl font-semibold">预设库</h1>{!loading && <span className="text-xs text-muted-foreground">{items.length} 份</span>}</div>
         <div className="flex flex-wrap gap-2 items-center flex-1 min-w-0">
@@ -260,7 +274,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     )}
     <div className={`flex-1 min-h-0 grid gap-4 ${view.selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]' : ''}`}>
       <div ref={scrollRef} className={`min-h-0 overflow-y-auto pb-3 pr-1 ${view.selected ? 'hidden xl:block' : ''}`} onScroll={e => { const scroll = e.currentTarget.scrollTop; setView(value => ({ ...value, scroll })); }}>
-        {loading ? <AssetGridSkeleton count={6} /> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="font-serif text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '选择作者发布的预设 JSON 和说明附件，适配模型与版本号会自动帮你识别。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}
+        {loading ? <AssetGridSkeleton count={6} /> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="font-serif text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '支持直接拖入 ZIP 压缩包或预设 JSON，自动识别适配模型、版本号与配套世界书。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}
         <PresetCollection items={filtered} selected={view.selected} onSelect={select} batch={batchMode} checked={checked} onCheck={id => setChecked(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} layout={view.layout} groupBy={view.groupBy} />
       </div>
       {view.selected && <aside className="min-h-0 flex flex-col rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] overflow-hidden" aria-label="预设资料">
@@ -269,7 +283,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     </div>
       </main>
     </div>
-    {importSeed && <PresetPackageImport seed={importSeed} onClose={() => setImportSeed(null)} onImported={ids => { void load(); if (ids[0]) { setView(value => ({ ...value, preview: true, selected: ids[0] })); syncSelectionUrl(ids[0]); } }} />}
+    {importSeed && <PresetPackageImport seed={importSeed} onDirtyChange={setImportDirty} onClose={() => { setImportDirty(false); setImportSeed(null); }} onImported={ids => { void load(); if (ids[0]) { setView(value => ({ ...value, preview: true, selected: ids[0] })); syncSelectionUrl(ids[0]); } }} />}
     <PresetDiscardDialog open={!!pending} cancel={() => { setPending(null); if (requestedId !== view.selected) syncSelectionUrl(view.selected); }} discard={() => { const action = pending; setPending(null); setDirty(false); setDetailRevision(n => n + 1); setConfirmedAction(() => action); }} />
     {bulkOpen && <PresetBulkEdit items={items.filter(item => checked.includes(item.id))} allItems={items} tags={options.tags} busy={busy} errors={bulkErrors} onClose={() => setBulkOpen(false)} onApply={patch => void applyBulk(patch)} />}
     {tagsOpen && <PresetTagManager preferences={tagPreferences} items={items} onClose={() => setTagsOpen(false)} onChanged={() => void load()} />}

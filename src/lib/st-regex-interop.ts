@@ -61,7 +61,7 @@ function placementToST(placement: ('all' | 'user' | 'assistant')[]): number[] {
 
 /** ST 正则脚本 → 应用内 RegexRule（ST 独有字段存入 _raw 以便无损导回） */
 export function stScriptToRule(script: STRegexScript): RegexRule {
-  const { id, scriptName, findRegex, replaceString, placement, disabled, ...rest } = script;
+  const { id, scriptName, findRegex, replaceString, placement, disabled, minDepth, maxDepth, ...rest } = script;
   return {
     id: id || crypto.randomUUID(),
     name: scriptName || '未命名规则',
@@ -69,9 +69,17 @@ export function stScriptToRule(script: STRegexScript): RegexRule {
     replaceString: replaceString ?? '',
     placement: placementFromST(placement),
     disabled: !!disabled,
-    ...getRegexDepthRange({ minDepth: script.minDepth, maxDepth: script.maxDepth }),
-    // 保留 ST 独有字段（trimStrings/markdownOnly/... 及任何未知字段），导出时拼回
-    _raw: { ...rest, ...(Array.isArray(placement) ? { placement: [...placement] } : {}) },
+    ...getRegexDepthRange({ minDepth, maxDepth }),
+    // 保留 ST 独有字段并补齐规范默认键，确保 parsePreset(JSON.parse(exportPreset)) 恒等，避免触发 2x 冗余快照
+    _raw: {
+      trimStrings: [],
+      markdownOnly: false,
+      promptOnly: false,
+      runOnEdit: true,
+      substituteRegex: 0,
+      ...rest,
+      ...(Array.isArray(placement) ? { placement: [...placement] } : {}),
+    },
   };
 }
 

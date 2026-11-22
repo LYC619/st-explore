@@ -137,6 +137,8 @@ export default function WorldBookPage() {
     load: async (identity, { initial, isCurrent }) => {
       if (initial && !identity.assetId && !initialImport.current) {
         const handoff = takePendingToolFile('worldbook');
+        const blankFlag = sessionStorage.getItem('ste-create-blank-worldbook');
+        sessionStorage.removeItem('ste-create-blank-worldbook');
         const aiImport = sessionStorage.getItem('ai-worldbook-import');
         sessionStorage.removeItem('ai-worldbook-import');
         let aiWorldbook: WorldBook | null = null;
@@ -144,9 +146,11 @@ export default function WorldBookPage() {
           const parsed = aiImport ? JSON.parse(aiImport) : null;
           if (parsed?.entries) aiWorldbook = parsed;
         } catch { /* ignore invalid AI handoff */ }
-        initialImport.current = handoff ? readWorldBookUpload(handoff).then((upload) => ({ ...upload, autoSave: true })) : Promise.resolve(
-          aiWorldbook ? { worldbook: aiWorldbook, title: 'AI 提取的世界书', autoSave: false } : null,
-        );
+        initialImport.current = handoff
+          ? readWorldBookUpload(handoff).then((upload) => ({ ...upload, autoSave: true }))
+          : blankFlag
+            ? Promise.resolve({ worldbook: { entries: {} }, title: '新建世界书', autoSave: true })
+            : Promise.resolve(aiWorldbook ? { worldbook: aiWorldbook, title: 'AI 提取的世界书', autoSave: false } : null);
       }
       const [item, character, items, imported] = await Promise.all([
         identity.assetId ? getWorldBook(identity.assetId) : null,
@@ -237,36 +241,52 @@ export default function WorldBookPage() {
 
   const handleImport = useCallback((wb: WorldBook, name: string, sourceModifiedAt?: number) => {
     const id = generateWorldBookId();
+    const now = Date.now();
+    const item: WorldBookItem = {
+      id,
+      title: name,
+      worldbook: wb,
+      createdAt: now,
+      updatedAt: now,
+      autoSaved: false,
+      ...(sourceModifiedAt === undefined ? {} : { sourceModifiedAt }),
+    };
     acceptLocalAsset(id, () => {
-      saveTargetRef.current = null;
+      saveTargetRef.current = item;
       partialSaveRef.current = null;
       setSaveScope(`import/${id}`);
       recoveryKeyRef.current = worldbookRecoveryKey(id, cowCharacterId);
       setRecoverableDraft(null);
       setCurrentItemId(id);
-      setWorldbook(wb);
+      hydrateWorldbook(wb);
       setFilename(name);
       setSelectedUid(null);
       setActiveTab('edit');
     });
     const isCurrent = captureCurrent();
-    // 自动保留为导入历史（autoSaved），并裁剪到最近 5 份
-    (async () => {
-      const now = Date.now();
-      await saveWorldBook({
-        id,
-        title: name,
-        worldbook: wb,
-        createdAt: now,
-        updatedAt: now,
-        autoSaved: false,
-        ...(sourceModifiedAt === undefined ? {} : { sourceModifiedAt }),
-      });
-      if (!isCurrent()) return;
+    const epoch = getVaultEpoch();
+    void (async () => {
+      await saveWorldBook(item);
+      if (cowCharacterId) {
+        await updateCharacterAssetReference(cowCharacterId, 'worldbook', id, id, now);
+      }
+      if (!isCurrent() || epoch !== getVaultEpoch()) return;
       const items = await getAllWorldBooks();
-      if (isCurrent()) setSavedItems(items);
-    })().catch(() => { /* 自动历史失败不阻塞导入 */ });
-  }, [setWorldbook, captureCurrent, acceptLocalAsset, cowCharacterId]);
+      if (isCurrent() && epoch === getVaultEpoch()) setSavedItems(items);
+    })().catch((error: unknown) => {
+      if (isCurrent()) {
+        toast({
+          title: '保存世界书失败',
+          description: error instanceof Error ? error.message : String(error),
+          variant: 'destructive',
+        });
+      }
+    });
+  }, [hydrateWorldbook, captureCurrent, acceptLocalAsset, cowCharacterId, toast]);
+
+  const filenameRef = useRef(filename);
+  filenameRef.current = filename;
+  const titleExplicitRef = useRef(false);
 
   const persistSnapshot = useCallback(async (snapshot: WorldBook | null) => {
     if (!snapshot) return;
@@ -274,6 +294,9 @@ export default function WorldBookPage() {
     const epoch = getVaultEpoch();
     const assertCurrent = () => { if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，保存已停止'); };
     const now = Date.now();
+    const activeTitle = filenameRef.current.trim() || filename;
+    const explicitTitle = titleExplicitRef.current;
+    titleExplicitRef.current = false;
     const base = saveTargetRef.current ?? (currentItemId ? savedItems.find(s => s.id === currentItemId) : undefined);
     if (cowCharacterId) {
       const character = await getCharacter(cowCharacterId);
@@ -303,7 +326,8 @@ export default function WorldBookPage() {
         reload: getAllWorldBooks,
         characterId: cowCharacterId,
         characterName: cowCharacterName,
-        title: filename,
+        title: activeTitle,
+        titleExplicit: explicitTitle,
         content: { worldbook: snapshot, autoSaved: false },
         newId: generateWorldBookId,
         save: async item => {
@@ -321,6 +345,7 @@ export default function WorldBookPage() {
       partialSaveRef.current = null;
       saveTargetRef.current = { ...base, id: result.targetId, title: result.title, worldbook: snapshot,
         updatedAt: now, ...(result.action === 'copy' ? { derived: { derivedFrom: base.id, characterId: cowCharacterId, diverged: true, createdAt: now, updatedAt: now } } : {}) };
+      filenameRef.current = result.title;
       setFilename(result.title);
       if (result.targetId !== currentItemId && ownsLocation()) acceptLocalAsset(result.targetId, () => setCurrentItemId(result.targetId));
       else setCurrentItemId(result.targetId);
@@ -339,7 +364,7 @@ export default function WorldBookPage() {
       const item = buildWorldBookSaveItem({
         base: fresh ?? base,
         id,
-        title: filename,
+        title: activeTitle,
         worldbook: snapshot,
         now,
       });
@@ -362,6 +387,51 @@ export default function WorldBookPage() {
   const autosave = useWorldbookAutosave({ value: worldbook, dirty: isDirty,
     enabled: !!currentItemId && savedLoaded, scope: saveScope, save: persistSnapshot });
   const { flush: flushWorldbook } = autosave;
+
+  const handleCreateBlank = useCallback(() => {
+    void (async () => {
+      if (isDirty) {
+        try {
+          await flushWorldbook(true);
+        } catch (error) {
+          toast({
+            title: '当前世界书尚未保存，已保留原内容',
+            description: error instanceof Error ? error.message : String(error),
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+      const used = new Set(savedItems.map((item) => item.title.trim()));
+      let nextTitle = '新建世界书';
+      for (let n = 2; used.has(nextTitle); n++) nextTitle = `新建世界书 ${n}`;
+      handleImport({ entries: {} }, nextTitle);
+      toast({ title: `已创建「${nextTitle}」`, description: '点击左上角「添加条目」即可开始编写设定' });
+    })();
+  }, [flushWorldbook, handleImport, isDirty, savedItems, toast]);
+
+  const handleRenameWorldbook = useCallback((nextName: string) => {
+    const trimmed = nextName.trim();
+    const prevFilename = filenameRef.current;
+    if (!trimmed || trimmed === prevFilename) return;
+    filenameRef.current = trimmed;
+    setFilename(trimmed);
+    if (!latestWorldbook.current) return;
+    titleExplicitRef.current = true;
+    const isCurrent = captureCurrent();
+    void flushWorldbook(true)
+      .then(() => {
+        if (isCurrent()) toast({ title: '世界书已重命名', description: `「${filenameRef.current}」` });
+      })
+      .catch((error: unknown) => {
+        titleExplicitRef.current = false;
+        if (isCurrent()) {
+          filenameRef.current = prevFilename;
+          setFilename(prevFilename);
+          toast({ title: '重命名失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+        }
+      });
+  }, [captureCurrent, flushWorldbook, latestWorldbook, toast]);
   useEffect(() => {
     if (!recoveryKeyRef.current) return;
     try {
@@ -496,6 +566,8 @@ export default function WorldBookPage() {
         <WorldBookHeader
           worldbook={worldbook}
           filename={filename}
+          onRename={handleRenameWorldbook}
+          onCreateBlank={handleCreateBlank}
           cowCharacterName={cowCharacterId ? cowCharacterName : ''}
           summary={summary}
           activeTab={activeTab}
@@ -565,6 +637,7 @@ export default function WorldBookPage() {
                 loadError={savedLoadError}
                 onRetry={refreshSavedItems}
                 onImport={handleImport}
+                onCreateBlank={handleCreateBlank}
                 onRestore={handleLoadStaged}
                 onDelete={setDeleteTarget}
               />

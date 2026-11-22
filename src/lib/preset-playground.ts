@@ -1,10 +1,15 @@
 import type { NormalizedPreset, PromptBlock } from '@/types/preset';
-import { DEFAULT_CHARACTER_ID } from '@/types/preset';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
 import type { STCharacterCard } from '@/lib/png-parser';
 import { normalizeCharacterCard } from '@/lib/png-parser';
 import type { ChatCompletionMessage } from '@/lib/llm';
-import { estimateTokens, getActiveOrder, substituteVars } from './preset-parser';
+import {
+  estimateTokens,
+  extractPresetAssistantPrefill,
+  getActiveOrder,
+  selectActivePromptOrderGroup,
+  substituteVars,
+} from './preset-parser';
 import { collectWorldbookEntries, insertAtDepth } from './summary-engine';
 import { inspectPresetScripts } from './preset-catalog';
 
@@ -52,17 +57,32 @@ export function selectPlaygroundWorldEntries(worldbook: WorldBook, messages: Cha
   });
 }
 
+function applyUtilityFormat(template: unknown, content: string): string {
+  if (!content.trim()) return '';
+  if (typeof template !== 'string' || !template.trim()) return content;
+  if (/\{\{(?:scenario|personality)\}\}/i.test(template)) {
+    return template.replace(/\{\{(?:scenario|personality)\}\}/gi, () => content);
+  }
+  if (template.includes('{0}')) {
+    return template.replace(/\{0\}/g, () => content);
+  }
+  return content;
+}
+
 /** Read-only adapter of STE's preset/order/macros/depth primitives. Never executes extensions or writes assets. */
 export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
   const { preset } = input;
+  const settings = preset.originalData;
   const card = input.character ? normalizeCharacterCard(input.character) : undefined;
   const userName = input.userName?.trim() || 'User', charName = card?.name || 'Assistant';
   const warnings = new Set<string>();
   const unsupportedMacros = new Set<string>();
   const variables = new Map<string, string>();
   const recent = [...input.messages].reverse();
+  const formattedScenario = applyUtilityFormat(settings.scenario_format, card?.scenario ?? '');
+  const formattedPersonality = applyUtilityFormat(settings.personality_format, card?.personality ?? '');
   const known: Record<string, string> = {
-    chardescription: card?.description ?? '', charpersonality: card?.personality ?? '', scenario: card?.scenario ?? '',
+    chardescription: card?.description ?? '', charpersonality: formattedPersonality, scenario: formattedScenario,
     persona: input.persona ?? '', personadescription: input.persona ?? '', mesexamples: card?.messageExample ?? '',
     charsystemprompt: card?.systemPrompt ?? '', charjailbreak: card?.postHistoryInstructions ?? '',
     lastmessage: input.messages.at(-1)?.content ?? '', lastusermessage: recent.find(message => message.role === 'user')?.content ?? '',
@@ -91,21 +111,22 @@ export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
     }
     return value;
   };
-  // ST's OpenAI PromptManager uses 100001; older STE-authored presets use 100000.
-  const group = preset.promptOrder.find(group => group.character_id === 100001)
-    ?? preset.promptOrder.find(group => group.character_id === DEFAULT_CHARACTER_ID) ?? preset.promptOrder[0];
-  const order = group ? getActiveOrder(preset, group.character_id) : preset.prompts.map(block => ({ identifier: block.identifier, enabled: block.enabled !== false }));
-  if (!group) warnings.add('预设没有激活顺序，按提示词条目顺序试用。');
+  const group = selectActivePromptOrderGroup(preset);
+  const order = group && group.order.length > 0
+    ? getActiveOrder(preset, group.character_id)
+    : preset.prompts.map(block => ({ identifier: block.identifier, enabled: block.enabled !== false }));
+  if (!group || !group.order.length) warnings.add('预设没有激活顺序，按提示词条目顺序试用。');
   const blocks = new Map(preset.prompts.map(block => [block.identifier, block]));
   const enabled = order.filter(entry => entry.enabled).flatMap(entry => blocks.has(entry.identifier) ? [blocks.get(entry.identifier)!] : []);
   const entries = input.worldbook ? selectPlaygroundWorldEntries(input.worldbook, input.messages, input.worldMode ?? 'keywords') : [];
-  const wbAt = (...positions: number[]) => entries.filter(entry => positions.includes(entry.position)).sort((a,b) => b.order - a.order).map(entry => entry.content).filter(Boolean).join('\n\n');
+  const formatWiEntry = (entry: WorldBookEntry) => applyUtilityFormat(settings.wi_format, entry.content);
+  const wbAt = (...positions: number[]) => entries.filter(entry => positions.includes(entry.position)).sort((a,b) => b.order - a.order).map(formatWiEntry).filter(Boolean).join('\n\n');
   const worldBefore = wbAt(0), worldAfter = wbAt(1, 4, 5), exampleBefore = wbAt(2), exampleAfter = wbAt(3);
   if (entries.some(entry => [4, 5].includes(entry.position))) warnings.add('作者注释位置的世界书条目暂放在角色设定之后。');
   if (input.worldbook && Object.values(input.worldbook.entries).some(entry => entry.vectorized || entry.sticky || entry.cooldown || entry.delay || entry.probability < 100 || entry.group)) warnings.add('关键词试用不运行向量、递归、分组概率和延迟触发；完整效果请在聊天页验证。');
   let history = input.messages.map(message => ({ ...message }));
   const injections: { message: ChatCompletionMessage; depth: number; order: number }[] = entries.filter(entry => entry.position === 6)
-    .map(entry => ({ message: { role: role(entry.role), content: entry.content }, depth: entry.depth ?? 4, order: entry.order }));
+    .map(entry => ({ message: { role: role(entry.role), content: formatWiEntry(entry) }, depth: entry.depth ?? 4, order: entry.order }));
   for (const block of enabled.filter(block => !block.marker && block.injection_position === 1)) {
     injections.push({ message: { role: role(block.role), content: text(block.content) }, depth: block.injection_depth ?? 4, order: typeof block.injection_order === 'number' ? block.injection_order : 100 });
   }
@@ -119,7 +140,7 @@ export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
   const push = (content: string, messageRole: ChatCompletionMessage['role'] = 'system') => { if (content.trim()) messages.push({ role: messageRole, content }); };
   const markerContent: Record<string, string> = {
     worldInfoBefore: worldBefore, worldInfoAfter: worldAfter,
-    charDescription: card?.description ?? '', charPersonality: card?.personality ?? '', scenario: card?.scenario ?? '',
+    charDescription: card?.description ?? '', charPersonality: formattedPersonality, scenario: formattedScenario,
     dialogueExamples: [exampleBefore, card?.messageExample, exampleAfter].filter(Boolean).join('\n\n'),
     personaDescription: input.persona ?? '',
   };
@@ -137,13 +158,16 @@ export function buildPresetPlaygroundRequest(input: PlaygroundInput) {
     } else push(promptContent(block), role(block.role));
   }
   if (!hasHistory) { messages.push(...history); warnings.add('预设未启用聊天历史插槽，本次消息追加到提示词末尾。'); }
+  const prefill = extractPresetAssistantPrefill(preset);
+  if (prefill) {
+    messages.push({ role: 'assistant', content: prefill });
+  }
   if (card && !['charDescription', 'charPersonality', 'scenario'].some(key => used.has(key))) warnings.add('此预设未启用角色设定插槽，所选角色只有名称宏参与。');
   if ((worldBefore && !used.has('worldInfoBefore')) || (worldAfter && !used.has('worldInfoAfter')) || ((exampleBefore || exampleAfter) && !used.has('dialogueExamples'))) warnings.add('部分世界书位置对应的预设插槽未启用，该部分没有注入。');
   if (preset.regexRules.some(rule => !rule.disabled) || inspectPresetScripts(preset.originalData).length) warnings.add('本试用不执行随包正则、酒馆助手脚本和 HTML／宏脚本；相关效果请在聊天页验证。');
   // Macro effects follow the final prompt order, including variables set in earlier preset blocks.
   for (const message of messages) message.content = macro(message.content);
   if (unsupportedMacros.size) warnings.add(`未支持的宏保持原文：${[...unsupportedMacros].slice(0, 8).join('、')}。`);
-  const settings = preset.originalData;
   const request: Record<string, unknown> = { ...settings, messages, stream: true, user_name: userName, char_name: charName };
   // Match ST's additional-parameter migration. Old top-level values can be dormant,
   // including a stale stream:false or invalid exclusion text for another source.

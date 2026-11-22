@@ -6,6 +6,8 @@ import type { PresetItem } from '@/types/preset';
 import { digest } from './fingerprint';
 import { isPresetRetired } from '@/lib/preset-tag-values';
 import { presetName } from '@/lib/preset-presentation';
+import { presetWriteQueue } from '@/lib/preset-db';
+import { getVaultEpoch } from '@/lib/vault/active';
 
 interface AssetOptions {
   worldbooks: Repo<WorldBookItem>;
@@ -145,33 +147,38 @@ export async function createRoleplayAssets(options: AssetOptions) {
       validName(name);
       const parsed = parsePreset(structuredClone(data));
       await writes.enqueue(`preset:${name}`, async () => {
-        assertCurrent();
+        const epoch = getVaultEpoch();
         const previous = presetMap.get(name);
-        const current = previous ? await options.presets.get(previous.id) : undefined;
-        if (presetOwners.has(name) && presetOwners.get(name) !== previous?.id) throw new Error('预设名称已变化，请重新打开后保存');
-        if (previous && (!current || presetVersions.get(previous.id) !== presetVersion(current))) throw new Error('预设已被其他编辑修改，请重新打开后保存');
-        const item: PresetItem = { ...current, id: current?.id ?? crypto.randomUUID(), title: current?.title ?? name,
-          createdAt: current?.createdAt ?? Date.now(), updatedAt: Date.now(), preset: parsed };
-        assertCurrent();
-        await options.presets.put(item);
-        presetMap.set(name, item);
-        presetOwners.set(name, item.id);
-        presetVersions.set(item.id, presetVersion(item));
+        const lockKey = previous ? `${epoch}:${previous.id}` : `${epoch}:new:${name}`;
+        await presetWriteQueue.enqueue(lockKey, async () => {
+          assertCurrent();
+          const current = previous ? await options.presets.get(previous.id) : undefined;
+          if (presetOwners.has(name) && presetOwners.get(name) !== previous?.id) throw new Error('预设名称已变化，请重新打开后保存');
+          if (previous && (!current || presetVersions.get(previous.id) !== presetVersion(current))) throw new Error('预设已被其他编辑修改，请重新打开后保存');
+          const item: PresetItem = { ...current, id: current?.id ?? crypto.randomUUID(), title: current?.title ?? name,
+            createdAt: current?.createdAt ?? Date.now(), updatedAt: Date.now(), preset: parsed };
+          assertCurrent();
+          await options.presets.put(item);
+          presetMap.set(name, item);
+          presetOwners.set(name, item.id);
+          presetVersions.set(item.id, presetVersion(item));
+        });
       });
     },
     async deletePreset(name: string) {
       await writes.enqueue(`preset:${name}`, async () => {
-        assertCurrent();
+        const epoch = getVaultEpoch();
         const previous = presetMap.get(name);
         if (!previous) throw new Error('内置预设请另存后编辑');
-        const current = await options.presets.get(previous.id);
-        if (presetOwners.get(name) !== previous.id || (current && presetVersions.get(previous.id) !== presetVersion(current))) throw new Error('预设已被其他编辑修改，请重新打开');
-        await options.presets.remove(previous.id);
-        presetMap.delete(name);
-        // Only a successful explicit deletion releases the alias. Background refreshes
-        // keep tombstones so a stale editor cannot recreate an externally renamed asset.
-        presetOwners.delete(name);
-        presetVersions.delete(previous.id);
+        await presetWriteQueue.enqueue(`${epoch}:${previous.id}`, async () => {
+          assertCurrent();
+          const current = await options.presets.get(previous.id);
+          if (presetOwners.get(name) !== previous.id || (current && presetVersions.get(previous.id) !== presetVersion(current))) throw new Error('预设已被其他编辑修改，请重新打开');
+          await options.presets.remove(previous.id);
+          presetMap.delete(name);
+          presetOwners.delete(name);
+          presetVersions.delete(previous.id);
+        });
       });
     },
   };

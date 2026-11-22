@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { GripVertical, Trash2, ChevronDown, ChevronRight, Plus, Search, Undo2, Redo2 } from 'lucide-react';
+import { GripVertical, Trash2, ChevronDown, ChevronRight, Plus, Search, Undo2, Redo2, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -30,7 +30,7 @@ interface PromptEditorProps {
   onCharacterIdChange: (id: number) => void;
   /** 改激活顺序（进历史栈） */
   onOrderChange: (order: OrderEntry[]) => void;
-  /** 改 prompt 块内容（不进历史栈） */
+  /** 改 prompt 块内容 */
   onBlockContentChange: (identifier: string, content: string) => void;
   /** 改 prompt 块名称 */
   onBlockNameChange: (identifier: string, name: string) => void;
@@ -38,6 +38,8 @@ interface PromptEditorProps {
   onBlockRoleChange: (identifier: string, role: 'system' | 'user' | 'assistant') => void;
   /** 手动新建提示词块（relative=普通块按顺序就地，injection=ST 绝对注入块），返回新块 identifier */
   onAddBlock: (name: string, kind?: 'relative' | 'injection') => string;
+  /** 彻底删除备用提示词块（系统 marker 不可删） */
+  onDeleteBlock?: (identifier: string) => void;
   /** 改注入块的 depth / order 数字字段 */
   onBlockInjectionChange: (identifier: string, field: 'injection_depth' | 'injection_order', value: number) => void;
   onUndo: () => void;
@@ -48,7 +50,7 @@ interface PromptEditorProps {
 
 export function PromptEditor({
   preset, activeCharacterId, onCharacterIdChange,
-  onOrderChange, onBlockContentChange, onBlockNameChange, onBlockRoleChange, onAddBlock, onBlockInjectionChange, onUndo, onRedo, canUndo, canRedo,
+  onOrderChange, onBlockContentChange, onBlockNameChange, onBlockRoleChange, onAddBlock, onDeleteBlock, onBlockInjectionChange, onUndo, onRedo, canUndo, canRedo,
 }: PromptEditorProps) {
   const { toast } = useToast();
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -99,13 +101,22 @@ export function PromptEditor({
   const removeFromOrder = (identifier: string) => {
     onOrderChange(order.filter((o) => o.identifier !== identifier));
     toast({
-      title: '已从激活顺序移除',
+      title: '已移回提示词备用库',
       action: <ToastAction altText="撤销" onClick={onUndo}>撤销</ToastAction>,
     });
   };
 
   const addToOrder = (identifier: string) => {
     onOrderChange([...order, { identifier, enabled: true }]);
+  };
+
+  const moveInOrder = (index: number, delta: -1 | 1) => {
+    const target = index + delta;
+    if (target < 0 || target >= order.length) return;
+    const reordered = [...order];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+    onOrderChange(reordered);
   };
 
   // ---- 实时预览 ----
@@ -130,19 +141,20 @@ export function PromptEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {charIds.map((id) => (
-                  <SelectItem key={id} value={String(id)} className="text-xs">
-                    角色组 {id}{id === 100000 ? '（默认）' : ''}
+                {preset.promptOrder.map((g, gi) => (
+                  <SelectItem key={g.character_id} value={String(g.character_id)} className="text-xs">
+                    {g.character_id === 100001 ? '默认主组' : g.character_id === 100000 ? '通用组' : `扩展组 ${gi + 1}`}
+                    {` · ${g.order.length} 项`}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
           <div className="ml-auto flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} aria-label="撤销">
+            <Button type="button" variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} aria-label="撤销" title="撤销上一步修改">
               <Undo2 className="w-4 h-4" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={onRedo} disabled={!canRedo} aria-label="重做">
+            <Button type="button" variant="ghost" size="icon" onClick={onRedo} disabled={!canRedo} aria-label="重做" title="重做修改">
               <Redo2 className="w-4 h-4" />
             </Button>
           </div>
@@ -154,7 +166,7 @@ export function PromptEditor({
             <h3 className="text-sm font-medium">激活顺序（{order.length}）</h3>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="px-2 text-xs">
+                <Button type="button" variant="ghost" size="sm" className="px-2 text-xs">
                   <Plus className="w-3.5 h-3.5 mr-1" /> 新建块
                 </Button>
               </DropdownMenuTrigger>
@@ -175,7 +187,7 @@ export function PromptEditor({
                     setExpandedId(id);
                   }}
                 >
-                  注入块（@深度注入聊天）
+                  注入块（@深度插入聊天楼层）
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -201,6 +213,7 @@ export function PromptEditor({
                     <div className="flex items-center gap-2 p-2">
                       <GripVertical className="w-4 h-4 text-muted-foreground cursor-grab shrink-0" />
                       <button
+                        type="button"
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                         onClick={() => setExpandedId(expanded ? null : entry.identifier)}
                         aria-label={expanded ? '收起' : '展开'}
@@ -211,14 +224,20 @@ export function PromptEditor({
                       {block?.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block?.injection_depth as number | undefined} /> : <RoleBadge role={block?.role} />}
                       {empty && <EmptyBadge />}
                       <Switch checked={entry.enabled} onCheckedChange={() => toggleEnabled(entry.identifier)} className="scale-90" />
-                      <Button variant="ghost" size="icon" className="shrink-0" onClick={() => removeFromOrder(entry.identifier)} aria-label="移除">
-                        <Trash2 className="w-3.5 h-3.5" />
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 text-muted-foreground" disabled={index === 0} onClick={() => moveInOrder(index, -1)} aria-label="上移提示词" title="上移一位">
+                        <ArrowUp className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 text-muted-foreground" disabled={index === order.length - 1} onClick={() => moveInOrder(index, 1)} aria-label="下移提示词" title="下移一位">
+                        <ArrowDown className="w-3.5 h-3.5" />
+                      </Button>
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeFromOrder(entry.identifier)} aria-label="移回备用库" title="从当前激活链移回下方备用库">
+                        <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                     {expanded && (
                       <div className="px-2 pb-2 pt-1 border-t border-border/50">
                         {block?.marker ? (
-                          <p className="text-xs text-muted-foreground py-1">系统插槽，运行时由 SillyTavern 动态填充，无可编辑内容。</p>
+                          <p className="text-xs text-muted-foreground py-1">系统动态插槽，对话时由酒馆自动填入对应人设、世界书或聊天历史，无需手动编辑文本。</p>
                         ) : (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1.5">
@@ -226,7 +245,7 @@ export function PromptEditor({
                                 value={block?.name ?? ''}
                                 onChange={(e) => onBlockNameChange(entry.identifier, e.target.value)}
                                 placeholder="块名称"
-                                className="text-xs flex-1"
+                                className="text-base sm:text-xs flex-1"
                               />
                               <Select
                                 value={block?.role ?? 'system'}
@@ -275,7 +294,7 @@ export function PromptEditor({
                               value={block?.content ?? ''}
                               onChange={(e) => onBlockContentChange(entry.identifier, e.target.value)}
                               placeholder="提示词内容"
-                              className="text-xs min-h-[80px] font-mono"
+                              className="text-base sm:text-xs min-h-[80px] font-mono"
                             />
                           </div>
                         )}
@@ -285,19 +304,19 @@ export function PromptEditor({
                 );
               })}
               {order.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-8">当前角色组无激活条目</p>
+                <p className="text-xs text-muted-foreground text-center py-8">当前分组没有激活条目</p>
               )}
             </div>
           </ScrollArea>
         </div>
 
-        {/* 提示词库 */}
+        {/* 提示词备用库 */}
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-sm font-medium">提示词库（{libraryBlocks.length}）</h3>
+            <h3 className="text-sm font-medium">备用提示词库（{libraryBlocks.length}）</h3>
             <div className="ml-auto relative">
               <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input size="sm" value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder="搜索" className="pl-7 text-xs w-36" />
+              <Input size="sm" value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder="搜索备用块" className="pl-7 text-base sm:text-xs w-36" />
             </div>
           </div>
           <ScrollArea className="h-[160px] pr-2">
@@ -307,13 +326,32 @@ export function PromptEditor({
                   <span className="text-sm truncate flex-1 min-w-0" title={blockDisplayName(block)}>{blockDisplayName(block)}</span>
                   {block.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block.injection_depth as number | undefined} /> : <RoleBadge role={block.role} />}
                   {isUnreferenced(block, referenced) && <UnreferencedBadge />}
-                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => addToOrder(block.identifier)} aria-label="加入激活顺序">
+                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => addToOrder(block.identifier)} aria-label="加入激活顺序" title="加入上方激活顺序">
                     <Plus className="w-3.5 h-3.5" />
                   </Button>
+                  {!block.marker && onDeleteBlock && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        onDeleteBlock(block.identifier);
+                        toast({
+                          title: `已彻底删除提示词块「${blockDisplayName(block)}」`,
+                          action: <ToastAction altText="撤销" onClick={onUndo}>撤销</ToastAction>,
+                        });
+                      }}
+                      aria-label={`彻底删除提示词块 ${blockDisplayName(block)}`}
+                      title="彻底从预设中移除该废块（可撤销）"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
                 </div>
               ))}
               {libraryBlocks.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-6">没有未激活的提示词</p>
+                <p className="text-xs text-muted-foreground text-center py-6">没有未挂载的备用提示词</p>
               )}
             </div>
           </ScrollArea>
@@ -326,9 +364,9 @@ export function PromptEditor({
           <h3 className="text-sm font-medium">实时预览</h3>
           <span className="text-xs text-muted-foreground">~{totalTokens} tokens</span>
           <div className="ml-auto flex items-center gap-1">
-            <Label className="text-xs text-muted-foreground">char</Label>
+            <Label className="text-xs text-muted-foreground">角色名</Label>
             <Input size="sm" value={charName} onChange={(e) => setCharName(e.target.value)} className="text-xs w-24" />
-            <Label className="text-xs text-muted-foreground">user</Label>
+            <Label className="text-xs text-muted-foreground">用户名</Label>
             <Input size="sm" value={userName} onChange={(e) => setUserName(e.target.value)} className="text-xs w-24" />
           </div>
         </div>
@@ -341,7 +379,7 @@ export function PromptEditor({
                   {block.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block.injection_depth as number | undefined} /> : <RoleBadge role={block.role} />}
                 </div>
                 {block.marker ? (
-                  <p className="text-xs text-muted-foreground italic">[ {blockDisplayName(block)} —— 由 SillyTavern 运行时填充此处内容 ]</p>
+                  <p className="text-xs text-muted-foreground italic">[ {blockDisplayName(block)} —— 对话时自动填充此处内容 ]</p>
                 ) : (
                   <p className="text-xs whitespace-pre-wrap leading-relaxed text-foreground/90">
                     {substituteVars(block.content ?? '', charName, userName) || <span className="text-muted-foreground italic">（空）</span>}

@@ -468,7 +468,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
 
         {/* 编辑区窄工具栏（0816 反馈）：固定在全局侧栏右侧，编辑区内所有页面共用。
             窄屏收掉：它那 7 项和编辑区的 NAV_AREAS.children 是同一份，抽屉里已经列了。 */}
-        {!isCompact && <EditorRail />}
+        {!isCompact && !(expanded && editorOpen) && <EditorRail />}
 
         {/* 主区：页面操作条（契约保留）+ 内容滚动区（入场 fade+slide，A7） */}
         <div

@@ -268,6 +268,11 @@ describe('工具页与独立预设库的导航落点', () => {
     navOpen.editor = true;
     await renderAt('/preset?assetId=p&characterId=c');
     expect(sideSubItem(container, 'editor', 'preset')?.getAttribute('aria-current')).toBe('page');
+    expect(container.querySelector('[data-editor-rail]')).toBeNull();
+    await act(async () => { root.unmount(); });
+    root = createRoot(container);
+    navOpen.editor = false;
+    await renderAt('/preset?assetId=p&characterId=c');
     expect(railButton('预设').getAttribute('aria-current')).toBe('page');
     await act(async () => railButton('预设').click());
     expect(container.querySelector('[data-testid="layout-location"]')?.textContent).toBe('/presets?mode=select');
@@ -358,7 +363,7 @@ describe('编辑区窄工具栏与侧栏共用当前故事', () => {
     expect(location()).toBe('/story/st_9?view=tree');
 
     await act(async () => { railButton('聊天处理').click(); });
-    expect(location()).toBe('/chat?storyId=st_9');
+    expect(location()).toBe('/story/st_9');
   });
 
   it('侧栏子项和窄工具栏用同一个当前故事，不会一个进故事一个进选择页', async () => {

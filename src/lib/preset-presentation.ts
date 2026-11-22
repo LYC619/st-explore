@@ -82,7 +82,7 @@ function releaseToken(text: string): { value: string; index: number; length: num
       // A leading step number, model generation or card format is not a preset release.
       if (!prefix.trim() || /(?:用于|适用|格式|\bfor)\s*$/i.test(prefix)) continue;
       const explicitRelease = /^(?:ver(?:sion)?|v)\s*\d/i.test(match[0]);
-      if (!explicitRelease && /(?:claude|gemini|(?:chat)?gpt|deepseek|qwen|llama|哈基米|哈吉米)\s*[-_]?\s*$/i.test(prefix)) continue;
+      if (!explicitRelease && /(?:claude|gemini|(?:chat)?gpt|deepseek|qwen|llama|sonnet|opus|haiku|grok|r1|o1|o3|哈基米|哈吉米)\s*[-_]?\s*$/i.test(prefix)) continue;
       return { value: match[0].replace(/\s/g, ''), index: match.index, length: match[0].length };
     }
   }
@@ -111,7 +111,7 @@ export function inferPresetIdentity(title: string, originalData?: Record<string,
   return { displayName, series, version, models, purposes, evidence };
 }
 
-/** Accepts full records and bounded catalog summaries; confirmed nonempty metadata wins field by field. */
+/** Accepts full records and bounded catalog summaries; confirmed metadata wins field by field without author->series pollution. */
 export function getPresetPresentation(item: {
   title: string;
   catalog?: Partial<PresetCatalog>;
@@ -126,13 +126,13 @@ export function getPresetPresentation(item: {
     ...hints,
     displayName: nonempty(catalog?.name) ?? hints.displayName,
     author: nonempty(catalog?.author),
-    version: version ?? hints.version,
-    series: series ?? nonempty(catalog?.author) ?? hints.series,
+    version: catalog?.versionConfirmed ? version : (version ?? hints.version),
+    series: catalog?.seriesConfirmed ? series : (series ?? hints.series),
     models: models.length || catalog?.modelsConfirmed === true ? models : hints.models,
     purposes: purposes.length ? purposes : hints.purposes,
     inferred: {
-      version: !version && !!hints.version,
-      series: !series && !nonempty(catalog?.author) && !!hints.series,
+      version: !version && catalog?.versionConfirmed !== true && !!hints.version,
+      series: !series && catalog?.seriesConfirmed !== true && !!hints.series,
       models: !models.length && catalog?.modelsConfirmed !== true && !!hints.models.length,
       purposes: !purposes.length && !!hints.purposes.length,
     },
@@ -142,4 +142,41 @@ export function getPresetPresentation(item: {
 export function presetSeriesKey(item: Parameters<typeof getPresetPresentation>[0]): string {
   const p = getPresetPresentation(item);
   return `${p.author ?? ''}\0${p.series || p.displayName}`.toLocaleLowerCase();
+}
+
+function parseVersionTuple(raw?: string): number[] | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const cnDate = /^(?:(20\d{2})年)?(\d{1,2})月(\d{1,2})日$/.exec(trimmed);
+  if (cnDate) return [Number(cnDate[1] || 0), Number(cnDate[2]), Number(cnDate[3])];
+  const isoDate = /^(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(trimmed);
+  if (isoDate) return [Number(isoDate[1]), Number(isoDate[2]), Number(isoDate[3])];
+  const semver = /^(?:ver(?:sion)?|v)?\s*(\d+(?:\.\d+)*)(?:\s*([a-z]))?$/i.exec(trimmed);
+  if (semver) {
+    const nums = semver[1].split('.').map(Number);
+    if (semver[2]) nums.push(semver[2].toLowerCase().charCodeAt(0) - 96);
+    return nums;
+  }
+  return null;
+}
+
+/** 语义化版本／日期比较器（返回值 > 0 表示 a 比 b 新） */
+export function comparePresetVersions(a?: string, b?: string): number {
+  const va = (a ?? '').trim();
+  const vb = (b ?? '').trim();
+  if (va === vb) return 0;
+  if (!va) return -1;
+  if (!vb) return 1;
+  const ta = parseVersionTuple(va);
+  const tb = parseVersionTuple(vb);
+  if (ta && tb) {
+    const len = Math.max(ta.length, tb.length);
+    for (let i = 0; i < len; i++) {
+      const diff = (ta[i] ?? 0) - (tb[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  }
+  return va.localeCompare(vb, 'zh-CN', { numeric: true });
 }

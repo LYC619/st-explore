@@ -48,6 +48,7 @@ import {
 import { getSummaryTemplate, saveSummary, getAllSummaries, deleteSummary } from '@/lib/summary-db';
 import { getAllPresets } from '@/lib/preset-db';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
+import { subscribeRecordChanges } from '@/lib/repo/changes';
 import { buildSummaryMessages, extractTitle, inferVolumeNumber } from '@/lib/summary-engine';
 import { getBranchLine } from '@/lib/archive-db';
 import { FloorRangePicker, type FloorAnchor } from '@/components/summary/FloorRangePicker';
@@ -257,9 +258,32 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
 
     const [presetMap, setPresetMap] = useState<Map<string, NormalizedPreset>>(new Map());
     const [worldbookMap, setWorldbookMap] = useState<Map<string, WorldBook>>(new Map());
+    const [assetsLoaded, setAssetsLoaded] = useState(false);
+    const [assetLoadError, setAssetLoadError] = useState<string | null>(null);
     useEffect(() => {
-      getAllPresets().then((ps) => setPresetMap(new Map(ps.map((p) => [p.id, p.preset])))).catch(() => {});
-      getAllWorldBooks().then((ws) => setWorldbookMap(new Map(ws.map((w) => [w.id, w.worldbook])))).catch(() => {});
+      let live = true;
+      let seq = 0;
+      const loadAssets = () => {
+        const current = ++seq;
+        Promise.all([getAllPresets(), getAllWorldBooks()])
+          .then(([ps, ws]) => {
+            if (!live || current !== seq) return;
+            setPresetMap(new Map(ps.map((p) => [p.id, p.preset])));
+            setWorldbookMap(new Map(ws.map((w) => [w.id, w.worldbook])));
+            setAssetLoadError(null);
+            setAssetsLoaded(true);
+          })
+          .catch((error: unknown) => {
+            if (!live || current !== seq) return;
+            setAssetLoadError(error instanceof Error ? error.message : '无法读取预设与世界书库');
+            setAssetsLoaded(true);
+          });
+      };
+      loadAssets();
+      const off = subscribeRecordChanges((change) => {
+        if (change.store === 'presets' || change.store === 'worldbooks') loadAssets();
+      });
+      return () => { live = false; off(); };
     }, []);
 
     // 日记主角非空时，自动在模板末尾附加定向指令
@@ -303,7 +327,8 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
 
     const buildSegmentMessages = useCallback((s: number, e: number) => {
       try {
-        return buildSummaryMessages({ ...buildEngineInput(), floorStart: s, floorEnd: e, priorSummaries: [], volumeNumber: undefined }).messages;
+        const built = buildSummaryMessages({ ...buildEngineInput(), floorStart: s, floorEnd: e, priorSummaries: [], volumeNumber: undefined });
+        return { messages: built.messages, params: built.params };
       } catch {
         return null;
       }
@@ -379,7 +404,23 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
         return;
       }
-      const { messages, warnings } = buildSummaryMessages(buildEngineInput());
+      if (assetLoadError && (attach.presetId || attach.worldbookId)) {
+        toast({ title: '挂载设定读取失败', description: `${assetLoadError}；请先清除挂载或重试读取后再生成`, variant: 'destructive' });
+        return;
+      }
+      if (!assetsLoaded && (attach.presetId || attach.worldbookId)) {
+        toast({ title: '正在加载挂载的预设与世界书，请稍候一秒再试' });
+        return;
+      }
+      if (attach.presetId && !presetMap.has(attach.presetId)) {
+        toast({ title: '所挂载的预设已不存在', description: '请在左侧「挂载设定」重新选择预设或清除挂载', variant: 'destructive' });
+        return;
+      }
+      if (attach.worldbookId && !worldbookMap.has(attach.worldbookId)) {
+        toast({ title: '所挂载的世界书已不存在', description: '请在左侧「挂载设定」重新选择世界书或清除挂载', variant: 'destructive' });
+        return;
+      }
+      const { messages, params, warnings } = buildSummaryMessages(buildEngineInput());
       if (messages.length === 0) {
         toast({ title: '没有可总结的内容', variant: 'destructive' });
         return;
@@ -404,6 +445,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       let wasTruncated = false;
       try {
         await callOpenAIMessages(config, messages, {
+          params,
           onChunk: (chunk) => {
             outputRef.current += chunk;
             setResultContent(outputRef.current);

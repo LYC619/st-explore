@@ -1,4 +1,3 @@
-// Authored for the next consolidated test batch; not run during the implementation batch.
 import { IDBFactory } from 'fake-indexeddb';
 import { closeDB } from '@/lib/idb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,53 +39,57 @@ beforeEach(() => { closeDB(); vi.stubGlobal('indexedDB', new IDBFactory()); setA
 afterEach(() => { setActiveVault(null); closeDB(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe.each(['vault', 'idb'] as const)('%s preset management persistence', backend => {
-  it('inherits the latest series tags during import and retries without overwriting later metadata', async () => {
+  it('inherits shared series tags during import while keeping per-version status independent', async () => {
     if (backend === 'idb') setActiveVault(null);
     const repo = getCurrentRepo<PresetItem>('presets'), original = item(); await repo.put(original);
     const added = { ...item(), id: 'imported-v2', catalog: { ...item().catalog, version: 'v2', tags: ['状态/在用'] } };
-    await Promise.all([updatePresetCatalog(original.id, { tags: ['状态/过期', '评价/良好'] }), saveImportedPreset(added)]);
-    expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired', version: 'v2' });
+    await Promise.all([updatePresetCatalog(original.id, { tags: ['状态/过期', '评价/良好', '剧情向'] }), saveImportedPreset(added)]);
+    // Shared series tag ('剧情向') syncs to imported-v2, while original's retired status does NOT clobber imported-v2's active status!
+    expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['状态/在用', '剧情向'], status: 'active', version: 'v2' });
+    expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好', '剧情向'], status: 'retired' });
     await updatePresetCatalog(added.id, { notes: 'edited after import' });
     expect((await saveImportedPreset(added)).catalog?.notes).toBe('edited after import');
     expect((await repo.list()).filter(entry => entry.id === added.id)).toHaveLength(1);
     const outsider = { ...item(), id: 'different-author', catalog: { ...item().catalog, author: 'another author', tags: ['状态/在用'] } };
     expect((await saveImportedPreset(outsider)).catalog?.tags).toEqual(['状态/在用']);
   });
-  it('shares tags only with the same author and series and keeps per-version fields intact', async () => {
+  it('shares ordinary tags across the same series while keeping status and rating strictly per-version', async () => {
     if (backend === 'idb') setActiveVault(null);
     const repo = getCurrentRepo<PresetItem>('presets');
-    const a = item(), b = { ...item(), id: 'preset-b', title: 'second', catalog: { ...item().catalog, version: 'v2', notes: 'second note' } },
+    const a = item(), b = { ...item(), id: 'preset-b', title: 'second', catalog: { ...item().catalog, version: 'v2', notes: 'second note', tags: ['状态/在用'] } },
       outsider = { ...item(), id: 'outsider', catalog: { ...item().catalog, author: 'other author' } };
     await repo.put(a); await repo.put(b); await repo.put(outsider);
-    await updatePresetCatalog(a.id, { tags: ['状态/在用', '评价/优秀'] });
-    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['状态/在用', '评价/优秀'], version: 'v2', notes: 'second note', status: 'active' });
+    await updatePresetCatalog(a.id, { tags: ['状态/备用', '评价/优秀', '文风细腻'] });
+    expect((await repo.get(a.id))?.catalog).toMatchObject({ tags: ['状态/备用', '评价/优秀', '文风细腻'], status: 'reserve' });
+    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['状态/在用', '文风细腻'], version: 'v2', notes: 'second note', status: 'active' });
     expect(await repo.get(outsider.id)).toEqual(outsider);
     await updatePresetCatalog(a.id, { status: 'retired' });
-    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['评价/优秀', '状态/过期'], status: 'retired' });
-    await updatePresetCatalog(a.id, { tags: ['评价/良好'] });
-    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['评价/良好'], status: 'unreviewed' });
+    expect((await repo.get(a.id))?.catalog).toMatchObject({ status: 'retired' });
+    expect((await repo.get(b.id))?.catalog).toMatchObject({ tags: ['状态/在用', '文风细腻'], status: 'active' });
     expect((await repo.get(b.id))?.preset).toEqual(b.preset);
   });
-  it('saves an explicit editor name into catalog metadata and subsequent exports', async () => {
+  it('saves an explicit editor name into catalog metadata and subsequent exports while keeping metadata-only edits off disk title', async () => {
     if (backend === 'idb') setActiveVault(null);
     const repo = getCurrentRepo<PresetItem>('presets'), original = item();
     original.catalog!.name = 'old configured name'; await repo.put(original);
-    const saved = await saveEditedPreset(original.id, 'new configured name', original.preset, original.preset);
+    await updatePresetCatalog(original.id, { name: 'metadata display alias' });
+    expect((await repo.get(original.id))?.title).toBe('作者预设');
+    const saved = await saveEditedPreset(original.id, 'new configured name', original.preset, original.preset, 'metadata display alias');
     expect(saved).toMatchObject({ title: 'new configured name', catalog: { name: 'new configured name' } });
     expect(getPresetPresentation(saved).displayName).toBe('new configured name');
     expect(buildPresetExportFiles(saved)).toHaveProperty('new configured name.json');
     await expect(saveEditedPreset(original.id, 'stale editor name', original.preset, original.preset, 'old configured name')).rejects.toThrow('名称已在其他位置修改');
     expect((await repo.get(original.id))?.catalog?.name).toBe('new configured name');
   });
-  it('inherits destination-series tags when regrouping a legacy status-only version', async () => {
+  it('inherits destination-series ordinary tags when regrouping a version without overwriting its own status', async () => {
     if (backend === 'idb') setActiveVault(null);
     const repo = getCurrentRepo<PresetItem>('presets'), original = item();
     original.catalog = { ...original.catalog, status: 'active' };
-    const destination = { ...item(), id: 'destination', catalog: { ...item().catalog, series: 'destination', tags: ['状态/过期', '评价/良好'], status: 'retired' as const } };
+    const destination = { ...item(), id: 'destination', catalog: { ...item().catalog, series: 'destination', tags: ['状态/过期', '评价/良好', '长文向'], status: 'retired' as const } };
     await repo.put(original); await repo.put(destination);
     await updatePresetCatalog(original.id, { series: 'destination' });
-    expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired' });
-    expect((await repo.get(destination.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired' });
+    expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/在用', '长文向'], status: 'active' });
+    expect((await repo.get(destination.id))?.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好', '长文向'], status: 'retired' });
   });
   it('keeps catalog edits while saving a previously opened prompt and preserves them after reload', async () => {
     if (backend === 'idb') setActiveVault(null);
@@ -104,11 +107,15 @@ describe.each(['vault', 'idb'] as const)('%s preset management persistence', bac
   });
 });
 
-it('round-trips package and catalog through native serialization and projects only bounded metadata', async () => {
+it('round-trips package and catalog through native serialization without 2x normalized bloat', async () => {
   const disk = createMemFs();
-  setActiveVault(createVault(disk));
+  const vault = createVault(disk);
+  setActiveVault(vault);
   const original = item(); original.catalog!.notes = 'personal note '.repeat(20000);
   await getCurrentRepo<PresetItem>('presets').put(original);
+  const savedPath = (await vault.pathOf('presets', original.id))!;
+  const rawDiskJson = JSON.parse(await disk.readText(savedPath));
+  expect(rawDiskJson.__ste).not.toHaveProperty('__ste_normalized_v1');
   setActiveVault(createVault(disk));
   expect(await getPreset(original.id)).toEqual(original);
   const [summary] = await listAssetIndex('presets');
@@ -126,11 +133,13 @@ it('rejects stale metadata saves but does not reject a change limited to prompt 
   await expect(savePresetDetails(original, { version: 'stale' }, [])).rejects.toThrow('其他位置');
 });
 
-it('copies DIY resources without changing the original or carrying a personal evaluation', async () => {
-  const original = item(); await getCurrentRepo<PresetItem>('presets').put(original);
+it('copies DIY resources without changing the original or carrying retired/rating tags', async () => {
+  const original = item();
+  original.catalog = { ...original.catalog, tags: ['状态/过期', '评价/优秀', '剧情向'], status: 'retired' };
+  await getCurrentRepo<PresetItem>('presets').put(original);
   const copy = await createPresetDiy(original.id);
   expect(copy.id).not.toBe(original.id);
-  expect(copy.catalog).toMatchObject({ author: '作者 A', version: 'v1', originId: original.id, favorite: false, notes: '', status: 'testing' });
+  expect(copy.catalog).toMatchObject({ author: '作者 A', version: 'v1', originId: original.id, favorite: false, notes: '', status: 'testing', tags: ['剧情向'] });
   expect(copy.packageFiles).toEqual(original.packageFiles);
   expect(await getPreset(original.id)).toEqual(original);
 });
@@ -181,7 +190,7 @@ it('classifies companion files without executing code and warns about duplicate 
   const imported = buildImportedPreset(preview.presets[0], { author: '作者 A', version: 'v2' }, preview.files);
   expect(imported.catalog?.releaseNotes).toContain('安装说明');
   expect(imported.autoSaved).toBe(false);
-  expect(buildImportedPreset(preview.presets[0], {}, []).id).toBe(imported.id); // Failed-save retry uses the same identity.
+  expect(buildImportedPreset(preview.presets[0], {}, []).id).toBe(imported.id);
 });
 
 it('generates safe ST exports, reuses intact folders, and preserves user-edited export copies', async () => {
@@ -239,10 +248,10 @@ it('serializes import against a concurrent series change rather than leaving the
   vi.spyOn(repo, 'listLight').mockImplementationOnce(async () => { const items = await list(); entered(); await gate; return items; });
   const added = { ...item(), id: 'concurrent-import' }, importing = saveImportedPreset(added);
   await listed;
-  const editing = updatePresetCatalog(original.id, { tags: ['状态/过期'] });
+  const editing = updatePresetCatalog(original.id, { tags: ['剧情向'] });
   resume(); await Promise.all([importing, editing]);
-  expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['状态/过期'], status: 'retired' });
-  expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['状态/过期'], status: 'retired' });
+  expect((await repo.get(added.id))?.catalog).toMatchObject({ tags: ['剧情向'] });
+  expect((await repo.get(original.id))?.catalog).toMatchObject({ tags: ['剧情向'] });
 });
 
 it('stops an import after the vault changes while reading peers, without writing either vault', async () => {

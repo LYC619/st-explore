@@ -6,51 +6,91 @@ import { getActiveVault, getVaultEpoch } from './vault/active';
 import { normalizePresetCatalog, presetContentFingerprint } from './preset-catalog';
 import { stableJson } from './roleplay/fingerprint';
 import { getPresetPresentation, presetName, presetSeriesKey } from './preset-presentation';
-import { catalogWithTags, getPresetTags } from './preset-tag-values';
+import { catalogWithTags, getPresetTags, isVersionScopedPresetTag } from './preset-tag-values';
 
 const repo = createRepo<PresetItem>('presets');
-const queue = new KeyedSerialQueue();
+export const presetWriteQueue = new KeyedSerialQueue();
 const seriesQueue = new KeyedSerialQueue();
+
+function splitPresetTags(tags: string[]): { versionTags: string[]; seriesTags: string[] } {
+  const versionTags: string[] = [];
+  const seriesTags: string[] = [];
+  for (const tag of tags) {
+    if (isVersionScopedPresetTag(tag)) versionTags.push(tag);
+    else seriesTags.push(tag);
+  }
+  return { versionTags, seriesTags };
+}
 
 export async function updatePreset(id: string, change: (latest: PresetItem) => PresetItem): Promise<PresetItem> {
   const epoch = getVaultEpoch(), target = getCurrentRepo<PresetItem>('presets');
-  return seriesQueue.enqueue(`${epoch}:series`, () => queue.enqueue(`${epoch}:${id}`, async () => {
+  return seriesQueue.enqueue(`${epoch}:series`, () => presetWriteQueue.enqueue(`${epoch}:${id}`, async () => {
     if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
     const latest = await target.get(id);
     if (!latest) throw new Error('预设已不存在，请刷新列表');
     const next = change(latest);
     if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
-    // Tags are series metadata. Apply to the destination series after a regroup,
-    // retaining each version's own content, model, name and notes.
-    const tagsChanged = stableJson(next.catalog?.tags ?? getPresetTags(next.catalog)) !== stableJson(latest.catalog?.tags ?? getPresetTags(latest.catalog));
-    if (tagsChanged) next.catalog = catalogWithTags(next.catalog ?? {}, next.catalog?.tags ?? []);
-    const explicitTags = tagsChanged || next.catalog?.status !== latest.catalog?.status;
+
+    // Ordinary tags belong to the series; status (状态/*) and rating (评价/*) belong strictly to each version.
+    const latestTags = getPresetTags(latest.catalog);
+    const rawNextTags = next.catalog?.tags !== undefined && next.catalog.tags !== latest.catalog?.tags
+      ? next.catalog.tags
+      : getPresetTags(next.catalog);
+    const tagsChanged = stableJson(rawNextTags) !== stableJson(latestTags) || next.catalog?.status !== latest.catalog?.status;
+    if (tagsChanged) {
+      next.catalog = catalogWithTags(next.catalog ?? {}, rawNextTags);
+    }
+
+    const latestSplit = splitPresetTags(latestTags);
+    const nextSplit = splitPresetTags(getPresetTags(next.catalog));
+    const explicitSeriesTags = stableJson(nextSplit.seriesTags) !== stableJson(latestSplit.seriesTags);
     const seriesChanged = presetSeriesKey(next) !== presetSeriesKey(latest);
-    const peers = explicitTags || seriesChanged ? (await target.listLight()).filter(item => item.id !== id && presetSeriesKey(item) === presetSeriesKey(next)) : [];
-    const tags = explicitTags ? getPresetTags(next.catalog) : seriesChanged && peers.length ? getPresetTags(peers[0].catalog) : getPresetTags(next.catalog);
-    if (explicitTags || seriesChanged) next.catalog = catalogWithTags(next.catalog ?? {}, tags);
-    if (next.catalog?.name?.trim() && next.catalog.name !== latest.catalog?.name) next.title = next.catalog.name.trim();
+    const peers = explicitSeriesTags || seriesChanged
+      ? (await target.listLight()).filter(item => item.id !== id && presetSeriesKey(item) === presetSeriesKey(next))
+      : [];
+
+    const targetSeriesTags = explicitSeriesTags
+      ? nextSplit.seriesTags
+      : seriesChanged && peers.length
+        ? splitPresetTags(getPresetTags(peers[0].catalog)).seriesTags
+        : nextSplit.seriesTags;
+
+    if (explicitSeriesTags || seriesChanged) {
+      next.catalog = catalogWithTags(next.catalog ?? {}, [...nextSplit.versionTags, ...targetSeriesTags]);
+    }
+
     if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
     await target.put(next);
-    for (const peer of peers) await queue.enqueue(`${epoch}:${peer.id}`, async () => {
-      if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，系列标签同步已停止');
-      const current = await target.get(peer.id);
-      if (!current || presetSeriesKey(current) !== presetSeriesKey(next)) return;
-      await target.put({ ...current, autoSaved: false, catalog: { ...catalogWithTags(current.catalog ?? {}, tags), updatedAt: Date.now() } });
-    });
+
+    if (explicitSeriesTags) {
+      for (const peer of peers) await presetWriteQueue.enqueue(`${epoch}:${peer.id}`, async () => {
+        if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，系列标签同步已停止');
+        const current = await target.get(peer.id);
+        if (!current || presetSeriesKey(current) !== presetSeriesKey(next)) return;
+        const peerSplit = splitPresetTags(getPresetTags(current.catalog));
+        if (stableJson(peerSplit.seriesTags) === stableJson(targetSeriesTags)) return;
+        await target.put({
+          ...current,
+          autoSaved: false,
+          catalog: {
+            ...catalogWithTags(current.catalog ?? {}, [...peerSplit.versionTags, ...targetSeriesTags]),
+            updatedAt: Date.now(),
+          },
+        });
+      });
+    }
     return next;
   }));
 }
 
-/** Import joins the same series metadata queue as edits, so a new version cannot revive a retired series. */
+/** Import joins the same series metadata queue as edits, inheriting only shared series tags while keeping each version's own status/rating. */
 export async function saveImportedPreset(item: PresetItem, options: { tagsExplicit?: boolean; epoch?: number } = {}): Promise<PresetItem> {
   const epoch = options.epoch ?? getVaultEpoch(), target = getCurrentRepo<PresetItem>('presets');
   const assertCurrent = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，本批剩余项目已停止'); };
-  return seriesQueue.enqueue(`${epoch}:series`, () => queue.enqueue(`${epoch}:${item.id}`, async () => {
+  return seriesQueue.enqueue(`${epoch}:series`, () => presetWriteQueue.enqueue(`${epoch}:${item.id}`, async () => {
     assertCurrent();
     const existing = await target.get(item.id);
     assertCurrent();
-    // A failed-save retry keeps its candidate ID. Recover a completed write without overwriting later edits.
     if (existing) {
       if (presetContentFingerprint(existing.preset) !== presetContentFingerprint(item.preset)) throw new Error('预设已在其他位置修改，请重新选择文件');
       return existing;
@@ -58,15 +98,31 @@ export async function saveImportedPreset(item: PresetItem, options: { tagsExplic
     const series = presetSeriesKey(item);
     const peers = (await target.listLight()).filter(peer => peer.id !== item.id && presetSeriesKey(peer) === series);
     assertCurrent();
-    const tags = !options.tagsExplicit && peers.length ? getPresetTags(peers[0].catalog) : getPresetTags(item.catalog);
-    const next = { ...item, catalog: normalizePresetCatalog(catalogWithTags(item.catalog ?? {}, tags)) };
-    if (options.tagsExplicit) for (const peer of peers) await queue.enqueue(`${epoch}:${peer.id}`, async () => {
-      assertCurrent();
-      const current = await target.get(peer.id);
-      assertCurrent();
-      if (!current || presetSeriesKey(current) !== series || stableJson(getPresetTags(current.catalog)) === stableJson(tags)) return;
-      await target.put({ ...current, autoSaved: false, catalog: { ...catalogWithTags(current.catalog ?? {}, tags), updatedAt: Date.now() } });
-    });
+    const ownSplit = splitPresetTags(getPresetTags(item.catalog));
+    const inheritedSeriesTags = !options.tagsExplicit && peers.length
+      ? splitPresetTags(getPresetTags(peers[0].catalog)).seriesTags
+      : ownSplit.seriesTags;
+    const mergedTags = [...ownSplit.versionTags, ...inheritedSeriesTags];
+    const next = { ...item, catalog: normalizePresetCatalog(catalogWithTags(item.catalog ?? {}, mergedTags)) };
+
+    if (options.tagsExplicit && ownSplit.seriesTags.length >= 0) {
+      for (const peer of peers) await presetWriteQueue.enqueue(`${epoch}:${peer.id}`, async () => {
+        assertCurrent();
+        const current = await target.get(peer.id);
+        assertCurrent();
+        if (!current || presetSeriesKey(current) !== series) return;
+        const peerSplit = splitPresetTags(getPresetTags(current.catalog));
+        if (stableJson(peerSplit.seriesTags) === stableJson(ownSplit.seriesTags)) return;
+        await target.put({
+          ...current,
+          autoSaved: false,
+          catalog: {
+            ...catalogWithTags(current.catalog ?? {}, [...peerSplit.versionTags, ...ownSplit.seriesTags]),
+            updatedAt: Date.now(),
+          },
+        });
+      });
+    }
     assertCurrent();
     await target.put(next);
     assertCurrent();
@@ -99,8 +155,16 @@ export function saveEditedPreset(id: string, title: string, preset: PresetItem['
   return updatePreset(id, latest => {
     if (expected && presetContentFingerprint(latest.preset) !== presetContentFingerprint(expected)) throw new Error('预设内容已在其他位置修改，请先导出草稿，再重新打开');
     if (expectedName !== undefined && presetName(latest) !== expectedName.trim()) throw new Error('预设名称已在其他位置修改，请重新打开后再保存');
-    const renamed = title.trim() !== (latest.catalog?.name?.trim() || latest.title.trim());
-    return { ...latest, title, preset, catalog: renamed ? { ...latest.catalog, name: title.trim() || undefined } : latest.catalog, autoSaved: false, updatedAt: Date.now() };
+    const trimmed = title.trim();
+    const renamed = trimmed !== (latest.catalog?.name?.trim() || latest.title.trim());
+    return {
+      ...latest,
+      title: renamed ? (trimmed || latest.title) : latest.title,
+      preset,
+      catalog: renamed ? { ...latest.catalog, name: trimmed || undefined } : latest.catalog,
+      autoSaved: false,
+      updatedAt: Date.now(),
+    };
   });
 }
 
@@ -110,13 +174,33 @@ export async function createPresetDiy(id: string, draft?: { title: string; prese
   if (!base) throw new Error('来源预设不存在');
   const now = Date.now();
   const identity = getPresetPresentation(base);
+  const cleanSeriesTags = getPresetTags(base.catalog).filter(tag => !isVersionScopedPresetTag(tag));
   const item: PresetItem = {
-    id: generatePresetId(), title: `${(draft?.title ?? base.title).replace(/(?:\s*·\s*DIY)+\s*$/i, '')} · DIY`, preset: structuredClone(draft?.preset ?? base.preset),
-    createdAt: now, updatedAt: now, autoSaved: false, packageFiles: structuredClone(base.packageFiles),
-    catalog: { ...base.catalog, name: identity.displayName, series: identity.series || identity.displayName, originId: base.id, variant: [...(base.catalog?.variant?.split('·').map(value => value.trim()).filter(value => value && value.toUpperCase() !== 'DIY') ?? []), 'DIY'].join(' · '), favorite: false, status: 'testing', notes: '', updatedAt: now },
+    id: generatePresetId(),
+    title: `${(draft?.title ?? base.title).replace(/(?:\s*·\s*DIY)+\s*$/i, '')} · DIY`,
+    preset: structuredClone(draft?.preset ?? base.preset),
+    createdAt: now,
+    updatedAt: now,
+    autoSaved: false,
+    packageFiles: structuredClone(base.packageFiles),
+    catalog: normalizePresetCatalog({
+      ...base.catalog,
+      name: identity.displayName,
+      series: identity.series || identity.displayName,
+      originId: base.id,
+      variant: [...(base.catalog?.variant?.split('·').map(value => value.trim()).filter(value => value && value.toUpperCase() !== 'DIY') ?? []), 'DIY'].join(' · '),
+      tags: cleanSeriesTags,
+      favorite: false,
+      status: 'testing',
+      notes: '',
+      updatedAt: now,
+    }),
   };
   if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
-  await target.put(item);
+  await presetWriteQueue.enqueue(`${epoch}:${item.id}`, async () => {
+    if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
+    await target.put(item);
+  });
   return item;
 }
 
@@ -130,17 +214,21 @@ export async function getPreset(id: string): Promise<PresetItem | undefined> {
 
 export async function savePreset(item: PresetItem): Promise<void> {
   const epoch = getVaultEpoch(), target = getCurrentRepo<PresetItem>('presets');
-  return queue.enqueue(`${epoch}:${item.id}`, async () => {
+  return presetWriteQueue.enqueue(`${epoch}:${item.id}`, async () => {
     const latest = await target.get(item.id);
     if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
-    await target.put({ ...item, autoSaved: latest?.autoSaved === false ? false : item.autoSaved,
-      catalog: latest?.catalog ?? item.catalog, packageFiles: latest?.packageFiles ?? item.packageFiles });
+    await target.put({
+      ...item,
+      autoSaved: latest?.autoSaved === false ? false : item.autoSaved,
+      catalog: latest?.catalog ?? item.catalog,
+      packageFiles: latest?.packageFiles ?? item.packageFiles,
+    });
   });
 }
 
 export async function deletePreset(id: string, options?: RemoveOptions): Promise<void> {
   const epoch = getVaultEpoch(), target = getCurrentRepo<PresetItem>('presets');
-  return queue.enqueue(`${epoch}:${id}`, async () => {
+  return presetWriteQueue.enqueue(`${epoch}:${id}`, async () => {
     if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
     await target.remove(id, options);
   });
@@ -172,7 +260,7 @@ export async function organizePresetFolders(options: { legacyOnly?: boolean } = 
     check();
     const items = await target.listLight();
     const result = { moved: 0, unchanged: 0, failed: [] as string[] };
-    for (const item of items) await queue.enqueue(`${epoch}:${item.id}`, async () => {
+    for (const item of items) await presetWriteQueue.enqueue(`${epoch}:${item.id}`, async () => {
       check();
       try {
         const before = await vault.pathOf('presets', item.id);

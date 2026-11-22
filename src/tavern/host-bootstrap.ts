@@ -363,6 +363,7 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     const response = await host.request('/ste/library/refresh');
     if (!response.ok) throw new Error(((await response.json()) as { error?: { message?: string } }).error?.message ?? '资料库列表无法读取');
     const data = await response.json() as LibraryRefreshPayload;
+    const prevRevisions = menuPresetRevisions;
     menuPresetRevisions = data.presetRevisions;
     const worlds = await loadUpstream('/scripts/world-info.js');
     for (let i = 0; i < worlds.selected_world_info.length; i++) {
@@ -386,7 +387,9 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
         }, true);
     }
     const openai = await loadUpstream('/scripts/openai.js');
-    const selected = data.presetRenames[openai.oai_settings.preset_settings_openai] ?? openai.oai_settings.preset_settings_openai;
+    const prevSelected = openai.oai_settings.preset_settings_openai;
+    const prevRevision = prevRevisions[prevSelected];
+    const selected = data.presetRenames[prevSelected] ?? prevSelected;
     openai.openai_settings.splice(0, openai.openai_settings.length, ...data.openai_settings.map(value => JSON.parse(value) as unknown));
     for (const key of Object.keys(openai.openai_setting_names)) delete openai.openai_setting_names[key];
     const picker = document.querySelector<HTMLSelectElement>('#settings_preset_openai')!;
@@ -397,6 +400,29 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     });
     openai.oai_settings.preset_settings_openai = selected in openai.openai_setting_names ? selected : '';
     picker.value = selected in openai.openai_setting_names ? String(openai.openai_setting_names[selected]) : '';
+    const presetChangedExternally = prevSelected !== selected || prevRevision !== data.presetRevisions[selected];
+    if (selected in openai.openai_setting_names && !host.isGenerating() && presetChangedExternally) {
+        const refreshed = openai.openai_settings[openai.openai_setting_names[selected]];
+        if (refreshed && typeof refreshed === 'object' && !Array.isArray(refreshed)) {
+            const refreshedRecord = refreshed as Record<string, unknown>;
+            const preserved = {
+                preset_settings_openai: selected,
+                chat_completion_source: openai.oai_settings.chat_completion_source,
+                custom_url: openai.oai_settings.custom_url,
+                custom_model: openai.oai_settings.custom_model,
+            };
+            for (const optionalKey of [
+                'assistant_prefill', 'top_k', 'min_p', 'top_a', 'repetition_penalty',
+                'frequency_penalty', 'presence_penalty', 'temperature', 'top_p',
+                'openai_max_context', 'openai_max_tokens', 'wi_format', 'scenario_format',
+                'personality_format', 'impersonation_prompt', 'new_chat_prompt',
+                'new_group_chat_prompt', 'new_example_chat_prompt', 'continue_nudge_prompt', 'group_nudge_prompt',
+            ]) {
+                if (!(optionalKey in refreshedRecord)) delete (openai.oai_settings as Record<string, unknown>)[optionalKey];
+            }
+            Object.assign(openai.oai_settings, refreshedRecord, preserved);
+        }
+    }
     tags.printTagFilters();
     await (stModule ?? await loadUpstream('/script.js')).printCharacters(true);
     if (await window.__STE_REFRESH_REGEX__?.() && !host.isGenerating() && !document.querySelector<HTMLTextAreaElement>('#chat .edit_textarea')) {

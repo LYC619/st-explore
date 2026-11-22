@@ -120,6 +120,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   }
   await inheritRuntime(catalog.initial);
   let selected = catalog.initial;
+  let selectedStoryAssets = startup.assets;
   let selectedFrontend = (await readFrontendState(createRuntimeStore(selected.storyId), selected.branchId)).state.applied;
   const processLog = createProcessLog(() => loadApiProfiles().profiles.map(profile => profile.apiKey));
   // A continuation can share its candidate with an earlier turn. Attribute new
@@ -373,9 +374,51 @@ export async function createTavernHost(options: TavernHostOptions) {
     const worldSettings = object(base.world_info_settings);
     const worldInfo = object(worldSettings.world_info);
     const savedWorldInfo = object(object(preferences.tavern?.world_info_settings).world_info);
-    const primaryPreset = [...startup.assets ?? [], ...characters.get(avatarKey(startup.characterId ?? ''))?.assets ?? []].find(ref => ref.kind === 'preset');
-    const presetName = primaryPreset ? assets.presetName(primaryPreset.assetId) : undefined;
-    const presetSettings = presetName ? assets.presetData().get(presetName) : undefined;
+    const group = (type: string) => defaults.presets?.[type] ?? [];
+    const allPresetData = assets.presetData();
+    const defaultOaiPresetName = typeof object(defaults.settings?.oai_settings).preset_settings_openai === 'string'
+      ? String(object(defaults.settings?.oai_settings).preset_settings_openai)
+      : 'Default';
+    const knownPresetNames = new Set([defaultOaiPresetName, ...group('openai_preset').map(p => p.name), ...allPresetData.keys()].filter(Boolean));
+    const primaryPreset = [...selectedStoryAssets ?? [], ...characters.get(selected.avatar)?.assets ?? []].find(ref => ref.kind === 'preset');
+    const linkedPresetName = primaryPreset ? assets.presetName(primaryPreset.assetId) : undefined;
+    const savedOai = object(preferences.tavern?.oai_settings);
+    const storyPresets = object(preferences.tavern?._ste_story_presets);
+    const rawStoryEntry = storyPresets[selected.key];
+    const parsedStoryEntry = typeof rawStoryEntry === 'string'
+      ? { chosen: rawStoryEntry, linked: undefined as string | undefined }
+      : rawStoryEntry && typeof rawStoryEntry === 'object' && !Array.isArray(rawStoryEntry)
+        ? {
+          chosen: typeof (rawStoryEntry as JsonObject).chosen === 'string' ? String((rawStoryEntry as JsonObject).chosen) : '',
+          linked: typeof (rawStoryEntry as JsonObject).linked === 'string' ? String((rawStoryEntry as JsonObject).linked) : undefined,
+        }
+        : undefined;
+    const steBindingChanged = Boolean(
+      linkedPresetName
+      && parsedStoryEntry?.linked !== undefined
+      && parsedStoryEntry.linked !== linkedPresetName,
+    );
+    const storyChosenPreset = !steBindingChanged && parsedStoryEntry?.chosen && knownPresetNames.has(parsedStoryEntry.chosen)
+      ? parsedStoryEntry.chosen
+      : undefined;
+    const savedGlobalPreset = typeof savedOai.preset_settings_openai === 'string' && knownPresetNames.has(savedOai.preset_settings_openai)
+      ? savedOai.preset_settings_openai
+      : undefined;
+    const effectivePresetName = storyChosenPreset
+      ?? linkedPresetName
+      ?? savedGlobalPreset;
+    const managedPresetSettings = effectivePresetName ? allPresetData.get(effectivePresetName) : undefined;
+    const isFactoryPreset = Boolean(effectivePresetName && !managedPresetSettings && knownPresetNames.has(effectivePresetName));
+    const currentPresetRev = effectivePresetName ? assets.presetRevisions()[effectivePresetName] : undefined;
+    const keepSavedTavernDraft = Boolean(
+      effectivePresetName
+      && savedOai.preset_settings_openai === effectivePresetName
+      && (isFactoryPreset || (managedPresetSettings && typeof savedOai._ste_preset_revision === 'string' && savedOai._ste_preset_revision === currentPresetRev)),
+    );
+    const mergedOaiBase = keepSavedTavernDraft
+      ? { ...object(defaults.settings.oai_settings), ...managedPresetSettings, ...savedOai }
+      : { ...object(defaults.settings.oai_settings), ...savedOai, ...managedPresetSettings };
+    delete mergedOaiBase._ste_preset_revision;
     const settings = {
       ...base, firstRun: false, username: typeof preferences.tavern?.username === 'string' && preferences.tavern.username.trim() ? preferences.tavern.username : startup.userName,
       ...roleplayLibraryTags([...characters.values()], libraryTags, base),
@@ -387,15 +430,15 @@ export async function createTavernHost(options: TavernHostOptions) {
         charLore: savedWorldInfo.charLore ?? [...characters.values()].map(character => ({ name: avatarKey(character.id).slice(0, -4),
           extraBooks: (character.assets ?? []).filter(ref => ref.kind === 'worldbook' && ref.relations?.includes('extra')).map(ref => assets.worldName(ref.assetId)).filter(Boolean) })),
       } },
-      oai_settings: { ...object(defaults.settings.oai_settings), ...presetSettings, ...object(preferences.tavern?.oai_settings),
-        openai_max_context: object(preferences.tavern?.oai_settings).openai_max_context ?? presetSettings?.openai_max_context ?? 32768,
-        // Factory Default is not a user selection; use the linked preset on first entry.
-        ...(presetName && !object(preferences.tavern?.oai_settings).preset_settings_openai ? { preset_settings_openai: presetName } : {}),
+      oai_settings: { ...mergedOaiBase,
+        openai_max_context: keepSavedTavernDraft
+          ? (savedOai.openai_max_context ?? managedPresetSettings?.openai_max_context ?? 32768)
+          : (managedPresetSettings?.openai_max_context ?? savedOai.openai_max_context ?? 32768),
+        ...(effectivePresetName ? { preset_settings_openai: effectivePresetName } : {}),
         chat_completion_source: 'custom', custom_url: profile?.apiUrl ?? '', custom_model: profile?.model ?? '', stream_openai: true },
     };
-    const group = (type: string) => defaults.presets?.[type] ?? [];
     const openai = new Map(group('openai_preset').map(preset => [preset.name, JSON.stringify(preset.data)]));
-    for (const [name, data] of assets.presetData()) openai.set(name, JSON.stringify(data));
+    for (const [name, data] of allPresetData) openai.set(name, JSON.stringify(data));
     return {
       settings: JSON.stringify(settings), world_names: assets.worldNames(),
       koboldai_settings: [], koboldai_setting_names: [], novelai_settings: [], novelai_setting_names: [],
@@ -751,6 +794,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           const cards = await characterDtos();
           const avatars = new Set(cards.map(card => card.avatar));
           for (const avatar of characters.keys()) if (!avatars.has(avatar)) characters.delete(avatar);
+          selectedStoryAssets = (await repos.stories.get(selected.storyId))?.assets;
           if (!isCurrent()) throw new Error('文件库已切换');
           const snapshot = settingsSnapshot();
           const settings = JSON.parse(snapshot.settings);
@@ -759,10 +803,20 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
         if (pathname === '/api/settings/save') {
+          const prevStoryPresets = object(preferences.tavern?._ste_story_presets);
           const tavern: Record<string, unknown> = { ...structuredClone(body), ...preserveHiddenTavernTags({ ...defaults.settings, ...preferences.tavern }, body) };
           const oai = object(tavern.oai_settings);
           customHeaders(oai.custom_include_headers);
           for (const key of ['api_key', 'api_key_openai', 'api_key_custom', 'proxy_password', 'secret_id', 'custom_url', 'custom_model']) delete oai[key];
+          if (typeof oai.preset_settings_openai === 'string' && oai.preset_settings_openai) {
+            const currentLinkedRef = [...selectedStoryAssets ?? [], ...characters.get(selected.avatar)?.assets ?? []].find(ref => ref.kind === 'preset');
+            const currentLinkedName = currentLinkedRef ? (assets.presetName(currentLinkedRef.assetId) ?? '') : '';
+            tavern._ste_story_presets = { ...prevStoryPresets, [selected.key]: { chosen: oai.preset_settings_openai, linked: currentLinkedName } };
+            const rev = assets.presetRevisions()[oai.preset_settings_openai];
+            if (rev) oai._ste_preset_revision = rev;
+          } else if (Object.keys(prevStoryPresets).length) {
+            tavern._ste_story_presets = prevStoryPresets;
+          }
           tavern.oai_settings = oai;
           delete tavern.api_key;
           const helperScript = object(object(object(tavern.extension_settings).tavern_helper).script);
@@ -894,7 +948,9 @@ export async function createTavernHost(options: TavernHostOptions) {
             await inheritRuntime(locator);
             if (selected.key !== locator.key) {
               await (await liveSession(selected)).flush();
-              selected = locator; options.onSelect?.(locator);
+              selected = locator;
+              selectedStoryAssets = (await repos.stories.get(locator.storyId))?.assets;
+              options.onSelect?.(locator);
             }
             await runtimeFor(locator).resume();
             selectedChats.set(avatar, locator.fileName);

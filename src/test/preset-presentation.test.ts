@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getPresetPresentation, inferPresetIdentity } from '@/lib/preset-presentation';
 import { toAssetIndex } from '@/lib/asset-index-entry';
 import type { PresetItem } from '@/types/preset';
-import { applyPresetBulkPatch } from '@/components/preset/PresetBulkEdit';
+import { applyPresetBulkPatch } from '@/lib/preset-bulk-patch';
 
 it('keeps an explicitly cleared model empty across the list summary', () => {
   const item = { title: '星海-Claude-v1', catalog: applyPresetBulkPatch({ models: ['Claude'] }, { models: { Claude: false }, tags: {} }) };

@@ -62,7 +62,16 @@ export function parsePreset(json: unknown): NormalizedPreset {
   const originalData: Record<string, unknown> = { ...raw };
   delete originalData.prompts;
   delete originalData.prompt_order;
-  // extensions 保留（里面可能有 regex_scripts 之外的字段），导出时单独覆盖 regex_scripts
+  if (hasRegexExtension && extensions && typeof extensions === 'object' && !Array.isArray(extensions)) {
+    const canonicalScripts: unknown[] = regexRules.map(ruleToSTScript);
+    (rawScripts as unknown[]).forEach((entry, index) => {
+      if (!editableRegex(entry)) canonicalScripts.splice(Math.min(index, canonicalScripts.length), 0, entry);
+    });
+    originalData.extensions = {
+      ...extensions,
+      regex_scripts: canonicalScripts,
+    };
+  }
 
   return { prompts, promptOrder, regexRules, hasRegexExtension, originalData };
 }
@@ -90,11 +99,38 @@ function buildExtensions(np: NormalizedPreset): unknown {
 }
 
 /**
+ * 智能选择真实激活的 prompt_order 分组：
+ * 1. 若调用方显式指定了 preferredCharacterId 且该组非空，优先采用；
+ * 2. 否则优先匹配 SillyTavern OpenAI 常用的 100001 非空组，其次 100000 非空组；
+ * 3. 再退回第一个非空组，最后兜底 promptOrder[0]（防止把空的占位组当成主激活顺序）。
+ */
+export function selectActivePromptOrderGroup(
+  np: NormalizedPreset,
+  preferredCharacterId?: number,
+): PromptOrderGroup | undefined {
+  if (preferredCharacterId !== undefined) {
+    const exactNonEmpty = np.promptOrder.find(
+      (g) => g.character_id === preferredCharacterId && g.order.length > 0,
+    );
+    if (exactNonEmpty) return exactNonEmpty;
+  }
+  return (
+    np.promptOrder.find((g) => g.character_id === 100001 && g.order.length > 0)
+    ?? np.promptOrder.find((g) => g.character_id === DEFAULT_CHARACTER_ID && g.order.length > 0)
+    ?? np.promptOrder.find((g) => g.order.length > 0)
+    ?? (preferredCharacterId !== undefined
+      ? np.promptOrder.find((g) => g.character_id === preferredCharacterId)
+      : undefined)
+    ?? np.promptOrder[0]
+  );
+}
+
+/**
  * 导出为 ST 兼容预设 JSON 字符串。
  * - mode='full'：保留全部分组与条目（默认）
  * - mode='group'：只保留所选分组（含禁用条目），prompt_order 压成单组
  * - mode='smart'：只保留所选分组里 enabled 的条目，prompt_order 压成单组
- * 选组优先 groupIndex（能区分 character_id 重复的分组），否则按 activeCharacterId 匹配，兜底第一组。
+ * 选组优先 groupIndex（能区分 character_id 重复的分组），否则按 selectActivePromptOrderGroup 匹配。
  */
 export function exportPreset(
   np: NormalizedPreset,
@@ -107,8 +143,7 @@ export function exportPreset(
 
   if (mode !== 'full') {
     const group = (groupIndex !== undefined ? np.promptOrder[groupIndex] : undefined)
-      ?? np.promptOrder.find((g) => g.character_id === activeCharacterId)
-      ?? np.promptOrder[0];
+      ?? selectActivePromptOrderGroup(np, activeCharacterId);
     const keptOrder = mode === 'group'
       ? (group?.order ?? [])
       : (group?.order ?? []).filter((o) => o.enabled);
@@ -159,8 +194,8 @@ export function exportPresetMarkdown(np: NormalizedPreset, name = '预设'): str
     lines.push('');
   }
 
-  // 激活顺序表（用第一组）
-  const group = np.promptOrder[0];
+  // 激活顺序表（优先选择非空有效激活组）
+  const group = selectActivePromptOrderGroup(np);
   if (group) {
     lines.push('## 激活顺序');
     lines.push('');
@@ -206,9 +241,9 @@ export function exportPresetMarkdown(np: NormalizedPreset, name = '预设'): str
 
 /** 收集所有 prompt_order 组里引用过的 identifier */
 export function collectReferencedIds(promptOrder: PromptOrderGroup[]): Set<string> {
-  const set = new Set<string>();
+  const set = new Set();
   promptOrder.forEach((g) => g.order.forEach((o) => set.add(o.identifier)));
-  return set;
+  return set as Set<string>;
 }
 
 /** prompt 是否未被任何 order 组引用 */
@@ -248,6 +283,12 @@ export function estimateTokens(text: string): number {
 /** 取当前角色组的 order */
 export function getActiveOrder(np: NormalizedPreset, characterId: number): OrderEntry[] {
   return np.promptOrder.find((g) => g.character_id === characterId)?.order ?? [];
+}
+
+/** 提取预设中的开头预填词（assistant_prefill） */
+export function extractPresetAssistantPrefill(np: NormalizedPreset): string {
+  const raw = np.originalData.assistant_prefill;
+  return typeof raw === 'string' ? raw.trim() : '';
 }
 
 /** 探测预设使用的模型来源/模型名（用于概览展示） */

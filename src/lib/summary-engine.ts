@@ -5,12 +5,12 @@ import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
  * 对齐 SillyTavern 的上下文语义：
  * - 楼层消息落在「聊天历史」块（chatHistory marker）位置；
  * - 模板提示词作为聊天历史最末一条 user 消息注入（D0）——与 ST 用户把总结请求作为最新消息发出一致；
- * - 挂预设时按激活顺序展开各块，chatHistory 处填入楼层消息，其后的 post-history 块（如 jailbreak）
+ * - 挂预设时按真实激活顺序展开各块，chatHistory 处填入楼层消息，其后的 post-history 块（如 jailbreak）
  *   自然落在模板之后；未挂预设时用最小骨架（世界书设定 → 前情 → 楼层 → D0 模板）。
- * - 世界书 position=6 (@depth) 条目按 depth 精确插入聊天倒数第 depth 层（role 按条目 role）；
- *   预设 injection_position=1 的绝对注入块同机制。position 0-5 在无角色卡上下文里近似归位。
+ * - 世界书 position=6 (@depth) 条目与预设已启用的 injection_position=1 块按 depth 倒序插入聊天倒数第 depth 层；
+ *   position 0（前置）与 1-5（后置）分别归位，避免同时开启前置/后置插槽时把整本世界书重复发两遍。
  *
- * 纯函数、无副作用、不触网，便于单测。实际请求由调用方用返回的 messages 调 callOpenAIMessages。
+ * 纯函数、无副作用、不触网，便于单测。实际请求由调用方用返回的 messages + params 调 callOpenAIMessages。
  */
 
 import type { ChatSession } from '@/types/chat';
@@ -18,8 +18,12 @@ import type { NormalizedPreset, PromptBlock } from '@/types/preset';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
 import type { SummaryItem } from '@/types/summary';
 import type { ChatCompletionMessage, SamplingParams } from '@/lib/llm';
-import { substituteVars, estimateTokens, getActiveOrder } from '@/lib/preset-parser';
-import { DEFAULT_CHARACTER_ID } from '@/types/preset';
+import {
+  substituteVars,
+  estimateTokens,
+  selectActivePromptOrderGroup,
+  extractPresetAssistantPrefill,
+} from '@/lib/preset-parser';
 
 export type WorldbookMode = 'constant' | 'all' | 'manual';
 
@@ -88,7 +92,7 @@ function buildFloorMessages(
 
 /**
  * 把一条 @depth 注入消息插入楼层消息数组：depth=0 追加到末尾，depth=N 插到倒数第 N 条之前。
- * 同深度多条按 order 降序（大者更靠近末尾/模型），调用方需先排序好再逐条插入。
+ * 调用方应先按 depth 降序（先插最远离末尾的条目）再按同深度 order 升序逐条插入，防止前序插入推歪后续深度。
  * 返回新数组，不改入参。
  */
 export function insertAtDepth(
@@ -130,9 +134,9 @@ export function collectWorldbookEntries(
 }
 
 /** 把非 @depth 世界书条目（position 0-5）合并为一块文本；@depth(6) 条目由调用方单独插入 */
-function worldbookStaticBlock(entries: WorldBookEntry[]): string {
+function worldbookStaticBlock(entries: WorldBookEntry[], filter?: (entry: WorldBookEntry) => boolean): string {
   const statics = entries
-    .filter((e) => e.position !== 6)
+    .filter((e) => e.position !== 6 && (!filter || filter(e)))
     .sort((a, b) => (a.position - b.position) || (b.order - a.order));
   const parts = statics.map((e) => e.content?.trim()).filter(Boolean) as string[];
   return parts.join('\n\n');
@@ -152,8 +156,6 @@ export function buildPriorBlock(priors: SummaryItem[]): string {
 
 /**
  * 下一卷卷号 = 已有最大卷号 + 1（无已存卷 → 1）。
- * 旧版把「起始楼层相同」视为重做同卷并沿用其卷号，实测反直觉：用户生成第一卷后不改楼层
- * 再点生成，得到的还是"第一卷"。现在永远顺延；重做某卷/自定义号时在页面的卷号输入框手改。
  */
 export function inferVolumeNumber(
   priorVolumes: Pick<SummaryItem, 'volumeNumber'>[]
@@ -177,7 +179,7 @@ export function extractTitle(kind: 'volume' | 'diary' | 'diy', output: string): 
 }
 
 /** 读预设采样参数（originalData 里的常见字段），供透传 */
-function readSamplingParams(preset: NormalizedPreset): SamplingParams | undefined {
+export function readSamplingParams(preset: NormalizedPreset): SamplingParams | undefined {
   const od = preset.originalData;
   const params: SamplingParams = {};
   const num = (v: unknown): number | undefined => (typeof v === 'number' && isFinite(v) ? v : undefined);
@@ -221,15 +223,35 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
 
   // 世界书条目
   const wbEntries = worldbook ? collectWorldbookEntries(worldbook, worldbookMode, worldbookUids) : [];
-  const wbStatic = wbEntries.length ? worldbookStaticBlock(wbEntries) : '';
+  const wbStatic = wbEntries.length ? macro(worldbookStaticBlock(wbEntries)) : '';
+  const wbBefore = wbEntries.length ? macro(worldbookStaticBlock(wbEntries, (e) => e.position === 0)) : '';
+  const wbAfter = wbEntries.length ? macro(worldbookStaticBlock(wbEntries, (e) => e.position !== 0)) : '';
   const wbDepthEntries = wbEntries.filter((e) => e.position === 6);
-  // @depth 注入：按 depth 分组，同 depth 内 order 升序逐条插入（order 大者后插=更靠近末尾）
-  const applyDepthInjections = () => {
-    const sorted = [...wbDepthEntries].sort((a, b) => (a.depth - b.depth) || (a.order - b.order));
-    for (const e of sorted) {
+
+  const applyCombinedDepthInjections = (presetBlocks: PromptBlock[]) => {
+    const injections: { msg: ChatCompletionMessage; depth: number; order: number }[] = [];
+    for (const e of wbDepthEntries) {
       const content = macro(e.content?.trim() || '');
       if (!content) continue;
-      floorMsgs = insertAtDepth(floorMsgs, { role: wbRole(e.role), content }, e.depth ?? 4);
+      injections.push({
+        msg: { role: wbRole(e.role), content },
+        depth: e.depth ?? 4,
+        order: e.order ?? 100,
+      });
+    }
+    for (const b of presetBlocks) {
+      const content = macro(b.content?.trim() || '');
+      if (!content) continue;
+      injections.push({
+        msg: { role: (b.role as Role) ?? 'system', content },
+        depth: b.injection_depth ?? 4,
+        order: typeof b.injection_order === 'number' ? b.injection_order : 100,
+      });
+    }
+    // 先插离末尾最远的条目（depth 降序），保持原始楼层深度不被前序插入推歪
+    injections.sort((a, b) => (b.depth - a.depth) || (a.order - b.order));
+    for (const item of injections) {
+      floorMsgs = insertAtDepth(floorMsgs, item.msg, item.depth);
     }
   };
 
@@ -241,40 +263,32 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
     // ---- 无预设：最小骨架 ----
     if (wbStatic) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: wbStatic }) });
     if (priorBlock) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.prior', { content: priorBlock }) });
-    applyDepthInjections();
+    applyCombinedDepthInjections([]);
     messages.push(...floorMsgs);
     messages.push(templateMsg);
   } else {
-    // ---- 挂预设：按激活顺序展开 ----
-    const charId = presetCharacterId ?? DEFAULT_CHARACTER_ID;
-    const order = getActiveOrder(preset, charId);
+    // ---- 挂预设：按真实激活组展开 ----
+    const group = selectActivePromptOrderGroup(preset, presetCharacterId);
+    const order = group?.order ?? [];
+    const enabledIds = new Set(order.filter((o) => o.enabled).map((o) => o.identifier));
     const blockMap = new Map<string, PromptBlock>(preset.prompts.map((p) => [p.identifier, p]));
 
-    // 先处理预设自身的绝对注入块（injection_position=1）——按 @depth 插入楼层
+    // 仅处理在当前激活顺序中【实际存在且已开启】的预设绝对注入块（injection_position=1）
     const injectionBlocks = preset.prompts.filter(
-      (p) => !p.marker && p.injection_position === 1 && typeof p.content === 'string' && p.content.trim()
+      (p) => !p.marker && p.injection_position === 1 && enabledIds.has(p.identifier) && typeof p.content === 'string' && p.content.trim(),
     );
-    const injSorted = [...injectionBlocks].sort(
-      (a, b) => ((a.injection_depth ?? 4) - (b.injection_depth ?? 4))
-        || (((a.injection_order as number) ?? 100) - ((b.injection_order as number) ?? 100))
-    );
-    applyDepthInjections();
-    for (const b of injSorted) {
-      floorMsgs = insertAtDepth(
-        floorMsgs,
-        { role: (b.role as Role) ?? 'system', content: macro(b.content!) },
-        b.injection_depth ?? 4
-      );
-    }
+    applyCombinedDepthInjections(injectionBlocks);
 
     const injectionIds = new Set(injectionBlocks.map((b) => b.identifier));
+    const hasBothWorldSlots = enabledIds.has('worldInfoBefore') && enabledIds.has('worldInfoAfter');
     let chatHistoryEmitted = false;
 
     for (const entry of order) {
       if (!entry.enabled) continue;
       const block = blockMap.get(entry.identifier);
       if (!block) continue;
-      if (injectionIds.has(block.identifier)) continue; // 注入块已处理
+      if (injectionIds.has(block.identifier)) continue; // 注入块已按深度插入
+      if (!block.marker && block.injection_position === 1) continue;
 
       if (block.marker) {
         switch (block.identifier) {
@@ -284,12 +298,16 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
             messages.push(templateMsg); // D0：模板作为聊天末尾的用户消息
             chatHistoryEmitted = true;
             break;
-          case 'worldInfoBefore':
-          case 'worldInfoAfter':
-            if (wbStatic) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: wbStatic }) });
+          case 'worldInfoBefore': {
+            const chunk = hasBothWorldSlots ? wbBefore : wbStatic;
+            if (chunk) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: chunk }) });
             break;
-          // charDescription/charPersonality/scenario/dialogueExamples/personaDescription：
-          // 一期无角色卡挂载，跳过（marker 运行时无内容）
+          }
+          case 'worldInfoAfter': {
+            const chunk = hasBothWorldSlots ? wbAfter : wbStatic;
+            if (chunk) messages.push({ role: 'system', content: formatBuiltinPrompt('summary.worldbook', { content: chunk }) });
+            break;
+          }
           default:
             break;
         }
@@ -306,8 +324,14 @@ export function buildSummaryMessages(input: SummaryEngineInput): SummaryEngineRe
       messages.push(templateMsg);
     }
 
+    // 若预设配置了开头预填词（assistant_prefill），在最末尾附带预填引导
+    const prefill = extractPresetAssistantPrefill(preset);
+    if (prefill) {
+      messages.push({ role: 'assistant', content: macro(prefill) });
+    }
+
     // 世界书挂了但预设没有 worldInfo marker → 提示可能未注入
-    if (wbStatic && !order.some((o) => o.enabled && (o.identifier === 'worldInfoBefore' || o.identifier === 'worldInfoAfter'))) {
+    if (wbStatic && !enabledIds.has('worldInfoBefore') && !enabledIds.has('worldInfoAfter')) {
       warnings.push('已挂世界书，但预设未启用「世界书」插槽，静态条目未注入');
     }
   }

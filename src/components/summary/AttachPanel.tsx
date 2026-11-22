@@ -11,6 +11,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { PresetSelect } from '@/components/preset/PresetSelect';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
+import { subscribeRecordChanges } from '@/lib/repo/changes';
+import { subscribeActiveVault } from '@/lib/vault/active';
 import type { WorldBookItem, WorldBookEntry } from '@/types/worldbook';
 import type { WorldbookMode } from '@/lib/summary-engine';
 
@@ -33,10 +35,36 @@ const NONE = '__none__';
 /** 挂载预设/世界书面板：选预设、选世界书 + 注入范围(constant/all/manual)，展示 token 估算 */
 export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps) {
   const [worldbooks, setWorldbooks] = useState<WorldBookItem[]>([]);
+  const [wbLoadError, setWbLoadError] = useState<string | null>(null);
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
-    getAllWorldBooks().then(setWorldbooks).catch(() => {});
-  }, []);
+    let live = true;
+    let seq = 0;
+    const load = () => {
+      const cur = ++seq;
+      getAllWorldBooks()
+        .then((items) => {
+          if (!live || cur !== seq) return;
+          setWorldbooks(items);
+          setWbLoadError(null);
+        })
+        .catch((error: unknown) => {
+          if (!live || cur !== seq) return;
+          setWbLoadError(error instanceof Error ? error.message : '无法读取世界书列表');
+        });
+    };
+    load();
+    const offChanges = subscribeRecordChanges((change) => {
+      if (change.store === 'worldbooks') load();
+    });
+    const offVault = subscribeActiveVault(load);
+    return () => {
+      live = false;
+      offChanges();
+      offVault();
+    };
+  }, [reloadTick]);
 
   const selectedWb = worldbooks.find((w) => w.id === value.worldbookId);
   const wbEntries: WorldBookEntry[] = selectedWb ? Object.values(selectedWb.worldbook.entries) : [];
@@ -93,6 +121,13 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
               ))}
             </SelectContent>
           </Select>
+
+          {wbLoadError && (
+            <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive">
+              <span>{wbLoadError}</span>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setReloadTick((n) => n + 1)}>重试读取</Button>
+            </div>
+          )}
 
           {selectedWb && (
             <div className="space-y-2 pt-1">

@@ -20,7 +20,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { loadAPIConfig } from '@/components/ai-tools';
-import { callOpenAIMessages, type ChatCompletionMessage } from '@/lib/llm';
+import { callOpenAIMessages, type ChatCompletionMessage, type SamplingParams } from '@/lib/llm';
 import type { ChatSession, ChatMessage } from '@/types/chat';
 
 interface BatchProcessorProps {
@@ -31,7 +31,7 @@ interface BatchProcessorProps {
   /** 轻量直调时的系统提示词 = 当前模板正文（宏已替换） */
   systemPrompt: string;
   /** 挂载模式：由父组件用完整引擎为某段楼层组装 messages（预设/世界书与左栏一致） */
-  buildFullMessages?: (start: number, end: number) => ChatCompletionMessage[] | null;
+  buildFullMessages?: (start: number, end: number) => { messages: ChatCompletionMessage[]; params?: SamplingParams } | ChatCompletionMessage[] | null;
   /** 把合并结果送入右栏结果编辑器（走既有编辑/保存/导出流） */
   onMergeToEditor?: (text: string) => void;
 }
@@ -138,13 +138,15 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
         const { seg, i } = item;
         try {
           // 挂载模式：该段用完整引擎组装（预设/世界书与左栏一致）；组装失败回落轻量直调
-          const fullMessages = attachContext && buildFullMessages ? buildFullMessages(seg.start, seg.end) : null;
+          const fullBuilt = attachContext && buildFullMessages ? buildFullMessages(seg.start, seg.end) : null;
+          const fullMessages = Array.isArray(fullBuilt) ? fullBuilt : fullBuilt?.messages ?? null;
+          const fullParams = fullBuilt && !Array.isArray(fullBuilt) ? fullBuilt.params : undefined;
           const messages: ChatCompletionMessage[] = fullMessages ?? [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: seg.text },
           ];
           let truncated = false;
-          const result = await callOpenAIMessages(config, messages, {
+          const result = await callOpenAIMessages(config, messages, { params: fullParams,
             signal: controller.signal,
             onWarning: () => { truncated = true; },
           });

@@ -1,6 +1,7 @@
-import { strToU8, zipSync } from 'fflate';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { sha256 } from 'js-sha256';
 import { type PresetCatalog, type PresetItem, type PresetPackageFile } from '@/types/preset';
+import { parseWorldBook, type WorldBook } from '@/types/worldbook';
 import { exportPreset, isValidPreset, parsePreset } from './preset-parser';
 import { inspectPresetScripts, normalizePresetCatalog, presetContentFingerprint, suggestPresetModels } from './preset-catalog';
 import { getCurrentRepo } from './repo';
@@ -26,9 +27,16 @@ export interface PresetImportCandidate {
   suggestedModels: string[];
   duplicateTitles: string[];
 }
+export interface PresetCompanionWorldBook {
+  key: string;
+  name: string;
+  worldbook: WorldBook;
+  entryCount: number;
+}
 export interface PresetPackagePreview {
   epoch: number;
   presets: PresetImportCandidate[];
+  worldbooks: PresetCompanionWorldBook[];
   files: PresetPackageFile[];
   errors: string[];
 }
@@ -37,6 +45,14 @@ function isRegex(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const object = value as Record<string, unknown>;
   return typeof object.findRegex === 'string' && typeof object.replaceString === 'string';
+}
+
+function isCompanionWorldBook(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || isValidPreset(value)) return false;
+  const entries = (value as Record<string, unknown>).entries;
+  if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return false;
+  const values = Object.values(entries as Record<string, unknown>);
+  return values.length > 0 && values.every(entry => !!entry && typeof entry === 'object' && !Array.isArray(entry));
 }
 
 /** Standalone, community pack and extracted ST extension shapes. */
@@ -62,20 +78,95 @@ export function classifyPresetAttachment(name: string, text: string): PresetPack
   return 'other';
 }
 
+interface RawTextCandidate {
+  name: string;
+  size: number;
+  readText: () => Promise<string>;
+}
+
+async function expandInputFiles(files: File[], errors: string[]): Promise<RawTextCandidate[]> {
+  const expanded: RawTextCandidate[] = [];
+  let totalUncompressed = 0;
+
+  for (const file of files) {
+    if (/\.zip$/i.test(file.name)) {
+      if (file.size > MAX_TOTAL_BYTES) {
+        errors.push(`${file.name}：压缩包超过 32 MB 上限`);
+        continue;
+      }
+      try {
+        const buffer = typeof file.arrayBuffer === 'function'
+          ? await file.arrayBuffer()
+          : await new Response(file).arrayBuffer();
+        let entryCount = 0;
+        let oversizeFileError: string | null = null;
+        const entries = unzipSync(new Uint8Array(buffer), {
+          filter(info) {
+            const normalized = info.name.replace(/\\/g, '/');
+            if (normalized.endsWith('/') || normalized.startsWith('__MACOSX/') || normalized.split('/').some(seg => seg.startsWith('.'))) {
+              return false;
+            }
+            const base = normalized.split('/').pop() || normalized;
+            if (!/\.(json|js|mjs|md|txt)$/i.test(base)) return false;
+            if (info.originalSize > MAX_FILE_BYTES) {
+              errors.push(`${base}：压缩包内单文件超过 8 MB 上限`);
+              return false;
+            }
+            entryCount += 1;
+            if (entryCount + expanded.length > MAX_FILES || totalUncompressed + info.originalSize > MAX_TOTAL_BYTES) {
+              oversizeFileError = '压缩包展开后超过 100 个文件或 32 MB 总大小上限';
+              return false;
+            }
+            totalUncompressed += info.originalSize;
+            return true;
+          },
+        });
+        if (oversizeFileError) throw new Error(oversizeFileError);
+        for (const [entryPath, bytes] of Object.entries(entries)) {
+          const normalized = entryPath.replace(/\\/g, '/');
+          const base = normalized.split('/').pop() || normalized;
+          if (bytes.byteLength > MAX_FILE_BYTES) {
+            errors.push(`${base}：压缩包内单文件超过 8 MB 上限`);
+            continue;
+          }
+          expanded.push({
+            name: base,
+            size: bytes.byteLength,
+            readText: async () => strFromU8(bytes),
+          });
+        }
+      } catch (error) {
+        errors.push(`${file.name}：${error instanceof Error ? error.message : '无法解压 ZIP 文件'}`);
+      }
+      continue;
+    }
+
+    totalUncompressed += file.size;
+    expanded.push({
+      name: file.name,
+      size: file.size,
+      readText: () => file.text(),
+    });
+  }
+  return expanded;
+}
+
 /** File inputs only: never writes to or enumerates the community source directory. */
 export async function readPresetPackage(files: File[]): Promise<PresetPackagePreview> {
   const epoch = getVaultEpoch();
   if (files.length > MAX_FILES || files.reduce((sum, file) => sum + file.size, 0) > MAX_TOTAL_BYTES) {
     throw new Error('一次最多选择 100 个文件，总计不超过 32 MB');
   }
-  const preview: PresetPackagePreview = { epoch, presets: [], files: [], errors: [] };
-  for (const file of files) {
+  const preview: PresetPackagePreview = { epoch, presets: [], worldbooks: [], files: [], errors: [] };
+  const candidates = await expandInputFiles(files, preview.errors);
+
+  for (const file of candidates) {
     if (file.size > MAX_FILE_BYTES || !/\.(json|js|mjs|md|txt)$/i.test(file.name)) {
-      preview.errors.push(`${file.name}：仅接受 8 MB 以内的 JSON、JS、MD、TXT；压缩包请先解压`);
+      preview.errors.push(`${file.name}：仅接受 8 MB 以内的 JSON、ZIP、JS、MD、TXT 文件`);
       continue;
     }
     try {
-      const text = await file.text();
+      const text = await file.readText();
       let raw: unknown;
       try { raw = JSON.parse(text); } catch { /* Keep unrecognized files below. */ }
       if (isValidPreset(raw)) {
@@ -84,6 +175,15 @@ export async function readPresetPackage(files: File[]): Promise<PresetPackagePre
         const preset = parsePreset(data);
         preview.presets.push({ key: crypto.randomUUID(), name: file.name.replace(/\.json$/i, ''), preset,
           suggestedModels: suggestPresetModels(file.name, preset), duplicateTitles: [] });
+      } else if (isCompanionWorldBook(raw)) {
+        const { __ste: _meta, ...data } = raw;
+        const worldbook = parseWorldBook(data);
+        preview.worldbooks.push({
+          key: crypto.randomUUID(),
+          name: file.name.replace(/\.json$/i, ''),
+          worldbook,
+          entryCount: Object.keys(worldbook.entries).length,
+        });
       } else {
         preview.files.push({ id: crypto.randomUUID(), name: file.name, text, kind: classifyPresetAttachment(file.name, text) });
       }
@@ -112,7 +212,7 @@ export async function readPresetPackage(files: File[]): Promise<PresetPackagePre
 export function buildImportedPreset(candidate: PresetImportCandidate, catalog: PresetCatalog, files: PresetPackageFile[]): PresetItem {
   const now = Date.now();
   return {
-    id: `preset_${candidate.key}`, title: catalog.name?.trim() || candidate.name.trim() || '未命名预设',
+    id: `preset_${candidate.key}`, title: candidate.name.trim() || catalog.name?.trim() || '未命名预设',
     preset: structuredClone(candidate.preset), createdAt: now, updatedAt: now, autoSaved: false,
     catalog: normalizePresetCatalog({ ...catalog, updatedAt: now,
       releaseNotes: catalog.releaseNotes || files.filter(file => file.kind === 'notes').map(file => `【${file.name}】\n${file.text}`).join('\n\n') }),
@@ -208,7 +308,7 @@ export async function exportPresetPackage(id: string, mode: 'folder' | 'zip' | '
       }
       assertCurrent();
       await vault.fs.mkdir(destination.slice(0, destination.lastIndexOf('/')));
-      await vault.fs.rename(staged, destination); // Refuses existing destinations, including user files.
+      await vault.fs.rename(staged, destination);
     } catch (error) {
       throw new Error(`取用文件夹生成未完成：${error instanceof Error ? error.message : String(error)}；临时文件保留在 ${staged}，可重试生成新副本`);
     }
@@ -217,7 +317,7 @@ export async function exportPresetPackage(id: string, mode: 'folder' | 'zip' | '
     catch { throw new Error(`取用副本已生成，但无法打开文件管理器。库内位置：${destination}`); }
     return destination;
   }
-  const archive = Object.fromEntries(Object.entries(files).map(([path, text]) => [`${group}/${path}`, strToU8(text)]));
+  const archive = Object.fromEntries(Object.entries(files).map(([path, text]) => [`${group}/${path}`, new Uint8Array(strToU8(text))]));
   const bytes = zipSync(archive);
   assertCurrent();
   const outcome = await savePackBytes(bytes, `${safeName(presetName(item))}-取用包.zip`, { label: '预设取用包', extension: 'zip' });

@@ -31,6 +31,8 @@ export function normalizePresetCatalog(catalog: PresetCatalog = {}): PresetCatal
   next.tags = getPresetTags(next);
   next.favorite = next.favorite === true;
   next.modelBasis = next.modelBasis === 'author' ? 'author' : 'manual';
+  if (next.seriesConfirmed !== true) delete next.seriesConfirmed;
+  if (next.versionConfirmed !== true) delete next.versionConfirmed;
   return next;
 }
 export function presetContentFingerprint(preset: NormalizedPreset): string {
@@ -75,6 +77,8 @@ export function summarizePresetCatalog(catalog?: PresetCatalog): PresetCatalogSu
     status: fields.status, favorite: fields.favorite, modelBasis: fields.modelBasis, updatedAt: fields.updatedAt,
     sourceUrl: fields.sourceUrl?.slice(0, 2000), publishedAt: fields.publishedAt?.slice(0, 20), originId: fields.originId?.slice(0, 180),
     models: fields.models?.slice(0, 30).map(value => value.slice(0, 120)), modelsConfirmed: fields.modelsConfirmed === true,
+    ...(fields.seriesConfirmed ? { seriesConfirmed: true } : {}),
+    ...(fields.versionConfirmed ? { versionConfirmed: true } : {}),
     purposes: fields.purposes?.slice(0, 30).map(value => value.slice(0, 80)),
     tags: fields.tags?.slice(0, 50).map(value => value.slice(0, 80)),
     representativeCards: fields.representativeCards?.slice(0, 20).map(value => value.slice(0, 120)),

@@ -1,7 +1,7 @@
 /** 聊天处理外的编辑区入口选择页：总结/故事树选故事，世界书选资产；旧预设入口转到独立预设库。 */
 import { useState, useEffect, useCallback } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { CalendarRange, MessageSquare, Search, DownloadCloud } from 'lucide-react';
+import { CalendarRange, MessageSquare, Plus, Search, DownloadCloud } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -58,7 +58,7 @@ const FOCUS_COPY: Record<string, { title: string; description: string; points: s
   worldbook: {
     title: '世界书',
     description: EDITOR_TOOL_COPY.worldbook,
-    points: ['编辑条目内容与触发关键词', '导入的世界书自动暂存，可随时切换', '支持 ST 世界书 JSON'],
+    points: ['可从零新建空白世界书编写设定', '编辑条目内容与触发关键词', '支持 ST 世界书 JSON 导入导出'],
     importLabel: '导入世界书',
   },
 };
@@ -87,13 +87,11 @@ const ToolsContent = () => {
   const assetFocus = focus === 'worldbook' ? focus : null;
   const focusCopy = focus ? FOCUS_COPY[focus] ?? null : null;
   const [dragOver, setDragOver] = useState(false);
-  // 待确认的文件 + 程序猜测（null = 没猜出来，让用户自己选）
   const [pending, setPending] = useState<{ file: File; guess: ToolFileType | null } | null>(null);
   const [chosenType, setChosenType] = useState<ToolFileType>('chat');
   const [stories, setStories] = useState<StoryIndexEntry[]>([]);
   const [characters, setCharacters] = useState<CharacterIndexEntry[]>([]);
   const [assetItems, setAssetItems] = useState<AssetPickerItem[]>([]);
-  /** 首次读完之前不能显示「还没有可以处理的故事」——那是明确的误导 */
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -115,10 +113,8 @@ const ToolsContent = () => {
         })));
         return;
       }
-      // 摘要包含消息时间范围与楼数，选择入口无需保留整库正文。
       const [stories, cards] = await Promise.all([
         listStoryIndex(),
-        // 角色索引只是显示名补充；索引失败不能把可用的故事选择器变成空态。
         listCharacterIndex().catch(() => []),
       ]);
       const sortedStories = [...stories]
@@ -138,7 +134,6 @@ const ToolsContent = () => {
   useEffect(() => { void loadData(); }, [loadData]);
 
   const handleFile = useCallback(async (file: File) => {
-    // .json 需要读内容嗅探；其他类型看扩展名即可
     let content: string | undefined;
     if (file.name.toLowerCase().endsWith('.json')) {
       try {
@@ -154,7 +149,7 @@ const ToolsContent = () => {
     e.preventDefault();
     setDragOver(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) handleFile(file);
+    if (file) void handleFile(file);
   }, [handleFile]);
 
   const handleConfirm = () => {
@@ -172,7 +167,6 @@ const ToolsContent = () => {
     navigate(buildEditorStoryPath(storyId, focusView));
   }, [focusView, navigate]);
 
-  // 资产用附属库同款 ?assetId= 深链打开编辑器
   const openAsset = useCallback((assetId: string) => {
     if (!assetFocus) return;
     navigate(`/worldbook?assetId=${encodeURIComponent(assetId)}`);
@@ -183,12 +177,10 @@ const ToolsContent = () => {
   const filteredAssetItems = normalizedQuery
     ? assetItems.filter((item) => item.title.toLocaleLowerCase().includes(normalizedQuery))
     : assetItems;
-  // 「继续上次」：故事入口共用同一个当前故事，进来先给一键续接（0816 反馈）
   const currentStoryId = getEditorStoryId();
   const lastStory = !assetFocus && currentStoryId ? stories.find((story) => story.id === currentStoryId) : undefined;
   const listTotal = assetFocus ? assetItems.length : stories.length;
 
-  // 编辑区一级入口沿用 7 月 26 日前的直接工作台模式；本页仅承载正式入口的选择器。
   if (!focusView && !assetFocus) return <Navigate to="/chat" replace />;
 
   return (
@@ -204,12 +196,11 @@ const ToolsContent = () => {
           type="file"
           accept=".jsonl,.json,.txt,.png"
           className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.target.value = ''; }}
         />
 
         {focusCopy && (
           <div className="mx-auto flex h-full min-h-0 max-w-6xl flex-nowrap overflow-hidden items-stretch gap-4 animate-fade-in">
-            {/* ===== 左：功能介绍与导入说明 ===== */}
             <aside className="flex min-h-0 basis-[16.5rem] grow-0 shrink-0 flex-col gap-3 rounded-lg border border-[color:var(--border-normal)] bg-elevated p-4">
               <div className="shrink-0">
                 <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">
@@ -236,7 +227,6 @@ const ToolsContent = () => {
               </div>
             </aside>
 
-            {/* ===== 右：选择或导入 ===== */}
             <section
               className="flex min-h-0 min-w-[24rem] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--border-normal)] bg-elevated p-4"
               data-editor-story-picker
@@ -251,17 +241,31 @@ const ToolsContent = () => {
                     {assetFocus ? '按最近更新排序，点击直接进入编辑器。' : '默认显示最近 10 个故事，更早内容可通过搜索找到。'}
                   </p>
                 </div>
-                {/* 0816 反馈：导入直接选文件（也可整页拖入），不再跳走 */}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-tour="tools-dropzone"
-                  onClick={() => document.getElementById('tools-file-input')?.click()}
-                >
-                  <DownloadCloud className="mr-1.5 h-4 w-4" />
-                  {focusCopy.importLabel}
-                </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {assetFocus === 'worldbook' && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => {
+                        sessionStorage.setItem('ste-create-blank-worldbook', '1');
+                        navigate('/worldbook');
+                      }}
+                    >
+                      <Plus className="mr-1.5 h-4 w-4" />
+                      新建空白世界书
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-tour="tools-dropzone"
+                    onClick={() => document.getElementById('tools-file-input')?.click()}
+                  >
+                    <DownloadCloud className="mr-1.5 h-4 w-4" />
+                    {focusCopy.importLabel}
+                  </Button>
+                </div>
               </div>
               {lastStory && !normalizedQuery && (
                 <button
@@ -343,7 +347,7 @@ const ToolsContent = () => {
                   <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg bg-chrome px-4 py-5 text-center">
                     <p className="text-sm text-[color:var(--text-body)]">{assetItems.length > 0 ? '没有匹配的结果' : `还没有保存的${focusCopy.title}`}</p>
                     <p className="mt-1 text-xs text-[color:var(--text-muted)]">
-                      {assetItems.length > 0 ? '换一个标题关键词试试。' : `点「${focusCopy.importLabel}」，或把 JSON 文件直接拖进本页。`}
+                      {assetItems.length > 0 ? '换一个标题关键词试试。' : `点上方「新建空白世界书」或「${focusCopy.importLabel}」，也可把 JSON 文件直接拖进本页。`}
                     </p>
                   </div>
                 )
@@ -390,7 +394,6 @@ const ToolsContent = () => {
           </div>
         )}
 
-        {/* 整页拖入的落点提示（视觉层不吃事件，drop 由外层容器处理） */}
         {dragOver && (
           <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-dashed border-brand bg-[var(--brand-active-bg)]">
             <div className="rounded-lg bg-elevated px-6 py-4 text-center shadow-lg">
@@ -402,7 +405,6 @@ const ToolsContent = () => {
         )}
       </div>
 
-      {/* 类型确认：程序猜测 + 用户拍板（选择器即适配层） */}
       <Dialog open={!!pending} onOpenChange={(v) => { if (!v) setPending(null); }}>
         <DialogContent>
           <DialogHeader>
