@@ -63,6 +63,7 @@ import {
 } from '@/lib/archive-db';
 import { listCharacterIndex, toCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { readLibraryReturnState, writeLibraryReturnState } from '@/lib/library-return-state';
+import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { scopedKey } from '@/lib/vault/vault-scope';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
@@ -451,12 +452,22 @@ const Library = () => {
     playBusyRef.current = true;
     setStartingStoryId(storyId);
     const epoch = getVaultEpoch();
+    const reservation = preopenDetachedTavernWindow();
     try {
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       const target = await prepareStoryPlay(storyId);
-      if (epoch !== getVaultEpoch()) return;
-      navigate(target.path);
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({
+        storyId: target.storyId,
+        branchId: target.branchId,
+        navigate,
+        reservation,
+      });
     } catch (err) {
+      reservation?.cancelIfUnused();
       toast({
         title: '暂时未能进入聊天',
         description: err instanceof Error ? err.message : String(err),

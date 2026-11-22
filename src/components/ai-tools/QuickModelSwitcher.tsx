@@ -18,10 +18,11 @@ export interface QuickModelSwitcherProps {
   /** Switching affects later requests; the caller retains its running request snapshot. */
   busy?: boolean;
   onManage?: () => void;
+  portalContainer?: HTMLElement | null;
   className?: string;
 }
 
-export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, className }: QuickModelSwitcherProps) {
+export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, portalContainer, className }: QuickModelSwitcherProps) {
   const navigate = useNavigate();
   const { profiles, activeId } = useApiProfileState();
   const active = profiles.find(profile => profile.id === (value?.profileId ?? activeId));
@@ -51,7 +52,7 @@ export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, 
         <span className="min-w-0 truncate">{currentLabel}</span><ChevronDown className="h-3.5 w-3.5 shrink-0" />
       </Button>
     </PopoverTrigger>
-    <PopoverContent align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0" aria-label="服务与模型选择">
+    <PopoverContent container={portalContainer} align="start" className="w-[min(26rem,calc(100vw-2rem))] p-0" aria-label="服务与模型选择">
       <div className="p-3 border-b border-border space-y-2">
         <div className="flex items-center justify-between gap-2"><span className="text-sm font-medium">选择模型</span><span className="text-[11px] text-muted-foreground">{value ? '仅此工作区' : '当前 AI 配置'}</span></div>
         <div className="relative"><Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" /><Input autoFocus aria-label="搜索服务或模型" placeholder="搜索服务或模型" value={query} onChange={event => setQuery(event.target.value)} className="pl-8" /></div>

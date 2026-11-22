@@ -128,12 +128,31 @@ export function getAPIConfigForSelection(selection: ApiModelSelection): APIConfi
   return { apiKey: profile.apiKey, apiUrl: profile.apiUrl || DEFAULT_API_URL, model: selection.model.trim() };
 }
 
+export function syncActiveProfileIdFromTavern(profileId: string): void {
+  const { profiles } = loadApiProfiles();
+  if (!profiles.some(profile => profile.id === profileId)) return;
+  if (!canPersistApiProfiles()) return;
+  const json = JSON.stringify(profiles);
+  localStorage.setItem(ACTIVE_KEY, profileId);
+  mirrorApiProfilesToSystem(json, profileId);
+  notifyApiProfilesChanged();
+}
+
+export function syncTavernMainProfileToActive(profileId: string): void {
+  if (!profileId) return;
+  void import('@/lib/archive-db')
+    .then(({ saveRoleplayPreferences }) => saveRoleplayPreferences({ mainProfileId: profileId }))
+    .catch(() => {});
+}
+
 export function activateApiModel(selection: ApiModelSelection): boolean {
   const { profiles } = loadApiProfiles();
   const index = profiles.findIndex(profile => profile.id === selection.profileId);
   if (index < 0 || !selection.model.trim()) return false;
   profiles[index] = { ...profiles[index], model: selection.model.trim() };
-  return persistProfiles(profiles, selection.profileId);
+  const ok = persistProfiles(profiles, selection.profileId);
+  if (ok) syncTavernMainProfileToActive(selection.profileId);
+  return ok;
 }
 
 export function setProfileModelFavorite(profileId: string, model: string, favorite: boolean): boolean {

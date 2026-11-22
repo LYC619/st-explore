@@ -34,6 +34,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
+import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
 import { listAssetIndex } from '@/lib/asset-index';
 import {
   EDITOR_TOOL_COPY,
@@ -233,12 +234,22 @@ const Home = () => {
     playBusyRef.current = true;
     setStartingStoryId(storyId);
     const epoch = getVaultEpoch();
+    const reservation = preopenDetachedTavernWindow();
     try {
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       const target = await prepareStoryPlay(storyId);
-      if (epoch !== getVaultEpoch()) return;
-      navigate(target.path);
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({
+        storyId: target.storyId,
+        branchId: target.branchId,
+        navigate,
+        reservation,
+      });
     } catch (err) {
+      reservation?.cancelIfUnused();
       toast({
         title: '暂时未能进入聊天',
         description: err instanceof Error ? err.message : String(err),

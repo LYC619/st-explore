@@ -101,7 +101,7 @@ test('captures consecutive records from a saved message and imports them once in
     await db.saveArchiveStory(story); return { characterId: card.id, storyId: story.id };
   });
   await page.goto(`/story/${fixture.storyId}?view=read`);
-  await page.getByRole('button', { name: '收录第 0 楼', exact: true }).click();
+  await page.getByRole('button', { name: '第 0 楼更多操作', exact: true }).click(); await page.getByRole('menuitem', { name: /收录/ }).click();
   const dialog = page.getByRole('dialog'); await expect(dialog.getByLabel('记录正文')).toHaveValue('已生成的总结正文');
   for (let i = 1; i <= 3; i++) {
     await dialog.getByLabel('记录标题', { exact: true }).fill(`第${i}卷成果`);
@@ -185,9 +185,9 @@ test('observes library return state and detail reading without changing typograp
     return parent?.scrollTop ?? 0;
   });
   await tile.click(); await page.getByRole('button', { name: '阅读', exact: true }).click();
-  await expect(page.getByRole('button', { name: '返回故事列表', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/story\/list-story-/);
   await page.screenshot({ path: '.cache/archive-maintenance-20261018/b6-detail-reading.png' });
-  await page.getByRole('button', { name: '返回故事列表', exact: true }).click();
+  await page.getByRole('button', { name: /^列表返回/ }).click();
   await page.getByRole('button', { name: '角色库', exact: true }).first().click();
   await expect(page.getByRole('combobox', { name: '角色排序', exact: true })).toContainText('按评分');
   await expect(type).toHaveAttribute('aria-pressed', 'true');

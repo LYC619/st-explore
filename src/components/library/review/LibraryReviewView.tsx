@@ -9,6 +9,7 @@ import { displayCharacterName } from '@/lib/library-query';
 import { getAllSummaries } from '@/lib/summary-db';
 import { scopedKey } from '@/lib/vault/vault-scope';
 import { getVaultEpoch } from '@/lib/vault/active';
+import { launchRoleplayTarget, preopenDetachedTavernWindow } from '@/lib/roleplay/detached-window';
 import { useViewport } from '@/hooks/use-viewport';
 import { useToast } from '@/hooks/use-toast';
 import { isPlainSingleKeyShortcut } from '@/lib/keyboard-shortcuts';
@@ -230,16 +231,29 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
             onStoriesChange={onStoriesChange}
             onOpenEditor={id => void transition(() => navigate(`/story/${id}`))}
             onOpenChat={(sid, bid) => {
+              if (transitionLock.current) return;
+              const reservation = preopenDetachedTavernWindow();
               void transition(async () => {
                 const epoch = getVaultEpoch();
                 try {
                   const m = await import('@/lib/roleplay/open-story');
                   const target = await m.prepareStoryPlay(sid, bid);
-                  if (!mounted.current || epoch !== getVaultEpoch()) return;
-                  navigate(target.path);
+                  if (!mounted.current || epoch !== getVaultEpoch()) {
+                    reservation?.cancelIfUnused();
+                    return;
+                  }
+                  launchRoleplayTarget({
+                    storyId: target.storyId,
+                    branchId: target.branchId,
+                    navigate,
+                    reservation,
+                  });
                 } catch (err) {
+                  reservation?.cancelIfUnused();
                   toast({ title: '暂时未能进入聊天', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
                 }
+              }).finally(() => {
+                reservation?.cancelIfUnused();
               });
             }}
             readerRef={readerRef}

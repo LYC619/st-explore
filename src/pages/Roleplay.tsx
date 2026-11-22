@@ -1,30 +1,76 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Activity, ArrowLeft, CircleHelp, Code, FileUp, GitBranch, Loader2, Menu, RotateCcw, SlidersHorizontal, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { ClientTitleBar } from '@/components/ClientTitleBar';
+import { useApiProfileState } from '@/components/ai-tools/useApiProfileState';
+import { isApiProfileConfigured } from '@/components/ai-tools/api-profiles';
 import { RoleplayGuide } from '@/components/roleplay/RoleplayGuide';
 import { ChatProcessPanel } from '@/components/roleplay/ChatProcessPanel';
+import {
+  RoleplayHeaderBar,
+  RoleplayRecoveryBanners,
+  type TavernSettingsSection,
+} from '@/components/roleplay/RoleplayChrome';
 import { createTavernHost } from '@/lib/roleplay/tavern-host';
 import { registerTavernHost, type TavernFrameWindow, type TavernHost } from '@/lib/roleplay/frame';
+import {
+  closeDetachedTavernWindow,
+  focusDetachedTavernWindow,
+  launchRoleplayTarget,
+  preopenDetachedTavernWindow,
+  registerDetachedCloseFlushHandler,
+  setRoleplayGeneratingState,
+  setRoleplayOpenChat,
+} from '@/lib/roleplay/detached-window';
 import { saveTextFile } from '@/lib/roleplay/export-package-file';
 import { saveSettingsSection } from '@/lib/settings-navigation';
 import { isTauri } from '@/lib/runtime';
 import { useReaderBack } from '@/lib/immersive-mode';
 import { useAndroidBackButton } from '@/hooks/use-android-back';
+import { useViewport } from '@/hooks/use-viewport';
 import { getVaultEpoch } from '@/lib/vault/active';
+import { buildStoryReadPath } from '@/lib/editor-story-context';
 
 type ExitDestination = { kind: 'route'; path: string; state?: unknown } | { kind: 'close' } | { kind: 'release' };
-const errorMessage = (reason: unknown) => reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : String(reason);
+const errorMessage = (reason: unknown) => (reason && typeof reason === 'object' && 'message' in reason ? String(reason.message) : String(reason));
 
 /** STE owns navigation and recovery; the actual chat DOM belongs entirely to ST. */
-export default function Roleplay({ id, branchId, fromChats, active, onRelease, taskDock, worldRequested = false }: {
-  id: string; branchId?: string | null; fromChats: boolean; active: boolean; onRelease: () => void; taskDock: HTMLDivElement | null; worldRequested?: boolean;
+export default function Roleplay({
+  id,
+  branchId,
+  fromChats,
+  active,
+  detached = false,
+  detachedContainer = null,
+  onRelease,
+  taskDock,
+  worldRequested = false,
+}: {
+  id: string;
+  branchId?: string | null;
+  fromChats: boolean;
+  active: boolean;
+  detached?: boolean;
+  detachedContainer?: HTMLElement | null;
+  onRelease: () => void;
+  taskDock: HTMLDivElement | null;
+  worldRequested?: boolean;
 }) {
-  const activeRef = useRef(active); activeRef.current = active;
-  const fromChatsRef = useRef(fromChats); fromChatsRef.current = fromChats;
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const detachedRef = useRef(detached);
+  detachedRef.current = detached;
+  const detachedContainerRef = useRef(detachedContainer);
+  detachedContainerRef.current = detachedContainer;
+  const fromChatsRef = useRef(fromChats);
+  fromChatsRef.current = fromChats;
+
+  const { isMobile } = useViewport();
+  const { profiles, activeId } = useApiProfileState();
+  const activeProfile = profiles.find((p) => p.id === activeId);
+
   const [launch, setLaunch] = useState({ storyId: id, branchId });
   const navigate = useNavigate();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -32,11 +78,13 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   const [src, setSrc] = useState<string>();
   const [status, setStatus] = useState('正在打开酒馆…');
   const [ready, setReady] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [startupSlow, setStartupSlow] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
   const [processOpen, setProcessOpen] = useState(false);
   const [processHost, setProcessHost] = useState<TavernHost>();
   useEffect(() => { processHost?.setForeground?.(active); }, [active, processHost]);
+
   const [error, setError] = useState<string>();
   const [saveFailed, setSaveFailed] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -51,10 +99,17 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
   const saveFailureKind = useRef<'chat' | 'flush'>();
   const generating = useRef(false);
   const switching = useRef(false);
-  const backDestination = useCallback((): ExitDestination => fromChats
-    ? { kind: 'route', path: '/play' }
-    : { kind: 'route', path: '/chat?storyId=' + encodeURIComponent(returnTarget.current.storyId ?? '')
-      + '&branch=' + encodeURIComponent(returnTarget.current.branchId ?? '') }, [fromChats]);
+
+  const backDestination = useCallback((): ExitDestination => (
+    fromChats
+      ? { kind: 'route', path: '/play' }
+      : {
+        kind: 'route',
+        path: '/chat?storyId=' + encodeURIComponent(returnTarget.current.storyId ?? '')
+          + '&branch=' + encodeURIComponent(returnTarget.current.branchId ?? ''),
+      }
+  ), [fromChats]);
+
   const reportSaveError = useCallback((reason: unknown, kind: 'chat' | 'flush' = 'flush') => {
     saveFailureKind.current = kind;
     setSaveFailed(true);
@@ -65,30 +120,93 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     if (exitTask.current) return exitTask.current;
     setLeaving(true);
     setError(undefined);
-    const task = Promise.resolve().then(() => flushRef.current()).then(() => {
-      saveFailureKind.current = undefined;
-      setSaveFailed(false); setError(undefined); setStatus('已保存');
-    }).catch(reason => {
-      reportSaveError(reason);
-      throw reason;
-    }).finally(() => { exitTask.current = undefined; setLeaving(false); });
+    const task = Promise.resolve()
+      .then(() => flushRef.current())
+      .then(() => {
+        saveFailureKind.current = undefined;
+        setSaveFailed(false);
+        setError(undefined);
+        setStatus('已保存');
+      })
+      .catch((reason) => {
+        reportSaveError(reason);
+        throw reason;
+      })
+      .finally(() => {
+        exitTask.current = undefined;
+        setLeaving(false);
+      });
     exitTask.current = task;
     return task;
   }, [reportSaveError]);
 
-  const worldExitAttempted = useRef(false);
-  const worldRequestedRef = useRef(worldRequested); worldRequestedRef.current = worldRequested;
   useEffect(() => {
-    if (!worldRequested) { worldExitAttempted.current = false; return; }
+    if (!detached) return undefined;
+    return registerDetachedCloseFlushHandler(saveBeforeExit);
+  }, [detached, saveBeforeExit]);
+
+  // Sync global active API profile / model switches to live Tavern session
+  const activeProfileRef = useRef(activeProfile);
+  activeProfileRef.current = activeProfile;
+  const initialProfileSigRef = useRef('');
+  const lastSyncedProfileSig = useRef('');
+  useEffect(() => {
+    if (!ready || !processHost || isGenerating || generating.current) return;
+    if (!activeProfile || !isApiProfileConfigured(activeProfile)) return;
+    const sig = `${activeProfile.id}::${activeProfile.model}::${activeProfile.apiUrl}`;
+    if (!lastSyncedProfileSig.current && sig === initialProfileSigRef.current) {
+      lastSyncedProfileSig.current = sig;
+      return;
+    }
+    if (lastSyncedProfileSig.current === sig) return;
+    lastSyncedProfileSig.current = sig;
+    void processHost
+      .request('/ste/configuration', { mainProfileId: activeProfile.id })
+      .then((res) => {
+        if (!res.ok) {
+          lastSyncedProfileSig.current = '';
+          return;
+        }
+        const child = frame.current?.contentWindow as TavernFrameWindow | null;
+        return child?.__STE_REFRESH_CONNECTIONS__?.();
+      })
+      .catch((err) => {
+        lastSyncedProfileSig.current = '';
+        console.warn('[Roleplay] 同步全局活跃连接至酒馆未完成:', err);
+      });
+  }, [activeProfile, isGenerating, processHost, ready]);
+
+  const worldExitAttempted = useRef(false);
+  const worldRequestedRef = useRef(worldRequested);
+  worldRequestedRef.current = worldRequested;
+  useEffect(() => {
+    if (!worldRequested) {
+      worldExitAttempted.current = false;
+      return;
+    }
     if (!ready || generating.current || worldExitAttempted.current || saveFailed) return;
     worldExitAttempted.current = true;
-    void saveBeforeExit().then(() => { if (worldRequestedRef.current) onRelease(); }).catch(() => { /* Retain iframe and existing save recovery controls. */ });
+    void saveBeforeExit()
+      .then(() => {
+        if (worldRequestedRef.current) onRelease();
+      })
+      .catch(() => { /* Retain iframe; reportSaveError already surfaced recovery UI. */ });
   }, [worldRequested, ready, status, saveFailed, saveBeforeExit, onRelease]);
 
   const flushedForPark = useRef(false);
   const navigateToModule = useCallback(async (path: string) => {
+    if (detachedRef.current) {
+      navigate(path);
+      try { window.focus(); } catch { /* ignore */ }
+      return;
+    }
     if (!generating.current) {
-      try { await saveBeforeExit(); flushedForPark.current = true; } catch { return; }
+      try {
+        await saveBeforeExit();
+        flushedForPark.current = true;
+      } catch {
+        return;
+      }
     }
     navigate(path);
   }, [navigate, saveBeforeExit]);
@@ -99,14 +217,15 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     const parked = wasActive.current && !active;
     wasActive.current = active;
     if (parked) libraryRefreshPending.current = true;
-    // Browser Back can park the page without using our toolbar. Commit idle edits
-    // while retaining the document; an in-progress generation must keep running.
-    // World entry has its own readiness barrier; flushing before ST finishes
-    // loading can reject saveSettings and strand the pending transition.
-    if (active) { flushedForPark.current = false; return; }
+    if (active) {
+      flushedForPark.current = false;
+      return;
+    }
     const alreadyFlushed = flushedForPark.current;
     flushedForPark.current = false;
-    if (parked && !alreadyFlushed && !generating.current && !worldRequested) void saveBeforeExit().catch(() => {});
+    if (parked && !alreadyFlushed && !generating.current && !worldRequested) {
+      void saveBeforeExit().catch(() => { /* reportSaveError already surfaced recovery UI */ });
+    }
   }, [active, worldRequested, saveBeforeExit]);
 
   useEffect(() => {
@@ -114,27 +233,59 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     const child = frame.current?.contentWindow as TavernFrameWindow | null;
     if (!child?.__STE_TAVERN_REFRESH_LIBRARY__) return;
     libraryRefreshPending.current = false;
-    void child.__STE_TAVERN_REFRESH_LIBRARY__().catch(reason => {
+    void child.__STE_TAVERN_REFRESH_LIBRARY__().catch((reason) => {
       libraryRefreshPending.current = true;
       setError('资料库列表刷新未完成：' + errorMessage(reason));
     });
   }, [active, ready, status]);
 
+  // Refresh Tavern catalogs on detached window focus & protect dirty detached window beforeunload
   useEffect(() => {
-    // A list entry omits branch to resume the already selected line. Guard the actual
-    // replacement here, so other pages may own their own navigation confirmation.
+    const win = detachedContainer?.ownerDocument?.defaultView;
+    if (!detached || !win) return undefined;
+    const onFocus = () => {
+      if (!ready || generating.current) return;
+      const child = frame.current?.contentWindow as TavernFrameWindow | null;
+      void child?.__STE_TAVERN_REFRESH_LIBRARY__?.().catch((err) => {
+        console.warn('[Roleplay] 聚焦独立窗口时刷新资料库未完成:', err);
+      });
+    };
+    const onChildBeforeUnload = (event: BeforeUnloadEvent) => {
+      const child = frame.current?.contentWindow as TavernFrameWindow | null;
+      if (allowExit.current || (!generating.current && !child?.__STE_TAVERN_DIRTY__?.())) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    win.addEventListener('focus', onFocus);
+    win.addEventListener('beforeunload', onChildBeforeUnload);
+    return () => {
+      win.removeEventListener('focus', onFocus);
+      win.removeEventListener('beforeunload', onChildBeforeUnload);
+    };
+  }, [detached, detachedContainer, ready]);
+
+  useEffect(() => {
     if (id === returnTarget.current.storyId && (branchId === undefined || branchId === returnTarget.current.branchId)) return;
     let cancelled = false;
     switching.current = true;
-    void saveBeforeExit().then(() => {
-      if (cancelled) return;
-      returnTarget.current = { storyId: id, branchId };
-      setLaunch({ storyId: id, branchId });
-    }, () => {
-      if (cancelled) return;
-      navigate('/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
-        + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? ''), { replace: true });
-    }).finally(() => { if (!cancelled) switching.current = false; });
+    void saveBeforeExit()
+      .then(() => {
+        if (cancelled) return;
+        returnTarget.current = { storyId: id, branchId };
+        setLaunch({ storyId: id, branchId });
+      }, () => {
+        if (cancelled) return;
+        if (detachedRef.current) {
+          setRoleplayOpenChat(
+            { id: returnTarget.current.storyId ?? id, branchId: returnTarget.current.branchId, fromChats: fromChatsRef.current, epoch: getVaultEpoch() },
+            { detached: true, container: detachedContainerRef.current },
+          );
+        } else {
+          navigate('/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
+            + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? ''), { replace: true });
+        }
+      })
+      .finally(() => { if (!cancelled) switching.current = false; });
     return () => { cancelled = true; switching.current = false; };
   }, [id, branchId, navigate, saveBeforeExit]);
 
@@ -143,21 +294,38 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     let unlisten: (() => void) | undefined;
     const beforeUnload = (event: BeforeUnloadEvent) => {
       const child = frame.current?.contentWindow as TavernFrameWindow | null;
-      if (allowExit.current || !child?.__STE_TAVERN_DIRTY__?.()) return;
-      event.preventDefault(); event.returnValue = '';
+      if (allowExit.current || (!generating.current && !child?.__STE_TAVERN_DIRTY__?.())) return;
+      event.preventDefault();
+      event.returnValue = '';
     };
     window.addEventListener('beforeunload', beforeUnload);
-    if (isTauri()) void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
-      const current = getCurrentWindow();
-      const stop = await current.onCloseRequested(event => {
-        if (allowExit.current) return;
-        event.preventDefault();
-        pendingExit.current = { kind: 'close' };
-        void saveBeforeExit().then(() => { allowExit.current = true; return current.close(); }).catch(() => {});
+    if (isTauri()) {
+      void import('@tauri-apps/api/window').then(async ({ getCurrentWindow }) => {
+        const current = getCurrentWindow();
+        const stop = await current.onCloseRequested((event) => {
+          if (allowExit.current) return;
+          event.preventDefault();
+          pendingExit.current = { kind: 'close' };
+          void saveBeforeExit()
+            .then(() => {
+              allowExit.current = true;
+              closeDetachedTavernWindow();
+              return current.close();
+            })
+            .catch(() => {
+              /* reportSaveError already surfaced recovery UI */
+              if (detachedRef.current) focusDetachedTavernWindow();
+            });
+        });
+        if (disposed) stop();
+        else unlisten = stop;
       });
-      if (disposed) stop(); else unlisten = stop;
-    });
-    return () => { disposed = true; unlisten?.(); window.removeEventListener('beforeunload', beforeUnload); };
+    }
+    return () => {
+      disposed = true;
+      unlisten?.();
+      window.removeEventListener('beforeunload', beforeUnload);
+    };
   }, [saveBeforeExit]);
 
   useEffect(() => {
@@ -169,6 +337,11 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     setStatus('正在打开酒馆…');
     setProcessHost(undefined);
     setSrc(undefined);
+    const curProf = activeProfileRef.current;
+    initialProfileSigRef.current = curProf && isApiProfileConfigured(curProf)
+      ? `${curProf.id}::${curProf.model}::${curProf.apiUrl}`
+      : '';
+    lastSyncedProfileSig.current = '';
     const open = async () => {
       allowExit.current = false;
       if (!launch.storyId) throw new Error('缺少故事 ID');
@@ -178,15 +351,19 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
       const defaults = await response.json();
       if (disposed || epoch !== getVaultEpoch()) return;
       const host = await createTavernHost({
-        storyId: launch.storyId, branchId: launch.branchId, defaults,
+        storyId: launch.storyId,
+        branchId: launch.branchId,
+        defaults,
         onCommit: () => {
           if (disposed) return;
           setStatus('正文已保存');
           if (saveFailureKind.current === 'chat' && !exitTask.current) {
-            saveFailureKind.current = undefined; setSaveFailed(false); setError(undefined);
+            saveFailureKind.current = undefined;
+            setSaveFailed(false);
+            setError(undefined);
           }
         },
-        onSaveError: message => { if (!disposed) reportSaveError(message, 'chat'); },
+        onSaveError: (message) => { if (!disposed) reportSaveError(message, 'chat'); },
         onStartup: (message, failed) => {
           if (disposed) return;
           setStatus(failed ? '酒馆加载失败' : message);
@@ -194,21 +371,36 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
         },
         onReady: () => {
           if (disposed) return;
-          setReady(true); setStatus(runtimeStatus.current ?? '无 Agent · 自动保存');
+          setReady(true);
+          setStatus(runtimeStatus.current ?? '无 Agent · 自动保存');
           if (!saveFailureKind.current) setError(undefined);
-          try { if (!localStorage.getItem('ste-play-guide-seen')) setGuideOpen(true); } catch { /* Help remains available without local preferences. */ }
+          try { if (!localStorage.getItem('ste-play-guide-seen')) setGuideOpen(true); } catch { /* Optional preference */ }
         },
-        onGeneration: active => { if (!disposed) { generating.current = active; setStatus(active ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存'); } },
-        onAgentStatus: state => { runtimeStatus.current = state.message; if (!disposed) setStatus(state.message); },
+        onGeneration: (genActive) => {
+          if (disposed) return;
+          generating.current = genActive;
+          setIsGenerating(genActive);
+          setRoleplayGeneratingState(genActive);
+          setStatus(genActive ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存');
+        },
+        onAgentStatus: (state) => {
+          runtimeStatus.current = state.message;
+          if (!disposed) setStatus(state.message);
+        },
         onManageProfiles: () => { saveSettingsSection('ai'); void navigateToModule('/settings'); },
-        onManagePage: path => { void navigateToModule(path); },
-        onOpenStory: storyId => { void navigateToModule('/chat?storyId=' + encodeURIComponent(storyId)); },
-        onSelect: locator => {
+        onManagePage: (path) => { void navigateToModule(path); },
+        onOpenStory: (storyId) => { void navigateToModule('/chat?storyId=' + encodeURIComponent(storyId)); },
+        onSelect: (locator) => {
           if (disposed) return;
           const previous = returnTarget.current;
           returnTarget.current = { storyId: locator.storyId, branchId: locator.branchId };
-          // A save can publish the selected chat while a blocked Back navigation is waiting.
-          // Replacing the URL here would cancel that pending navigation after its data was saved.
+          if (detachedRef.current) {
+            setRoleplayOpenChat(
+              { id: locator.storyId, branchId: locator.branchId, fromChats: fromChatsRef.current, epoch: getVaultEpoch() },
+              { detached: true, container: detachedContainerRef.current },
+            );
+            return;
+          }
           if (!activeRef.current || exitTask.current || switching.current) return;
           if (previous.storyId === locator.storyId && previous.branchId === locator.branchId) return;
           const params = new URLSearchParams();
@@ -218,68 +410,172 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
           navigate(path, { replace: true });
         },
       });
-      if (disposed) { host.close(); return; }
+      if (disposed) {
+        host.close();
+        return;
+      }
       host.setForeground(activeRef.current);
       setProcessHost(host);
       const registration = registerTavernHost(host);
       remove = registration.remove;
       flushRef.current = async () => {
-        const child = frame.current?.contentWindow as TavernFrameWindow | null;
-        if (child?.__STE_TAVERN_FLUSH__) await child.__STE_TAVERN_FLUSH__();
+        const child = frame.current?.contentWindow as (TavernFrameWindow & { closed?: boolean }) | null;
+        if (child && !child.closed && child.__STE_TAVERN_FLUSH__) {
+          try {
+            await child.__STE_TAVERN_FLUSH__();
+          } catch (err) {
+            if (!child.closed) throw err;
+            console.warn('[Roleplay] 独立子窗口已关闭，跳过前端快照冲刷并继续落盘宿主状态:', err);
+          }
+        }
         await host.flush();
       };
-      setSrc('/tavern.html?host=' + registration.id);
+      const baseOrigin = detachedRef.current ? window.location.origin : '';
+      setSrc(`${baseOrigin}/tavern.html?host=${registration.id}`);
     };
-    void open().catch(reason => { if (!disposed) { setError(errorMessage(reason)); setStatus('酒馆加载失败'); } });
-    return () => { disposed = true; remove?.(); flushRef.current = async () => {}; };
+    void open().catch((reason) => {
+      if (!disposed) {
+        setError(errorMessage(reason));
+        setStatus('酒馆加载失败');
+      }
+    });
+    return () => {
+      disposed = true;
+      setIsGenerating(false);
+      setRoleplayGeneratingState(false);
+      remove?.();
+      flushRef.current = async () => {};
+    };
   }, [launch, navigate, navigateToModule, reportSaveError]);
 
   const goToDestination = useCallback(async (destination: ExitDestination) => {
     if (destination.kind === 'close') {
       allowExit.current = true;
-      try { const { getCurrentWindow } = await import('@tauri-apps/api/window'); await getCurrentWindow().close(); }
-      catch (reason) { allowExit.current = false; reportSaveError(reason); }
-    } else if (destination.kind === 'release') onRelease();
-    else navigate(destination.path, { state: destination.state });
+      closeDetachedTavernWindow();
+      try {
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        await getCurrentWindow().close();
+      } catch (reason) {
+        allowExit.current = false;
+        reportSaveError(reason);
+      }
+    } else if (destination.kind === 'release') {
+      onRelease();
+    } else {
+      navigate(destination.path, { state: destination.state });
+    }
   }, [navigate, onRelease, reportSaveError]);
+
   const leave = useCallback(async () => {
     if (leaving) return;
     const destination = backDestination();
     if (!generating.current) {
-      try { await saveBeforeExit(); flushedForPark.current = true; } catch { return; }
+      try {
+        await saveBeforeExit();
+        flushedForPark.current = true;
+      } catch {
+        return;
+      }
     }
     if (destination.kind === 'route') navigate(destination.path, { state: destination.state });
   }, [leaving, backDestination, navigate, saveBeforeExit]);
+
+  const popOutToDetached = async () => {
+    if (leaving || detached || generating.current) return;
+    const reservation = preopenDetachedTavernWindow(true);
+    if (!reservation) {
+      setError('当前环境拦截了独立窗口，请允许弹窗权限后再试（也可继续在页内游玩）。');
+      return;
+    }
+    const targetStoryId = returnTarget.current.storyId ?? id;
+    const targetBranchId = returnTarget.current.branchId ?? branchId;
+    try {
+      await saveBeforeExit();
+      flushedForPark.current = true;
+    } catch {
+      reservation.cancelIfUnused();
+      return;
+    }
+    setReady(false);
+    setStatus('正在切换窗口…');
+    launchRoleplayTarget({
+      storyId: targetStoryId,
+      branchId: targetBranchId,
+      fromChats,
+      navigate,
+      reservation,
+      forceMode: 'detached',
+    });
+    navigate(fromChats ? '/play' : buildStoryReadPath(targetStoryId, { branchId: targetBranchId }), { replace: true });
+  };
+
+  const dockBackInline = async () => {
+    if (leaving || !detached || generating.current) return;
+    const targetStoryId = returnTarget.current.storyId ?? id;
+    const targetBranchId = returnTarget.current.branchId ?? branchId;
+    try {
+      await saveBeforeExit();
+    } catch {
+      return;
+    }
+    setReady(false);
+    setStatus('正在切换窗口…');
+    launchRoleplayTarget({
+      storyId: targetStoryId,
+      branchId: targetBranchId,
+      fromChats,
+      navigate,
+      forceMode: 'inline',
+    });
+  };
+
   const closeChat = async () => {
     pendingExit.current = { kind: 'release' };
-    try { await saveBeforeExit(); await goToDestination({ kind: 'release' }); } catch { /* Keep recovery available. */ }
+    try {
+      await saveBeforeExit();
+      await goToDestination({ kind: 'release' });
+    } catch { /* Keep recovery available. */ }
   };
+
   const exportRecovery = async () => {
-    setExporting(true); setExportNotice(undefined);
+    setExporting(true);
+    setExportNotice(undefined);
     try {
       const child = frame.current?.contentWindow as TavernFrameWindow | null;
       if (!child?.__STE_TAVERN_SNAPSHOT__) throw new Error('聊天界面尚未准备好');
       const output = await child.__STE_TAVERN_SNAPSHOT__();
       const result = await saveTextFile({ ...output, label: '聊天恢复文件', extension: 'jsonl' });
-      setExportNotice(result === 'cancelled' ? '已取消导出，当前聊天仍未保存。'
-        : '已导出当时的聊天、编辑内容和未发送输入。之后的修改需要再次导出。');
-    } catch (reason) { setExportNotice('导出未完成：' + errorMessage(reason)); }
-    finally { setExporting(false); }
+      setExportNotice(
+        result === 'cancelled'
+          ? '已取消导出，当前聊天仍未保存。'
+          : '已导出当时的聊天、编辑内容和未发送输入。之后的修改需要再次导出。',
+      );
+    } catch (reason) {
+      setExportNotice('导出未完成：' + errorMessage(reason));
+    } finally {
+      setExporting(false);
+    }
   };
-  const openSettings = (section: 'runtime' | 'models' | 'scripts' | 'branches' | 'chat') => {
+
+  const openSettings = (section: TavernSettingsSection) => {
     const child = frame.current?.contentWindow as TavernFrameWindow | null;
-    void child?.__STE_TAVERN_OPEN_SETTINGS__?.(section).catch(reason => setError(errorMessage(reason)));
+    void child?.__STE_TAVERN_OPEN_SETTINGS__?.(section).catch((reason) => setError(errorMessage(reason)));
   };
+
   const changeGuide = (open: boolean) => {
     setGuideOpen(open);
-    if (!open) try { localStorage.setItem('ste-play-guide-seen', '1'); } catch { /* Optional preference. */ }
+    if (!open) {
+      try { localStorage.setItem('ste-play-guide-seen', '1'); } catch { /* Optional preference. */ }
+    }
   };
+
   useEffect(() => {
     setStartupSlow(false);
-    if (ready || error) return;
-    const timer = setTimeout(() => setStartupSlow(true), 20000);
+    if (ready || error) return undefined;
+    const timer = setTimeout(() => setStartupSlow(true), 20_000);
     return () => clearTimeout(timer);
   }, [ready, error, launch]);
+
   const retryStartup = async () => {
     if (ready || leaving) return;
     const child = frame.current?.contentWindow as TavernFrameWindow | null;
@@ -287,73 +583,122 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
       if (child?.__STE_TAVERN_DIRTY__?.()) await saveBeforeExit();
       else await processHost?.flush();
       setLaunch({ ...returnTarget.current });
-    } catch (reason) { reportSaveError(reason); }
+    } catch (reason) {
+      reportSaveError(reason);
+    }
   };
-  useAndroidBackButton(active);
-  useReaderBack(active, () => { void leave(); });
 
-  return <>
-    {!active && taskDock && createPortal(<div className="flex max-w-full shrink-0 items-center gap-2 rounded-lg border bg-background p-2 shadow-lg">
-      <Button variant={saveFailed ? 'destructive' : 'outline'} size="sm" onClick={() => navigate('/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
-        + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? '') + (fromChats ? '&from=chats' : ''))}>
-        返回聊天 · {saveFailed ? '保存未完成' : status}
-      </Button>
-      <Button variant="ghost" size="icon" aria-label="关闭后台聊天" disabled={leaving} onClick={() => { void closeChat(); }}><X className="h-4 w-4" /></Button>
-    </div>, taskDock)}
-    {/* Keep layout dimensions while parked: ST's virtual list skips updates at zero size. */}
-    <div aria-hidden={!active} style={active ? undefined : { position: 'fixed', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}><div className="flex h-dvh min-h-0 flex-col bg-background">
-    {isTauri() && <ClientTitleBar titleBarContent="聊天" />}
-    <header className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-1.5">
-      <Button variant="ghost" size="sm" disabled={leaving} onClick={() => { void leave(); }}>
-        {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArrowLeft className="mr-1 h-4 w-4" />}{fromChats ? '返回聊天列表' : '返回聊天处理'}
-      </Button>
-      <span role="status" title={status} className="order-last min-w-0 basis-full truncate text-xs text-muted-foreground sm:order-none sm:flex-1 sm:basis-auto">{status}</span>
-      <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1">
-        <Button variant="ghost" size="sm" disabled={!ready} onClick={() => setProcessOpen(true)}><Activity className="mr-1 h-4 w-4" />过程</Button>
-        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('branches')}><GitBranch className="mr-1 h-4 w-4" />分支</Button>
-        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('scripts')}><Code className="mr-1 h-4 w-4" />脚本</Button>
-        <Button variant="ghost" size="sm" disabled={!ready || leaving} onClick={() => openSettings('chat')}><Menu className="mr-1 h-4 w-4" />聊天工具</Button>
-        <Button variant="ghost" size="sm" disabled={!ready} onClick={() => openSettings('runtime')}><SlidersHorizontal className="mr-1 h-4 w-4" />玩法设置</Button>
-        <Button variant="ghost" size="sm" onClick={() => changeGuide(true)}><CircleHelp className="mr-1 h-4 w-4" />使用帮助</Button>
-        <Button variant="ghost" size="sm" disabled={leaving} onClick={() => { void closeChat(); }}><X className="mr-1 h-4 w-4" />关闭聊天</Button>
+  useAndroidBackButton(active && !detached);
+  useReaderBack(active && !detached, () => { void leave(); });
+
+  const shellContent = (
+    <div
+      aria-hidden={!active}
+      style={active ? undefined : { position: 'fixed', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}
+    >
+      <div className="flex h-dvh min-h-0 flex-col bg-background text-foreground">
+        {!detached && isTauri() && <ClientTitleBar titleBarContent="聊天" />}
+        <RoleplayHeaderBar
+          detached={detached}
+          fromChats={fromChats}
+          isMobile={isMobile}
+          ready={ready}
+          leaving={leaving}
+          isGenerating={isGenerating}
+          status={status}
+          detachedContainer={detachedContainer}
+          onDockBackInline={() => { void dockBackInline(); }}
+          onLeave={() => { void leave(); }}
+          onPopOutToDetached={() => { void popOutToDetached(); }}
+          onManageModels={() => {
+            if (ready) openSettings('models');
+            else {
+              saveSettingsSection('ai');
+              void navigateToModule('/settings');
+            }
+          }}
+          onOpenProcess={() => setProcessOpen(true)}
+          onOpenSettings={openSettings}
+          onOpenGuide={() => changeGuide(true)}
+          onCloseChat={() => { void closeChat(); }}
+        />
+
+        <RoleplayRecoveryBanners
+          ready={ready}
+          error={error}
+          saveFailed={saveFailed}
+          startupSlow={startupSlow}
+          leaving={leaving}
+          exporting={exporting}
+          exportNotice={exportNotice}
+          confirmExit={confirmExit}
+          closingWindow={pendingExit.current?.kind === 'close'}
+          detachedContainer={detachedContainer}
+          onRetryStartup={() => { void retryStartup(); }}
+          onRetrySave={() => { void saveBeforeExit().catch(() => { /* reportSaveError already surfaced recovery UI */ }); }}
+          onExportRecovery={() => { void exportRecovery(); }}
+          onConfirmExitChange={setConfirmExit}
+          onForceLeave={() => { void goToDestination(pendingExit.current ?? { kind: 'release' }); }}
+        />
+
+        {src ? (
+          <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
+        ) : (
+          !error && (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          )
+        )}
+
+        <ChatProcessPanel
+          host={processHost}
+          storyId={returnTarget.current.storyId}
+          branchId={returnTarget.current.branchId}
+          open={processOpen && active}
+          onOpenChange={setProcessOpen}
+          portalContainer={detachedContainer}
+        />
+        <RoleplayGuide
+          open={guideOpen && active}
+          onOpenChange={changeGuide}
+          runtimeReady={ready}
+          portalContainer={detachedContainer}
+          onModels={() => {
+            if (ready) openSettings('models');
+            else {
+              saveSettingsSection('ai');
+              void navigateToModule('/settings');
+            }
+          }}
+          onRuntime={() => { if (ready) openSettings('runtime'); }}
+        />
       </div>
-    </header>
-    {(error || saveFailed) && <div role="alert" className="shrink-0 border-b bg-destructive/10 px-4 py-3 text-sm">
-      <p className="break-words text-destructive">{error ?? '正在重试保存…'}</p>
-      {!ready && !saveFailed && <Button variant="outline" size="sm" className="mt-2 min-h-11" disabled={leaving} onClick={() => { void retryStartup(); }}><RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆</Button>}
-      {saveFailed && <>
-        <p className="mt-1 text-muted-foreground">可以修复原因后重试，或先导出恢复文件再离开。导出会保留当前编辑和未发送输入。</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" disabled={leaving} onClick={() => { void saveBeforeExit().catch(() => {}); }}>
-            {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}重试保存
+    </div>
+  );
+
+  return (
+    <>
+      {!active && !detached && taskDock && createPortal(
+        <div className="flex max-w-full shrink-0 items-center gap-2 rounded-lg border bg-background p-2 shadow-lg">
+          <Button
+            variant={saveFailed ? 'destructive' : 'outline'}
+            size="sm"
+            onClick={() => navigate(
+              '/play/' + encodeURIComponent(returnTarget.current.storyId ?? id)
+              + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? '')
+              + (fromChats ? '&from=chats' : ''),
+            )}
+          >
+            返回聊天 · {saveFailed ? '保存未完成' : status}
           </Button>
-          <Button variant="outline" size="sm" disabled={exporting} onClick={() => { void exportRecovery(); }}><FileUp className="mr-1 h-4 w-4" />{exporting ? '正在导出…' : '导出当前内容'}</Button>
-          <Button variant="ghost" size="sm" disabled={leaving || exporting} onClick={() => setConfirmExit(true)}>退出聊天</Button>
-        </div>
-        {exportNotice && <p className="mt-2 text-muted-foreground" role="status">{exportNotice}</p>}
-      </>}
-    </div>}
-    {!ready && !error && startupSlow && <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-muted px-4 py-2 text-sm">
-      <span>加载时间较长，可等待当前步骤完成，或重新加载。</span>
-      <Button variant="outline" size="sm" className="min-h-11" disabled={leaving} onClick={() => { void retryStartup(); }}><RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆</Button>
-    </div>}
-    {src ? <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
-      : !error && <div className="flex flex-1 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>}
-    <ChatProcessPanel host={processHost} storyId={returnTarget.current.storyId} branchId={returnTarget.current.branchId} open={processOpen && active} onOpenChange={setProcessOpen} />
-    <RoleplayGuide open={guideOpen && active} onOpenChange={changeGuide} runtimeReady={ready} onModels={() => {
-      if (ready) openSettings('models'); else { saveSettingsSection('ai'); navigate('/settings'); }
-    }} onRuntime={() => { if (ready) openSettings('runtime'); }} />
-    <AlertDialog open={confirmExit} onOpenChange={setConfirmExit}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>离开未保存的聊天？</AlertDialogTitle>
-          <AlertDialogDescription>本次保存没有完成。离开后，尚未保存的回复、编辑和输入可能丢失。建议先取消并“导出当前内容”；确认离开会直接{pendingExit.current?.kind === 'close' ? '关闭窗口' : '离开聊天'}。</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>留在聊天</AlertDialogCancel>
-          <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { void goToDestination(pendingExit.current ?? { kind: 'release' }); }}>确认离开</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  </div></div></>;
+          <Button variant="ghost" size="icon" aria-label="关闭后台聊天" disabled={leaving} onClick={() => { void closeChat(); }}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>,
+        taskDock,
+      )}
+      {detached && detachedContainer ? createPortal(shellContent, detachedContainer) : shellContent}
+    </>
+  );
 }

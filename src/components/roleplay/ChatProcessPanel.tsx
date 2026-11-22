@@ -12,15 +12,15 @@ const noSubscribe = () => () => {};
 const statusText = { pending: '进行中', succeeded: '模型回复完成', failed: '生成未完成', cancelled: '已停止' };
 const elapsed = (ms: number) => ms < 1000 ? `${Math.max(0, ms)} 毫秒` : `${(ms / 1000).toFixed(2)} 秒`;
 
-export function ChatProcessPanel({ host, storyId, branchId, open, onOpenChange }: {
-  host?: TavernHost; storyId: string; branchId?: string | null; open: boolean; onOpenChange: (open: boolean) => void;
+export function ChatProcessPanel({ host, storyId, branchId, open, onOpenChange, portalContainer }: {
+  host?: TavernHost; storyId: string; branchId?: string | null; open: boolean; onOpenChange: (open: boolean) => void; portalContainer?: HTMLElement | null;
 }) {
   const records = useSyncExternalStore(open && host ? host.processLog.subscribe : noSubscribe,
     host ? host.processLog.snapshot : emptySnapshot);
   const turns = records.filter(record => record.storyId === storyId && record.branchId === (branchId ?? null)).slice().reverse();
   const [view, setView] = useState<'timeline' | 'compare'>('timeline');
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent className="flex w-full flex-col sm:max-w-2xl" aria-label="聊天过程">
+    <SheetContent container={portalContainer} className="flex w-full flex-col sm:max-w-2xl" aria-label="聊天过程">
       <SheetHeader className="shrink-0 pr-8">
         <SheetTitle>聊天过程</SheetTitle>
         <SheetDescription>查看当前故事与分支中，每轮实际发生的请求、回复处理和保存。保留本次打开聊天期间最近 20 轮，详情过长会截断。</SheetDescription>

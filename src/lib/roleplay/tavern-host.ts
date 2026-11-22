@@ -7,7 +7,7 @@ import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
 import type { WorldBookItem } from '@/types/worldbook';
 import type { PresetItem } from '@/types/preset';
-import { isApiProfileConfigured, loadApiProfiles, storeProfileModelsIfCurrent } from '@/components/ai-tools/api-profiles';
+import { isApiProfileConfigured, loadApiProfiles, storeProfileModelsIfCurrent, syncActiveProfileIdFromTavern } from '@/components/ai-tools/api-profiles';
 import { getApiConfigSyncState, restoreMissingApiProfiles } from '@/lib/vault/sensitive-config';
 import { fetchModels } from '@/lib/llm';
 import { openStorySession, type StoryCommit, type RoleplayStorySession } from './story-session';
@@ -101,6 +101,7 @@ export async function createTavernHost(options: TavernHostOptions) {
   ]);
   let preferences = initialPreferences;
   await restoreMissingApiProfiles([preferences.mainProfileId, preferences.toolProfileId]);
+  if (preferences.mainProfileId) syncActiveProfileIdFromTavern(preferences.mainProfileId);
   let libraryTags = await getLibraryTagPreferences();
   const characters = new Map<string, Pick<ArchiveCharacter, 'id' | 'assets' | 'pngBase64' | 'tags' | 'type' | 'rating' | 'roleplayWorldbookDisabled'> & { cardRevision: string }>();
   const cardEditorVersions = new Map<string, string>();
@@ -712,6 +713,7 @@ export async function createTavernHost(options: TavernHostOptions) {
               ...(typeof body.mainProfileId === 'string' ? { mainProfileId: body.mainProfileId } : {}),
               ...(typeof body.toolProfileId === 'string' ? { toolProfileId: body.toolProfileId } : {}),
             });
+            if (typeof body.mainProfileId === 'string') syncActiveProfileIdFromTavern(body.mainProfileId);
           }
           const { profiles, activeId } = loadApiProfiles();
           const mainProfileId = preferences.mainProfileId ?? activeId;
@@ -788,6 +790,8 @@ export async function createTavernHost(options: TavernHostOptions) {
           return json({ settings: settingsSnapshot(), characters: cards, groups: [], avatars: avatarNames(), secret_state: {}, ios_policy: null });
         }
         if (pathname === '/ste/library/refresh') {
+          const prevLinkedRef = [...selectedStoryAssets ?? [], ...characters.get(selected.avatar)?.assets ?? []].find(ref => ref.kind === 'preset');
+          const prevLinkedName = prevLinkedRef ? (assets.presetName(prevLinkedRef.assetId) ?? '') : '';
           const presetRenames = await assets.refreshPresets();
           const worldRenames = await assets.refreshWorlds();
           libraryTags = await getLibraryTagPreferences();
@@ -796,10 +800,18 @@ export async function createTavernHost(options: TavernHostOptions) {
           for (const avatar of characters.keys()) if (!avatars.has(avatar)) characters.delete(avatar);
           selectedStoryAssets = (await repos.stories.get(selected.storyId))?.assets;
           if (!isCurrent()) throw new Error('文件库已切换');
+          const nextLinkedRef = [...selectedStoryAssets ?? [], ...characters.get(selected.avatar)?.assets ?? []].find(ref => ref.kind === 'preset');
+          const nextLinkedName = nextLinkedRef ? (assets.presetName(nextLinkedRef.assetId) ?? '') : '';
+          const prevMapped = presetRenames[prevLinkedName] ?? prevLinkedName;
+          const defaultPresetName = String(object(defaults.settings?.oai_settings).preset_settings_openai || 'Default');
+          const externalPresetSwitch = nextLinkedName !== prevMapped
+            ? (nextLinkedName || defaultPresetName)
+            : undefined;
           const snapshot = settingsSnapshot();
           const settings = JSON.parse(snapshot.settings);
           return json({ tags: settings.tags, tag_map: settings.tag_map, openai_settings: snapshot.openai_settings,
-            openai_setting_names: snapshot.openai_setting_names, presetRenames, presetRevisions: assets.presetRevisions(), worldRenames });
+            openai_setting_names: snapshot.openai_setting_names, presetRenames, presetRevisions: assets.presetRevisions(),
+            worldRenames, externalPresetSwitch });
         }
         if (pathname === '/api/settings/get') return json(settingsSnapshot());
         if (pathname === '/api/settings/save') {

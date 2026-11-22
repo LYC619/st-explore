@@ -7,7 +7,7 @@ import {
   type APIConfig, type ApiProfile, DEFAULT_API_URL, DEFAULT_MODEL,
   generateProfileId, persistProfiles, loadApiProfiles,
   storeProfileModelsIfCurrent,
-  normalizeModelNames,
+  normalizeModelNames, syncTavernMainProfileToActive,
 } from './api-profiles';
 import { subscribeApiProfileChanges } from './useApiProfileState';
 import { getApiConfigSyncState } from '@/lib/vault/sensitive-config';
@@ -83,6 +83,7 @@ export function useApiProfiles() {
     const target = ps.find((p) => p.id === id);
     if (!target) return;
     if (!persist(ps, id)) return;
+    syncTavernMainProfileToActive(id);
     setProfiles(ps);
     setActiveId(id);
     loadIntoForm(target);
@@ -147,6 +148,7 @@ export function useApiProfiles() {
       favoriteModels,
     };
     if (!persist(ps, activeId ? aid : ps[idx].id)) return false;
+    syncTavernMainProfileToActive(activeId ? aid : ps[idx].id);
     setActiveId(ps[idx].id);
     setProfiles(ps);
     setDirty(false);

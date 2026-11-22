@@ -669,7 +669,7 @@ test('browser Back retains the current editor and explicit close flushes it', as
   page.on('pageerror', error => errors.push(error.message));
   const storyId = await seed(page);
   await page.goto(`/story/${storyId}`);
-  await page.getByRole('button', { name: '开始游玩' }).click();
+  await page.getByRole('button', { name: '继续聊天' }).click();
   const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
   const message = tavern.locator('#chat .mes').first();
   await expect(message.locator('.mes_text')).toHaveText('请进，外面在下雨。');
@@ -691,7 +691,7 @@ test('browser Back retains the current editor and explicit close flushes it', as
 test('parked chat pauses idle status polling and resumes for background generation and return', async ({ page }) => {
   const storyId = await seed(page);
   await page.goto(`/story/${storyId}`);
-  await page.getByRole('button', { name: '开始游玩' }).click();
+  await page.getByRole('button', { name: '继续聊天' }).click();
   const tavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
   await expect(tavern.locator('#chat')).toContainText('请进，外面在下雨。');
   await page.evaluate(() => {
@@ -1009,4 +1009,37 @@ test('real BaiBai 1.2.7 installs, summarizes through ST, survives reopening and 
   expect(requests.filter(request => request.model === 'fixture-baibai-tool')).toHaveLength(before);
   expect(errors).toEqual([]);
   await info.attach('baibai-actual-snapshot', { body: JSON.stringify({ snapshot, swipeBehavior }, null, 2), contentType: 'application/json' });
+});
+
+
+test('independent split-screen Tavern window shares the live VaultBackend while the main window live-syncs the story in read-only mode', async ({ page }) => {
+  const storyId = await seed(page);
+  await page.goto(`/play/${storyId}`);
+  const inlineTavern = page.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(inlineTavern.locator('#chat')).toContainText('请进，外面在下雨。');
+
+  const popupPromise = page.waitForEvent('popup');
+  await page.getByRole('button', { name: '独立窗口', exact: true }).click();
+  const popup = await popupPromise;
+
+  // Main window automatically returns to the story reader with live read-only sync banner and zero taskDock pill
+  await expect(page).toHaveURL(new RegExp(`/story/${storyId}`));
+  await expect(page.locator('[data-detached-sync-banner]')).toContainText('正在独立酒馆窗口对话中');
+  await expect(page.getByRole('button', { name: /^返回聊天 ·/ })).toHaveCount(0);
+
+  // Detached popup window mounts SillyTavern sharing the main window's TavernHost and streams a reply
+  const detachedTavern = popup.frameLocator('iframe[title="SillyTavern 角色扮演"]');
+  await expect(detachedTavern.locator('#chat')).toContainText('请进，外面在下雨。');
+  await detachedTavern.locator('#send_textarea').fill('分屏窗口里打招呼');
+  await detachedTavern.locator('#send_but').click();
+  await expect(detachedTavern.locator('#chat')).toContainText('门外传来轻轻的敲门声。');
+
+  // Main window reader live-syncs the newly generated floor automatically without reloading
+  await expect(page.locator('main')).toContainText('门外传来轻轻的敲门声。');
+
+  // Docking back inline closes the detached window and restores inline /play/:id
+  await popup.getByRole('button', { name: '收回页内', exact: true }).click();
+  await expect.poll(() => popup.isClosed()).toBe(true);
+  await expect(page).toHaveURL(new RegExp(`/play/${storyId}`));
+  await expect(page.frameLocator('iframe[title="SillyTavern 角色扮演"]').locator('#chat')).toContainText('门外传来轻轻的敲门声。');
 });

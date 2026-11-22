@@ -22,7 +22,7 @@ test('a complete story copy keeps record ownership independent through detail-pa
     return { characterId: card.id, sourceId: story.id };
   });
   await page.goto(`/character/${fixture.characterId}`);
-  await page.getByRole('button', { name: '复制故事', exact: true }).click();
+  await page.getByRole('button', { name: '更多故事操作', exact: true }).click(); await page.getByRole('menuitem', { name: '复制故事', exact: true }).click();
   await expect(page.getByTitle('原故事（副本）', { exact: true })).toBeVisible();
   const ownership = await page.evaluate(async sourceId => {
     const db = await import('/src/lib/archive-db.ts');

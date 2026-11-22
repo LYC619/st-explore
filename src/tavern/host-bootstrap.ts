@@ -69,6 +69,7 @@ interface LibraryRefreshPayload {
     presetRevisions: Record<string, string>;
     worldRenames: Record<string, string>;
     presetRenames: Record<string, string>;
+    externalPresetSwitch?: string;
     tags: { id: string }[];
     openai_settings: string[];
     openai_setting_names: string[];
@@ -87,7 +88,10 @@ const { lodash } = await loadUpstream('/lib.js');
 const { installChatSurfaceApi } = await loadUpstream('/tauri/main/api/chat-surface.js');
 
 const channel = new URLSearchParams(location.search).get('host');
-const resolvedHost = channel ? window.parent.__STE_TAVERN_HOSTS__?.get(channel) : undefined;
+const hostRegistry = window.parent?.__STE_TAVERN_HOSTS__
+    ?? (window.parent?.opener as Window | undefined)?.__STE_TAVERN_HOSTS__
+    ?? (window.opener as Window | undefined)?.__STE_TAVERN_HOSTS__;
+const resolvedHost = channel ? hostRegistry?.get(channel) : undefined;
 if (!resolvedHost) throw new Error('请从 STE 的聊天或故事页面打开酒馆');
 const host = resolvedHost;
 window._ = lodash;
@@ -389,7 +393,9 @@ window.__STE_TAVERN_REFRESH_LIBRARY__ = async () => {
     const openai = await loadUpstream('/scripts/openai.js');
     const prevSelected = openai.oai_settings.preset_settings_openai;
     const prevRevision = prevRevisions[prevSelected];
-    const selected = data.presetRenames[prevSelected] ?? prevSelected;
+    const selected = (!host.isGenerating() && data.externalPresetSwitch)
+        ? data.externalPresetSwitch
+        : (data.presetRenames[prevSelected] ?? prevSelected);
     openai.openai_settings.splice(0, openai.openai_settings.length, ...data.openai_settings.map(value => JSON.parse(value) as unknown));
     for (const key of Object.keys(openai.openai_setting_names)) delete openai.openai_setting_names[key];
     const picker = document.querySelector<HTMLSelectElement>('#settings_preset_openai')!;

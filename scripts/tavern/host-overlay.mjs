@@ -72,7 +72,7 @@ export async function createHostAssets(source, cacheRelative = 'host') {
     }
     return `// Report even failures that occur before the host bridge module is loaded.\n`
       + `globalThis.__STE_TAVERN_STARTUP__ = (message, failed = false) => {\n`
-      + `    const host = window.parent.__STE_TAVERN_HOSTS__?.get(new URLSearchParams(location.search).get('host'));\n`
+      + `    const host = (window.parent?.__STE_TAVERN_HOSTS__ ?? window.parent?.opener?.__STE_TAVERN_HOSTS__ ?? window.opener?.__STE_TAVERN_HOSTS__)?.get(new URLSearchParams(location.search).get('host'));\n`
       + `    host?.startup(String(message), failed);\n};\n` + text;
   });
   await override('/scripts/personas.js', text => replaceOnce(text,

@@ -8,12 +8,13 @@ interface RoleplayGuideProps {
   onRuntime: () => void;
   inChat?: boolean;
   runtimeReady?: boolean;
+  portalContainer?: HTMLElement | null;
 }
 
-export function RoleplayGuide({ open, onOpenChange, onModels, onRuntime, inChat = true, runtimeReady = true }: RoleplayGuideProps) {
+export function RoleplayGuide({ open, onOpenChange, onModels, onRuntime, inChat = true, runtimeReady = true, portalContainer }: RoleplayGuideProps) {
   const openSettings = (action: () => void) => { onOpenChange(false); action(); };
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
+    <DialogContent container={portalContainer} className="max-h-[85dvh] overflow-y-auto sm:max-w-xl">
       <DialogHeader>
         <DialogTitle>聊天与记忆指南</DialogTitle>
         <DialogDescription>先选主模型，再按需要开启记忆。聊天窗口沿用 SillyTavern 的操作方式。</DialogDescription>

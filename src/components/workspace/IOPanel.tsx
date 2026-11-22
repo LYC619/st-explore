@@ -36,6 +36,7 @@ interface IOPanelProps {
   branchId: string | null;
   line: BranchLine;
   settings: ExportSettings;
+  readOnly?: boolean;
   /** 与工作区共用的故事修改入口（dirty+防抖落库） */
   onStoryUpdate: (fn: (cur: ArchiveStory) => ArchiveStory) => void;
 }
@@ -55,7 +56,7 @@ function downloadJSON(name: string, content: string): void {
 
 const fmtTime = (t?: number) => (t ? new Date(t).toLocaleString('zh-CN') : '从未');
 
-export function IOPanel({ story, branchId, line, settings, onStoryUpdate }: IOPanelProps) {
+export function IOPanel({ story, branchId, line, settings, readOnly = false, onStoryUpdate }: IOPanelProps) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<SummaryItem[]>([]);
@@ -89,6 +90,7 @@ export function IOPanel({ story, branchId, line, settings, onStoryUpdate }: IOPa
   }, [story.id, artifactsReloadKey]);
 
   const markExported = () => {
+    if (readOnly) return;
     onStoryUpdate((cur) => ({ ...cur, lastExportedAt: Date.now() }));
   };
 
@@ -215,12 +217,12 @@ export function IOPanel({ story, branchId, line, settings, onStoryUpdate }: IOPa
           />
           <div className="flex flex-wrap items-center gap-2">
             {canReimportFromSource && (
-              <Button size="sm" onClick={handleReimportFromSource}>
+              <Button size="sm" disabled={readOnly} onClick={handleReimportFromSource}>
                 <RefreshCw className="w-4 h-4 mr-1.5" />
                 按原绑定文件重新导入
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
+            <Button variant="outline" size="sm" disabled={readOnly} onClick={() => fileRef.current?.click()}>
               <FileDown className="w-4 h-4 mr-1.5" />
               {canReimportFromSource ? '另选文件重新导入' : '选择文件重新导入'}
             </Button>
@@ -285,7 +287,7 @@ export function IOPanel({ story, branchId, line, settings, onStoryUpdate }: IOPa
       </Card>
 
       {/* ③ 写回 ST：客户端 + 已绑定原路径 = 真实现（阶段7.5），否则保留说明占位 */}
-      {isTauri() && story.characterId && story.sourcePath ? (
+      {!readOnly && isTauri() && story.characterId && story.sourcePath ? (
         <WritebackSection story={story} onStoryUpdate={onStoryUpdate} />
       ) : (
         <Card>

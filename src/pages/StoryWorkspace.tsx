@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BookOpen, BookOpenCheck, BookOpenText, ArrowDownUp, MessageSquare, Cpu,
-  ScrollText, NotebookPen, PenLine, Network, Link2, PanelLeftClose,
+  ScrollText, NotebookPen, PenLine, Network, Link2, PanelLeftClose, ExternalLink,
 } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,13 @@ import { isOrganizeWorkspaceView } from '@/lib/story-workspace-layout';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 import { useViewport } from '@/hooks/use-viewport';
 import { getVaultEpoch } from '@/lib/vault/active';
+import { subscribeRecordChanges } from '@/lib/repo/changes';
+import {
+  focusDetachedTavernWindow,
+  launchRoleplayTarget,
+  preopenDetachedTavernWindow,
+  useRoleplaySessionState,
+} from '@/lib/roleplay/detached-window';
 
 const RAIL_COLLAPSED_STORAGE_KEY = 'ste-story-rail-collapsed';
 
@@ -137,6 +144,8 @@ const StoryWorkspace = () => {
   const [playBusy, setPlayBusy] = useState(false);
   const playBusyRef = useRef(false);
   const workbenchRef = useRef<ChatWorkbenchHandle>(null);
+  const roleplaySession = useRoleplaySessionState();
+  const isLiveInDetachedTavern = Boolean(roleplaySession.detached && id && roleplaySession.openChat?.id === id);
 
   useEffect(() => {
     const stateView = (location.state as StoryWorkspaceLocationState | null)?.view;
@@ -208,6 +217,31 @@ const StoryWorkspace = () => {
       });
     });
   }, []);
+
+  useEffect(() => {
+    if (!isLiveInDetachedTavern || !id) return undefined;
+    let alive = true;
+    const syncLatest = () => {
+      const epoch = getVaultEpoch();
+      void getArchiveStory(id)
+        .then((latest) => {
+          if (!alive || !latest || epoch !== getVaultEpoch()) return;
+          storyRef.current = latest;
+          setStory(latest);
+        })
+        .catch((err) => {
+          console.warn('[StoryWorkspace] 实时同步独立窗口最新楼层未成功:', err);
+        });
+    };
+    syncLatest();
+    const off = subscribeRecordChanges((change) => {
+      if (change.store === 'archiveStories' && change.id === id) syncLatest();
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [id, isLiveInDetachedTavern]);
 
   // 加载故事 + 角色；记录 lastViewedAt（排序依据，不动 updatedAt）
   useEffect(() => {
@@ -333,6 +367,7 @@ const StoryWorkspace = () => {
   const line = story ? getBranchLine(story, branchId) : undefined;
 
   const handleSessionChange = useCallback((next: ChatSession) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => {
       let updated = updateBranchLine(cur, branchId, { session: next });
       if (branchId === null && next.title && next.title !== cur.title) {
@@ -340,19 +375,22 @@ const StoryWorkspace = () => {
       }
       return updated;
     });
-  }, [mutateStory, branchId]);
+  }, [isLiveInDetachedTavern, mutateStory, branchId]);
 
   const handleMarkersChange = useCallback((next: ArchiveStory['markers']) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => updateBranchLine(cur, branchId, { markers: next }));
-  }, [mutateStory, branchId]);
+  }, [isLiveInDetachedTavern, mutateStory, branchId]);
 
   const handleFavoritesChange = useCallback((next: string[]) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => updateBranchLine(cur, branchId, { favorites: next }));
-  }, [mutateStory, branchId]);
+  }, [isLiveInDetachedTavern, mutateStory, branchId]);
 
   const handleFloorChange = useCallback((floor: number) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => updateBranchLine(cur, branchId, { lastFloor: floor }));
-  }, [mutateStory, branchId]);
+  }, [isLiveInDetachedTavern, mutateStory, branchId]);
 
   const handleSettingsChange = useCallback((next: NonNullable<ArchiveStory['settings']>) => {
     mutateStory((cur) => {
@@ -409,7 +447,7 @@ const StoryWorkspace = () => {
   }, [branchId, mutateStory, setSearchParams]);
 
   const handleImportBranch = async (files: FileList | null) => {
-    if (!files || files.length === 0 || !story) return;
+    if (isLiveInDetachedTavern || !files || files.length === 0 || !story) return;
     let ok = 0;
     let fail = 0;
     let lastId: string | null = null;
@@ -449,6 +487,7 @@ const StoryWorkspace = () => {
   };
 
   const handleRenameBranch = (bid: string, name: string) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => ({
       ...cur,
       branches: (cur.branches ?? []).map((b) => (b.id === bid ? { ...b, name, updatedAt: Date.now() } : b)),
@@ -457,6 +496,7 @@ const StoryWorkspace = () => {
   };
 
   const handleDeleteBranch = (bid: string) => {
+    if (isLiveInDetachedTavern) return;
     mutateStory((cur) => ({
       ...cur,
       branches: (cur.branches ?? []).filter((b) => b.id !== bid),
@@ -561,6 +601,7 @@ const StoryWorkspace = () => {
       <BranchPanel
         story={story}
         activeBranchId={branchId}
+        readOnly={isLiveInDetachedTavern}
         onSwitch={handleSwitchBranch}
         onImportBranch={handleImportBranch}
         onRenameBranch={handleRenameBranch}
@@ -577,17 +618,31 @@ const StoryWorkspace = () => {
   ) : null;
 
   const runContinuePlay = async () => {
+    if (isLiveInDetachedTavern) {
+      focusDetachedTavernWindow();
+      return;
+    }
     if (playBusyRef.current) return;
     playBusyRef.current = true;
     setPlayBusy(true);
     const epoch = getVaultEpoch();
+    const reservation = preopenDetachedTavernWindow();
     try {
       await saverRef.current.flush();
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       const target = await prepareStoryPlay(story.id, branchId);
-      if (epoch !== getVaultEpoch()) return;
-      navigate(target.path);
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({
+        storyId: target.storyId,
+        branchId: target.branchId,
+        navigate,
+        reservation,
+      });
     } catch (error) {
+      reservation?.cancelIfUnused();
       toast({
         title: '保存未完成，暂未进入聊天',
         description: error instanceof Error ? error.message : String(error),
@@ -715,7 +770,20 @@ const StoryWorkspace = () => {
             {view === 'read' && (
               <div className="flex items-start flex-wrap">
                 <div className={cn('flex-1', isCompact ? 'min-w-0' : 'min-w-[20rem]')}>
+                  {isLiveInDetachedTavern && (
+                    <div
+                      role="status"
+                      data-detached-sync-banner
+                      className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-4 py-2 text-xs text-[color:var(--text-primary)]"
+                    >
+                      <span>当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）</span>
+                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
+                        <ExternalLink className="w-3.5 h-3.5 mr-1" />聚焦酒馆窗口
+                      </Button>
+                    </div>
+                  )}
                   <ChatWorkbench
+                    readerMode={isLiveInDetachedTavern}
                     recordContext={{ storyId: story.id, branchId, flush: () => saverRef.current.flush() }}
                     characterId={story.characterId}
                     characterAvatarUrl={characterAvatarUrl}
@@ -749,7 +817,7 @@ const StoryWorkspace = () => {
                             title="接着当前剧情进入酒馆继续聊"
                           >
                             <MessageSquare className="w-4 h-4 mr-1.5" />
-                            继续聊天
+                            {isLiveInDetachedTavern ? '聚焦酒馆窗口' : '继续聊天'}
                           </Button>
                         )}
                         <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+单栏或双页阅读（Esc 退出）">
@@ -790,6 +858,7 @@ const StoryWorkspace = () => {
                 branchId={branchId}
                 line={line}
                 settings={settings}
+                readOnly={isLiveInDetachedTavern}
                 onStoryUpdate={mutateStory}
               />
             )}
@@ -797,7 +866,7 @@ const StoryWorkspace = () => {
         </div>
       </div>
 
-      <STUpdateHint story={story} onStoryUpdate={mutateStory} />
+      {!isLiveInDetachedTavern && <STUpdateHint story={story} onStoryUpdate={mutateStory} />}
       <BindStoryDialog open={bindOpen} onOpenChange={setBindOpen} onSelect={handleBind} />
 
       {novelOpen && (
@@ -806,13 +875,13 @@ const StoryWorkspace = () => {
           markers={line.markers}
           regexRules={settings.regexRules}
           onClose={() => setNovelOpen(false)}
-          onMarkersChange={handleMarkersChange}
+          onMarkersChange={isLiveInDetachedTavern ? undefined : handleMarkersChange}
           favorites={line.favorites}
-          onFavoritesChange={handleFavoritesChange}
+          onFavoritesChange={isLiveInDetachedTavern ? undefined : handleFavoritesChange}
           initialFloor={line.lastFloor}
           onFloorChange={handleFloorChange}
           progressKey={`${story.id}:${branchId ?? 'main'}`}
-          polish={{ story, branchId }}
+          polish={isLiveInDetachedTavern ? undefined : { story, branchId }}
           renderTopActions={story.characterId ? () => (
             <Button
               variant="outline"
@@ -822,7 +891,7 @@ const StoryWorkspace = () => {
               onClick={() => { void runContinuePlay(); }}
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              继续聊天
+              {isLiveInDetachedTavern ? '聚焦酒馆窗口' : '继续聊天'}
             </Button>
           ) : undefined}
         />

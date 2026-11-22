@@ -25,13 +25,22 @@ interface BranchPanelProps {
   story: ArchiveStory;
   /** null = 主线 */
   activeBranchId: string | null;
+  readOnly?: boolean;
   onSwitch: (branchId: string | null) => void;
   onImportBranch: (files: FileList | null) => void;
   onRenameBranch: (branchId: string, name: string) => void;
   onDeleteBranch: (branchId: string) => void;
 }
 
-export function BranchPanel({ story, activeBranchId, onSwitch, onImportBranch, onRenameBranch, onDeleteBranch }: BranchPanelProps) {
+export function BranchPanel({
+  story,
+  activeBranchId,
+  readOnly = false,
+  onSwitch,
+  onImportBranch,
+  onRenameBranch,
+  onDeleteBranch,
+}: BranchPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [renameTarget, setRenameTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -54,7 +63,7 @@ export function BranchPanel({ story, activeBranchId, onSwitch, onImportBranch, o
         <span className="text-xs text-muted-foreground shrink-0">
           {opts.count} 楼{opts.lastFloor ? ` · 读到 #${opts.lastFloor}` : ''}
         </span>
-        {opts.id !== null && (
+        {opts.id !== null && !readOnly && (
           <span className="hidden group-hover:flex items-center gap-0.5 shrink-0">
             <button
               className="p-0.5 rounded hover:bg-accent text-muted-foreground hover:text-foreground"
@@ -80,24 +89,28 @@ export function BranchPanel({ story, activeBranchId, onSwitch, onImportBranch, o
     <div className="space-y-1">
       <div className="flex items-center justify-between px-2">
         <p className="text-xs font-medium text-muted-foreground">分支</p>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="px-1.5 text-xs text-muted-foreground"
-          onClick={() => fileRef.current?.click()}
-          title="把 ST 里同一故事的另一份聊天文件（JSONL/JSON）导入为分支"
-        >
-          <Plus className="w-3 h-3 mr-0.5" />
-          导入分支
-        </Button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".jsonl,.json"
-          multiple
-          className="hidden"
-          onChange={(e) => { onImportBranch(e.target.files); e.target.value = ''; }}
-        />
+        {!readOnly && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="px-1.5 text-xs text-muted-foreground"
+              onClick={() => fileRef.current?.click()}
+              title="把 ST 里同一故事的另一份聊天文件（JSONL/JSON）导入为分支"
+            >
+              <Plus className="w-3 h-3 mr-0.5" />
+              导入分支
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".jsonl,.json"
+              multiple
+              className="hidden"
+              onChange={(e) => { onImportBranch(e.target.files); e.target.value = ''; }}
+            />
+          </>
+        )}
       </div>
       {row({ id: null, name: '主线', count: story.session.messages.length, lastFloor: story.lastFloor })}
       {branches.map((b) =>

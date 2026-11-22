@@ -51,6 +51,13 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { buildStoryFileExport, type StoryFileFormat } from '@/lib/story-file-export';
 import { saveTextFile } from '@/lib/roleplay/export-package-file';
+import {
+  closeDetachedTavernWindow,
+  getRoleplaySessionSnapshot,
+  launchRoleplayTarget,
+  preopenDetachedTavernWindow,
+  setRoleplayOpenChat,
+} from '@/lib/roleplay/detached-window';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { subscribePortraitCloudSaves } from '@/lib/portrait-cloud-task';
 import { editsFromNormalized, type CardEdits } from '@/lib/card-export';
@@ -435,6 +442,19 @@ const CharacterPage = () => {
 
   const handleConfirmDeleteStory = async (options: RemoveOptions) => {
     if (!storyToDelete) return;
+    const activeSession = getRoleplaySessionSnapshot();
+    if (activeSession.openChat?.id === storyToDelete.id) {
+      if (activeSession.generating) {
+        toast({
+          title: '无法删除正在生成的故事',
+          description: '请先在酒馆窗口停止本轮生成或关闭该对话后再删除。',
+          variant: 'destructive',
+        });
+        return;
+      }
+      closeDetachedTavernWindow();
+      setRoleplayOpenChat(null);
+    }
     await deleteArchiveStory(storyToDelete.id, options);
     setStoryToDelete(null);
     await load();
@@ -598,15 +618,31 @@ const CharacterPage = () => {
     if (playPendingRef.current) return;
     playPendingRef.current = true;
     const epoch = getVaultEpoch();
+    const reservation = preopenDetachedTavernWindow();
     try {
-      if (!(await flushUnsavedCardEdits())) return;
+      if (!(await flushUnsavedCardEdits())) {
+        reservation?.cancelIfUnused();
+        return;
+      }
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
       const target = await prepareStoryPlay(storyId, branchId);
-      if (epoch !== getVaultEpoch()) return;
-      navigate(target.path);
-    } catch (error) { toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' }); }
-    finally { playPendingRef.current = false; }
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({
+        storyId: target.storyId,
+        branchId: target.branchId,
+        navigate,
+        reservation,
+      });
+    } catch (error) {
+      reservation?.cancelIfUnused();
+      toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' });
+    } finally {
+      playPendingRef.current = false;
+    }
   };
 
   const startWithGreeting = async (greetingIndex: number) => {
@@ -614,13 +650,21 @@ const CharacterPage = () => {
     playStartLock.current = true;
     setStartingGreetingIdx(greetingIndex);
     const epoch = getVaultEpoch();
+    const reservation = preopenDetachedTavernWindow();
     try {
-      if (!(await flushUnsavedCardEdits())) return;
+      if (!(await flushUnsavedCardEdits())) {
+        reservation?.cancelIfUnused();
+        return;
+      }
       const { startCharacterStory } = await import('@/lib/roleplay/start-story');
       const storyId = await startCharacterStory(character.id, { greetingIndex });
-      if (epoch !== getVaultEpoch()) return;
-      navigate('/play/' + encodeURIComponent(storyId));
+      if (epoch !== getVaultEpoch()) {
+        reservation?.cancelIfUnused();
+        return;
+      }
+      launchRoleplayTarget({ storyId, navigate, reservation });
     } catch (error) {
+      reservation?.cancelIfUnused();
       toast({
         title: '无法开启新对话',
         description: error instanceof Error ? error.message : String(error),
@@ -802,16 +846,27 @@ const CharacterPage = () => {
                {activeTab === 'stories' && <Button size="sm" disabled={startingPlay} onClick={() => {
                  if (playStartLock.current || character.id !== id) return;
                  const epoch = getVaultEpoch();
+                 const reservation = preopenDetachedTavernWindow();
                  playStartLock.current = true; setStartingPlay(true);
                  void flushUnsavedCardEdits()
                    .then(ok => {
-                     if (!ok) return null;
+                     if (!ok) {
+                       reservation?.cancelIfUnused();
+                       return null;
+                     }
                      return import('@/lib/roleplay/start-story').then(module => module.startCharacterStory(character.id));
                    })
                    .then(storyId => {
-                     if (storyId && epoch === getVaultEpoch()) navigate('/play/' + encodeURIComponent(storyId));
+                     if (!storyId || epoch !== getVaultEpoch()) {
+                       reservation?.cancelIfUnused();
+                       return;
+                     }
+                     launchRoleplayTarget({ storyId, navigate, reservation });
                    })
-                   .catch(error => toast({ title: '无法开始新聊天', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }))
+                   .catch(error => {
+                     reservation?.cancelIfUnused();
+                     toast({ title: '无法开始新聊天', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+                   })
                    .finally(() => { playStartLock.current = false; setStartingPlay(false); });
                }}><MessageSquare className="mr-1 h-3.5 w-3.5" />{startingPlay ? '正在打开…' : '新开聊天'}</Button>}
                {/* 导出阅读包：只在故事 tab 且有故事时给——包的主体就是故事正文，
