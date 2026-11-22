@@ -11,6 +11,11 @@ const SUMMARY_KIND_STORAGE_KEY = 'ste-editor-summary-kind-history';
 
 export type EditorStoryView = 'read' | 'io' | SummarySurfaceKind | 'tree';
 
+export interface OrganizeTarget {
+  type: 'record' | 'tree';
+  id: string;
+}
+
 const SUMMARY_KINDS = new Set<SummarySurfaceKind>(['volume', 'diary', 'diy', 'mini']);
 
 export function isSummarySurfaceKind(value: string | null | undefined): value is SummarySurfaceKind {
@@ -82,6 +87,23 @@ export function buildEditorStoryPath(storyId: string, view: EditorStoryView): st
   return `/story/${encodeURIComponent(id)}?view=${view}`;
 }
 
+export function buildStoryReadPath(
+  storyId: string,
+  options?: { branchId?: string | null; floor?: number },
+): string {
+  const id = normalizeStoryId(storyId);
+  if (!id) throw new Error('故事 ID 无效');
+  const params = new URLSearchParams();
+  if (options?.branchId !== undefined) {
+    params.set('branch', options.branchId ?? '');
+  }
+  if (typeof options?.floor === 'number' && Number.isSafeInteger(options.floor) && options.floor >= 0) {
+    params.set('floor', String(options.floor));
+  }
+  const query = params.toString();
+  return `/story/${encodeURIComponent(id)}${query ? `?${query}` : ''}`;
+}
+
 export function buildEditorChatPath(storyId: string): string {
   const id = normalizeStoryId(storyId);
   if (!id) throw new Error('故事 ID 无效');
@@ -98,7 +120,7 @@ export function resolveEditorStoryId(
 
 export function editorStoryPathForNavKey(key: string, storyId: string | null): string | null {
   if (!storyId) return null;
-  if (key === 'chat') return buildEditorChatPath(storyId);
+  if (key === 'chat') return buildStoryReadPath(storyId);
   if (key === 'summary') return buildEditorStoryPath(storyId, getEditorSummaryKind(storyId) ?? 'volume');
   if (key === 'story-tree') return buildEditorStoryPath(storyId, 'tree');
   return null;

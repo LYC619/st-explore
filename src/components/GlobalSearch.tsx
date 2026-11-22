@@ -53,10 +53,21 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
     }
   }, []);
 
-  // 覆盖 WebView2 自带的 Ctrl+F 页内查找，统一进入应用全局搜索。
+  // 覆盖 WebView2 自带的 Ctrl+F 页内查找：当前屏幕有挂载正文搜索框（且未被全屏小说层遮挡）时优先聚焦正文搜索，否则进全局搜索。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+      if ((e.ctrlKey && e.key.toLowerCase() === 'f') || (e.metaKey && e.key.toLowerCase() === 'f')) {
+        const novelOverlayOpen = Boolean(document.querySelector('[data-novel-surface]'));
+        if (!novelOverlayOpen) {
+          const localInputs = Array.from(document.querySelectorAll<HTMLInputElement>('[data-message-search-input]'));
+          const visibleLocal = localInputs.find((el) => el.offsetParent !== null || el.getClientRects().length > 0);
+          if (visibleLocal) {
+            e.preventDefault();
+            visibleLocal.focus();
+            visibleLocal.select();
+            return;
+          }
+        }
         e.preventDefault();
         inputRef.current?.focus();
       }
@@ -109,6 +120,9 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
         <Search className="w-3.5 h-3.5 shrink-0 text-[color:var(--text-faint)]" />
         <input
           ref={inputRef}
+          autoCorrect="off"
+          autoCapitalize="none"
+          spellCheck={false}
           value={query}
           onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
           onFocus={() => { setOpen(true); void loadEntries(); }}

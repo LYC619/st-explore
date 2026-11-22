@@ -17,7 +17,7 @@ import { EntryListPanel } from '@/components/worldbook/EntryListPanel';
 import { EntryEditorPane } from '@/components/worldbook/EntryEditorPane';
 import type { WorldBook, WorldBookItem } from '@/types/worldbook';
 import { generateWorldBookId } from '@/types/worldbook';
-import { saveWorldBook, getAllWorldBooks, getWorldBook, deleteWorldBook, pruneAutoSavedWorldBooks } from '@/lib/worldbook-db';
+import { saveWorldBook, getAllWorldBooks, getWorldBook, deleteWorldBook } from '@/lib/worldbook-db';
 import { appendEntries } from '@/lib/worldbook-entry-copy';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import { buildWorldBookSaveItem } from '@/lib/asset-save-record';
@@ -259,10 +259,9 @@ export default function WorldBookPage() {
         worldbook: wb,
         createdAt: now,
         updatedAt: now,
-        autoSaved: true,
+        autoSaved: false,
         ...(sourceModifiedAt === undefined ? {} : { sourceModifiedAt }),
       });
-      await pruneAutoSavedWorldBooks(5);
       if (!isCurrent()) return;
       const items = await getAllWorldBooks();
       if (isCurrent()) setSavedItems(items);

@@ -2,7 +2,7 @@ import type { RemoveOptions } from '@/lib/repo';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { MoveRecordDialog } from '@/components/organize/MoveRecordDialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
+import { Eye, LocateFixed, Plus, RotateCcw, Trash2, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,7 @@ interface SavedSummaryListProps {
   onView: (item: SummaryItem) => void;
   onRegenerate: (item: SummaryItem) => void;
   onChanged?: () => void;
+  onJumpToFloor?: (floor: number, branchId?: string | null) => void;
 }
 
 export function SavedSummaryList({
@@ -31,14 +32,23 @@ export function SavedSummaryList({
   onView,
   onRegenerate,
   onChanged,
+  onJumpToFloor,
 }: SavedSummaryListProps) {
   const { toast } = useToast();
   const [all, setAll] = useState<SummaryItem[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [moveRecord, setMoveRecord] = useState<SummaryItem | null>(null);
 
   const load = useCallback(() => {
-    getAllSummaries().then(setAll).catch(() => setAll([]));
+    getAllSummaries()
+      .then((list) => {
+        setAll(list);
+        setLoadFailed(false);
+      })
+      .catch(() => {
+        setLoadFailed(true);
+      });
   }, []);
 
   useEffect(() => { load(); }, [load, refreshKey]);
@@ -98,37 +108,69 @@ export function SavedSummaryList({
           )}
         </div>
 
-        {filtered.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-8 text-center">暂无总结</p>
+        {loadFailed ? (
+          <div role="alert" className="py-6 text-center space-y-2">
+            <p className="text-sm text-destructive">读取已保存记录失败，库内原有记录并未丢失。</p>
+            <Button variant="outline" size="sm" onClick={load}>重试读取</Button>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-8 text-center">暂无已保存记录，可在左侧生成或点右上角手动添加</p>
         ) : (
-          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1 scrollbar-thin">
-            {filtered.map((item) => (
-              <div key={item.id} className="flex items-center gap-2 p-2 rounded-md border hover:bg-accent/40 text-sm">
-                <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">{SUMMARY_KIND_LABELS[item.kind]}</Badge>
-                {summaryVolumeLabel(item) && <span className="text-xs text-muted-foreground shrink-0">{summaryVolumeLabel(item)}</span>}
-                <span className="truncate flex-1" title={item.title}>{item.title || '（无标题）'}</span>
-                <span className="text-xs text-muted-foreground shrink-0">{item.rangeDetached ? "原来源 " : ""}{item.floorStart}~{item.floorEnd}</span>
-                {!item.autoSaved && <Badge variant="secondary" className="text-[11px] px-1 py-0 shrink-0">永久</Badge>}
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <Button variant="ghost" size="icon" title="查看或编辑" onClick={() => onView(item)}><Eye className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" title={item.rangeDetached ? "请先在编辑器关联目标楼层" : "用相同设置重新生成"} disabled={item.rangeDetached} onClick={() => onRegenerate(item)}><RotateCcw className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="sm" onClick={() => setMoveRecord(item)}>移动</Button>
-                  <Button variant="ghost" size="icon" title="导出 Markdown" onClick={() => void handleExport(item)}><Upload className="w-3.5 h-3.5" /></Button>
-                  <Button variant="ghost" size="icon" className="text-destructive" title="删除" onClick={() => setDeleteId(item.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+          <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain pr-1 scrollbar-thin">
+            {filtered.map((item) => {
+              const jumpFloor = !item.rangeDetached && Number.isSafeInteger(item.floorStart)
+                ? item.floorStart
+                : (Number.isSafeInteger(item.source?.floor) ? item.source!.floor : null);
+              const canJump = jumpFloor !== null && !!onJumpToFloor;
+              return (
+                <div key={item.id} className="flex items-center gap-2 p-2 rounded-md border hover:bg-accent/40 text-sm">
+                  <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">{SUMMARY_KIND_LABELS[item.kind]}</Badge>
+                  {summaryVolumeLabel(item) && <span className="text-xs text-muted-foreground shrink-0">{summaryVolumeLabel(item)}</span>}
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left hover:text-primary transition-colors"
+                    onClick={() => onView(item)}
+                  >
+                    <span className="block truncate" title={item.title || '（无标题）'}>
+                      {item.title || '（无标题）'}
+                    </span>
+                  </button>
+                  {canJump ? (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-primary hover:bg-primary/10 shrink-0 tabular-nums"
+                      title={`跳回第 #${jumpFloor} 楼原文`}
+                      onClick={() => onJumpToFloor!(jumpFloor, item.branchId ?? null)}
+                    >
+                      <LocateFixed className="h-3 w-3" />
+                      {item.rangeDetached ? `#${jumpFloor}` : `#${item.floorStart}~${item.floorEnd}`}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                      {item.rangeDetached ? '原来源 ' : '#'}{item.floorStart}~{item.floorEnd}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button variant="ghost" size="icon" aria-label="查看或编辑" title="查看或编辑" onClick={() => onView(item)}><Eye className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" aria-label="用相同设置重新生成" title={item.rangeDetached ? '请先在编辑器关联目标楼层' : '用相同设置重新生成'} disabled={item.rangeDetached} onClick={() => onRegenerate(item)}><RotateCcw className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="sm" onClick={() => setMoveRecord(item)}>移动</Button>
+                    <Button variant="ghost" size="icon" aria-label="导出 Markdown" title="导出 Markdown" onClick={() => void handleExport(item)}><Upload className="w-3.5 h-3.5" /></Button>
+                    <Button variant="ghost" size="icon" className="text-destructive" aria-label="删除记录" title="删除" onClick={() => setDeleteId(item.id)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        <p className="shrink-0 text-xs text-muted-foreground">标“永久”的是手动保存记录；其他为自动暂存。查看后会切换到详情编辑。</p>
+        <p className="shrink-0 text-xs text-muted-foreground">所有已生成与手动添加的记录都会长久保存；点击标题可展开详情编辑，点击楼层范围可跳回原文。</p>
       </CardContent>
 
-      <DeleteConfirmDialog open={deleteId !== null} onOpenChange={open => { if (!open) setDeleteId(null); }}
+      <DeleteConfirmDialog open={deleteId !== null} onOpenChange={(open) => { if (!open) setDeleteId(null); }}
         title="删除这条总结？" description="该记录将从列表移除。"
         fileTarget={deleteId ? { store: 'summaries', id: deleteId } : undefined} onConfirm={handleDelete} />
-      <MoveRecordDialog open={!!moveRecord} record={moveRecord} onOpenChange={open => { if (!open) setMoveRecord(null); }}
-        onMoved={item => { load(); onChanged?.(); toast({ title: '记录已移动', description: item.bookTitle }); }} />
+      <MoveRecordDialog open={!!moveRecord} record={moveRecord} onOpenChange={(open) => { if (!open) setMoveRecord(null); }}
+        onMoved={(item) => { load(); onChanged?.(); toast({ title: '记录已移动', description: item.bookTitle }); }} />
     </Card>
   );
 }

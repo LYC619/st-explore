@@ -9,8 +9,7 @@ import { ArrowLeft, BookOpenCheck, ChevronDown, ExternalLink, GitBranch, Message
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ChatWorkbench, type ChatWorkbenchHandle } from '@/components/chat/ChatWorkbench';
 import NovelView from '@/components/reader/NovelView';
@@ -18,7 +17,12 @@ import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
   getArchiveStory, updateArchiveStory, getBranchLine, updateBranchLine, resolveInitialBranchId,
 } from '@/lib/archive-db';
-import { getDefaultExportSettings, normalizeAppearanceSettings } from '@/lib/session-storage';
+import {
+  applyGlobalAppearanceToSettings,
+  getDefaultExportSettings,
+  hasNonAppearanceSettingsChange,
+  normalizeAppearanceSettings,
+} from '@/lib/session-storage';
 import { StoryDraftSaver, flushBeforeStoryTransition } from '@/lib/story-draft-save';
 import { useToast } from '@/hooks/use-toast';
 import { useViewport } from '@/hooks/use-viewport';
@@ -43,8 +47,6 @@ interface InlineStoryReaderProps {
   onOpenEditor: (id: string) => void;
   /** 保存阅读变更后继续当前主线或分支的聊天。 */
   onOpenChat?: (id: string, branchId: string | null) => void;
-  /** 从指定楼层分叉新支线并直接开启续聊 */
-  onBranchChatFromFloor?: (id: string, branchId: string | null, floor: number, messageId?: string | null) => void;
   /** 收录角色语录后同步父页角色状态 */
   onCharacterUpdated?: (character: ArchiveCharacter) => void;
   /** 进入时直接打开的分支（null=显式打开主线，string=指定支线，undefined=恢复上次看的脉络） */
@@ -74,8 +76,6 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   backLabel = '故事列表',
   onOpenEditor,
   onOpenChat,
-  onBranchChatFromFloor,
-  onCharacterUpdated,
   initialBranchId,
   jumpRequest = null,
   onReadyChange,
@@ -92,7 +92,6 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   const [branchId, setBranchId] = useState<string | null>(null);
   const [novelOpen, setNovelOpen] = useState(false);
   const [spotlightMessageId, setSpotlightMessageId] = useState<string | null>(null);
-  const [visibleRawFloor, setVisibleRawFloor] = useState<number>(0);
   const workbenchRef = useRef<ChatWorkbenchHandle>(null);
   const consumedJumpSeqRef = useRef<number>(-1);
 
@@ -188,8 +187,6 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         }
         const restoredBranchId = resolveInitialBranchId(s, initialBranchId);
         setBranchId(restoredBranchId);
-        const restoredLine = getBranchLine(s, restoredBranchId);
-        setVisibleRawFloor(restoredLine?.lastFloor ?? 0);
         const viewedAt = Date.now();
         const viewPatch = (current: ArchiveStory) => ({
           settings: current.settings ?? getDefaultExportSettings(),
@@ -241,7 +238,6 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
     const targetMsg = msgs.slice(clamped).find((m) => m.content.trim().length > 0) ?? msgs[clamped];
     const targetId = targetMsg?.id ?? null;
     setSpotlightMessageId(targetId);
-    setVisibleRawFloor(clamped);
 
     const jumpTimer = setTimeout(() => {
       if (targetId) workbenchRef.current?.scrollToMessageId(targetId);
@@ -275,19 +271,17 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   }, [mutateStory, branchId]);
 
   const handleFloorChange = useCallback((floor: number) => {
-    mutateStory((cur) => {
-      const curLine = getBranchLine(cur, branchId);
-      const msgId = workbenchRef.current?.getCurrentMessageId();
-      const rawIdx = msgId && curLine
-        ? curLine.session.messages.findIndex((m) => m.id === msgId)
-        : -1;
-      setVisibleRawFloor(rawIdx >= 0 ? rawIdx : floor);
-      return updateBranchLine(cur, branchId, { lastFloor: floor });
-    });
+    mutateStory((cur) => updateBranchLine(cur, branchId, { lastFloor: floor }));
   }, [mutateStory, branchId]);
 
   const handleSettingsChange = useCallback((next: NonNullable<ArchiveStory['settings']>) => {
-    mutateStory((cur) => ({ ...cur, settings: next, updatedAt: Date.now() }));
+    mutateStory((cur) => {
+      const prev = cur.settings ?? getDefaultExportSettings();
+      if (!hasNonAppearanceSettingsChange(prev, next)) {
+        return { ...cur, settings: next };
+      }
+      return { ...cur, settings: next, updatedAt: Date.now() };
+    });
   }, [mutateStory]);
 
   const handleSwitchBranch = useCallback((nextBranchId: string | null) => {
@@ -317,19 +311,12 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
     );
   }
 
-  const settings = normalizeAppearanceSettings(story.settings ?? getDefaultExportSettings());
+  const settings = applyGlobalAppearanceToSettings(
+    normalizeAppearanceSettings(story.settings ?? getDefaultExportSettings()),
+  );
   const currentBranchName = branchId !== null
     ? story.branches?.find((b) => b.id === branchId)?.name
     : null;
-
-  const triggerTopBranch = () => {
-    if (!onBranchChatFromFloor) return;
-    const msgId = workbenchRef.current?.getCurrentMessageId() ?? null;
-    const rawIdx = msgId ? line.session.messages.findIndex((m) => m.id === msgId) : -1;
-    const fallbackFloor = workbenchRef.current?.getCurrentFloor() ?? line.lastFloor ?? (line.session.messages.length - 1);
-    const resolvedFloor = rawIdx >= 0 ? rawIdx : fallbackFloor;
-    void transitionAfterFlush(() => onBranchChatFromFloor(story.id, branchId, resolvedFloor, msgId));
-  };
 
   const pendingUnconsumedJump = jumpRequest && consumedJumpSeqRef.current !== jumpRequest.seq;
 
@@ -367,15 +354,6 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto min-w-56">
-            {isCompact && onBranchChatFromFloor && line.session.messages.length > 0 && (
-              <>
-                <DropdownMenuItem onClick={triggerTopBranch}>
-                  <GitBranch className="w-3.5 h-3.5 mr-1.5 shrink-0 text-primary" />
-                  <span>从 #{visibleRawFloor} 楼开支线续聊</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )}
             <DropdownMenuLabel className="text-xs text-muted-foreground">切换故事与支线</DropdownMenuLabel>
             {stories.map((s) => (
               <div key={s.id}>
@@ -420,24 +398,12 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           <MessageSquare className={cn('w-4 h-4', !isCompact && 'mr-1.5')} />
           {!isCompact && '继续聊天'}
         </Button>}
-        {onBranchChatFromFloor && !isCompact && line.session.messages.length > 0 && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={triggerTopBranch}
-            title={`保留截止 #${visibleRawFloor} 楼的剧情与设定，拉出一条新平行支线续聊（也可直接点任意楼层右上角的分叉按钮）`}
-          >
-            <GitBranch className="w-3.5 h-3.5 mr-1.5" />
-            从 #{visibleRawFloor} 楼开支线
-          </Button>
-        )}
         <Button
           variant="outline"
           size="sm"
           className="shrink-0"
           onClick={() => void transitionAfterFlush(() => onOpenEditor(story.id))}
-          title="进入故事工作区（编辑器）：分支/整理与记录/导入导出"
+          title="进入完整大屏故事工作区：更宽视野、分支管理、总结整理与导入导出"
           aria-label="在编辑器中打开"
         >
           <ExternalLink className={cn('w-4 h-4', !isCompact && 'mr-1.5')} />
@@ -460,48 +426,23 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           progressKey={`${story.id}:${branchId ?? 'main'}`}
           embedded
           readOnly
-          renderTopActions={({ currentFloor }) => (
-            <>
-              {onOpenChat && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1 text-xs"
-                  onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  继续聊
-                </Button>
-              )}
-              {onBranchChatFromFloor && line.session.messages.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1 text-xs"
-                  onClick={() => {
-                    const msgId = line.session.messages[currentFloor]?.id ?? null;
-                    void transitionAfterFlush(() => onBranchChatFromFloor(story.id, branchId, currentFloor, msgId));
-                  }}
-                  title={`保留截止 #${currentFloor} 楼的剧情与设定，拉出一条新支线续聊`}
-                >
-                  <GitBranch className="h-3.5 w-3.5" />
-                  从 #{currentFloor} 楼开支线
-                </Button>
-              )}
-            </>
-          )}
+          renderTopActions={onOpenChat ? () => (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 text-xs"
+              onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              继续聊
+            </Button>
+          ) : undefined}
         />
       ) : (
         <ChatWorkbench
           key={`${story.id}:${branchId ?? 'trunk'}`}
           ref={workbenchRef}
           characterId={story.characterId}
-          onCharacterUpdated={onCharacterUpdated}
-          onBranchFromMessage={
-            onBranchChatFromFloor
-              ? (messageId, rawFloor) => void transitionAfterFlush(() => onBranchChatFromFloor(story.id, branchId, rawFloor, messageId))
-              : undefined
-          }
           highlightedMessageId={spotlightMessageId}
           session={line.session}
           markers={line.markers}

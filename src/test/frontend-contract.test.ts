@@ -97,9 +97,9 @@ describe('前端状态刷新契约', () => {
   // 该文件其余断言已换成 editor-chat-session.test.tsx 里的页面行为测试；
   // 这条要等价覆盖需要渲染 CharacterPage（595 行、依赖立绘与资产区），
   // 按「不允许先删后补」暂留，等 C3 拆完 CharacterPage 再补行为用例。
-  it('角色页普通处理进入 Chat，整理和导出仍进入对应故事视图', () => {
+  it('角色页阅读、处理、整理和导出统一进入大屏故事工作区各子视图', () => {
     const page = read('src/pages/CharacterPage.tsx');
-    expect(page).toContain('buildEditorChatPath');
+    expect(page).toContain('buildStoryReadPath');
     expect(page).toContain('buildEditorStoryPath');
     expect(page).toContain('setEditorStoryId(storyId)');
   });
@@ -119,7 +119,6 @@ describe('前端状态刷新契约', () => {
 describe('四主题覆盖契约', () => {
   it('全屏阅读器使用主题画布而非固定黑白背景', () => {
     for (const path of [
-      'src/components/reader/ReaderView.tsx',
       'src/components/reader/NovelView.tsx',
     ]) {
       const source = read(path);

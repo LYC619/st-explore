@@ -41,7 +41,7 @@ export function ChapterMarkerDialog({
       setVolume(existingMarker.volume || '');
       setSummary(existingMarker.summary || '');
     } else {
-      setTitle(`第 ${messageIndex + 1} 楼`);
+      setTitle(`第 #${messageIndex} 楼`);
       setVolume('');
       setSummary('');
     }
@@ -70,7 +70,7 @@ export function ChapterMarkerDialog({
 
         <div className="space-y-4 py-4">
           <div className="text-sm text-muted-foreground">
-            标记位置：第 {messageIndex + 1} 楼
+            标记位置：第 #{messageIndex} 楼
           </div>
 
           <div className="space-y-2">

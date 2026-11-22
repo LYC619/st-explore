@@ -1,6 +1,6 @@
 import type { RemoveOptions } from '@/lib/repo';
 import type { WorldBookItem } from '@/types/worldbook';
-import { createRepo, getCurrentRepo, pruneAutoSaved } from '@/lib/repo';
+import { createRepo, getCurrentRepo } from '@/lib/repo';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 
@@ -32,10 +32,7 @@ export async function deleteWorldBook(id: string, options?: RemoveOptions): Prom
   return repo.remove(id, options);
 }
 
-/**
- * 只保留最近 `keep` 份「自动保留」(autoSaved) 的世界书，超出的按 updatedAt 由旧到新删除。
- * 用户手动保存(autoSaved 非 true)的不受影响。返回被删除的 id 数组。
- */
-export async function pruneAutoSavedWorldBooks(keep = 5): Promise<string[]> {
-  return pruneAutoSaved(repo, keep);
+/** 历史兼容存根：已取消按上限静默删除旧世界书的行为。 */
+export async function pruneAutoSavedWorldBooks(_keep = 5): Promise<string[]> {
+  return [];
 }

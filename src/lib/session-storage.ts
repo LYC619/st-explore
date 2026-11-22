@@ -4,9 +4,25 @@ import { getArchiveStory } from '@/lib/archive-db';
 
 const SESSION_KEY = 'st-beautifier-session';
 const SETTINGS_KEY = 'st-beautifier-settings';
+const GLOBAL_APPEARANCE_KEY = 'ste-global-reading-appearance';
 const CUSTOM_REGEX_KEY = 'st-beautifier-custom-regex';
 const BUILTIN_STATES_KEY = 'st-beautifier-builtin-states';
 const REGEX_PRESETS_KEY = 'st-beautifier-regex-presets';
+
+export const PAPER_WIDTH_FULL = 9999;
+export const DEFAULT_PAPER_WIDTH = 860;
+
+export interface GlobalReadingAppearance {
+  theme: ExportSettings['theme'];
+  fontSize: number;
+  paperWidth: number;
+  showTimestamp: boolean;
+  showAvatar: boolean;
+  showModel: boolean;
+  fontFamily?: string;
+  showHidden: boolean;
+  showOOC: boolean;
+}
 
 /**
  * 跨页临时态。
@@ -143,12 +159,12 @@ export function loadBuiltinRuleStates(): Record<string, boolean> {
 export function getInitialRegexRules(): RegexRule[] {
   const builtinStates = loadBuiltinRuleStates();
   const customRules = loadCustomRegexRules();
-  
+
   const builtinRules = DEFAULT_REGEX_RULES.map(rule => ({
     ...rule,
     disabled: builtinStates[rule.id] ?? rule.disabled,
   }));
-  
+
   return [...builtinRules, ...customRules];
 }
 
@@ -210,30 +226,103 @@ export function normalizeAppearanceSettings(settings: ExportSettings): ExportSet
   return { ...settings, showModel: true, showTimestamp: true };
 }
 
+export function loadGlobalReadingAppearance(): GlobalReadingAppearance {
+  const defaults: GlobalReadingAppearance = {
+    theme: 'elegant',
+    fontSize: 15,
+    paperWidth: DEFAULT_PAPER_WIDTH,
+    showTimestamp: true,
+    showAvatar: true,
+    showModel: true,
+    fontFamily: undefined,
+    showHidden: true,
+    showOOC: true,
+  };
+  try {
+    const raw = localStorage.getItem(GLOBAL_APPEARANCE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<GlobalReadingAppearance>;
+      return {
+        theme: parsed.theme ?? defaults.theme,
+        fontSize: typeof parsed.fontSize === 'number' ? parsed.fontSize : defaults.fontSize,
+        paperWidth: typeof parsed.paperWidth === 'number' ? parsed.paperWidth : defaults.paperWidth,
+        showTimestamp: typeof parsed.showTimestamp === 'boolean' ? parsed.showTimestamp : defaults.showTimestamp,
+        showAvatar: typeof parsed.showAvatar === 'boolean' ? parsed.showAvatar : defaults.showAvatar,
+        showModel: typeof parsed.showModel === 'boolean' ? parsed.showModel : defaults.showModel,
+        fontFamily: typeof parsed.fontFamily === 'string' ? parsed.fontFamily : defaults.fontFamily,
+        showHidden: typeof parsed.showHidden === 'boolean' ? parsed.showHidden : defaults.showHidden,
+        showOOC: typeof parsed.showOOC === 'boolean' ? parsed.showOOC : defaults.showOOC,
+      };
+    }
+  } catch { /* non-critical preference */ }
+  return defaults;
+}
+
+export function saveGlobalReadingAppearance(patch: Partial<GlobalReadingAppearance>): GlobalReadingAppearance {
+  const next: GlobalReadingAppearance = { ...loadGlobalReadingAppearance(), ...patch };
+  try {
+    localStorage.setItem(GLOBAL_APPEARANCE_KEY, JSON.stringify(next));
+  } catch { /* non-critical preference */ }
+  return next;
+}
+
+export function applyGlobalAppearanceToSettings(
+  settings: ExportSettings,
+  appearance: GlobalReadingAppearance = loadGlobalReadingAppearance(),
+): ExportSettings {
+  return {
+    ...settings,
+    theme: appearance.theme,
+    fontSize: appearance.fontSize,
+    paperWidth: appearance.paperWidth,
+    showTimestamp: appearance.showTimestamp,
+    showAvatar: appearance.showAvatar,
+    showModel: appearance.showModel,
+    fontFamily: appearance.fontFamily,
+  };
+}
+
+export function hasNonAppearanceSettingsChange(prev: ExportSettings, next: ExportSettings): boolean {
+  return (
+    prev.prefixMode !== next.prefixMode ||
+    prev.cleanPluginCache !== next.cleanPluginCache ||
+    prev.slimExport !== next.slimExport ||
+    prev.exportRange !== next.exportRange ||
+    prev.recentCount !== next.recentCount ||
+    prev.customStart !== next.customStart ||
+    prev.customEnd !== next.customEnd ||
+    prev.regexRules !== next.regexRules
+  );
+}
+
 /**
  * 默认导出/外观设置：优先用用户上次保存的全局设置（正则用当前合并规则集），
  * 否则给出厂缺省。聊天处理页与故事工作区（故事还没存 settings 时）共用。
  */
 export function getDefaultExportSettings(): ExportSettings {
   const saved = loadSettings();
+  const appearance = loadGlobalReadingAppearance();
   if (saved) {
-    return normalizeAppearanceSettings({ ...saved, regexRules: getInitialRegexRules() });
+    return applyGlobalAppearanceToSettings(
+      normalizeAppearanceSettings({ ...saved, regexRules: getInitialRegexRules() }),
+      appearance,
+    );
   }
-  return {
+  return applyGlobalAppearanceToSettings({
     theme: 'elegant',
     showTimestamp: true,
     showModel: true,
     showAvatar: true,
-    paperWidth: 600,
+    paperWidth: DEFAULT_PAPER_WIDTH,
     fontSize: 15,
     prefixMode: 'name',
     regexRules: getInitialRegexRules(),
     cleanPluginCache: true,
     exportRange: 'all',
     recentCount: 100,
-    customStart: 1,
+    customStart: 0,
     customEnd: 100,
-  };
+  }, appearance);
 }
 
 // 保存设置到 localStorage

@@ -242,20 +242,6 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
                 }
               });
             }}
-            onBranchChatFromFloor={(sid, bid, floor, messageId) => {
-              void transition(async () => {
-                const epoch = getVaultEpoch();
-                try {
-                  const m = await import('@/lib/roleplay/branch-from-floor');
-                  const created = await m.branchStoryFromFloor(sid, bid, floor, { targetMessageId: messageId });
-                  if (!mounted.current || epoch !== getVaultEpoch()) return;
-                  toast({ title: `已开辟支线「${created.branchName}」`, description: `已保留前 ${created.floorCount} 楼剧情与设定` });
-                  navigate(created.playPath);
-                } catch (err) {
-                  toast({ title: '创建支线未成功', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
-                }
-              });
-            }}
             readerRef={readerRef}
             onReaderReady={onReaderReady}
             restoreFloor={characterSession?.storyScroll === undefined}

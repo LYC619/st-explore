@@ -38,6 +38,7 @@ import { listAssetIndex } from '@/lib/asset-index';
 import {
   EDITOR_TOOL_COPY,
   horizontalWheelDelta,
+  pickRecentEditorStories,
   pickRecentlyViewedStories,
 } from '@/lib/home-layout';
 
@@ -153,12 +154,22 @@ const Home = () => {
         listAssetIndex('regexes').catch(() => { nextFailedAssets.regexes = true; return null; }),
       ]);
       if (!isCurrent()) return;
-      // 最近在看的故事：只列看过的（无记录的还谈不上「最近」），绑定与未绑定都算
+      // 最近故事：优先取已阅读记录，不足 12 条时用最近续聊或刚导入的故事补齐，防新对话在首页隐身
       const viewed = pickRecentlyViewedStories(allStories, 12);
+      const viewedIds = new Set(viewed.map((item) => item.id));
+      const supplemented = viewed.length >= 12
+        ? viewed
+        : [
+            ...viewed,
+            ...pickRecentEditorStories(
+              allStories.filter((item) => !viewedIds.has(item.id)),
+              12 - viewed.length,
+            ),
+          ];
       const nextSnapshot: HomeSnapshot = {
         characters: chars,
         stories: allStories,
-        recentStories: viewed,
+        recentStories: supplemented,
         resources: {},
         assetCounts: {
           worldbooks: wbs ? wbs.length : homeSnapshot.assetCounts.worldbooks,
@@ -427,7 +438,7 @@ const Home = () => {
                         <CharacterQuickPills
                           hasStory={Boolean(latestStoryByChar[c.id])}
                           busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id].id)}
-                          onReminisce={() => navigate(`/character/${c.id}?story=${encodeURIComponent(latestStoryByChar[c.id].id)}`)}
+                          onReminisce={() => navigate(`/story/${encodeURIComponent(latestStoryByChar[c.id].id)}`)}
                           onContinueChat={() => { void continueStoryFromHome(latestStoryByChar[c.id].id); }}
                           onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
                         />
@@ -471,21 +482,53 @@ const Home = () => {
                 >
                   {(isMobile && !showAllMobileStories ? recentStories.slice(0, 4) : recentStories).map((s) => {
                     const char = s.characterId ? characterById[s.characterId] : undefined;
+                    const charLabel = char?.displayMeta?.name || char?.name || s.chatIndex?.characterName || '未绑定角色';
+                    const progressLabel = typeof s.lastFloor === 'number' && s.lastFloor > 0 && s.floorCount > 0
+                      ? `读至 #${Math.min(s.lastFloor, Math.max(0, s.floorCount - 1))} / 共 ${s.floorCount} 楼`
+                      : `共 ${s.floorCount} 楼`;
                     return (
-                      <button
-                        type="button"
+                      <div
                         key={s.id}
-                        onClick={() => navigate(s.characterId ? `/character/${encodeURIComponent(s.characterId)}?story=${encodeURIComponent(s.id)}` : `/story/${encodeURIComponent(s.id)}`)}
-                        className="flex h-full min-h-0 min-w-0 items-center gap-2.5 rounded-lg bg-chrome px-3 py-2.5 text-left transition-colors hover:bg-elevated-strong"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(`/story/${encodeURIComponent(s.id)}`)}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            navigate(`/story/${encodeURIComponent(s.id)}`);
+                          }
+                        }}
+                        className="group flex h-full min-h-0 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg bg-chrome px-3 py-2 text-left transition-colors hover:bg-elevated-strong focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[color:var(--brand-hairline)]"
                       >
                         <div className="relative aspect-[3/4] h-full max-h-14 shrink-0 overflow-hidden rounded bg-[var(--hover-overlay)]">
                           {char ? (
                             <CharacterPortrait character={char} />
                           ) : <BookOpenText className="m-2 h-4 w-4 text-muted-foreground/50" />}
                         </div>
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-[color:var(--text-body)]" title={s.title}>{s.title}</span>
-                        <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">{s.floorCount} 楼</span>
-                      </button>
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-medium text-[color:var(--text-body)]" title={s.title}>
+                            {s.title}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-[color:var(--text-muted)]" title={`${charLabel} · ${progressLabel}`}>
+                            {charLabel} · {progressLabel}
+                          </span>
+                        </div>
+                        {s.characterId && (
+                          <button
+                            type="button"
+                            disabled={startingStoryId === s.id}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void continueStoryFromHome(s.id);
+                            }}
+                            className="hover-reveal tap-target shrink-0 rounded-full border border-[color:var(--border-normal)] px-2 py-0.5 text-[11px] text-[color:var(--text-muted)] hover:border-[color:var(--brand-hairline)] hover:text-brand transition-colors"
+                            title="接着当前剧情进入酒馆继续聊"
+                          >
+                            {startingStoryId === s.id ? '打开中…' : '续聊'}
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

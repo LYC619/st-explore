@@ -573,7 +573,7 @@ const Library = () => {
       <CharacterActionsMenu
         onOpen={() => navigate(`/character/${c.id}`)}
         onContinueChat={latestId ? () => { void continueStoryFromCard(latestId); } : undefined}
-        onReminisceStory={latestId ? () => navigate(`/character/${c.id}?story=${encodeURIComponent(latestId)}`) : undefined}
+        onReminisceStory={latestId ? () => navigate(`/story/${encodeURIComponent(latestId)}`) : undefined}
         onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
         onExport={() => void handleSingleExport(c)}
         onDelete={() => setPendingDelete([c])}
@@ -756,7 +756,7 @@ const Library = () => {
                                 <CharacterQuickPills
                                   hasStory={Boolean(latestStoryByChar[c.id])}
                                   busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id])}
-                                  onReminisce={() => navigate(`/character/${c.id}?story=${encodeURIComponent(latestStoryByChar[c.id])}`)}
+                                  onReminisce={() => navigate(`/story/${encodeURIComponent(latestStoryByChar[c.id])}`)}
                                   onContinueChat={() => { void continueStoryFromCard(latestStoryByChar[c.id]); }}
                                   onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
                                 />

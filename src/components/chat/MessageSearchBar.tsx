@@ -23,12 +23,21 @@ export function MessageSearchBar({ query, onQueryChange, total, current, onNext,
     <div className="flex max-w-full min-w-0 items-center gap-1 rounded-md border border-border bg-background px-2 py-1">
       <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <Input size="sm"
+        data-message-search-input
+        autoCorrect="off"
+        autoCapitalize="none"
+        spellCheck={false}
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
           if (e.key === 'Enter') { e.preventDefault(); if (e.shiftKey) onPrev(); else onNext(); }
+          if (e.key === 'Escape') {
+            if (hasQuery) onQueryChange('');
+            e.currentTarget.blur();
+          }
         }}
-        placeholder="搜索正文…"
+        placeholder="搜索正文 (Ctrl+F)…"
         /* 窄屏收窄输入框：整条搜索栏在 390px 视口里占掉三分之二，
            而它前后还有外观、小说视图、导出。搜关键词一般就几个字，
            w-24 够看；桌面档保留 w-40。 */

@@ -159,7 +159,7 @@ describe('聊天楼层连续跳转', () => {
     expect(nextButton()?.disabled).toBe(true);
   });
 
-  it('楼层总数按过滤后的消息算：空消息不占楼层', async () => {
+  it('楼层号与 SillyTavern 原始楼层对齐：跨过空消息跳至真实 #2、#3 楼', async () => {
     const withEmpty = mkSession([
       mkMessage(0),
       mkMessage(1, { content: '   ' }),
@@ -168,12 +168,14 @@ describe('聊天楼层连续跳转', () => {
     ]);
     await renderWorkbench(withEmpty);
 
-    // 4 条消息里有 1 条是空的 → 最大楼层号是 2 而不是 3
-    expect(maxFloorLabel()).toBe('/ 2');
+    // 4 条消息里第 #1 楼为空，可见原始楼层号为 0, 2, 3 → 最大原始楼层号是 3
+    expect(maxFloorLabel()).toBe('/ 3');
 
     await click(nextButton());
-    await click(nextButton());
     expect(floorInput()?.value).toBe('2');
+
+    await click(nextButton());
+    expect(floorInput()?.value).toBe('3');
     expect(nextButton()?.disabled).toBe(true);
   });
 

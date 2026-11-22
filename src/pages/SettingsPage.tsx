@@ -1,9 +1,20 @@
-import { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Database, Eye, FolderCog, Info, KeyRound, Settings, BookText } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { APIConfigCard } from '@/components/ai-tools';
 import { AboutSettingsPanel, DataSettingsPanel } from '@/components/GlobalSettings';
 import { HelpCard } from '@/components/HelpCard';
+import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   DirectorySettingsPanel,
   DisplaySettingsPanel,
@@ -25,7 +36,10 @@ const SECTION_ITEMS = [
   { key: 'about', label: '关于与引导', icon: Info },
 ] satisfies Array<{ key: SettingsSection; label: string; icon: typeof Eye }>;
 
-function renderSettingsPanel(activeSection: SettingsSection) {
+function renderSettingsPanel(
+  activeSection: SettingsSection,
+  onAiDirtyStateChange: (state: { dirty: boolean; save: () => boolean }) => void,
+) {
   switch (activeSection) {
     case 'display':
       return <DisplaySettingsPanel />;
@@ -38,7 +52,7 @@ function renderSettingsPanel(activeSection: SettingsSection) {
               支持保存多个 OpenAI 兼容提供商并随时切换，可拉取模型列表、测试连通。密钥仅保存在本地，客户端另镜像到系统配置目录，不写入库文件夹。
             </HelpCard>
           </div>
-          <APIConfigCard />
+          <APIConfigCard onDirtyStateChange={onAiDirtyStateChange} />
         </div>
       );
     case 'prompts':
@@ -54,11 +68,27 @@ function renderSettingsPanel(activeSection: SettingsSection) {
 
 const SettingsPage = () => {
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => loadSettingsSection());
+  const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
+  const aiDirtyRef = useRef<{ dirty: boolean; save: () => boolean }>({ dirty: false, save: () => true });
   const activeItem = SECTION_ITEMS.find((item) => item.key === activeSection) ?? SECTION_ITEMS[0];
 
-  const selectSection = (section: SettingsSection) => {
+  const handleAiDirtyStateChange = useCallback((state: { dirty: boolean; save: () => boolean }) => {
+    aiDirtyRef.current = state;
+  }, []);
+
+  const applySection = (section: SettingsSection) => {
+    aiDirtyRef.current = { dirty: false, save: () => true };
     setActiveSection(section);
     saveSettingsSection(section);
+  };
+
+  const selectSection = (section: SettingsSection) => {
+    if (section === activeSection) return;
+    if (activeSection === 'ai' && aiDirtyRef.current.dirty) {
+      setPendingSection(section);
+      return;
+    }
+    applySection(section);
   };
 
   return (
@@ -103,10 +133,46 @@ const SettingsPage = () => {
             <h1 id="settings-section-title" className="mb-4 font-display text-lg font-semibold">
               {activeItem.label}
             </h1>
-            {renderSettingsPanel(activeSection)}
+            {renderSettingsPanel(activeSection, handleAiDirtyStateChange)}
           </section>
         </div>
       </div>
+
+      <AlertDialog open={pendingSection !== null} onOpenChange={(open) => { if (!open) setPendingSection(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>AI 服务配置还未保存</AlertDialogTitle>
+            <AlertDialogDescription>
+              你刚修改了接口地址、密钥或模型，切换设置分区会丢失未保存的改动。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel autoFocus>继续编辑</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const next = pendingSection;
+                setPendingSection(null);
+                if (next) applySection(next);
+              }}
+            >
+              放弃修改并切换
+            </Button>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (aiDirtyRef.current.save()) {
+                  const next = pendingSection;
+                  setPendingSection(null);
+                  if (next) applySection(next);
+                }
+              }}
+            >
+              保存并切换
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };

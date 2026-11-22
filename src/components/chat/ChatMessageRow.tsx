@@ -6,13 +6,19 @@ import {
   ChevronLeft,
   ChevronRight,
   EyeOff,
-  GitBranch,
   MessageSquareDashed,
+  MoreHorizontal,
+  NotebookPen,
   Pencil,
-  Quote,
-  Share2,
+  Star,
   User,
 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
 import { parseRegex } from '@/lib/regex-processor';
@@ -71,9 +77,9 @@ function formatTime(timestamp?: number): string {
 
 export interface MessageRowProps {
   onCaptureMessage?: (messageId: string, content: string) => void;
-  onQuoteMessage?: (messageId: string, floor: number, content: string, speakerName: string) => void;
-  onShareMessage?: (floor: number, content: string, speakerName: string) => void;
-  onBranchFromMessage?: (messageId: string, rawFloor: number) => void;
+  onToggleFavorite?: (messageId: string) => void;
+  isFavorited?: boolean;
+  characterAvatarUrl?: string;
   message: ProcessedMessage;
   marker?: ChapterMarker;
   index: number;
@@ -118,13 +124,12 @@ export const MessageRow = memo(function MessageRow({
   onUnhideMessage,
   onHideMessage,
   onCaptureMessage,
-  onQuoteMessage,
-  onShareMessage,
-  onBranchFromMessage,
+  onToggleFavorite,
+  isFavorited = false,
+  characterAvatarUrl,
 }: MessageRowProps) {
   const captureText = useRef('');
   const rowRef = useRef<HTMLDivElement>(null);
-  const [selectedSnippet, setSelectedSnippet] = useState('');
   const realFloor = message.rawFloor ?? index;
   const isUser = message.role === 'user';
   const hasMarker = !!marker;
@@ -136,26 +141,20 @@ export const MessageRow = memo(function MessageRow({
     : undefined;
   const speakerName = message.name || (isUser ? userName : charName);
 
-  const readSelectedSnippet = (button: HTMLElement) => {
+  const [hasCapturedSnippet, setHasCapturedSnippet] = useState(false);
+
+  const readSelectedSnippet = () => {
     const selection = window.getSelection();
-    const rowRoot = rowRef.current ?? button.closest('[data-message-header]')?.parentElement;
+    const rowRoot = rowRef.current;
     if (selection?.anchorNode && rowRoot?.contains(selection.anchorNode)) {
       return selection.toString().trim();
     }
     return '';
   };
 
-  const syncSelectionSnippet = () => {
-    if (!onQuoteMessage && !onShareMessage) return;
-    const selection = window.getSelection();
-    const rowRoot = rowRef.current;
-    if (!selection || selection.isCollapsed || !rowRoot || !selection.anchorNode || !rowRoot.contains(selection.anchorNode)) {
-      if (selectedSnippet) setSelectedSnippet('');
-      return;
-    }
-    const text = selection.toString().trim();
-    setSelectedSnippet(text.length >= 2 ? text : '');
-  };
+  const hasSecondaryActions = Boolean(
+    onCaptureMessage || onEditMessage || (onHideMessage && !message.hidden && !message.ooc),
+  );
 
   return (
     <div>
@@ -179,16 +178,14 @@ export const MessageRow = memo(function MessageRow({
 
       <div
         ref={rowRef}
-        data-floor-row={index}
+        data-floor-row={realFloor}
         data-raw-floor={realFloor}
-        onMouseUp={syncSelectionSnippet}
-        onTouchEnd={() => setTimeout(syncSelectionSnippet, 60)}
         className={`${theme === 'social' ? 'mb-4' : classes.message} ${theme === 'social' ? '' : isUser ? classes.userBubble : classes.charBubble} animate-fade-in group relative w-full ${
           editMode ? 'cursor-pointer hover:bg-primary/5 rounded-lg transition-colors pt-9 px-2' : ''
         } ${isActiveMatch ? 'rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''} ${
           isHighlightedFloor ? 'rounded-lg bg-primary/10 ring-1 ring-primary/45 px-2.5 py-1.5 -mx-2.5 transition-colors duration-500' : ''
         }`}
-        onClick={() => editMode && onMessageClick?.(message.id, index)}
+        onClick={() => editMode && onMessageClick?.(message.id, realFloor)}
       >
         {message.hidden && (
           <div className="mb-1.5 inline-flex items-center gap-1 rounded bg-muted/70 px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -205,7 +202,7 @@ export const MessageRow = memo(function MessageRow({
                     className="ml-1 rounded px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/10"
                     onClick={(event) => {
                       event.stopPropagation();
-                      onUnhideMessage(message.id, index);
+                      onUnhideMessage(message.id, realFloor);
                     }}
                   >
                     恢复显示
@@ -218,8 +215,8 @@ export const MessageRow = memo(function MessageRow({
 
         {editMode && (
           <div className="absolute left-1 top-1 flex items-center gap-1 z-10">
-            <span className="text-xs text-muted-foreground font-mono">
-              #{index}
+            <span className="text-xs text-muted-foreground font-mono tabular-nums">
+              #{realFloor}
             </span>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -245,139 +242,101 @@ export const MessageRow = memo(function MessageRow({
           </div>
         )}
 
-        {!editMode && (
-          <span
-            className="pointer-events-none absolute -left-12 top-0.5 hidden w-9 select-none text-right font-mono text-sm font-semibold tabular-nums text-primary/50 md:block"
-            aria-hidden="true"
-          >
-            {index}
-          </span>
-        )}
-
-        <div className="mb-2 flex items-start justify-between gap-3" data-message-header>
-          <div className={`${classes.name} min-w-0 flex-1 break-words`}>
-            {speakerName}
-            {model && <span className="ml-2 text-[11px] text-muted-foreground/80" title={generationHint}>{model}</span>}
+        <div className="mb-2 flex items-start justify-between gap-2" data-message-header>
+          <div className={`${classes.name} min-w-0 flex-1 break-words flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5`}>
+            {!editMode && (
+              <span
+                className="font-mono text-xs font-semibold tabular-nums text-primary/65 select-none"
+                data-floor-badge
+              >
+                #{realFloor}
+              </span>
+            )}
+            <span>{speakerName}</span>
+            {model && (
+              <span className="text-[11px] font-normal text-muted-foreground/80" title={generationHint}>
+                {model}
+              </span>
+            )}
             {showTimestamp && displayTimestamp !== undefined && (
-              <span className="ml-2 text-xs font-normal text-muted-foreground">{formatTime(displayTimestamp)}</span>
+              <span className="text-xs font-normal text-muted-foreground">{formatTime(displayTimestamp)}</span>
+            )}
+            {message.swipeTotal > 1 && onSwipeSelect && !editMode && (
+              <span
+                className="inline-flex items-center gap-0.5 text-xs font-normal text-muted-foreground select-none"
+                data-swipe-switcher
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  disabled={message.swipeId <= 0}
+                  onClick={() => onSwipeSelect(message.id, message.swipeId - 1)}
+                  className="tap-target inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="上一条回复版本"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="tabular-nums px-0.5">
+                  {message.swipeId + 1}/{message.swipeTotal}
+                </span>
+                <button
+                  type="button"
+                  disabled={message.swipeId >= message.swipeTotal - 1}
+                  onClick={() => onSwipeSelect(message.id, message.swipeId + 1)}
+                  className="tap-target inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="下一条回复版本"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+                {message.swipeIsSteEdit && (
+                  <span
+                    className="ml-0.5 rounded border border-primary/40 px-1 py-px text-[11px] leading-none text-primary/80"
+                    title="重复导入时保留的本地修改版（酒馆新回复可通过左右切换查看）"
+                  >
+                    本地精修版
+                  </span>
+                )}
+              </span>
             )}
           </div>
 
           {!editMode && (
-            <div className="flex shrink-0 items-center gap-1" data-message-actions>
-              {onCaptureMessage && (
-                <button
-                  type="button"
-                  className="tap-target h-7 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                  aria-label={`收录第 ${index} 楼`}
-                  onMouseDown={(event) => {
-                    captureText.current = readSelectedSnippet(event.currentTarget);
-                    event.preventDefault();
-                  }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onCaptureMessage(message.id, captureText.current || message.content);
-                    captureText.current = '';
-                  }}
-                >
-                  收录
-                </button>
-              )}
-              {onBranchFromMessage && (
+            <div className="flex shrink-0 items-center gap-1.5" data-message-actions>
+              {onToggleFavorite && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`从第 ${realFloor} 楼开支线续聊`}
+                      className={`tap-target flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                        isFavorited
+                          ? 'text-primary hover:bg-primary/10'
+                          : 'hover-reveal text-muted-foreground hover:bg-primary/10 hover:text-primary'
+                      }`}
+                      aria-label={isFavorited ? `取消收藏第 ${realFloor} 楼` : `收藏第 ${realFloor} 楼`}
+                      aria-pressed={isFavorited}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onBranchFromMessage(message.id, realFloor);
+                        onToggleFavorite(message.id);
                       }}
                     >
-                      <GitBranch className="h-3.5 w-3.5" />
+                      <Star className={`h-3.5 w-3.5 ${isFavorited ? 'fill-primary text-primary' : ''}`} />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>从这楼拉支线续聊（保留截止本楼剧情与设定）</TooltipContent>
+                  <TooltipContent>{isFavorited ? '取消收藏本楼' : '收藏本楼'}</TooltipContent>
                 </Tooltip>
               )}
-              {onQuoteMessage && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`将第 ${realFloor} 楼收进角色语录`}
-                      onMouseDown={(event) => {
-                        captureText.current = readSelectedSnippet(event.currentTarget);
-                        event.preventDefault();
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onQuoteMessage(message.id, realFloor, captureText.current || selectedSnippet || message.content, speakerName);
-                        captureText.current = '';
-                        setSelectedSnippet('');
-                      }}
-                    >
-                      <Quote className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>收进角色语录（支持先划选句子）</TooltipContent>
-                </Tooltip>
-              )}
-              {onShareMessage && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`生成第 ${realFloor} 楼分享图`}
-                      onMouseDown={(event) => {
-                        captureText.current = readSelectedSnippet(event.currentTarget);
-                        event.preventDefault();
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onShareMessage(realFloor, captureText.current || selectedSnippet || message.content, speakerName);
-                        captureText.current = '';
-                        setSelectedSnippet('');
-                      }}
-                    >
-                      <Share2 className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>生成名场面分享图</TooltipContent>
-                </Tooltip>
-              )}
-              {onHideMessage && !message.hidden && !message.ooc && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`隐藏第 ${index} 楼`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onHideMessage(message.id, index);
-                      }}
-                    >
-                      <EyeOff className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>隐藏本楼</TooltipContent>
-                </Tooltip>
-              )}
+
               {onEditMessage && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       data-tour="msg-edit-pencil"
-                      className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`编辑第 ${index} 楼`}
+                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary [@media(hover:none)]:hidden"
+                      aria-label={`编辑第 ${realFloor} 楼`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onEditMessage(message.id, index);
+                        onEditMessage(message.id, realFloor);
                       }}
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -386,6 +345,56 @@ export const MessageRow = memo(function MessageRow({
                   <TooltipContent>编辑本楼</TooltipContent>
                 </Tooltip>
               )}
+
+              {hasSecondaryActions && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      aria-label={`第 ${realFloor} 楼更多操作`}
+                      onPointerDown={() => {
+                        const snippet = readSelectedSnippet();
+                        captureText.current = snippet;
+                        setHasCapturedSnippet(Boolean(snippet));
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44">
+                    {onEditMessage && (
+                      <DropdownMenuItem
+                        onSelect={() => onEditMessage(message.id, realFloor)}
+                      >
+                        <Pencil className="mr-2 h-3.5 w-3.5" />
+                        编辑本楼
+                      </DropdownMenuItem>
+                    )}
+                    {onCaptureMessage && (
+                      <DropdownMenuItem
+                        onSelect={() => {
+                          onCaptureMessage(message.id, captureText.current || message.content);
+                          captureText.current = '';
+                          setHasCapturedSnippet(false);
+                        }}
+                      >
+                        <NotebookPen className="mr-2 h-3.5 w-3.5" />
+                        {hasCapturedSnippet ? '收录选中片段' : '收录进总结或备注'}
+                      </DropdownMenuItem>
+                    )}
+                    {onHideMessage && !message.hidden && !message.ooc && (
+                      <DropdownMenuItem
+                        onSelect={() => onHideMessage(message.id, realFloor)}
+                      >
+                        <EyeOff className="mr-2 h-3.5 w-3.5" />
+                        隐藏本楼
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           )}
         </div>
@@ -393,17 +402,25 @@ export const MessageRow = memo(function MessageRow({
         {theme === 'social' ? (
           <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
             {showAvatar && (
-              <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                  isUser ? 'bubble-user' : 'bubble-char'
-                }`}
-              >
-                {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
-              </div>
+              !isUser && characterAvatarUrl ? (
+                <img
+                  src={characterAvatarUrl}
+                  alt={speakerName}
+                  className="w-10 h-10 rounded-full object-cover flex-shrink-0 border border-border/60"
+                />
+              ) : (
+                <div
+                  className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    isUser ? 'bubble-user' : 'bubble-char'
+                  }`}
+                >
+                  {isUser ? <User className="w-5 h-5" /> : <Bot className="w-5 h-5" />}
+                </div>
+              )
             )}
-            <div className={isUser ? 'text-right' : 'text-left'}>
+            <div className={`min-w-0 ${isUser ? 'text-right' : 'text-left'}`}>
               <div
-                className={`inline-block ${classes.content} ${
+                className={`inline-block max-w-full ${classes.content} ${
                   isUser ? 'bubble-user' : 'bubble-char'
                 } whitespace-pre-wrap`}
               >
@@ -420,85 +437,6 @@ export const MessageRow = memo(function MessageRow({
                 ? renderPreviewHighlight(message.content, previewRule)
                 : <ChatMarkdown text={message.content} search={searchQuery} />}
             </div>
-          </div>
-        )}
-
-        {selectedSnippet && !editMode && (onQuoteMessage || onShareMessage) && (
-          <div
-            data-selection-action-bar
-            className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-full border border-primary/30 bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs shadow-sm"
-          >
-            <span className="text-[11px] text-muted-foreground">已划选 {selectedSnippet.length} 字</span>
-            {onQuoteMessage && (
-              <button
-                type="button"
-                className="tap-target inline-flex items-center gap-1 rounded-full bg-[var(--brand-active-bg)] px-2 py-0.5 font-medium text-brand hover:bg-[var(--brand-active-bg-strong)]"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onQuoteMessage(message.id, realFloor, selectedSnippet, speakerName);
-                  setSelectedSnippet('');
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                <Quote className="h-3 w-3" />
-                收进语录
-              </button>
-            )}
-            {onShareMessage && (
-              <button
-                type="button"
-                className="tap-target inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onShareMessage(realFloor, selectedSnippet, speakerName);
-                  setSelectedSnippet('');
-                  window.getSelection()?.removeAllRanges();
-                }}
-              >
-                <Share2 className="h-3 w-3" />
-                分享图
-              </button>
-            )}
-          </div>
-        )}
-
-        {message.swipeTotal > 1 && onSwipeSelect && !editMode && (
-          <div className="mt-1.5 flex items-center gap-0.5 text-xs text-muted-foreground select-none">
-            <button
-              type="button"
-              disabled={message.swipeId <= 0}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSwipeSelect(message.id, message.swipeId - 1);
-              }}
-              className="tap-target flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
-              aria-label="上一条回复版本"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="tabular-nums px-0.5">版本 {message.swipeId + 1}/{message.swipeTotal}</span>
-            <button
-              type="button"
-              disabled={message.swipeId >= message.swipeTotal - 1}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSwipeSelect(message.id, message.swipeId + 1);
-              }}
-              className="tap-target flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
-              aria-label="下一条回复版本"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-            {message.swipeIsSteEdit && (
-              <span
-                className="ml-1 rounded border border-primary/40 px-1 py-px text-[11px] leading-none text-primary/80"
-                title="重复导入时保留的本地修改版（酒馆新回复可通过左右切换查看）"
-              >
-                本地精修版
-              </span>
-            )}
           </div>
         )}
       </div>

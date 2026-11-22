@@ -45,7 +45,7 @@ import {
   getBuiltinTemplate,
   type AnySummaryTemplate,
 } from '@/lib/summary-templates';
-import { getSummaryTemplate, saveSummary, pruneAutoSavedSummaries, getAllSummaries, deleteSummary } from '@/lib/summary-db';
+import { getSummaryTemplate, saveSummary, getAllSummaries, deleteSummary } from '@/lib/summary-db';
 import { getAllPresets } from '@/lib/preset-db';
 import { getAllWorldBooks } from '@/lib/worldbook-db';
 import { buildSummaryMessages, extractTitle, inferVolumeNumber } from '@/lib/summary-engine';
@@ -164,6 +164,10 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     const abortRef = useRef<AbortController | null>(null);
     const outputRef = useRef('');
     const resultRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => () => {
+      abortRef.current?.abort();
+    }, []);
 
     /**
      * 右栏滚到「生成结果」。右栏顶上还压着已存记录列表/返回条，
@@ -357,11 +361,10 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
 
     const autoSave = async (content: string, title: string, volume: number | undefined, wasTruncated: boolean) => {
       const id = generateSummaryId();
-      const item = buildItem(content, title, true, id, volume);
+      const item = buildItem(content, title, false, id, volume);
       await saveSummary(item);
-      await pruneAutoSavedSummaries();
       setCurrentSummaryId(id);
-      setSavedPermanent(false);
+      setSavedPermanent(true);
       setVolumeOverride(null);
       onSaved(item, wasTruncated);
     };
@@ -435,14 +438,22 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       }
       const id = currentSummaryId ?? generateSummaryId();
       const item = buildItem(resultContent, resultTitle || SUMMARY_KIND_LABELS[kind], false, id, resultMetadata.volumeNumber, resultCategory);
-      await saveSummary(item);
-      setCurrentSummaryId(id);
-      setSavedPermanent(true);
-      setMetadataEdited(false);
-      setVolumeOverride(null);
-      reloadVolumes();
-      onSaved(item, truncated);
-      toast({ title: '已永久保存', description: resultTitle || SUMMARY_KIND_LABELS[kind] });
+      try {
+        await saveSummary(item);
+        setCurrentSummaryId(id);
+        setSavedPermanent(true);
+        setMetadataEdited(false);
+        setVolumeOverride(null);
+        reloadVolumes();
+        onSaved(item, truncated);
+        toast({ title: '已永久保存', description: resultTitle || SUMMARY_KIND_LABELS[kind] });
+      } catch (error) {
+        toast({
+          title: '保存记录未成功',
+          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          variant: 'destructive',
+        });
+      }
     };
 
     const handleContentEdit = (c: string) => {

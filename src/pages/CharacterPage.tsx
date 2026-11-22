@@ -5,8 +5,8 @@
  *   + tab 导航（故事/备注/关联资产/立绘）+ tab 行右侧统一导入钮（10.3c，按当前 tab 预选类型）
  * - patchCharacter：评分→评价档位标签单向联动（10.0）+ 标签变化同步 nsfw 字段
  */
-import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, useContext } from 'react';
+import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, BookOpen, Download, Package, MessageSquare } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -54,8 +54,8 @@ import { importFilesForCharacter } from '@/lib/character-import';
 import { commitCharacterPatch, type CharacterPatch } from '@/lib/character-write';
 import { isPreparedCharacterMutation } from '@/lib/character-mutation';
 import {
-  buildEditorChatPath,
   buildEditorStoryPath,
+  buildStoryReadPath,
   setEditorStoryId,
   type EditorStoryView,
 } from '@/lib/editor-story-context';
@@ -69,18 +69,18 @@ import { PortraitSection } from '@/components/character/PortraitSection';
 import { CharacterImportDialog } from '@/components/character/CharacterImportDialog';
 import { StoryListSection } from '@/components/character/StoryListSection';
 import { ReadingPackExportDialog } from '@/components/character/ReadingPackExportDialog';
-import { InlineStoryReader, type FloorJumpRequest, type InlineStoryReaderHandle } from '@/components/character/InlineStoryReader';
 import { StoryRecordsView, type RecordViewKind } from '@/components/character/StoryRecordsView';
 import { CharacterCardEditSection } from '@/components/character/CharacterCardEditSection';
 import { GreetingsSection } from '@/components/character/GreetingsSection';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 
-/** 故事 tab 内的子视图：列表 | 总结/日记/故事树查看视图 */
+/** 故事 tab 内的子视图：列表 | 总结/日记/自定义记录/故事树查看视图 */
 type StorySubView = 'list' | RecordViewKind;
 
 const STORY_SUB_VIEWS: { key: RecordViewKind; label: string }[] = [
   { key: 'volume', label: '总结' },
   { key: 'diary', label: '日记' },
+  { key: 'diy', label: '自定义记录' },
   { key: 'tree', label: '故事树' },
 ];
 
@@ -92,6 +92,46 @@ const TAB_IMPORT_KIND: Record<string, CharacterImportKind> = {
   portraits: 'portrait',
 };
 
+function CharacterRouteBlocker({
+  dirty,
+  flush,
+}: {
+  dirty: boolean;
+  flush: () => Promise<boolean>;
+}) {
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => (
+    dirty && currentLocation.pathname !== nextLocation.pathname
+  ));
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    let cancelled = false;
+    void flush().then((ok) => {
+      if (cancelled) return;
+      if (ok) blocker.proceed();
+      else blocker.reset();
+    });
+    return () => { cancelled = true; };
+  }, [blocker, flush]);
+
+  return null;
+}
+
+function SafeCharacterRouteBlocker(props: { dirty: boolean; flush: () => Promise<boolean> }) {
+  const router = useContext(UNSAFE_DataRouterContext);
+  return router ? <CharacterRouteBlocker {...props} /> : null;
+}
+
 const CharacterPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -101,15 +141,13 @@ const CharacterPage = () => {
   const [character, setCharacter] = useState<ArchiveCharacter | null>(null);
   const [stories, setStories] = useState<ArchiveStory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadSeqRef = useRef(0);
   const [storyToDelete, setStoryToDelete] = useState<ArchiveStory | null>(null);
   const [charDeleteOpen, setCharDeleteOpen] = useState(false);
-  // 就地阅读：?story=<id> 深链（首页最近故事跳入）；readingBranchId 区分显式主线 null、指定支线 string 与默认恢复 undefined
-  const readingStoryId = searchParams.get('story');
+  // 兼容旧 ?story=<id> 书签直跳大屏故事工作区
+  const legacyReadingStoryId = searchParams.get('story');
   const requestedTab = searchParams.get('tab');
-  const [readingBranchId, setReadingBranchId] = useState<string | null | undefined>(undefined);
-  const [readingJumpRequest, setReadingJumpRequest] = useState<FloorJumpRequest | null>(null);
-  const [readingReturnSubView, setReadingReturnSubView] = useState<StorySubView | null>(null);
-  const jumpSeqRef = useRef(0);
   const [storySubView, setStorySubView] = useState<StorySubView>('list');
   // 统一导入弹窗（10.3c）：按当前 tab 预选类型
   const [activeTab, setActiveTab] = useState(() => (
@@ -126,16 +164,19 @@ const CharacterPage = () => {
   const [cardSaving, setCardSaving] = useState(false);
   const [startingPlay, setStartingPlay] = useState(false);
   const [startingGreetingIdx, setStartingGreetingIdx] = useState<number | null>(null);
-  const readerRef = useRef<InlineStoryReaderHandle>(null);
   const playPendingRef = useRef(false);
   const playStartLock = useRef(false);
   const contentColumnRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!legacyReadingStoryId) return;
+    setEditorStoryId(legacyReadingStoryId);
+    navigate(buildStoryReadPath(legacyReadingStoryId), { replace: true });
+  }, [legacyReadingStoryId, navigate]);
+
   useLayoutEffect(() => {
     contentColumnRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     setStorySubView('list');
-    setReadingReturnSubView(null);
-    setReadingJumpRequest(null);
   }, [id]);
 
   useEffect(() => {
@@ -169,20 +210,37 @@ const CharacterPage = () => {
     }
   }, [searchParams, setSearchParams]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (resetCharacter = false) => {
     if (!id) return;
+    const seq = ++loadSeqRef.current;
+    const epoch = getVaultEpoch();
+    setLoadError(null);
+    if (resetCharacter) {
+      setLoading(true);
+      setCharacter(null);
+      setStories([]);
+    }
     try {
       const [c, s] = await Promise.all([getCharacter(id), getStoriesByCharacter(id)]);
+      if (seq !== loadSeqRef.current || epoch !== getVaultEpoch()) return;
       const viewed = c ? await markCharacterViewed(id).catch(() => undefined) : undefined;
+      if (seq !== loadSeqRef.current || epoch !== getVaultEpoch()) return;
       setCharacter(viewed ?? c ?? null);
       setStories(s);
+    } catch (error) {
+      if (seq !== loadSeqRef.current || epoch !== getVaultEpoch()) return;
+      setCharacter(null);
+      setStories([]);
+      setLoadError(error instanceof Error ? error.message : '读取角色档案失败，请检查文件库连接后重试');
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current && epoch === getVaultEpoch()) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
   useEffect(() => {
-    load();
+    void load(true);
   }, [load]);
 
   useEffect(() => subscribePortraitCloudSaves(saved => {
@@ -271,16 +329,18 @@ const CharacterPage = () => {
     }
   }, [cardEdits, cardSaving, character, id, patchCharacter, toast]);
 
-  const saveDisplayName = useCallback(async () => {
-    if (!character || character.id !== id) return;
+  const saveDisplayName = useCallback(async (): Promise<boolean> => {
+    if (!character || character.id !== id) return false;
     // 与档案值相同则跳过：避免多余写入和「已保存」噪音提示。
-    if ((displayNameDraft.trim() || undefined) === character.displayMeta?.name) return;
+    if ((displayNameDraft.trim() || undefined) === character.displayMeta?.name) return true;
     try {
       const next = applyCharacterPageDisplayMeta(character, { name: displayNameDraft });
       await patchCharacter({ displayMeta: next.displayMeta });
       toast({ title: '展示名已保存' });
+      return true;
     } catch (error) {
       toast({ title: '展示名保存失败', description: error instanceof Error ? error.message : '请重试', variant: 'destructive' });
+      return false;
     }
   }, [character, displayNameDraft, id, patchCharacter, toast]);
 
@@ -335,40 +395,33 @@ const CharacterPage = () => {
       if (!ok) return false;
     }
     if (displayNameDirty) {
-      await saveDisplayName();
+      const ok = await saveDisplayName();
+      if (!ok) return false;
     }
     return true;
   }, [cardDirty, displayNameDirty, saveCardEdits, saveDisplayName]);
 
   const navigateWithGuard = useCallback(async (targetPath: string) => {
     if (!(await flushUnsavedCardEdits())) return;
-    try {
-      await readerRef.current?.flushPendingSave();
-    } catch (error) {
-      toast({
-        title: '阅读进度尚未保存，已取消跳转',
-        description: error instanceof Error ? error.message : '请检查文件库是否可写',
-        variant: 'destructive',
-      });
-      return;
-    }
     navigate(targetPath);
-  }, [flushUnsavedCardEdits, navigate, toast]);
+  }, [flushUnsavedCardEdits, navigate]);
 
   const neighbors = useCharacterNeighbors(id, {
-    disabled: Boolean(readingStoryId || importOpen || packExportOpen || exportChoice || storyToDelete || charDeleteOpen || cardSaving),
+    disabled: Boolean(importOpen || packExportOpen || exportChoice || storyToDelete || charDeleteOpen || cardSaving),
     onNavigateNeighbor: (targetId) => { void navigateWithGuard(`/character/${targetId}`); },
   });
 
   /** 编辑角色卡：把卡原件经内存交接送进编辑区角色卡工具（处理归编辑区的动线） */
-  const handleEditCard = () => {
+  const handleEditCard = async () => {
     if (!character) return;
+    if (!(await flushUnsavedCardEdits())) return;
+    const latest = (await getCharacter(character.id).catch(() => undefined)) ?? character;
     let file: File;
-    if (character.pngBase64) {
-      const bytes = Uint8Array.from(atob(character.pngBase64), (ch) => ch.charCodeAt(0));
-      file = new File([bytes], `${character.name}.png`, { type: 'image/png' });
+    if (latest.pngBase64) {
+      const bytes = Uint8Array.from(atob(latest.pngBase64), (ch) => ch.charCodeAt(0));
+      file = new File([bytes], `${latest.name}.png`, { type: 'image/png' });
     } else {
-      file = new File([exportCardJson(character.card)], `${character.name}.json`, { type: 'application/json' });
+      file = new File([exportCardJson(latest.card)], `${latest.name}.json`, { type: 'application/json' });
     }
     setPendingToolFile('card', file);
     navigate('/card-viewer');
@@ -425,45 +478,21 @@ const CharacterPage = () => {
   };
 
   const sortedStories = useMemo(() => sortStoriesForDisplay(stories), [stories]);
-  /** 底部「开始阅读」的目标：排序后的第一条（sortStoriesForDisplay 已按最近在前） */
   const latestStory = sortedStories[0];
 
-  // ===== 就地阅读与故事子视图（10.3b） =====
+  // ===== 大屏故事阅读与子视图 =====
 
   const openReader = useCallback((
     storyId: string,
     branchId?: string | null,
     floorOverride?: number,
-    returnSubView?: StorySubView | null,
   ) => {
-    setReadingBranchId(branchId);
-    setReadingJumpRequest(
-      floorOverride !== undefined
-        ? { floor: floorOverride, seq: ++jumpSeqRef.current }
-        : null,
-    );
-    if (returnSubView !== undefined) setReadingReturnSubView(returnSubView);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set('story', storyId);
-      return next;
+    setEditorStoryId(storyId);
+    void flushUnsavedCardEdits().then((ok) => {
+      if (!ok) return;
+      navigate(buildStoryReadPath(storyId, { branchId, floor: floorOverride }));
     });
-  }, [setSearchParams]);
-
-  const closeReader = useCallback(() => {
-    const backToSubView = readingReturnSubView;
-    setReadingBranchId(undefined);
-    setReadingJumpRequest(null);
-    setReadingReturnSubView(null);
-    if (backToSubView) setStorySubView(backToSubView);
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.delete('story');
-      return next;
-    });
-    // 阅读中可能改了标题/评分/进度，回列表重新拉一遍
-    void load();
-  }, [setSearchParams, load, readingReturnSubView]);
+  }, [flushUnsavedCardEdits, navigate]);
 
   /** 列表行内改状态/评分（就地落库，不动 lastViewedAt） */
   const patchStory = useCallback(async (storyId: string, patch: Partial<ArchiveStory>) => {
@@ -471,16 +500,19 @@ const CharacterPage = () => {
     await load();
   }, [load]);
 
-  /** 普通处理进入聊天工作台；整理/导出进入同一故事的明确子视图。 */
+  /** 故事阅读与编辑、总结整理、导入导出统一进入大屏故事工作区 `/story/:id`。 */
   const goWorkspace = useCallback((storyId: string, view?: EditorStoryView, branchId?: string | null) => {
     setEditorStoryId(storyId);
-    if (!view || view === 'read') {
-      navigate(buildEditorChatPath(storyId));
-      return;
-    }
-    const state = branchId !== undefined ? { state: { branchId } } : undefined;
-    navigate(buildEditorStoryPath(storyId, view), state);
-  }, [navigate]);
+    void flushUnsavedCardEdits().then((ok) => {
+      if (!ok) return;
+      if (!view || view === 'read') {
+        navigate(buildStoryReadPath(storyId, { branchId }));
+        return;
+      }
+      const state = branchId !== undefined ? { state: { branchId } } : undefined;
+      navigate(buildEditorStoryPath(storyId, view), state);
+    });
+  }, [flushUnsavedCardEdits, navigate]);
 
   const exportJsonCard = async (worldbookId?: string) => {
     if (!character) return;
@@ -508,7 +540,6 @@ const CharacterPage = () => {
   const exportStoryFile = async (storyId: string, branchId: string | null, format: StoryFileFormat) => {
     const epoch = getVaultEpoch();
     try {
-      await readerRef.current?.flushPendingSave();
       const current = await getArchiveStory(storyId);
       if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
       if (!current) throw new Error('故事不存在');
@@ -522,7 +553,7 @@ const CharacterPage = () => {
     playPendingRef.current = true;
     const epoch = getVaultEpoch();
     try {
-      await readerRef.current?.flushPendingSave();
+      if (!(await flushUnsavedCardEdits())) return;
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
       const target = await prepareStoryPlay(storyId, branchId);
@@ -530,37 +561,6 @@ const CharacterPage = () => {
       navigate(target.path);
     } catch (error) { toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' }); }
     finally { playPendingRef.current = false; }
-  };
-
-  const branchAndPlayFromFloor = async (
-    storyId: string,
-    branchId: string | null,
-    floor: number,
-    targetMessageId?: string | null,
-  ) => {
-    if (playPendingRef.current) return;
-    playPendingRef.current = true;
-    const epoch = getVaultEpoch();
-    try {
-      await readerRef.current?.flushPendingSave();
-      const { branchStoryFromFloor } = await import('@/lib/roleplay/branch-from-floor');
-      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
-      const created = await branchStoryFromFloor(storyId, branchId, floor, { targetMessageId });
-      if (epoch !== getVaultEpoch()) return;
-      toast({
-        title: `已开辟支线「${created.branchName}」`,
-        description: `已保留前 ${created.floorCount} 楼剧情与设定，正在进入酒馆续聊…`,
-      });
-      navigate(created.playPath);
-    } catch (error) {
-      toast({
-        title: '创建支线续聊未成功',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      playPendingRef.current = false;
-    }
   };
 
   const startWithGreeting = async (greetingIndex: number) => {
@@ -625,6 +625,22 @@ const CharacterPage = () => {
     );
   }
 
+  if (loadError) {
+    return (
+      <AppLayout>
+        <div role="alert" className="flex flex-col min-h-[50vh] items-center justify-center gap-3 px-4 text-center">
+          <BookOpen className="w-12 h-12 text-muted-foreground/50" />
+          <p className="font-medium text-foreground">角色档案暂时没能读出来，库里的原文件未受影响</p>
+          <p className="max-w-md break-words text-sm text-muted-foreground">{loadError}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => navigate('/library')}>返回角色库</Button>
+            <Button onClick={() => void load(true)}>重新读取</Button>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
   if (!character || !norm) {
     return (
       <AppLayout>
@@ -651,7 +667,7 @@ const CharacterPage = () => {
             <ArrowLeft className="w-4 h-4 mr-1" />
             角色库
           </Button>
-          {(neighbors.prev || neighbors.next) && !readingStoryId && (
+          {(neighbors.prev || neighbors.next) && (
             <div className="hidden sm:flex items-center gap-0.5 border-l border-[color:var(--hairline-inner)] pl-1.5 text-xs text-muted-foreground">
               <Button
                 variant="ghost"
@@ -699,8 +715,7 @@ const CharacterPage = () => {
 
         {/* ===== 主列：头部 + tabs（就地阅读时头部收起，返回列表自动展开） ===== */}
         <div ref={contentColumnRef} className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto scrollbar-thin">
-          {/* 就地阅读时把封面信息块一起收掉：手机屏幕上它会把正文挤到折叠线以下 */}
-          {isMobile && !readingStoryId && (
+          {isMobile && (
             <CharacterInfoRail
               stacked
               character={character}
@@ -719,16 +734,13 @@ const CharacterPage = () => {
             character={character}
             norm={norm}
             onPatch={patchCharacter}
-            collapsed={readingStoryId ? true : undefined}
           />
 
-          {!readingStoryId && (
-            <CharacterLoadoutBar
-              character={character}
-              norm={norm}
-              onSelectTab={changeActiveTab}
-            />
-          )}
+          <CharacterLoadoutBar
+            character={character}
+            norm={norm}
+            onSelectTab={changeActiveTab}
+          />
 
           <Tabs
             value={activeTab}
@@ -787,102 +799,72 @@ const CharacterPage = () => {
                )}
             </div>
 
-            {/* 故事 tab：就地阅读 / 列表+子视图（总结/日记/故事树，10.3b） */}
+            {/* 故事 tab：列表 + 子视图（总结/日记/自定义记录/故事树），阅读与处理统一跳转大屏 /story/:id */}
             <TabsContent value="stories" className="mt-3">
-              {readingStoryId ? (
-                <InlineStoryReader
-                  ref={readerRef}
-                  storyId={readingStoryId}
-                  stories={sortedStories}
-                  initialBranchId={readingBranchId}
-                  jumpRequest={readingJumpRequest}
-                  backLabel={
-                    readingReturnSubView === 'volume'
-                      ? '返回总结'
-                      : readingReturnSubView === 'diary'
-                        ? '返回日记'
-                        : readingReturnSubView === 'tree'
-                          ? '返回故事树'
-                          : '故事列表'
-                  }
-                  onSwitchStory={(sid) => openReader(sid, undefined, undefined, null)}
-                  onBack={closeReader}
-                  onOpenEditor={(sid) => goWorkspace(sid)}
-                  onOpenChat={(sid, branchId) => { void playStory(sid, branchId); }}
-                  onBranchChatFromFloor={(sid, branchId, floor, msgId) => { void branchAndPlayFromFloor(sid, branchId, floor, msgId); }}
-                  onCharacterUpdated={setCharacter}
-                />
-              ) : (
-                <div className="space-y-3">
-                  {/* 子视图切换：故事列表 › 总结/日记/故事树（设计稿的三个子 tab） */}
-                  <div className="flex items-center gap-1 text-xs">
+              <div className="space-y-3">
+                <div className="flex items-center gap-1 text-xs flex-wrap">
+                  <button
+                    type="button"
+                    className={cn(
+                      'rounded-md px-2 py-1 transition-colors',
+                      storySubView === 'list' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                    )}
+                    onClick={() => setStorySubView('list')}
+                  >
+                    故事列表
+                  </button>
+                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
+                  {STORY_SUB_VIEWS.map((v) => (
                     <button
                       type="button"
+                      key={v.key}
                       className={cn(
                         'rounded-md px-2 py-1 transition-colors',
-                        storySubView === 'list' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                        storySubView === v.key ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                       )}
-                      onClick={() => setStorySubView('list')}
+                      onClick={() => setStorySubView(v.key)}
                     >
-                      故事列表
+                      {v.label}
                     </button>
-                    <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
-                    {STORY_SUB_VIEWS.map((v) => (
-                      <button
-                        type="button"
-                        key={v.key}
-                        className={cn(
-                          'rounded-md px-2 py-1 transition-colors',
-                          storySubView === v.key ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-                        )}
-                        onClick={() => setStorySubView(v.key)}
-                      >
-                        {v.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {storySubView !== 'list' ? (
-                    <StoryRecordsView
-                      stories={sortedStories}
-                      kind={storySubView}
-                      onGoGenerate={(sid, kind, branchId) => goWorkspace(sid, kind, branchId)}
-                      onJumpToFloor={(sid, branchId, floor) => {
-                        const fromSubView = storySubView;
-                        setStorySubView('list');
-                        openReader(sid, branchId ?? null, floor, fromSubView);
-                      }}
-                    />
-                  ) : stories.length === 0 ? (
-                    <Card>
-                      <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                        还没有故事。点右上角「导入」，把 ST 聊天记录（JSONL）挂到这张卡下。
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <StoryListSection
-                      stories={sortedStories}
-                      activeStoryId={readingStoryId}
-                      onRead={openReader}
-                      onProcess={(sid) => goWorkspace(sid)}
-                      onExport={(sid) => goWorkspace(sid, 'io')}
-                      onExportFile={(sid, branchId, format) => { void exportStoryFile(sid, branchId, format); }}
-                      onPlay={(sid, branchId) => { void playStory(sid, branchId); }}
-                      onDelete={setStoryToDelete}
-                      onCopy={async sid => {
-                        const copy = await duplicateArchiveStory(sid);
-                        await load();
-                        toast({ title: '已复制故事', description: copy.title });
-                      }}
-                      onPatchStory={(sid, patch) => void patchStory(sid, patch)}
-                      onRenameStory={async (sid, title) => {
-                        await renameArchiveStory(sid, title);
-                        await load();
-                      }}
-                    />
-                  )}
+                  ))}
                 </div>
-              )}
+
+                {storySubView !== 'list' ? (
+                  <StoryRecordsView
+                    stories={sortedStories}
+                    kind={storySubView}
+                    onGoGenerate={(sid, kind, branchId) => goWorkspace(sid, kind, branchId)}
+                    onJumpToFloor={(sid, branchId, floor) => openReader(sid, branchId ?? null, floor)}
+                  />
+                ) : stories.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                      还没有故事。点右上角「导入」，把 ST 聊天记录（JSONL）挂到这张卡下，或直接点「新开聊天」开启第一段对话。
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <StoryListSection
+                    stories={sortedStories}
+                    activeStoryId={null}
+                    onRead={(sid, branchId) => openReader(sid, branchId)}
+                    onProcess={(sid) => goWorkspace(sid)}
+                    onExport={(sid) => goWorkspace(sid, 'io')}
+                    onExportFile={(sid, branchId, format) => { void exportStoryFile(sid, branchId, format); }}
+                    onPlay={(sid, branchId) => { void playStory(sid, branchId); }}
+                    onDelete={setStoryToDelete}
+                    onCopy={async (sid) => {
+                      const copy = await duplicateArchiveStory(sid);
+                      await load();
+                      toast({ title: '已复制故事', description: copy.title });
+                    }}
+                    onPatchStory={(sid, patch) => void patchStory(sid, patch)}
+                    onRenameStory={async (sid, title) => {
+                      await renameArchiveStory(sid, title);
+                      await load();
+                    }}
+                  />
+                )}
+              </div>
             </TabsContent>
 
             {/* 备注 tab（10.3c CRUD） */}
@@ -965,11 +947,11 @@ const CharacterPage = () => {
           fixed 就得跟着它的高度算偏移，flex 里 shrink-0 自然叠在它上面。
           就地阅读时收起（阅读器自带返回和进度条）。
         */}
-        {isMobile && !readingStoryId && latestStory && (
+        {isMobile && latestStory && (
           <div className="shrink-0 border-t border-[color:var(--border-subtle)] bg-chrome px-3 py-2">
             <Button
               className="w-full"
-              onClick={() => { setActiveTab('stories'); openReader(latestStory.id); }}
+              onClick={() => openReader(latestStory.id)}
             >
               <BookOpen className="mr-1.5 h-4 w-4" />
               开始阅读
@@ -1010,6 +992,7 @@ const CharacterPage = () => {
         fileTarget={storyToDelete ? { store: 'archiveStories', id: storyToDelete.id } : undefined}
         onConfirm={handleConfirmDeleteStory} />
 
+      <SafeCharacterRouteBlocker dirty={cardDirty || displayNameDirty} flush={flushUnsavedCardEdits} />
       <DeleteConfirmDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}
         title={`删除「${character.name}」？`}
         description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"

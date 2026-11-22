@@ -39,7 +39,6 @@ import { MobileReaderSettings, ReaderZoneHint, type ReadingMode } from './Mobile
 import { NovelChapterSuggestDialog } from './NovelChapterSuggestDialog';
 import { NovelPolishDialog } from './NovelPolishDialog';
 import { NovelTopBar } from './NovelTopBar';
-import { ShareImage } from './ShareImage';
 import type { ChatSession, ChapterMarker, RegexRule } from '@/types/chat';
 import type { ArchiveStory } from '@/types/archive';
 
@@ -79,12 +78,16 @@ interface StoredOptions {
   sceneGapMinutes: number;
   fontSize: number;
   readingMode: ReadingMode;
+  desktopReadingMode: ReadingMode;
+  scrollMaxWidth: number;
 }
 
 const STORED_DEFAULTS: StoredOptions = {
   ...DEFAULT_NOVEL_OPTIONS,
   fontSize: 18,
   readingMode: 'scroll',
+  desktopReadingMode: 'page',
+  scrollMaxWidth: 760,
 };
 
 function loadStoredOptions(): StoredOptions {
@@ -118,26 +121,34 @@ const NovelView = ({
   const [sceneGap, setSceneGap] = useState(stored.sceneGapMinutes);
   const [fontSize, setFontSize] = useState(stored.fontSize);
   const [readingMode, setReadingMode] = useState<ReadingMode>(stored.readingMode);
+  const [desktopReadingMode, setDesktopReadingMode] = useState<ReadingMode>(stored.desktopReadingMode ?? 'page');
+  const [scrollMaxWidth, setScrollMaxWidth] = useState<number>(stored.scrollMaxWidth ?? 760);
   const [currentPage, setCurrentPage] = useState(0);
   const currentPageRef = useRef(0);
   const touchStartX = useRef<number | null>(null);
 
-  const step = isMobile ? 1 : 2;
-  const normalizePage = isMobile ? clampNovelPageIndex : normalizeNovelSpreadStart;
-  const scrolling = isMobile && readingMode === 'scroll';
+  const activeReadingMode = isMobile ? readingMode : desktopReadingMode;
+  const scrolling = activeReadingMode === 'scroll';
+  const step = isMobile || scrolling ? 1 : 2;
+  const normalizePage = isMobile || scrolling ? clampNovelPageIndex : normalizeNovelSpreadStart;
 
   useEffect(() => {
     try {
       localStorage.setItem(OPTS_STORAGE_KEY, JSON.stringify({
-        userMode, showHidden, sceneGapMinutes: sceneGap, fontSize, readingMode,
+        userMode,
+        showHidden,
+        sceneGapMinutes: sceneGap,
+        fontSize,
+        readingMode,
+        desktopReadingMode,
+        scrollMaxWidth,
       }));
     } catch { /* non-critical preference */ }
-  }, [userMode, showHidden, sceneGap, fontSize, readingMode]);
+  }, [userMode, showHidden, sceneGap, fontSize, readingMode, desktopReadingMode, scrollMaxWidth]);
 
   const [chromeVisible, setChromeVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [zoneHintOpen, setZoneHintOpen] = useState(false);
-  const [shareImageOpen, setShareImageOpen] = useState(false);
   const [chapterDialogOpen, setChapterDialogOpen] = useState(false);
   const [polishChapter, setPolishChapter] = useState<NovelChapter | null>(null);
   const hideTimerRef = useRef<number | null>(null);
@@ -150,13 +161,13 @@ const NovelView = ({
   }, []);
 
   useEffect(() => {
-    if (!isMobile || !chromeVisible || settingsOpen || zoneHintOpen || shareImageOpen) {
+    if (!isMobile || !chromeVisible || settingsOpen || zoneHintOpen) {
       clearHideTimer();
       return;
     }
     hideTimerRef.current = window.setTimeout(() => setChromeVisible(false), TOOLBAR_AUTO_HIDE_MS);
     return clearHideTimer;
-  }, [isMobile, chromeVisible, settingsOpen, zoneHintOpen, shareImageOpen, clearHideTimer]);
+  }, [isMobile, chromeVisible, settingsOpen, zoneHintOpen, clearHideTimer]);
 
   useEffect(() => {
     if (!isMobile) return;
@@ -209,7 +220,9 @@ const NovelView = ({
       const clientWidth = rect.width - horizontalPadding;
       const clientHeight = rect.height - verticalPadding;
       if (clientWidth <= 0 || clientHeight <= 0) return;
-      const width = scrolling ? Math.min(clientWidth, SCROLL_TEXT_MAX_WIDTH) : clientWidth;
+      const width = scrolling
+        ? (isMobile ? Math.min(clientWidth, SCROLL_TEXT_MAX_WIDTH) : Math.min(clientWidth, scrollMaxWidth))
+        : clientWidth;
       setPageBox((prev) => (prev.width === width && prev.height === clientHeight
         ? prev
         : { width, height: clientHeight }));
@@ -219,7 +232,7 @@ const NovelView = ({
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasPages, embedded, scrolling, isMobile]);
+  }, [hasPages, embedded, scrolling, isMobile, scrollMaxWidth]);
 
   const readStoredFloor = useCallback((): number | undefined => {
     if (!progressKey) return undefined;
@@ -305,7 +318,7 @@ const NovelView = ({
   }, [jumpToPage, isMobile]);
 
   const current = pages[currentPage];
-  const facing = isMobile ? undefined : pages[currentPage + 1];
+  const facing = isMobile || scrolling ? undefined : pages[currentPage + 1];
   const lastSpreadStart = normalizePage(pages.length - 1, pages.length);
   const polishTarget = current ? chapters[current.chapterIndex] : undefined;
   const novelBookmarks = useMemo<NovelBookmark[]>(
@@ -339,7 +352,7 @@ const NovelView = ({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [chapterDialogOpen, polishChapter, exitReader, turnPage, step]);
+  }, [chapterDialogOpen, polishChapter, exitReader, turnPage, step, scrolling]);
 
   const chapterNav = chapters.map((c, i) => ({
     title: c.title ?? '（开篇）',
@@ -570,6 +583,10 @@ const NovelView = ({
         title={session.title || '未命名作品'}
         isMobile={isMobile}
         chromeVisible={chromeVisible}
+        readingMode={activeReadingMode}
+        onReadingModeChange={isMobile ? setReadingMode : setDesktopReadingMode}
+        scrollMaxWidth={scrollMaxWidth}
+        onScrollMaxWidthChange={setScrollMaxWidth}
         userMode={userMode}
         onUserModeChange={setUserMode}
         hiddenUserFloors={hiddenUserFloors}
@@ -618,7 +635,11 @@ const NovelView = ({
           >
             <div
               ref={scrollInnerRef}
-              className="mx-auto max-w-2xl px-5 pb-24 pt-[calc(env(safe-area-inset-top)+2.75rem)]"
+              style={isMobile ? undefined : { maxWidth: `${scrollMaxWidth}px` }}
+              className={cn(
+                'mx-auto px-5 pb-24',
+                isMobile ? 'max-w-2xl pt-[calc(env(safe-area-inset-top)+2.75rem)]' : 'pt-6',
+              )}
             >
               <div className="relative w-full" style={{ height: pageVirtualizer.getTotalSize() }}>
                 {pageVirtualizer.getVirtualItems().map((item) => {
@@ -679,7 +700,7 @@ const NovelView = ({
           </div>
         )}
 
-        {!isMobile && (
+        {!isMobile && !scrolling && (
           <>
             <Button
               variant="ghost"
@@ -745,14 +766,6 @@ const NovelView = ({
               ? `${currentPage + 1}${facing ? `–${currentPage + 2}` : ''} / ${pages.length}`
               : '0 / 0'}
           </span>
-          <ShareImage
-            storyTitle={session.title || session.character.name || '未命名故事'}
-            characterName={session.character.name}
-            currentFloor={pages[currentPage]?.startFloor ?? 1}
-            currentText={pages[currentPage]?.blocks.map(b => b.text).join('\n') ?? ''}
-            triggerLabel="生成分享图"
-            onOpenChange={setShareImageOpen}
-          />
         </div>
       </div>
 

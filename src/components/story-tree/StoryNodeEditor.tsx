@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Pin, Archive, Trash2, Layers, Pencil } from 'lucide-react';
+import { Pin, Archive, Trash2, Layers, LocateFixed, Pencil, X } from 'lucide-react';
 import type { StoryNode, StoryNodeType } from '@/types/story-tree';
 import { STORY_NODE_TYPES, NODE_TYPE_LABELS, NODE_TYPE_DOT } from '@/types/story-tree';
 import { splitContentSections } from '@/lib/story-tree-ai';
@@ -14,19 +14,45 @@ interface StoryNodeEditorProps {
   node: StoryNode;
   onChange: (patch: Partial<Omit<StoryNode, 'id' | 'parentId' | 'order'>>) => void;
   onDelete: () => void;
+  onClose?: () => void;
+  onJumpToFloor?: (floor: number) => void;
 }
 
-/** 右栏节点编辑表单：标题/提示/正文/标签 + 置顶/归档开关 + 删除。
- *  正文含多个 `## 卷/阶段` 小节时，提供「分卷」只读视图，按卷展现角色状态变化。 */
-export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorProps) {
+function extractFloorRefs(text: string): number[] {
+  const found = new Set<number>();
+  const re = /(?:#|第\s*)(\d+)(?:\s*[-~～至]\s*\d+)?(?:\s*楼)?|(\d+)\s*[-~～]\s*\d+\s*楼/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const n = Number(m[1] ?? m[2]);
+    if (Number.isSafeInteger(n) && n >= 0) found.add(n);
+    if (found.size >= 8) break;
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+/** 右栏节点编辑表单：标题/提示/正文/标签 + 置顶/归档开关 + 提及楼层直跳 + 删除。 */
+export function StoryNodeEditor({ node, onChange, onDelete, onClose, onJumpToFloor }: StoryNodeEditorProps) {
   const sections = splitContentSections(node.content);
   const hasSections = sections.some((s) => s.label != null);
-  // 有分卷小节时默认走分卷阅读视图；点「编辑」切回纯文本编辑
   const [byVolume, setByVolume] = useState(hasSections);
   useEffect(() => setByVolume(hasSections), [node.id, hasSections]);
 
+  const floorRefs = useMemo(
+    () => extractFloorRefs(`${node.hint}\n${node.content}`),
+    [node.hint, node.content],
+  );
+
   return (
     <div className="space-y-3">
+      {onClose && (
+        <div className="flex items-center justify-between border-b border-border/60 pb-2">
+          <span className="text-xs font-medium text-muted-foreground">节点详情</span>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="收起节点详情" title="收起右侧面板">
+            <X className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
       <div className="flex items-end gap-2">
         <div className="space-y-1 flex-1 min-w-0">
           <Label htmlFor="node-title" className="text-xs text-muted-foreground">标题</Label>
@@ -59,6 +85,24 @@ export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorPro
           </Select>
         </div>
       </div>
+
+      {onJumpToFloor && floorRefs.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs text-muted-foreground">跳回原文：</span>
+          {floorRefs.map((floor) => (
+            <button
+              key={floor}
+              type="button"
+              onClick={() => onJumpToFloor(floor)}
+              className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-primary hover:bg-primary/10 transition-colors tabular-nums"
+            >
+              <LocateFixed className="w-3 h-3" />
+              #{floor} 楼
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-1">
         <Label htmlFor="node-hint" className="text-xs text-muted-foreground">提示 / 别名（大纲里跟在标题后）</Label>
         <Input
@@ -89,7 +133,7 @@ export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorPro
           )}
         </div>
         {hasSections && byVolume ? (
-          <div className="space-y-2 max-h-[42vh] overflow-y-auto pr-0.5">
+          <div className="space-y-2 max-h-[42vh] overflow-y-auto overscroll-contain pr-0.5">
             {sections.map((s, i) => (
               <div key={i} className="rounded-md border bg-muted/30 p-2.5">
                 {s.label && (
@@ -106,8 +150,8 @@ export function StoryNodeEditor({ node, onChange, onDelete }: StoryNodeEditorPro
             id="node-content"
             value={node.content}
             onChange={(e) => onChange({ content: e.target.value })}
-            className="min-h-[30vh] text-sm"
-            placeholder="记录这个节点的事实信息……"
+            className="min-h-[30vh] text-sm leading-relaxed"
+            placeholder="记录这个节点的事实信息……（如写下 #12 楼 可自动生成原文跳转按钮）"
           />
         )}
         {hasSections && byVolume && (

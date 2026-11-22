@@ -1,5 +1,5 @@
 import type { SummaryItem, SummaryTemplate } from '@/types/summary';
-import { createRepo, getCurrentRepo, pruneAutoSaved, type RemoveOptions } from '@/lib/repo';
+import { createRepo, getCurrentRepo, type RemoveOptions } from '@/lib/repo';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { withArchiveStoryLock } from '@/lib/archive-db';
 import { getVaultEpoch } from '@/lib/vault/active';
@@ -28,12 +28,24 @@ export async function saveSummary(item: SummaryItem): Promise<void> {
   return item.bookId ? withArchiveStoryLock(item.bookId, write) : write();
 }
 
+export type SummaryEditPatch = Pick<SummaryItem, 'title' | 'content' | 'volumeNumber' | 'volumeCategory' | 'diaryOwner'>
+  & Partial<Pick<SummaryItem, 'floorStart' | 'floorEnd' | 'rangeDetached'>>;
+
 /** Explicit detail-editor save: never recreate a deleted/moved record or overwrite another editor. */
-export async function editSummary(expected: SummaryItem, patch: Pick<SummaryItem, 'title' | 'content' | 'volumeNumber' | 'volumeCategory' | 'diaryOwner'>, expectedEpoch: number): Promise<void> {
+export async function editSummary(expected: SummaryItem, patch: SummaryEditPatch, expectedEpoch: number): Promise<void> {
   const repo = getCurrentRepo<SummaryItem>('summaries');
   const baseline = JSON.stringify(expected), edits = structuredClone(patch);
   if (!edits.title.trim() || !edits.content.trim()) throw new Error('标题和正文不能为空');
-  if (edits.volumeNumber !== undefined && (!Number.isSafeInteger(edits.volumeNumber) || edits.volumeNumber < 1)) throw new Error('卷号必须是正整数');
+  if (edits.volumeNumber !== undefined && (!Number.isSafeInteger(edits.volumeNumber) || edits.volumeNumber < 1)) {
+    throw new Error('卷号必须是正整数');
+  }
+  if (edits.floorStart !== undefined || edits.floorEnd !== undefined) {
+    const start = edits.floorStart ?? expected.floorStart;
+    const end = edits.floorEnd ?? expected.floorEnd;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) {
+      throw new Error('起始楼层需为非负整数，且结束楼层不能小于起始楼层');
+    }
+  }
   const write = () => withSummaryLock(expected.id, async () => {
     if (getVaultEpoch() !== expectedEpoch) throw new Error('文件库已切换，请重新打开记录');
     const current = await repo.get(expected.id);
@@ -57,12 +69,10 @@ export async function deleteSummary(id: string, options?: RemoveOptions): Promis
 }
 
 /**
- * 只保留最近 `keep` 份「自动落库」(autoSaved) 的总结，超出的按 updatedAt 由旧到新删除。
- * 用户手动保存(autoSaved 非 true)的不受影响。返回被删除的 id 数组。
- * keep 默认 10（生成成本高，比 presets/cards 的 5 多留）。
+ * 历史兼容存根：已取消自动按数量静默清理旧总结的危险行为，所有已生成记录永久保留直至用户主动删除。
  */
-export async function pruneAutoSavedSummaries(keep = 10): Promise<string[]> {
-  return pruneAutoSaved(summaryRepo, keep);
+export async function pruneAutoSavedSummaries(_keep = 10): Promise<string[]> {
+  return [];
 }
 
 // ---------- summaryTemplates（自定义提示词模板；内置模板是常量见 summary-templates.ts） ----------

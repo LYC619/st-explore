@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
+import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { Key, Check, AlertCircle, PlugZap, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,10 +16,60 @@ import { ProfileToolbar } from './ProfileToolbar';
 import { ModelNameInput } from './ModelNameInput';
 import { ApiConfigSyncNotice } from './ApiConfigSyncNotice';
 
-// 持久化/领域层已拆到 api-profiles.ts；barrel（index.ts）从那里导出 loadAPIConfig 等。
+function RouteDirtyBlocker({ dirty, onSave }: { dirty: boolean; onSave: () => boolean }) {
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => (
+    dirty && currentLocation.pathname !== nextLocation.pathname
+  ));
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  if (blocker.state !== 'blocked') return null;
+
+  return (
+    <AlertDialog open onOpenChange={(open) => { if (!open) blocker.reset(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>AI 服务配置还未保存</AlertDialogTitle>
+          <AlertDialogDescription>
+            你刚修改了接口地址、密钥或模型，离开当前页面会丢失未保存的改动。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel autoFocus onClick={() => blocker.reset()}>继续编辑</AlertDialogCancel>
+          <Button variant="outline" onClick={() => blocker.proceed()}>放弃修改并离开</Button>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault();
+              if (onSave()) blocker.proceed();
+            }}
+          >
+            保存并离开
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function SafeApiRouteBlocker(props: { dirty: boolean; onSave: () => boolean }) {
+  const router = useContext(UNSAFE_DataRouterContext);
+  return router ? <RouteDirtyBlocker {...props} /> : null;
+}
 
 /** 多提供商 API 配置卡：全应用唯一的 AI 配置维护点（其余页面用 ApiStatusLine 状态条）。 */
-export function APIConfigCard() {
+export function APIConfigCard({
+  onDirtyStateChange,
+}: {
+  onDirtyStateChange?: (state: { dirty: boolean; save: () => boolean }) => void;
+} = {}) {
   const {
     profiles, activeId, savedActive,
     name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList, favoriteModels, setFavoriteModels,
@@ -31,6 +82,9 @@ export function APIConfigCard() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [pending, setPending] = useState<(() => void) | null>(null);
   useEffect(() => setIsKeyVisible(false), [activeId]);
+  useEffect(() => {
+    onDirtyStateChange?.({ dirty, save: handleSave });
+  }, [dirty, handleSave, onDirtyStateChange]);
   const requestChange = (action: () => void) => {
     const apply = () => { setIsKeyVisible(false); action(); };
     if (dirty) setPending(() => apply); else apply();
@@ -38,6 +92,7 @@ export function APIConfigCard() {
 
   return (
     <Card>
+      <SafeApiRouteBlocker dirty={dirty} onSave={handleSave} />
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Key className="w-5 h-5" />
@@ -55,9 +110,9 @@ export function APIConfigCard() {
         <ProfileToolbar
           profiles={profiles}
           activeId={activeId}
-          onSwitch={id => requestChange(() => handleSwitch(id))}
+          onSwitch={(id) => requestChange(() => handleSwitch(id))}
           onAdd={() => requestChange(handleAdd)}
-          onDuplicate={handleDuplicate}
+          onDuplicate={() => requestChange(handleDuplicate)}
           onDeleteClick={() => setDeleteOpen(true)}
         />
 
@@ -79,6 +134,9 @@ export function APIConfigCard() {
                 type={isKeyVisible ? 'text' : 'password'}
                 value={apiKey}
                 aria-label="API Key"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 onChange={(e) => { setApiKey(e.target.value); setDirty(true); }}
                 placeholder="sk-..."
               />
@@ -94,11 +152,14 @@ export function APIConfigCard() {
           <Input
             value={apiUrl}
             aria-label="API 接口地址"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             onChange={(e) => { setApiUrl(e.target.value); setDirty(true); }}
             placeholder={DEFAULT_API_URL}
           />
           <p className="text-xs text-muted-foreground">
-            支持 OpenAI 兼容格式的接口，如官方、各类中转站、本地部署的模型等
+            支持 OpenAI、Claude、Gemini 等官方及兼容中转站地址
           </p>
         </div>
 
@@ -106,7 +167,7 @@ export function APIConfigCard() {
           model={model}
           modelList={modelList}
           favoriteModels={favoriteModels}
-          onFavoriteToggle={value => { setFavoriteModels(previous => previous.includes(value) ? previous.filter(item => item !== value) : [...previous, value]); setDirty(true); }}
+          onFavoriteToggle={(value) => { setFavoriteModels((previous) => previous.includes(value) ? previous.filter((item) => item !== value) : [...previous, value]); setDirty(true); }}
           fetching={fetchingModels}
           onModelChange={(v) => { setModel(v); setDirty(true); }}
           onFetch={handleFetchModels}
@@ -120,17 +181,24 @@ export function APIConfigCard() {
             {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
             测试连通
           </Button>
-          {dirty && <span className="text-xs text-muted-foreground">有未保存的修改</span>}
+          {dirty && <span className="text-xs text-primary font-medium">有未保存的修改</span>}
         </div>
 
         {testResult && (
-          <div className={`flex items-center gap-2 text-sm rounded-md border px-3 py-2 ${
+          <div className={`flex items-center justify-between gap-2 flex-wrap text-sm rounded-md border px-3 py-2 ${
             testResult.ok
               ? 'border-[var(--status-ok-bg)] bg-[var(--status-ok-bg)] text-[color:var(--status-ok)]'
               : 'border-[var(--status-warn-bg)] bg-[var(--status-warn-bg)] text-[color:var(--status-warn)]'
           }`}>
-            {testResult.ok ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-            <span className="break-all">{testResult.text}</span>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {testResult.ok ? <Check className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+              <span className="break-all">{testResult.text}</span>
+            </div>
+            {testResult.ok && dirty && (
+              <Button size="sm" onClick={handleSave} className="shrink-0">
+                保存并启用此配置
+              </Button>
+            )}
           </div>
         )}
 
@@ -155,16 +223,21 @@ export function APIConfigCard() {
             <AlertDialogDescription>该提供商的密钥与配置将被移除，此操作不可撤销。</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>取消</AlertDialogCancel>
             <AlertDialogAction onClick={() => { handleDelete(); setDeleteOpen(false); }}>删除</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <AlertDialog open={!!pending} onOpenChange={open => { if (!open) setPending(null); }}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>服务配置还未保存</AlertDialogTitle><AlertDialogDescription>切换会离开当前草稿。可以先保存，或放弃这次修改。</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel onClick={() => setPending(null)}>继续编辑</AlertDialogCancel>
+      <AlertDialog open={!!pending} onOpenChange={(open) => { if (!open) setPending(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>服务配置还未保存</AlertDialogTitle>
+            <AlertDialogDescription>切换会离开当前草稿。可以先保存，或放弃这次修改。</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel autoFocus onClick={() => setPending(null)}>继续编辑</AlertDialogCancel>
             <Button variant="outline" onClick={() => { const action = pending; setPending(null); action?.(); }}>放弃修改并切换</Button>
-            <AlertDialogAction onClick={event => { event.preventDefault(); if (handleSave()) { const action = pending; setPending(null); action?.(); } }}>保存并切换</AlertDialogAction>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); if (handleSave()) { const action = pending; setPending(null); action?.(); } }}>保存并切换</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

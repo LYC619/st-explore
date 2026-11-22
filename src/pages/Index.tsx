@@ -33,6 +33,7 @@ import {
   deleteArchiveStory,
   updateBranchLine,
   getBranchLine,
+  resolveInitialBranchId,
 } from '@/lib/archive-db';
 import { bindSessionToCharacter } from '@/lib/bind-story';
 import { takePendingToolFile } from '@/lib/tool-handoff';
@@ -42,10 +43,13 @@ import {
   clearSessionState,
   getDefaultExportSettings,
   saveSettings,
+  applyGlobalAppearanceToSettings,
+  normalizeAppearanceSettings,
 } from '@/lib/session-storage';
 import { useToast } from '@/hooks/use-toast';
 import {
   buildEditorChatPath,
+  buildStoryReadPath,
   getEditorStoryId,
   resolveEditorStoryId,
   setEditorStoryId,
@@ -105,10 +109,14 @@ const Index = () => {
     }
   }, []);
 
-  const hydrateStory = useCallback((story: ArchiveStory, pointer = loadSessionPointer(), branchId: string | null = null) => {
-    const line = getBranchLine(story, branchId);
-    if (!line) throw new Error('故事分支不存在');
-    const markers = line.markers ?? [], favorites = line.favorites ?? [], settings = story.settings ?? settingsRef.current;
+  const hydrateStory = useCallback((story: ArchiveStory, pointer = loadSessionPointer(), requestedBranchId: string | null = null) => {
+    const branchId = resolveInitialBranchId(story, requestedBranchId);
+    const line = getBranchLine(story, branchId) ?? getBranchLine(story, null)!;
+    const markers = line.markers ?? [];
+    const favorites = line.favorites ?? [];
+    const settings = applyGlobalAppearanceToSettings(
+      normalizeAppearanceSettings(story.settings ?? settingsRef.current),
+    );
     savedDraft.current = { storyId: story.id, branchId, session: line.session, markers, favorites, settings };
     setCurrentBranchId(branchId);
     setSession(line.session);
@@ -338,6 +346,11 @@ const Index = () => {
       toast({ title: '故事读取失败，已取消切换', variant: 'destructive' });
       return;
     }
+    if (fresh.characterId) {
+      setEditorStoryId(fresh.id);
+      navigate(buildStoryReadPath(fresh.id));
+      return;
+    }
     hydrateStory(fresh);
     navigate(buildEditorChatPath(story.id));
   };
@@ -379,7 +392,7 @@ const Index = () => {
         title: `已绑定到「${character.name}」`,
         description: carried > 0 ? `${carried} 条总结/故事树已一并带走` : undefined,
       });
-      navigate(buildEditorChatPath(story.id) + (currentBranchId ? '&branch=' + encodeURIComponent(currentBranchId) : ''), { replace: true });
+      navigate(`/story/${encodeURIComponent(story.id)}${currentBranchId ? `?branch=${encodeURIComponent(currentBranchId)}` : ''}`, { replace: true });
     } catch (error) {
       console.error('Bind failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({
@@ -493,20 +506,6 @@ const Index = () => {
                 </div>
               </div>
             )}
-
-            <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              {[
-                { label: '典雅书籍', desc: '装饰边框' },
-                { label: '小说排版', desc: '经典引号' },
-                { label: '社交气泡', desc: '聊天风格' },
-                { label: '极简主义', desc: '清爽干净' },
-              ].map((item, i) => (
-                <div key={i} className="p-4 rounded-lg bg-card border border-border card-elevated">
-                  <div className="font-display font-medium">{item.label}</div>
-                  <div className="text-xs text-muted-foreground">{item.desc}</div>
-                </div>
-              ))}
-            </div>
               </div>
             </div>
           </div>

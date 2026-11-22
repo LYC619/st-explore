@@ -8,7 +8,7 @@ export function loadSettingsSection(): SettingsSection {
   const value = localStorage.getItem(STORAGE_KEY);
   return SETTINGS_SECTIONS.includes(value as SettingsSection)
     ? value as SettingsSection
-    : 'display';
+    : 'ai';
 }
 
 export function saveSettingsSection(section: SettingsSection): void {

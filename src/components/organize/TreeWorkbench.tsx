@@ -1,14 +1,6 @@
 /**
- * 故事树工作台（2.0 阶段3，从 pages/StoryTree.tsx 拆出的完整树编辑器）。
- * 只管一棵树的编辑：树/导图/卡片/时间轴视图、节点编辑、拖拽移动、撤销/重做、AI 生成。
- * 树列表的新建/删除/导入/导出在整理与记录的左栏与右栏（OrganizePanel/ContextRail）。
- * 父组件用 key={tree.id} 重挂来切树；保存防抖 600ms + 卸载兜底。
- *
- * TODO(移动端适配)：本工作台暂未做窄屏适配（<1024px）。
- * 四种视图里导图和时间轴是二维画布，横向空间是它们的语义本身，
- * 不是「换成单列」能解决的——手机上大概要改成「先选节点再看详情」的两级结构，
- * 拖拽移动也得换成长按+移动到目标的两步操作。这是重新设计交互，不是调布局，
- * 所以本轮先放着。做法见 docs/mobile-adaptation.md「没做的部分」。
+ * 故事树工作台：树/导图/卡片/时间轴视图、节点编辑、拖拽移动、撤销/重做、AI 生成。
+ * 未选中节点时自动收起右侧空白面板，让故事树画布铺满视野；选中节点后展开详情栏。
  */
 import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
 import {
@@ -37,20 +29,17 @@ import { StoryNodeEditor } from '@/components/story-tree/StoryNodeEditor';
 import { AIFillDialog } from '@/components/story-tree/AIFillDialog';
 import { toast } from '@/hooks/use-toast';
 
-/** 撤销栈上限：结构操作（增/删/移/AI 应用）才进栈，文本输入不进 */
 const UNDO_LIMIT = 50;
 
 interface TreeWorkbenchProps {
   tree: StoryTreeT;
-  /** AI 生成用的会话（当前脉络）；null 时隐藏 AI 生成入口 */
   session: ChatSession | null;
-  /** 保存落库后通知父组件刷新索引 */
   onChanged: () => void;
-  /** 页面级包装器可把选树、重命名和文件操作恢复到旧版同一工具行。 */
+  onJumpToFloor?: (floor: number) => void;
   renderHeader?: (props: { title: string; onTitleChange: (value: string) => void }) => ReactNode;
 }
 
-export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWorkbenchProps) {
+export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderHeader }: TreeWorkbenchProps) {
   const [nodes, setNodes] = useState<StoryNode[]>(tree.nodes);
   const [treeTitle, setTreeTitle] = useState(tree.title);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -59,14 +48,11 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
   const [aiFillOpen, setAiFillOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [viewMode, setViewMode] = useState<'tree' | 'mindmap' | 'cards' | 'timeline'>('tree');
-  // 导图/时间轴内容自含全文，独占一整行；编辑器整行铺在下方（未选中不占位）
   const fullRowView = viewMode === 'mindmap' || viewMode === 'timeline';
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 卸载兜底用：闭包外读最新值
   const latestRef = useRef({ nodes: tree.nodes, title: tree.title, dirty: false });
 
-  // 撤销/重做：仅结构操作进栈（存 nodes 快照），文本编辑不进
   const undoStack = useRef<StoryNode[][]>([]);
   const redoStack = useRef<StoryNode[][]>([]);
   const [, forceUpdate] = useState(0);
@@ -83,7 +69,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     updatedAt: Date.now(),
   }), [tree]);
 
-  // 防抖自动保存
   const scheduleSave = useCallback((nextNodes: StoryNode[], nextTitle: string) => {
     latestRef.current = { nodes: nextNodes, title: nextTitle, dirty: true };
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -103,7 +88,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     }, 600);
   }, [buildItem, onChanged]);
 
-  // 卸载兜底：防抖窗口内切走不丢最后一笔
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     const { nodes: n, title: t, dirty } = latestRef.current;
@@ -131,7 +115,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     scheduleSave(nodes, v);
   };
 
-  // 节点操作（结构变更先 pushHistory 再应用）
   const handleAddRoot = () => {
     const { nodes: next, node } = addNode(nodes, null, { title: '新节点' });
     pushHistory(nodes);
@@ -150,11 +133,10 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     applyNodes(updateNode(nodes, selectedId, patch));
   };
 
-  // 删除三选一：取消 / 改为归档（软删除，可恢复）/ 确认删除
   const [deleteNodeOpen, setDeleteNodeOpen] = useState(false);
   const deleteTargetCount = useMemo(
     () => (selectedId && deleteNodeOpen ? collectSubtreeIds(nodes, selectedId).length : 0),
-    [selectedId, deleteNodeOpen, nodes]
+    [selectedId, deleteNodeOpen, nodes],
   );
   const handleDeleteNode = () => {
     if (!selectedId) return;
@@ -173,7 +155,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
   const handleMove = (draggedId: string, targetId: string | null, zone: DropZone) => {
     let next: StoryNode[];
     if (targetId === null) {
-      // 拖到根级落点 = 移到顶层末尾
       next = moveNode(nodes, draggedId, null, childrenOf(nodes, null).length);
     } else if (zone === 'inside') {
       next = moveNode(nodes, draggedId, targetId, childrenOf(nodes, targetId).length);
@@ -185,7 +166,7 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
       if (base < 0) return;
       next = moveNode(nodes, draggedId, target.parentId, zone === 'before' ? base : base + 1);
     }
-    if (next === nodes) return; // model 拒绝的非法移动（如移到自己后代下）
+    if (next === nodes) return;
     pushHistory(nodes);
     applyNodes(next);
   };
@@ -193,7 +174,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
     setCollapsed((c) => { const n = new Set(c); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   };
 
-  // 撤销/重做
   const undo = useCallback(() => {
     const prev = undoStack.current.pop();
     if (!prev) return;
@@ -213,7 +193,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
   const canUndo = undoStack.current.length > 0;
   const canRedo = redoStack.current.length > 0;
 
-  // Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y（输入框内不拦截）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
@@ -231,7 +210,6 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
   const selectedNode = selectedId ? findById(nodes, selectedId) : undefined;
   const archivedCount = nodes.filter((n) => n.archived).length;
 
-  // 搜索：命中行高亮、其余淡化；命中节点的祖先自动展开
   const searchResult = useMemo(() => searchNodes(nodes, query), [nodes, query]);
   const effectiveCollapsed = useMemo(() => {
     if (!searchResult) return collapsed;
@@ -254,8 +232,7 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
       )}
 
       <div className="flex flex-wrap gap-4 items-start">
-        {/* 布局铁律：flex-wrap + 行内 flex-basis，禁视口断点（同原故事树页） */}
-        <Card className="min-w-0" style={{ flex: fullRowView ? '1 1 100%' : '2 1 230px' }}>
+        <Card className="min-w-0" style={{ flex: fullRowView || !selectedNode ? '1 1 100%' : '2 1 280px' }}>
           <CardContent className="p-3 space-y-2 min-h-[60vh]">
             <div className="flex items-center gap-1 flex-wrap">
               <Button variant="outline" size="sm" className="gap-1" onClick={handleAddRoot}>
@@ -293,6 +270,11 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
                   </Button>
                 </>
               )}
+              {!selectedNode && nodes.length > 0 && (
+                <span className="ml-2 text-xs text-muted-foreground hidden sm:inline">
+                  点击任意节点可在右侧展开编辑
+                </span>
+              )}
               {archivedCount > 0 && (
                 <Button
                   variant={showArchived ? 'default' : 'ghost'}
@@ -308,7 +290,8 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
             {nodes.length > 0 && (
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-                <Input size="sm"
+                <Input
+                  size="sm"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="搜索标题 / 提示 / 正文 / 标签"
@@ -369,35 +352,27 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
           </CardContent>
         </Card>
 
-        {/* 节点编辑（默认占 3/5 且 sticky；导图/时间轴模式整行铺在下方，未选中时不占位） */}
-        {(!fullRowView || selectedNode) && (
+        {selectedNode && (
           <div
             className={fullRowView ? 'min-w-0' : 'min-w-0 sm:sticky sm:top-4'}
-            style={{ flex: fullRowView ? '1 1 100%' : '3 1 270px' }}
+            style={{ flex: fullRowView ? '1 1 100%' : '3 1 300px' }}
           >
             <Card>
-              <CardContent className={fullRowView ? 'p-4' : 'p-4 min-h-[60vh]'}>
-                {selectedNode ? (
-                  <StoryNodeEditor
-                    key={selectedNode.id}
-                    node={selectedNode}
-                    onChange={handleUpdateNode}
-                    onDelete={() => setDeleteNodeOpen(true)}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-full min-h-[50vh]">
-                    <p className="text-sm text-muted-foreground text-center">
-                      点击左侧节点进行编辑；拖拽节点可移动到别的节点下。
-                    </p>
-                  </div>
-                )}
+              <CardContent className="p-4">
+                <StoryNodeEditor
+                  key={selectedNode.id}
+                  node={selectedNode}
+                  onChange={handleUpdateNode}
+                  onDelete={() => setDeleteNodeOpen(true)}
+                  onClose={() => setSelectedId(null)}
+                  onJumpToFloor={onJumpToFloor}
+                />
               </CardContent>
             </Card>
           </div>
         )}
       </div>
 
-      {/* 删除节点：三选一，优先引导用归档（软删除，可恢复） */}
       <AlertDialog open={deleteNodeOpen} onOpenChange={setDeleteNodeOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -408,7 +383,7 @@ export function TreeWorkbench({ tree, session, onChanged, renderHeader }: TreeWo
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>取消</AlertDialogCancel>
             <Button variant="outline" onClick={handleArchiveInstead}>
               <Archive className="w-4 h-4 mr-1.5" />改为归档
             </Button>

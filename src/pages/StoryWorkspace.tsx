@@ -1,14 +1,13 @@
 /**
- * 故事工作区（2.0 阶段2，定稿第五章）。
- * 共享同一个故事上下文（角色卡/故事/分支/阅读位置），左侧二级栏切换三个一级界面：
- * 阅读与编辑 / 整理与记录（阶段3 已迁入）/ 导入与导出（阶段4 完整，此处先给导出）。
- * 布局铁律：分栏用 flex-wrap + 行内 basis，禁视口断点。
+ * 故事工作区（大屏统一落点 `/story/:id`）。
+ * 共享同一个故事上下文（角色卡/故事/分支/阅读位置），左侧可收起二级栏切换：
+ * 阅读与编辑 / 分卷总结 / 角色日记 / 自定义记录 / 故事树 / 导入与导出。
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BookOpen, BookOpenCheck, BookOpenText, ArrowDownUp, MessageSquare, Cpu,
-  ScrollText, NotebookPen, PenLine, Network, Link2, GitBranch,
+  ScrollText, NotebookPen, PenLine, Network, Link2, PanelLeftClose,
 } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -16,15 +15,13 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ChatWorkbench, type ChatWorkbenchHandle } from '@/components/chat/ChatWorkbench';
 import { IOPanel } from '@/components/workspace/IOPanel';
-import { OrganizeContextBar } from '@/components/workspace/OrganizeContextBar';
+import { OrganizeContextBar, type ContextStoryOption } from '@/components/workspace/OrganizeContextBar';
 import { STUpdateHint } from '@/components/workspace/STUpdateHint';
 import { BranchPanel } from '@/components/workspace/BranchPanel';
 import { OutlinePanel } from '@/components/workspace/OutlinePanel';
-import type { OrganizeTarget } from '@/components/organize/OrganizePanel';
 import { SummaryWorkspace } from '@/components/organize/SummaryWorkspace';
 import { StoryTreeWorkspace } from '@/components/organize/StoryTreeWorkspace';
 import { BindStoryDialog } from '@/components/chat/BindStoryDialog';
-import ReaderView from '@/components/reader/ReaderView';
 import NovelView from '@/components/reader/NovelView';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -40,22 +37,40 @@ import {
   updateBranchLine,
   buildBranchFromSession,
 } from '@/lib/archive-db';
+import { listStoryIndex } from '@/lib/archive-index';
 import { StoryDraftSaver } from '@/lib/story-draft-save';
 import { parseJsonl, parseJson } from '@/lib/adapters/st';
-import { getDefaultExportSettings, normalizeAppearanceSettings } from '@/lib/session-storage';
 import {
+  applyGlobalAppearanceToSettings,
+  getDefaultExportSettings,
+  hasNonAppearanceSettingsChange,
+  normalizeAppearanceSettings,
+} from '@/lib/session-storage';
+import {
+  buildEditorStoryPath,
+  buildStoryReadPath,
   isSummarySurfaceKind,
   parseEditorStoryView,
   setEditorStoryId,
   setEditorSummaryKind,
   type EditorStoryView,
+  type OrganizeTarget,
 } from '@/lib/editor-story-context';
 import { isOrganizeWorkspaceView } from '@/lib/story-workspace-layout';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 import { useViewport } from '@/hooks/use-viewport';
 import { getVaultEpoch } from '@/lib/vault/active';
 
-/** 阶段9.6：整理与记录拆成四个子页面（参照 2.0 前 /summary /story-tree 独立页的架构） */
+const RAIL_COLLAPSED_STORAGE_KEY = 'ste-story-rail-collapsed';
+
+function readInitialRailCollapsed(): boolean {
+  try {
+    return localStorage.getItem(RAIL_COLLAPSED_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 type WorkspaceView = EditorStoryView;
 
 interface StoryWorkspaceLocationState {
@@ -74,6 +89,12 @@ const VIEW_ITEMS: { key: WorkspaceView; label: string; icon: typeof BookOpenText
   { key: 'io', label: '导入与导出', icon: ArrowDownUp },
 ];
 
+function parseQueryFloor(raw: string | null): number | undefined {
+  if (raw === null || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+}
+
 const StoryWorkspace = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -82,26 +103,35 @@ const StoryWorkspace = () => {
   const { toast } = useToast();
   const toastRef = useRef(toast);
   toastRef.current = toast;
-  // 窄屏：宽二级栏放不进 375px（224 + 主区 384 下限，flex-wrap 也只是换行后照旧溢出）。
-  // 拆成两处——六个视图进左抽屉的页面插槽（同角色库筛选栏的位置），
-  // 分支/章节/书签进右抽屉（当前这篇故事自己的上下文）。
   const { isCompact } = useViewport();
   const [story, setStory] = useState<ArchiveStory | null>(null);
   const [character, setCharacter] = useState<ArchiveCharacter | null>(null);
+  const [siblingStories, setSiblingStories] = useState<ContextStoryOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loadRetry, setLoadRetry] = useState(0);
   const [branchId, setBranchId] = useState<string | null>(null);
+  const [spotlightFloor, setSpotlightFloor] = useState<number | null>(null);
+  const [railCollapsed, setRailCollapsed] = useState(readInitialRailCollapsed);
+
+  const toggleRailCollapsed = useCallback((next: boolean) => {
+    setRailCollapsed(next);
+    try {
+      if (next) localStorage.setItem(RAIL_COLLAPSED_STORAGE_KEY, '1');
+      else localStorage.removeItem(RAIL_COLLAPSED_STORAGE_KEY);
+    } catch { /* non-critical preference */ }
+  }, []);
+
   const locationState = location.state as StoryWorkspaceLocationState | null;
   const latestLocationStateRef = useRef(locationState);
   latestLocationStateRef.current = locationState;
+  const latestSearchParamsRef = useRef(searchParams);
+  latestSearchParamsRef.current = searchParams;
   const queryView = searchParams.get('view');
-  // 角色页「导出/去处理区生成」带初始视图和来源脉络跳入（10.3b）
   const [view, setView] = useState<WorkspaceView>(() => {
     return parseEditorStoryView(queryView ?? locationState?.view) ?? 'read';
   });
   const initialTarget = locationState?.view === view ? locationState.initialTarget : undefined;
-  const [immersive, setImmersive] = useState(false);
   const [novelOpen, setNovelOpen] = useState(false);
   const [bindOpen, setBindOpen] = useState(false);
   const [playBusy, setPlayBusy] = useState(false);
@@ -126,8 +156,10 @@ const StoryWorkspace = () => {
   const changeView = useCallback((next: WorkspaceView) => {
     setView(next);
     setSearchParams((current) => {
-      current.set('view', next);
-      return current;
+      const copy = new URLSearchParams(current);
+      copy.set('view', next);
+      copy.delete('floor');
+      return copy;
     }, { replace: true });
   }, [setSearchParams]);
   const changeSummaryKind = useCallback((kind: SummarySurfaceKind) => changeView(kind), [changeView]);
@@ -136,7 +168,12 @@ const StoryWorkspace = () => {
     if (id && isSummarySurfaceKind(view)) setEditorSummaryKind(id, view);
   }, [id, view]);
 
-  // 持久化：界面立即更新，落库时在最新故事上重放 mutation，避免旧页面快照覆盖并发修改。
+  useEffect(() => {
+    if (spotlightFloor === null) return;
+    const timer = setTimeout(() => setSpotlightFloor(null), 3500);
+    return () => clearTimeout(timer);
+  }, [spotlightFloor]);
+
   const storyRef = useRef<ArchiveStory | null>(null);
   const saverRef = useRef(new StoryDraftSaver(updateArchiveStory));
   const mutateStory = useCallback((fn: (cur: ArchiveStory) => ArchiveStory) => {
@@ -191,7 +228,11 @@ const StoryWorkspace = () => {
         }
         setEditorStoryId(s.id);
         const navState = latestLocationStateRef.current;
-        const requestedBranchId = navState?.branchId;
+        const params = latestSearchParamsRef.current;
+        const hasBranchQuery = params.has('branch');
+        const requestedBranchId = hasBranchQuery
+          ? (params.get('branch') || null)
+          : navState?.branchId;
         const restoredBranchId = resolveInitialBranchId(s, requestedBranchId);
         setBranchId(restoredBranchId);
         const viewedAt = Date.now();
@@ -207,20 +248,35 @@ const StoryWorkspace = () => {
         saverRef.current = loadedSaver;
         saverRef.current.queueMutation(s.id, viewPatch);
         let withView: ArchiveStory = { ...s, ...viewPatch(s) };
-        const sourceFloor = navState?.sourceFloor;
+        const sourceFloor = parseQueryFloor(params.get('floor')) ?? navState?.sourceFloor;
         const sourceLine = getBranchLine(withView, restoredBranchId);
         if (Number.isSafeInteger(sourceFloor) && sourceFloor! >= 0 && sourceLine && sourceFloor! < sourceLine.session.messages.length) {
           withView = updateBranchLine(withView, restoredBranchId, { lastFloor: sourceFloor });
           saverRef.current.queueMutation(s.id, (cur) => updateBranchLine(cur, restoredBranchId, { lastFloor: sourceFloor }));
+          setSpotlightFloor(sourceFloor!);
+        } else {
+          setSpotlightFloor(null);
         }
         storyRef.current = withView;
         setStory(withView);
         setLoading(false);
         if (withView.characterId) {
-          const c = await getCharacter(withView.characterId).catch(() => null);
-          if (!cancelled) setCharacter(c ?? null);
+          const charId = withView.characterId;
+          const [c, allStoryIdx] = await Promise.all([
+            getCharacter(charId).catch(() => null),
+            listStoryIndex().catch(() => []),
+          ]);
+          if (!cancelled) {
+            setCharacter(c ?? null);
+            setSiblingStories(
+              allStoryIdx
+                .filter((entry) => entry.characterId === charId)
+                .map((entry) => ({ id: entry.id, title: entry.title })),
+            );
+          }
         } else {
           setCharacter(null);
+          setSiblingStories([]);
         }
       } catch (error) {
         if (!cancelled && epoch === getVaultEpoch()) {
@@ -250,29 +306,35 @@ const StoryWorkspace = () => {
     };
   }, [id, loadRetry]);
 
-  // 同故事 id 下通过导航传入新的 branchId / sourceFloor 时原地定位，不重拉磁盘覆盖未保存草稿
+  // 同故事 id 下通过导航传入新的 branch / floor 时原地定位，不重拉磁盘覆盖未保存草稿
   useEffect(() => {
     const current = storyRef.current;
-    if (!current || current.id !== id || !locationState) return;
-    const nextBranch = locationState.branchId !== undefined
-      ? resolveInitialBranchId(current, locationState.branchId)
+    if (!current || current.id !== id) return;
+    const hasBranchQuery = searchParams.has('branch');
+    const requestedBranch = hasBranchQuery
+      ? (searchParams.get('branch') || null)
+      : locationState?.branchId;
+    const nextBranch = requestedBranch !== undefined
+      ? resolveInitialBranchId(current, requestedBranch)
       : branchId;
     if (nextBranch !== branchId) setBranchId(nextBranch);
-    const sf = locationState.sourceFloor;
+    const sf = parseQueryFloor(searchParams.get('floor')) ?? locationState?.sourceFloor;
     const targetLine = getBranchLine(current, nextBranch);
-    if (Number.isSafeInteger(sf) && sf! >= 0 && targetLine && sf! < targetLine.session.messages.length && targetLine.lastFloor !== sf) {
-      mutateStory((cur) => updateBranchLine(cur, nextBranch, { lastFloor: sf }));
+    if (Number.isSafeInteger(sf) && sf! >= 0 && targetLine && sf! < targetLine.session.messages.length) {
+      if (targetLine.lastFloor !== sf) {
+        mutateStory((cur) => updateBranchLine(cur, nextBranch, { lastFloor: sf }));
+      }
+      setSpotlightFloor(sf!);
+      setTimeout(() => workbenchRef.current?.scrollToFloor(sf!), 120);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, location.key]);
 
-  // 当前脉络（主线或分支）的数据切片
   const line = story ? getBranchLine(story, branchId) : undefined;
 
   const handleSessionChange = useCallback((next: ChatSession) => {
     mutateStory((cur) => {
       let updated = updateBranchLine(cur, branchId, { session: next });
-      // 主线标题重命名跟随到故事标题（角色页列表/导出文件名都用它）
       if (branchId === null && next.title && next.title !== cur.title) {
         updated = { ...updated, title: next.title };
       }
@@ -293,18 +355,58 @@ const StoryWorkspace = () => {
   }, [mutateStory, branchId]);
 
   const handleSettingsChange = useCallback((next: NonNullable<ArchiveStory['settings']>) => {
-    mutateStory((cur) => ({ ...cur, settings: next, updatedAt: Date.now() }));
+    mutateStory((cur) => {
+      const prev = cur.settings ?? getDefaultExportSettings();
+      if (!hasNonAppearanceSettingsChange(prev, next)) {
+        return { ...cur, settings: next };
+      }
+      return { ...cur, settings: next, updatedAt: Date.now() };
+    });
   }, [mutateStory]);
 
   const handleSwitchBranch = useCallback((nextBranchId: string | null) => {
+    setSpotlightFloor(null);
     setBranchId(nextBranchId);
+    setSearchParams((current) => {
+      if (!current.has('branch') && !current.has('floor')) return current;
+      const copy = new URLSearchParams(current);
+      if (copy.has('branch')) copy.set('branch', nextBranchId ?? '');
+      copy.delete('floor');
+      return copy;
+    }, { replace: true });
     mutateStory((cur) => {
       if ((cur.lastViewedBranchId ?? null) === nextBranchId) return cur;
       return { ...cur, lastViewedBranchId: nextBranchId ?? undefined };
     });
-  }, [mutateStory]);
+  }, [mutateStory, setSearchParams]);
 
-  // ---- 分支操作 ----
+  const jumpFromRecordToFloor = useCallback((targetFloor: number, targetBranchId?: string | null) => {
+    const current = storyRef.current;
+    if (!current) return;
+    const resolvedBranch = targetBranchId !== undefined
+      ? resolveInitialBranchId(current, targetBranchId)
+      : branchId;
+    if (resolvedBranch !== branchId) {
+      setBranchId(resolvedBranch);
+    }
+    const targetLine = getBranchLine(current, resolvedBranch);
+    const clamped = targetLine && targetLine.session.messages.length > 0
+      ? Math.min(Math.max(0, targetFloor), targetLine.session.messages.length - 1)
+      : Math.max(0, targetFloor);
+    mutateStory((cur) => updateBranchLine(cur, resolvedBranch, { lastFloor: clamped }));
+    setSpotlightFloor(clamped);
+    setView('read');
+    setSearchParams((prev) => {
+      const copy = new URLSearchParams(prev);
+      copy.set('view', 'read');
+      if (copy.has('branch') || targetBranchId !== undefined) {
+        copy.set('branch', resolvedBranch ?? '');
+      }
+      copy.delete('floor');
+      return copy;
+    }, { replace: true });
+    setTimeout(() => workbenchRef.current?.scrollToFloor(clamped), 180);
+  }, [branchId, mutateStory, setSearchParams]);
 
   const handleImportBranch = async (files: FileList | null) => {
     if (!files || files.length === 0 || !story) return;
@@ -364,8 +466,6 @@ const StoryWorkspace = () => {
     toast({ title: '分支已删除' });
   };
 
-  // 未绑定故事在工作区内直接绑定（阶段9.10）：未绑定本就是 characterId 空的归档故事，
-  // 绑定 = 补 characterId（总结/故事树挂在故事 id 上原地带走），落库走统一的 dirty+防抖
   const handleBind = (c: ArchiveCharacter) => {
     mutateStory((cur) => ({ ...cur, characterId: c.id, updatedAt: Date.now() }));
     setCharacter(c);
@@ -408,14 +508,19 @@ const StoryWorkspace = () => {
     );
   }
 
-  const settings = normalizeAppearanceSettings(story.settings ?? getDefaultExportSettings());
+  const settings = applyGlobalAppearanceToSettings(
+    normalizeAppearanceSettings(story.settings ?? getDefaultExportSettings()),
+  );
   const backTarget = story.characterId ? `/character/${story.characterId}` : '/chat';
-  const backLabel = character?.name ?? (story.characterId ? '角色库' : '聊天处理');
+  const backLabel = character?.displayMeta?.name || character?.name || (story.characterId ? '角色详情' : '聊天处理');
   const organizeView = isOrganizeWorkspaceView(view);
-  /** 窄屏不渲染宽二级栏，它的两部分内容分别进左右抽屉 */
-  const showWideRail = !organizeView && !isCompact;
+  const showWideRail = !organizeView && !isCompact && !railCollapsed;
+  const showContextBar = organizeView || isCompact || railCollapsed;
 
-  /** 六个视图的切换列表。桌面在二级栏里，窄屏在左抽屉的页面插槽里，同一份 JSX。 */
+  const characterAvatarUrl = character?.pngBase64
+    ? `data:image/png;base64,${character.pngBase64}`
+    : undefined;
+
   const viewNav = (
     <nav className="space-y-0.5">
       {VIEW_ITEMS.map((item, i) => {
@@ -434,7 +539,6 @@ const StoryWorkspace = () => {
               onClick={() => changeView(item.key)}
               className={cn(
                 'w-full flex items-center gap-2 rounded-md text-sm transition-colors',
-                // 抽屉里按触控热区放大，桌面二级栏保持原来的紧凑行高
                 isCompact ? 'px-2.5 py-2.5' : 'px-2 py-1.5',
                 item.group && (isCompact ? 'pl-4' : 'pl-3'),
                 active
@@ -452,7 +556,6 @@ const StoryWorkspace = () => {
     </nav>
   );
 
-  /** 分支 + 章节书签：这篇故事自己的上下文，只在阅读视图有意义 */
   const storyContext = view === 'read' ? (
     <>
       <BranchPanel
@@ -496,44 +599,12 @@ const StoryWorkspace = () => {
     }
   };
 
-  const runBranchPlay = async (targetFloor: number, targetMessageId?: string | null) => {
-    if (playBusyRef.current) return;
-    playBusyRef.current = true;
-    setPlayBusy(true);
-    const epoch = getVaultEpoch();
-    try {
-      await saverRef.current.flush();
-      const { branchStoryFromFloor } = await import('@/lib/roleplay/branch-from-floor');
-      const created = await branchStoryFromFloor(story.id, branchId, targetFloor, { targetMessageId });
-      if (epoch !== getVaultEpoch()) return;
-      toast({
-        title: `已开辟支线「${created.branchName}」`,
-        description: `已保留前 ${created.floorCount} 楼剧情与设定`,
-      });
-      navigate(created.playPath);
-    } catch (error) {
-      toast({
-        title: '创建支线未成功',
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      playBusyRef.current = false;
-      setPlayBusy(false);
-    }
-  };
-
   return (
     <AppLayout
-      actions={<Button size="sm" disabled={playBusy} onClick={() => { void runContinuePlay(); }}><MessageSquare className="mr-1 h-4 w-4" />开始游玩</Button>}
-      /* 窄屏：六个视图进左抽屉的页面插槽，分支/章节/书签进右抽屉。
-         桌面档两个插槽都不传，二级栏照旧在页面里。 */
       mobileDrawer={isCompact ? (
         <div>
           <p className="px-2 pb-1 text-[11px] text-[color:var(--text-muted)]">当前故事</p>
           {viewNav}
-          {/* 绑定入口原本挂在宽二级栏里，窄屏那条栏不渲染，得在这儿补一个，
-              否则未绑定故事在手机上永远绑不了 */}
           {!story.characterId && (
             <div className="mt-2 border-t border-[color:var(--border-subtle)] px-2 pt-2.5">
               <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">未绑定</Badge>
@@ -551,189 +622,184 @@ const StoryWorkspace = () => {
         content: <div className="space-y-4">{storyContext}</div>,
       } : undefined}
     >
-      <div className={organizeView ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex items-start flex-wrap'}>
-        {/* ===== 左侧二级栏：故事上下文 + 三组导航 + 分支/章节/书签 ===== */}
-        {/* 新外壳（2.1-P1）主区内滚动：sticky 仍生效，高度上限改为主区可视高（标题栏36+状态栏26=62px） */}
-        {/* 整理视图（0816）：不再渲染宽二级栏，编辑区切换交给 AppLayout 的全局窄工具栏 */}
-        {showWideRail && <aside className="w-56 basis-56 shrink-0 grow-0 border-r border-border bg-card/40 sticky top-0 max-h-[calc(100vh-62px)] overflow-y-auto p-3 space-y-4">
-          <div>
-            <Button variant="ghost" size="sm" className="px-1.5 -ml-1 text-muted-foreground" onClick={() => navigate(backTarget)}>
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              {backLabel}
-            </Button>
-            <p className="font-display font-semibold text-sm mt-1 px-1.5 break-words">{story.title}</p>
-            <p className="text-xs text-muted-foreground px-1.5 mt-0.5 flex items-center gap-2 flex-wrap">
-              <span className="flex items-center gap-1">
-                <MessageSquare className="w-3 h-3" />
-                {line.session.messages.length} 楼
-              </span>
-              {story.meta.lastModel && (
-                <span className="flex items-center gap-1 min-w-0">
-                  <Cpu className="w-3 h-3 shrink-0" />
-                  <span className="truncate" title={story.meta.lastModel}>{story.meta.lastModel}</span>
-                </span>
-              )}
-            </p>
-            {!story.characterId && (
-              <div className="px-1.5 mt-2 space-y-1.5">
-                <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">未绑定</Badge>
-                <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setBindOpen(true)}>
-                  <Link2 className="w-3.5 h-3.5 mr-1" />
-                  绑定到角色
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {viewNav}
-
-          {storyContext && (
-            <>
-              <Separator />
-              {storyContext}
-            </>
-          )}
-        </aside>}
-
-        {/* 整理视图（桌面）与全部窄屏视图都靠这条留住「返回 + 故事名」两个出口。
-            窄屏在阅读视图也需要它：二级栏已经收进抽屉，不给这条的话页面上
-            连当前是哪篇故事都看不到，返回只能靠系统手势。 */}
-        {(organizeView || isCompact) && (
+      <div className={organizeView ? 'flex h-full min-h-0 flex-col overflow-hidden' : 'flex flex-col'}>
+        {showContextBar && (
           <OrganizeContextBar
             storyTitle={story.title}
             backLabel={backLabel}
             onBack={() => navigate(backTarget)}
             onRead={() => changeView('read')}
-            /* 已经在阅读视图时不给「阅读与编辑」——按了没有任何变化 */
             hideReadAction={view === 'read'}
+            onExpandRail={!organizeView && !isCompact && railCollapsed ? () => toggleRailCollapsed(false) : undefined}
+            currentStoryId={story.id}
+            stories={siblingStories}
+            onSelectStory={(targetStoryId) => {
+              void (async () => {
+                try {
+                  await saverRef.current.flush();
+                  navigate(view === 'read' ? buildStoryReadPath(targetStoryId) : buildEditorStoryPath(targetStoryId, view));
+                } catch (error) {
+                  toast({
+                    title: '当前故事尚未保存成功，已取消切换',
+                    description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+                    variant: 'destructive',
+                  });
+                }
+              })();
+            }}
+            currentBranchId={branchId}
+            branches={(story.branches ?? []).map((b) => ({ id: b.id, name: b.name }))}
+            onSelectBranch={handleSwitchBranch}
           />
         )}
 
-        {/* ===== 主区 ===== */}
-        {/* 窄屏去掉两处 min-w：24rem/20rem 在 375px 视口下本身就比视口宽，
-            flex-wrap 换行之后照旧横向溢出。桌面档保留原值不动。 */}
-        <div className={cn(
-          organizeView ? 'min-h-0 min-w-0 flex-1' : 'flex-1',
-          !organizeView && (isCompact ? 'min-w-0' : 'min-w-[24rem]'),
-        )}>
-          {view === 'read' && (
-            <div className="flex items-start flex-wrap">
-              <div className={cn('flex-1', isCompact ? 'min-w-0' : 'min-w-[20rem]')}>
-                {/* key 按脉络切：换分支重挂工作台，UI 态（搜索/编辑模式/滚动）随之复位 */}
-                <ChatWorkbench
-                  recordContext={{ storyId: story.id, branchId, flush: () => saverRef.current.flush() }}
-                  characterId={story.characterId}
-                  onCharacterUpdated={setCharacter}
-                  onBranchFromMessage={
-                    story.characterId
-                      ? (messageId, rawFloor) => { void runBranchPlay(rawFloor, messageId); }
-                      : undefined
-                  }
-                  key={branchId ?? 'trunk'}
-                  ref={workbenchRef}
-                  session={line.session}
-                  markers={line.markers}
-                  favorites={line.favorites}
-                  settings={settings}
-                  onSessionChange={handleSessionChange}
-                  onMarkersChange={handleMarkersChange}
-                  onFavoritesChange={handleFavoritesChange}
-                  onSettingsChange={handleSettingsChange}
-                  onFloorChange={handleFloorChange}
-                  initialFloor={line.lastFloor}
-                  titleBadge={
-                    branchId !== null ? (
-                      <Badge variant="secondary" className="shrink-0">
-                        分支：{story.branches?.find((b) => b.id === branchId)?.name}
-                      </Badge>
-                    ) : undefined
-                  }
-                  toolbarExtras={
-                    <>
-                      {story.characterId && (
-                        <>
+        <div className={organizeView ? 'min-h-0 min-w-0 flex-1' : 'flex items-start flex-wrap'}>
+          {showWideRail && (
+            <aside className="w-56 basis-56 shrink-0 grow-0 border-r border-border bg-card/40 sticky top-0 max-h-[calc(100vh-62px)] overflow-y-auto overscroll-contain p-3 space-y-4">
+              <div>
+                <div className="flex items-center justify-between gap-1">
+                  <Button variant="ghost" size="sm" className="px-1.5 -ml-1 text-muted-foreground min-w-0" onClick={() => navigate(backTarget)}>
+                    <ArrowLeft className="w-4 h-4 mr-1 shrink-0" />
+                    <span className="truncate">{backLabel}</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 text-muted-foreground"
+                    onClick={() => toggleRailCollapsed(true)}
+                    aria-label="收起故事目录栏"
+                    title="收起左侧目录栏，让正文铺得更宽"
+                  >
+                    <PanelLeftClose className="w-4 h-4" />
+                  </Button>
+                </div>
+                <p className="font-display font-semibold text-sm mt-1 px-1.5 break-words">{story.title}</p>
+                <p className="text-xs text-muted-foreground px-1.5 mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span className="flex items-center gap-1">
+                    <MessageSquare className="w-3 h-3" />
+                    {line.session.messages.length} 楼
+                  </span>
+                  {story.meta.lastModel && (
+                    <span className="flex items-center gap-1 min-w-0">
+                      <Cpu className="w-3 h-3 shrink-0" />
+                      <span className="truncate" title={story.meta.lastModel}>{story.meta.lastModel}</span>
+                    </span>
+                  )}
+                </p>
+                {!story.characterId && (
+                  <div className="px-1.5 mt-2 space-y-1.5">
+                    <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">未绑定</Badge>
+                    <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setBindOpen(true)}>
+                      <Link2 className="w-3.5 h-3.5 mr-1" />
+                      绑定到角色
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {viewNav}
+
+              {storyContext && (
+                <>
+                  <Separator />
+                  {storyContext}
+                </>
+              )}
+            </aside>
+          )}
+
+          <div className={cn(
+            organizeView ? 'h-full min-h-0 min-w-0 flex-1' : 'flex-1',
+            !organizeView && (isCompact ? 'min-w-0' : 'min-w-[24rem]'),
+          )}>
+            {view === 'read' && (
+              <div className="flex items-start flex-wrap">
+                <div className={cn('flex-1', isCompact ? 'min-w-0' : 'min-w-[20rem]')}>
+                  <ChatWorkbench
+                    recordContext={{ storyId: story.id, branchId, flush: () => saverRef.current.flush() }}
+                    characterId={story.characterId}
+                    characterAvatarUrl={characterAvatarUrl}
+                    highlightedFloor={spotlightFloor}
+                    key={branchId ?? 'trunk'}
+                    ref={workbenchRef}
+                    session={line.session}
+                    markers={line.markers}
+                    favorites={line.favorites}
+                    settings={settings}
+                    onSessionChange={handleSessionChange}
+                    onMarkersChange={handleMarkersChange}
+                    onFavoritesChange={handleFavoritesChange}
+                    onSettingsChange={handleSettingsChange}
+                    onFloorChange={handleFloorChange}
+                    initialFloor={line.lastFloor}
+                    titleBadge={
+                      branchId !== null ? (
+                        <Badge variant="secondary" className="shrink-0">
+                          分支：{story.branches?.find((b) => b.id === branchId)?.name}
+                        </Badge>
+                      ) : undefined
+                    }
+                    toolbarExtras={
+                      <>
+                        {story.characterId && (
                           <Button
-                            variant="outline"
                             size="sm"
                             disabled={playBusy}
                             onClick={() => { void runContinuePlay(); }}
                             title="接着当前剧情进入酒馆继续聊"
                           >
                             <MessageSquare className="w-4 h-4 mr-1.5" />
-                            继续聊
+                            继续聊天
                           </Button>
-                          {line.session.messages.length > 0 && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={playBusy}
-                              onClick={() => {
-                                const msgId = workbenchRef.current?.getCurrentMessageId() ?? null;
-                                const rawIdx = msgId ? line.session.messages.findIndex((m) => m.id === msgId) : -1;
-                                const fallbackFloor = workbenchRef.current?.getCurrentFloor() ?? line.lastFloor ?? (line.session.messages.length - 1);
-                                void runBranchPlay(rawIdx >= 0 ? rawIdx : fallbackFloor, msgId);
-                              }}
-                              title="保留截止当前阅读楼层的剧情与设定，拉出一条新支线续聊（也可点任意楼层右上角的分叉按钮）"
-                            >
-                              <GitBranch className="w-4 h-4 mr-1.5" />
-                              从当前楼开支线
-                            </Button>
-                          )}
-                        </>
-                      )}
-                      <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）">
-                        <BookOpenCheck className="w-4 h-4 mr-1.5" />
-                        小说视图
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => setImmersive(true)} title="沉浸式翻页阅读（Esc 退出）">
-                        <BookOpen className="w-4 h-4 mr-1.5" />
-                        沉浸阅读
-                      </Button>
-                    </>
-                  }
-                />
+                        )}
+                        <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+单栏或双页阅读（Esc 退出）">
+                          <BookOpenCheck className="w-4 h-4 mr-1.5" />
+                          小说视图
+                        </Button>
+                      </>
+                    }
+                  />
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {isSummarySurfaceKind(view) && (
-            <SummaryWorkspace
-              story={story}
-              characterName={character?.name}
-              currentBranchId={branchId}
-              kind={view}
-              initialTarget={initialTarget}
-              onKindChange={changeSummaryKind}
-            />
-          )}
+            {isSummarySurfaceKind(view) && (
+              <SummaryWorkspace
+                story={story}
+                characterName={character?.displayMeta?.name || character?.name}
+                currentBranchId={branchId}
+                kind={view}
+                initialTarget={initialTarget}
+                onKindChange={changeSummaryKind}
+                onJumpToFloor={jumpFromRecordToFloor}
+              />
+            )}
 
-          {view === 'tree' && (
-            <StoryTreeWorkspace
-              story={story}
-              currentBranchId={branchId}
-              initialTarget={initialTarget}
-            />
-          )}
+            {view === 'tree' && (
+              <StoryTreeWorkspace
+                story={story}
+                currentBranchId={branchId}
+                initialTarget={initialTarget}
+                onJumpToFloor={jumpFromRecordToFloor}
+              />
+            )}
 
-          {view === 'io' && (
-            <IOPanel
-              story={story}
-              branchId={branchId}
-              line={line}
-              settings={settings}
-              onStoryUpdate={mutateStory}
-            />
-          )}
+            {view === 'io' && (
+              <IOPanel
+                story={story}
+                branchId={branchId}
+                line={line}
+                settings={settings}
+                onStoryUpdate={mutateStory}
+              />
+            )}
+          </div>
         </div>
       </div>
 
-      {/* 检查 ST 更新（阶段7.4，仅客户端且有来源路径时出角落提示） */}
       <STUpdateHint story={story} onStoryUpdate={mutateStory} />
-
-      {/* 未绑定故事的绑定入口（阶段9.10） */}
       <BindStoryDialog open={bindOpen} onOpenChange={setBindOpen} onSelect={handleBind} />
 
-      {/* 小说视图（阶段6；三层管道，进度按 故事+脉络 记忆） */}
       {novelOpen && (
         <NovelView
           session={line.session}
@@ -747,48 +813,18 @@ const StoryWorkspace = () => {
           onFloorChange={handleFloorChange}
           progressKey={`${story.id}:${branchId ?? 'main'}`}
           polish={{ story, branchId }}
-          renderTopActions={story.characterId ? ({ currentFloor }) => (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1 text-xs"
-                disabled={playBusy}
-                onClick={() => { void runContinuePlay(); }}
-              >
-                <MessageSquare className="h-3.5 w-3.5" />
-                继续聊
-              </Button>
-              {line.session.messages.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1 text-xs"
-                  disabled={playBusy}
-                  onClick={() => {
-                    const msgId = line.session.messages[currentFloor]?.id ?? null;
-                    void runBranchPlay(currentFloor, msgId);
-                  }}
-                >
-                  <GitBranch className="h-3.5 w-3.5" />
-                  从 #{currentFloor} 楼开支线
-                </Button>
-              )}
-            </>
+          renderTopActions={story.characterId ? () => (
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 text-xs"
+              disabled={playBusy}
+              onClick={() => { void runContinuePlay(); }}
+            >
+              <MessageSquare className="h-3.5 w-3.5" />
+              继续聊天
+            </Button>
           ) : undefined}
-        />
-      )}
-
-      {/* 沉浸式翻页阅读（覆盖层；翻页进度按 故事+脉络 记忆） */}
-      {immersive && (
-        <ReaderView
-          messages={line.session.messages}
-          markers={line.markers}
-          regexRules={settings.regexRules}
-          characterName={line.session.character.name}
-          userName={line.session.user.name}
-          onClose={() => setImmersive(false)}
-          bookId={`${story.id}:${branchId ?? 'main'}`}
         />
       )}
     </AppLayout>

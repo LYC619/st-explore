@@ -19,7 +19,7 @@ import type { NormalizedPreset, OrderEntry, PresetItem } from '@/types/preset';
 import { DEFAULT_CHARACTER_ID, generatePresetId } from '@/types/preset';
 import { parsePreset, getActiveOrder } from '@/lib/preset-parser';
 import {
-  getAllPresets, getPreset, savePreset, deletePreset, pruneAutoSavedPresets, saveEditedPreset, createPresetDiy,
+  getAllPresets, getPreset, savePreset, deletePreset, saveEditedPreset, createPresetDiy,
 } from '@/lib/preset-db';
 import { saveAssetWithCow } from '@/lib/asset-cow-save';
 import { buildPresetSaveItem } from '@/lib/asset-save-record';
@@ -140,10 +140,9 @@ export default function Preset() {
     const epoch = loadedEpoch.current;
     try {
       if (epoch !== getVaultEpoch()) return;
-      await savePreset(item);
+      await savePreset({ ...item, autoSaved: false });
       if (!isCurrent() || epoch !== getVaultEpoch()) return;
       setCurrentItemId(item.id);
-      await pruneAutoSavedPresets(5);
       await refreshSaved(isCurrent);
     } catch { /* 自动历史失败不阻塞导入 */ }
   }, [captureCurrent, refreshSaved]);

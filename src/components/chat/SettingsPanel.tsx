@@ -5,6 +5,7 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
+import { DEFAULT_PAPER_WIDTH, PAPER_WIDTH_FULL } from '@/lib/session-storage';
 import type { ThemeStyle, ExportSettings, PrefixMode } from '@/types/chat';
 
 const FONT_OPTIONS = [
@@ -28,10 +29,10 @@ const themes: { id: ThemeStyle; name: string; icon: React.ReactNode; desc: strin
 ];
 
 const prefixModes: { id: PrefixMode; name: string; desc: string }[] = [
-  { id: 'name', name: '角色名', desc: '使用对话中的角色名称' },
-  { id: 'human-assistant', name: 'Human/Assistant', desc: '标准对话格式' },
-  { id: 'user-model', name: 'user/model', desc: 'API 风格格式' },
-  { id: 'none', name: '无前缀', desc: '仅显示内容' },
+  { id: 'name', name: '角色名', desc: '使用对话中的角色与玩家名称' },
+  { id: 'human-assistant', name: '问答角色前缀', desc: '固定标为 Human / Assistant' },
+  { id: 'user-model', name: '玩家与模型标识', desc: '固定标为 user / model' },
+  { id: 'none', name: '无前缀', desc: '仅导出台词与描写正文' },
 ];
 
 /**
@@ -97,18 +98,43 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
 
           {/* 宽度 */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <Label className="text-sm">阅读宽度</Label>
-              <span className="text-xs text-muted-foreground">{settings.paperWidth}px</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {settings.paperWidth >= PAPER_WIDTH_FULL ? '铺满可用宽度' : `${settings.paperWidth}px`}
+                </span>
+                <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                  <Switch
+                    checked={settings.paperWidth >= PAPER_WIDTH_FULL}
+                    onCheckedChange={(checked) => updateSetting('paperWidth', checked ? PAPER_WIDTH_FULL : DEFAULT_PAPER_WIDTH)}
+                    aria-label="铺满可用宽度"
+                  />
+                  铺满
+                </label>
+              </div>
             </div>
-            <Slider
-              value={[settings.paperWidth]}
-              onValueChange={([value]) => updateSetting('paperWidth', value)}
-              min={400}
-              max={1000}
-              step={50}
-            />
+            {settings.paperWidth < PAPER_WIDTH_FULL && (
+              <Slider
+                value={[Math.min(Math.max(settings.paperWidth, 480), 1400)]}
+                onValueChange={([value]) => updateSetting('paperWidth', value)}
+                min={480}
+                max={1400}
+                step={40}
+              />
+            )}
           </div>
+
+          {/* 社交气泡头像 */}
+          {settings.theme === 'social' && (
+            <div className="flex items-center justify-between">
+              <Label className="text-sm">显示气泡头像</Label>
+              <Switch
+                checked={settings.showAvatar}
+                onCheckedChange={(checked) => updateSetting('showAvatar', checked)}
+              />
+            </div>
+          )}
 
           {/* 时间戳 */}
           <div className="flex items-center justify-between">

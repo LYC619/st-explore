@@ -106,17 +106,17 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     setPresets(loadRegexPresets());
   }, []);
 
-  // 保存规则变更到 localStorage
-  useEffect(() => {
-    if (!readOnly) {
-      saveCustomRegexRules(rules);
-      saveBuiltinRuleStates(rules);
-    }
-  }, [readOnly, rules]);
+  // 仅在用户主动增删改规则/导入/切预设时同步更新全局自定义正则，禁止挂载时用旧故事固化规则反向清空全局！
+  const commitRulesChange = (nextRules: RegexRule[]) => {
+    if (readOnly) return;
+    saveCustomRegexRules(nextRules);
+    saveBuiltinRuleStates(nextRules);
+    onRulesChange(nextRules);
+  };
 
   const handleResetToDefault = () => {
     if (readOnly) return;
-    onRulesChange([...DEFAULT_REGEX_RULES]);
+    commitRulesChange([...DEFAULT_REGEX_RULES]);
   };
 
   const handleSavePreset = () => {
@@ -134,7 +134,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
 
   const handleLoadPreset = (preset: RegexPreset) => {
     if (readOnly) return;
-    onRulesChange(JSON.parse(JSON.stringify(preset.rules)));
+    commitRulesChange(JSON.parse(JSON.stringify(preset.rules)));
     setPresetOpen(false);
     toast({ title: '已加载预设', description: `「${preset.name}」（${preset.rules.length} 条规则）` });
   };
@@ -168,7 +168,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     // 按 id 去重合并：已存在的 id 覆盖，新 id 追加
     const byId = new Map(rules.map((r) => [r.id, r]));
     imported.forEach((r) => byId.set(r.id, r));
-    onRulesChange(Array.from(byId.values()));
+    commitRulesChange(Array.from(byId.values()));
     toast({
       title: '已导入 ST 正则',
       description: `导入 ${imported.length} 条规则${files.length > 1 ? `（${files.length - failed.length}/${files.length} 个文件）` : ''}${failed.length > 0 ? `；失败：${failed.join('、')}` : ''}`,
@@ -195,7 +195,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
   const handleAddRule = (rule?: RegexRule) => {
     if (readOnly) return;
     if (rule) {
-      onRulesChange([...rules, rule]);
+      commitRulesChange([...rules, rule]);
       setEditingId(rule.id);
       setScrollToId(rule.id);
     } else {
@@ -207,7 +207,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
         placement: ['all'],
         disabled: false,
       };
-      onRulesChange([...rules, newRule]);
+      commitRulesChange([...rules, newRule]);
       setEditingId(newRule.id);
       setScrollToId(newRule.id);
     }
@@ -215,14 +215,14 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
 
   const handleUpdateRule = (id: string, updates: Partial<RegexRule>) => {
     if (readOnly) return;
-    onRulesChange(
+    commitRulesChange(
       rules.map((rule) => (rule.id === id ? { ...rule, ...updates } : rule))
     );
   };
 
   const handleDeleteRule = (id: string) => {
     if (readOnly) return;
-    onRulesChange(rules.filter((rule) => rule.id !== id));
+    commitRulesChange(rules.filter((rule) => rule.id !== id));
   };
 
   const handleToggleRule = (id: string) => {
@@ -254,7 +254,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     const reordered = [...rules];
     const [moved] = reordered.splice(dragIndex, 1);
     reordered.splice(index, 0, moved);
-    onRulesChange(reordered);
+    commitRulesChange(reordered);
     setDragIndex(null);
     setDragOverIndex(null);
   };

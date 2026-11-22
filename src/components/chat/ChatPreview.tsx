@@ -12,11 +12,11 @@ import { getThemeClasses, type ProcessedMessage } from './chat-theme-classes';
  * ChatPreview 暴露给父组件的命令式句柄：跳转条/收藏列表通过它驱动滚动。
  */
 export interface ChatPreviewHandle {
-  /** 跳到第 floor 楼（0-based，与界面 #N 一致） */
+  /** 跳到第 floor 楼（0-based 原始楼层号，与界面 #N 一致） */
   scrollToFloor: (floor: number) => void;
   /** 按 messageId 跳转（收藏列表用，id 稳定不受空消息过滤影响） */
   scrollToMessageId: (messageId: string) => void;
-  /** 过滤空消息后的总楼层数，供跳转条做边界 */
+  /** 过滤空消息后的可见总楼层数 */
   getFloorCount: () => number;
   /** 跳到下一个/上一个搜索命中（循环），无命中时无操作 */
   nextMatch: () => void;
@@ -31,13 +31,17 @@ export interface ChatPreviewProps {
   fontSize: number;
   regexRules: RegexRule[];
   markers?: ChapterMarker[];
+  favoritesSet?: ReadonlySet<string>;
+  onToggleFavorite?: (messageId: string) => void;
+  characterAvatarUrl?: string;
+  currentAnchorFloor?: number;
   onMessageClick?: (messageId: string, messageIndex: number) => void;
   onEditMessage?: (messageId: string, messageIndex: number) => void;
   editMode?: boolean;
   fontFamily?: string;
   previewRule?: RegexRule | null;
   onVisibleFloorChange?: (floor: number, messageId: string | null) => void;
-  onFloorMapChange?: (map: Map<string, number>) => void;
+  onFloorMapChange?: (map: Map<string, number>, visibleFloors: number[]) => void;
   searchQuery?: string;
   onSearchResult?: (total: number, current: number) => void;
   showHidden?: boolean;
@@ -46,13 +50,7 @@ export interface ChatPreviewProps {
   onUnhideMessage?: (messageId: string, messageIndex: number) => void;
   onHideMessage?: (messageId: string, messageIndex: number) => void;
   onCaptureMessage?: (messageId: string, content: string) => void;
-  /** 将某楼或划选句子收进角色语录 */
-  onQuoteMessage?: (messageId: string, floor: number, content: string, speakerName: string) => void;
-  /** 将某楼或划选句子生成名场面分享图 */
-  onShareMessage?: (floor: number, content: string, speakerName: string) => void;
-  /** 从指定楼层分叉新支线 */
-  onBranchFromMessage?: (messageId: string, rawFloor: number) => void;
-  /** 外部定位跳转的目标楼层高亮 */
+  /** 外部定位跳转的目标楼层高亮（0-based 原始楼层号） */
   highlightedFloor?: number | null;
   /** 按稳定 messageId 高亮目标楼层（不受隐藏楼过滤影响） */
   highlightedMessageId?: string | null;
@@ -69,6 +67,10 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     fontSize,
     regexRules,
     markers = [],
+    favoritesSet,
+    onToggleFavorite,
+    characterAvatarUrl,
+    currentAnchorFloor = 0,
     onMessageClick,
     onEditMessage,
     editMode = false,
@@ -84,9 +86,6 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     onUnhideMessage,
     onHideMessage,
     onCaptureMessage,
-    onQuoteMessage,
-    onShareMessage,
-    onBranchFromMessage,
     highlightedFloor = null,
     highlightedMessageId = null,
     showModel = true,
@@ -179,7 +178,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
 
     const virtualItems = virtualizer.getVirtualItems();
 
-    const idToIndex = useMemo(() => {
+    const idToVirtualIndex = useMemo(() => {
       const m = new Map<string, number>();
       processedMessages.forEach((msg, i) => m.set(msg.id, i));
       return m;
@@ -188,9 +187,13 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     useEffect(() => {
       if (!onFloorMapChange) return;
       const m = new Map<string, number>();
-      idToIndex.forEach((i, id) => m.set(id, i));
-      onFloorMapChange(m);
-    }, [idToIndex, onFloorMapChange]);
+      const visibleFloors: number[] = [];
+      processedMessages.forEach((msg) => {
+        m.set(msg.id, msg.rawFloor);
+        visibleFloors.push(msg.rawFloor);
+      });
+      onFloorMapChange(m, visibleFloors);
+    }, [processedMessages, onFloorMapChange]);
 
     const matchIndices = useMemo(() => {
       const q = searchQuery.trim().toLowerCase();
@@ -204,6 +207,8 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
 
     const [matchPos, setMatchPos] = useState(-1);
     const matchPosRef = useRef(-1);
+    const anchorFloorRef = useRef(currentAnchorFloor);
+    anchorFloorRef.current = currentAnchorFloor;
     const searchScrollFrameRef = useRef<number | null>(null);
     const virtualJumpFrameRef = useRef<number | null>(null);
 
@@ -284,23 +289,48 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     }, [matchIndices, onSearchResult, scrollElement, scrollPaddingStart, virtualizer]);
 
     const moveSearchMatch = useCallback((direction: SearchDirection) => {
+      if (matchIndices.length === 0) return;
+      if (matchPosRef.current < 0) {
+        const anchor = anchorFloorRef.current;
+        if (direction === 1) {
+          const idx = matchIndices.findIndex((vi) => (processedMessages[vi]?.rawFloor ?? 0) >= anchor);
+          scrollToSearchMatch(idx >= 0 ? idx : 0);
+        } else {
+          let idx = -1;
+          for (let i = matchIndices.length - 1; i >= 0; i--) {
+            if ((processedMessages[matchIndices[i]]?.rawFloor ?? 0) <= anchor) {
+              idx = i;
+              break;
+            }
+          }
+          scrollToSearchMatch(idx >= 0 ? idx : matchIndices.length - 1);
+        }
+        return;
+      }
       const next = cycleSearchPosition(matchPosRef.current, matchIndices.length, direction);
       if (next >= 0) scrollToSearchMatch(next);
-    }, [matchIndices.length, scrollToSearchMatch]);
+    }, [matchIndices, processedMessages, scrollToSearchMatch]);
+
+    const resolveVirtualIndexForFloor = useCallback((targetFloor: number): number => {
+      if (processedMessages.length === 0) return -1;
+      const clamped = Math.max(0, targetFloor);
+      const found = processedMessages.findIndex((msg) => msg.rawFloor >= clamped);
+      return found >= 0 ? found : processedMessages.length - 1;
+    }, [processedMessages]);
 
     useImperativeHandle(ref, () => ({
       scrollToFloor: (floor: number) => {
-        const idx = Math.min(Math.max(floor, 0), processedMessages.length - 1);
+        const idx = resolveVirtualIndexForFloor(floor);
         if (idx >= 0) scrollToVirtualRow(idx);
       },
       scrollToMessageId: (messageId: string) => {
-        const idx = idToIndex.get(messageId);
+        const idx = idToVirtualIndex.get(messageId);
         if (idx !== undefined) scrollToVirtualRow(idx);
       },
       getFloorCount: () => processedMessages.length,
       nextMatch: () => moveSearchMatch(1),
       prevMatch: () => moveSearchMatch(-1),
-    }), [idToIndex, moveSearchMatch, processedMessages.length, scrollToVirtualRow]);
+    }), [idToVirtualIndex, moveSearchMatch, processedMessages.length, resolveVirtualIndexForFloor, scrollToVirtualRow]);
 
     const lastReportedFloorRef = useRef(-1);
     useEffect(() => {
@@ -316,9 +346,11 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
           rows.push({ index: Number(el.dataset.index), bottom: el.getBoundingClientRect().bottom });
         });
         const top = resolveTopVisibleIndex(rows, floorJudgementLine(containerTop, scrollPaddingStart), -1);
-        if (top < 0 || top === lastReportedFloorRef.current) return;
-        lastReportedFloorRef.current = top;
-        onVisibleFloorChange(top, processedMessages[top]?.id ?? null);
+        if (top < 0) return;
+        const rawFloor = processedMessages[top]?.rawFloor ?? top;
+        if (rawFloor === lastReportedFloorRef.current) return;
+        lastReportedFloorRef.current = rawFloor;
+        onVisibleFloorChange(rawFloor, processedMessages[top]?.id ?? null);
       };
       report();
       scrollElement.addEventListener('scroll', report, { passive: true });
@@ -378,19 +410,19 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     isHighlightedFloor={
                       highlightedMessageId != null
                         ? message.id === highlightedMessageId
-                        : highlightedFloor === vItem.index
+                        : highlightedFloor === message.rawFloor
                     }
                     userName={session.user.name}
                     charName={session.character.name}
+                    characterAvatarUrl={characterAvatarUrl}
+                    isFavorited={favoritesSet?.has(message.id) ?? false}
+                    onToggleFavorite={onToggleFavorite}
                     onMessageClick={onMessageClick}
                     onEditMessage={onEditMessage}
                     onSwipeSelect={onSwipeSelect}
                     onUnhideMessage={onUnhideMessage}
                     onHideMessage={onHideMessage}
                     onCaptureMessage={onCaptureMessage}
-                    onQuoteMessage={onQuoteMessage}
-                    onShareMessage={onShareMessage}
-                    onBranchFromMessage={onBranchFromMessage}
                   />
                 </div>
               );
@@ -402,7 +434,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
           <div className="mt-12 pt-6 border-t border-border text-center text-sm text-muted-foreground">
             <div className="mb-2">— 完 —</div>
             <div className="text-xs">
-              共 {processedMessages.length} 楼
+              共 {session.messages.length} 楼
             </div>
           </div>
         )}

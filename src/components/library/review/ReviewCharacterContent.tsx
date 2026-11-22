@@ -37,7 +37,6 @@ export function ReviewCharacterContent({
   onStoriesChange,
   onOpenEditor,
   onOpenChat,
-  onBranchChatFromFloor,
   readerRef,
   onReaderReady,
   restoreFloor,
@@ -61,7 +60,6 @@ export function ReviewCharacterContent({
   onStoriesChange: () => Promise<void>;
   onOpenEditor: (id: string) => void;
   onOpenChat?: (id: string, branchId: string | null) => void;
-  onBranchChatFromFloor?: (id: string, branchId: string | null, floor: number, messageId?: string | null) => void;
   readerRef: Ref<InlineStoryReaderHandle>;
   onReaderReady: (ready: boolean) => void;
   restoreFloor: boolean;
@@ -190,7 +188,6 @@ export function ReviewCharacterContent({
           }}
           onOpenEditor={onOpenEditor}
           onOpenChat={onOpenChat}
-          onBranchChatFromFloor={onBranchChatFromFloor}
           onCharacterUpdated={onCharacterChange}
           onReadyChange={onReaderReady}
           restoreFloor={restoreFloor}

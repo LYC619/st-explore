@@ -20,7 +20,7 @@ import {
   applyEditsToCard, exportCardJson, editsFromNormalized, type CardEdits,
 } from '@/lib/card-export';
 import { embedCharaInPngBlob } from '@/lib/png-writer';
-import { getAllCards, getCard, saveCard, deleteCard, pruneAutoSavedCards } from '@/lib/card-db';
+import { getAllCards, getCard, saveCard, deleteCard } from '@/lib/card-db';
 import { generateCardId, type CardItem } from '@/types/character-card';
 import { characterBookToWorldBook } from '@/lib/character-book';
 import { saveWorldBook } from '@/lib/worldbook-db';
@@ -195,9 +195,8 @@ export default function CardViewer() {
       (async () => {
         const id = generateCardId();
         const now = Date.now();
-        await saveCard({ id, title: name, card: raw, pngBase64: png ? abToBase64(png) : undefined, createdAt: now, updatedAt: now, autoSaved: true });
+        await saveCard({ id, title: name, card: raw, pngBase64: png ? abToBase64(png) : undefined, createdAt: now, updatedAt: now, autoSaved: false });
         setCurrentItemId(id);
-        await pruneAutoSavedCards(5);
         await refreshSaved();
       })().catch(() => { /* 自动历史失败不阻塞 */ });
       toast({

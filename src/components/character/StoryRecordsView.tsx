@@ -1,12 +1,9 @@
 /**
- * 角色页故事子视图：总结 / 日记 / 故事树 的查看视图（10.3b，C2）。
- * - 故事切换下拉 + 「去处理区生成」（工作区左上角已有返回按钮）+ 手动录入入口
- * - 条目展示「生成于 X · 覆盖 A-B 楼」（不做"已过期"判断——分卷增量总结会被误判，
- *   过没过期用户自己看）；手动录入的条目显示「手动录入」
- * - 未配 AI 时空态提示去 AI 工具页配置
+ * 角色页故事子视图：总结 / 日记 / 自定义记录 / 故事树 的查看视图。
+ * - 默认展示「全部脉络」防分支成果被静默藏起；支持多卷同时展开通读；日记支持切换手账本视图。
  */
 import { useState, useEffect, useMemo } from 'react';
-import { ExternalLink, LocateFixed, NotebookPen, Plus } from 'lucide-react';
+import { BookHeart, ChevronsDownUp, ChevronsUpDown, ExternalLink, LocateFixed, NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -24,22 +21,28 @@ import { loadAPIConfig } from '@/components/ai-tools';
 import { getActiveProfile } from '@/components/ai-tools/api-profiles';
 import { formatFullTime, formatListTime } from '@/lib/time-display';
 import { MarkdownLite } from '@/components/MarkdownLite';
+import { DiaryView } from '@/components/summary/DiaryView';
 import { MoveStoryRecordDialog } from './MoveStoryRecordDialog';
 import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
 import { RecordsToWorldbookDialog } from '@/components/summary/RecordsToWorldbookDialog';
 import { StoryTreePreview } from './StoryTreePreview';
 import { EditRecordDialog } from '@/components/summary/EditRecordDialog';
 
-export type RecordViewKind = 'volume' | 'diary' | 'tree';
+export type RecordViewKind = 'volume' | 'diary' | 'diy' | 'tree';
 
-const KIND_LABELS: Record<RecordViewKind, string> = { volume: '总结', diary: '日记', tree: '故事树' };
+const KIND_LABELS: Record<RecordViewKind, string> = {
+  volume: '总结',
+  diary: '日记',
+  diy: '自定义记录',
+  tree: '故事树',
+};
 
 interface StoryRecordsViewProps {
   stories: ArchiveStory[];
   kind: RecordViewKind;
   /** 去处理区生成：进入 /story/:id 对应整理子页面 */
   onGoGenerate: (storyId: string, kind: RecordViewKind, branchId: string | null) => void;
-  /** 点击记录关联楼层直达故事阅读器对应位置 */
+  /** 点击记录关联楼层直达大屏故事阅读器对应位置 */
   onJumpToFloor?: (storyId: string, branchId: string | null, floor: number) => void;
 }
 
@@ -50,8 +53,9 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
   const [storyId, setStoryId] = useState<string | null>(stories[0]?.id ?? null);
   const [summaries, setSummaries] = useState<SummaryItem[]>([]);
   const [trees, setTrees] = useState<StoryTree[]>([]);
-  const [branchFilter, setBranchFilter] = useState<RecordBranchFilter>('main');
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [branchFilter, setBranchFilter] = useState<RecordBranchFilter>('all');
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [diaryNotebookIds, setDiaryNotebookIds] = useState<Set<string>>(new Set());
   const [manualOpen, setManualOpen] = useState(false);
   const [editing, setEditing] = useState<SummaryItem | null>(null);
   const [loadingRecords, setLoadingRecords] = useState(true);
@@ -67,19 +71,29 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
   const story = stories.find((s) => s.id === storyId) ?? null;
 
   useEffect(() => {
-    if (!stories.some(item => item.id === storyId)) setStoryId(stories[0]?.id ?? null);
+    if (!stories.some((item) => item.id === storyId)) setStoryId(stories[0]?.id ?? null);
   }, [stories, storyId]);
 
   useEffect(() => {
-    setBranchFilter('main');
-    setExpandedId(null);
+    setBranchFilter('all');
+    setExpandedIds(new Set());
+    setDiaryNotebookIds(new Set());
     setMoveRecord(null);
   }, [storyId]);
-  useEffect(() => { setBatchMode(false); setSelected(new Set()); setWorldbookOpen(false); setManualOpen(false); }, [storyId, kind, branchFilter]);
+
+  useEffect(() => {
+    setBatchMode(false);
+    setSelected(new Set());
+    setWorldbookOpen(false);
+    setManualOpen(false);
+  }, [storyId, kind, branchFilter]);
 
   useEffect(() => {
     let cancelled = false;
-    setLoadingRecords(true); setRecordsError(''); setSummaries([]); setTrees([]);
+    setLoadingRecords(true);
+    setRecordsError('');
+    setSummaries([]);
+    setTrees([]);
     (async () => {
       if (!storyId) return;
       if (kind === 'tree') {
@@ -88,13 +102,20 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
       } else {
         const all = await getAllSummaries();
         if (!cancelled) {
-          setSummaries(all
-            .filter((s) => s.bookId === storyId && s.kind === (kind as SummaryKind))
-            .sort(compareSummaryOrder));
+          setSummaries(
+            all
+              .filter((s) => s.bookId === storyId && s.kind === (kind as SummaryKind))
+              .sort(compareSummaryOrder),
+          );
         }
       }
-    })().catch((error: unknown) => { if (!cancelled) setRecordsError(error instanceof Error ? error.message : String(error)); })
-      .finally(() => { if (!cancelled) setLoadingRecords(false); });
+    })()
+      .catch((error: unknown) => {
+        if (!cancelled) setRecordsError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRecords(false);
+      });
     return () => { cancelled = true; };
   }, [storyId, kind, manualOpen, revision]);
 
@@ -103,6 +124,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
       ? story?.branches?.find((b) => b.id === branchId)?.name ?? '分支已删除'
       : '主线'
   );
+
   const visibleSummaries = useMemo(
     () => summaries.filter((item) => (
       branchFilter === 'all'
@@ -119,18 +141,34 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
   );
   const items = kind === 'tree' ? visibleTrees : visibleSummaries;
   const selectedBranchId = branchFilter !== 'all' && branchFilter !== 'main' ? branchFilter : null;
-  const branchSelectionReady = branchFilter !== 'all';
   const canBatch = kind !== 'tree' && !!story?.characterId && visibleSummaries.length > 0;
-  const toggleSelected = (id: string) => setSelected(previous => {
+
+  const toggleExpanded = (id: string) => setExpandedIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
+  const toggleDiaryNotebook = (id: string) => setDiaryNotebookIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+
+  const toggleSelected = (id: string) => setSelected((previous) => {
     const next = new Set(previous);
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
+
   const exitBatchMode = () => { setBatchMode(false); setSelected(new Set()); };
+
   useEffect(() => {
-    const visibleIds = new Set(visibleSummaries.map(item => item.id));
-    setSelected(previous => {
-      const next = new Set([...previous].filter(id => visibleIds.has(id)));
+    const visibleIds = new Set(visibleSummaries.map((item) => item.id));
+    setSelected((previous) => {
+      const next = new Set([...previous].filter((id) => visibleIds.has(id)));
       return next.size === previous.size ? previous : next;
     });
     if (!canBatch) setBatchMode(false);
@@ -146,9 +184,10 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
     );
   }
 
+  const allExpanded = visibleSummaries.length > 1 && visibleSummaries.every((item) => expandedIds.has(item.id));
+
   return (
     <div className="space-y-3 font-sans min-w-0">
-      {/* 工具行：故事切换 + 去处理区生成 + 手动录入 */}
       <div className="flex items-center gap-2 flex-wrap">
         <Select value={storyId ?? undefined} onValueChange={setStoryId}>
           <SelectTrigger className="h-8 w-56 text-xs">
@@ -174,17 +213,34 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             </SelectContent>
           </Select>
         )}
+        {kind !== 'tree' && visibleSummaries.length > 1 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs gap-1"
+            onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(visibleSummaries.map((i) => i.id)))}
+          >
+            {allExpanded ? <ChevronsDownUp className="w-3.5 h-3.5" /> : <ChevronsUpDown className="w-3.5 h-3.5" />}
+            {allExpanded ? '全部收起' : '全部展开'}
+          </Button>
+        )}
         <div className="flex-1" />
-        {canBatch && <Button variant={batchMode ? 'secondary' : 'outline'} size="sm" aria-pressed={batchMode}
-          onClick={() => batchMode ? exitBatchMode() : setBatchMode(true)}>{batchMode ? '完成' : '批量管理'}</Button>}
+        {canBatch && (
+          <Button
+            variant={batchMode ? 'secondary' : 'outline'}
+            size="sm"
+            aria-pressed={batchMode}
+            onClick={() => (batchMode ? exitBatchMode() : setBatchMode(true))}
+          >
+            {batchMode ? '完成' : '批量管理'}
+          </Button>
+        )}
         {kind !== 'tree' && (
           <Button
             variant="outline"
             size="sm"
             className="text-xs"
             onClick={() => setManualOpen(true)}
-            disabled={!branchSelectionReady}
-            title={branchSelectionReady ? undefined : '请先选择主线或具体分支'}
           >
             <Plus className="w-3.5 h-3.5 mr-1" />
             手动录入
@@ -196,8 +252,6 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             size="sm"
             className="text-xs"
             onClick={() => onGoGenerate(story.id, kind, selectedBranchId)}
-            disabled={!branchSelectionReady}
-            title={branchSelectionReady ? undefined : '请先选择主线或具体分支'}
           >
             <ExternalLink className="w-3.5 h-3.5 mr-1" />
             去处理区生成
@@ -205,19 +259,30 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
         )}
       </div>
 
-      {batchMode && canBatch && <div aria-label="记录批量管理" className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-elevated px-3 py-2 text-xs">
-        <label className="flex min-h-8 cursor-pointer items-center gap-2">
-          <Checkbox aria-label="全选当前记录" checked={selected.size === visibleSummaries.length ? true : selected.size > 0 ? 'indeterminate' : false}
-            onCheckedChange={checked => setSelected(checked === true ? new Set(visibleSummaries.map(item => item.id)) : new Set())} />
-          全选当前记录
-        </label>
-        <span className="text-muted-foreground">已选 {selected.size} 条</span>
-        {selected.size > 0 && <Button variant="outline" size="sm" className="ml-auto" onClick={() => setWorldbookOpen(true)}>加入世界书（{selected.size}）</Button>}
-      </div>}
+      {batchMode && canBatch && (
+        <div aria-label="记录批量管理" className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-elevated px-3 py-2 text-xs">
+          <label className="flex min-h-8 cursor-pointer items-center gap-2">
+            <Checkbox
+              aria-label="全选当前记录"
+              checked={selected.size === visibleSummaries.length ? true : selected.size > 0 ? 'indeterminate' : false}
+              onCheckedChange={(checked) => setSelected(checked === true ? new Set(visibleSummaries.map((item) => item.id)) : new Set())}
+            />
+            全选当前记录
+          </label>
+          <span className="text-muted-foreground">已选 {selected.size} 条</span>
+          {selected.size > 0 && (
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setWorldbookOpen(true)}>
+              加入世界书（{selected.size}）
+            </Button>
+          )}
+        </div>
+      )}
 
-      {recordsError ? <p role="alert" className="text-sm text-destructive">读取记录失败：{recordsError}</p>
-        : loadingRecords ? <p role="status" className="text-sm text-muted-foreground">正在读取记录…</p>
-        : items.length === 0 ? (
+      {recordsError ? (
+        <p role="alert" className="text-sm text-destructive">读取记录失败：{recordsError}</p>
+      ) : loadingRecords ? (
+        <p role="status" className="text-sm text-muted-foreground">正在读取记录…</p>
+      ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-10 flex flex-col items-center gap-2 text-center">
             <NotebookPen className="w-8 h-8 text-muted-foreground/40" />
@@ -261,47 +326,93 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
         <div className="space-y-2">
           {visibleSummaries.map((item) => {
             const manual = !item.genParams;
-            const expanded = expandedId === item.id;
+            const expanded = expandedIds.has(item.id);
+            const useDiaryNotebook = kind === 'diary' && diaryNotebookIds.has(item.id);
             return (
-              <Card key={item.id} className={cn('cursor-pointer', batchMode && selected.has(item.id) && 'border-primary/60 bg-primary/5')}
-                onClick={() => batchMode ? toggleSelected(item.id) : setExpandedId(expanded ? null : item.id)}>
+              <Card
+                key={item.id}
+                className={cn('cursor-pointer', batchMode && selected.has(item.id) && 'border-primary/60 bg-primary/5')}
+                onClick={() => (batchMode ? toggleSelected(item.id) : toggleExpanded(item.id))}
+              >
                 <CardContent className="py-3 px-4">
                   <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
-                    {batchMode && <span onClick={event => event.stopPropagation()}><Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={() => toggleSelected(item.id)} /></span>}
+                    {batchMode && (
+                      <span onClick={(event) => event.stopPropagation()}>
+                        <Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={() => toggleSelected(item.id)} />
+                      </span>
+                    )}
                     <span className="truncate" title={item.title}>{item.title}</span>
-                    {(item.diaryOwner || item.genParams?.diaryOwner) && <Badge variant="secondary">{item.diaryOwner || item.genParams?.diaryOwner}</Badge>}
+                    {(item.diaryOwner || item.genParams?.diaryOwner) && (
+                      <Badge variant="secondary">{item.diaryOwner || item.genParams?.diaryOwner}</Badge>
+                    )}
                     {summaryVolumeLabel(item) && (
                       <Badge variant="secondary" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{summaryVolumeLabel(item)}</Badge>
                     )}
                     <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(item.branchId)}</Badge>
                   </div>
-                  {/* 生成于 X · 覆盖 A-B 楼（不判断过期）；手动录入单独标 */}
                   <p className="text-xs text-muted-foreground mt-0.5" title={formatFullTime(item.updatedAt)}>
                     {manual ? '手动录入' : '生成'}于{formatListTime(item.updatedAt)}
                     {item.source && ` · 收录自第 ${item.source.floor} 楼`}
-                    {item.rangeDetached ? item.provenance ? ` · 原故事 ${item.floorStart}-${item.floorEnd} 楼` : ' · 覆盖范围未指定'
+                    {item.rangeDetached
+                      ? item.provenance ? ` · 原故事 ${item.floorStart}-${item.floorEnd} 楼` : ' · 覆盖范围未指定'
                       : ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
                   </p>
-                  <div className={cn('record-reading mt-3', !expanded && 'max-h-32 overflow-hidden')}>
-                    <MarkdownLite text={item.content} />
-                  </div>
-                  {!batchMode && <div className="mt-3 flex flex-wrap gap-2 [&>button]:min-h-11" onClick={event => event.stopPropagation()}>
-                    <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? null : item.id)}>{expanded ? '收起全文' : '展开全文'}</Button>
-                    {onJumpToFloor && story && !item.rangeDetached && Number.isSafeInteger(item.floorStart) && (
+
+                  {useDiaryNotebook ? (
+                    <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+                      <DiaryView
+                        content={item.content}
+                        charName={item.diaryOwner || item.genParams?.diaryOwner || story?.session?.character?.name}
+                      />
+                    </div>
+                  ) : (
+                    <div className={cn('record-reading mt-3', !expanded && 'max-h-36 overflow-hidden')}>
+                      <MarkdownLite text={item.content} />
+                    </div>
+                  )}
+
+                  {!batchMode && (
+                    <div className="mt-3 flex flex-wrap gap-2 [&>button]:min-h-11" onClick={(event) => event.stopPropagation()}>
+                      {!useDiaryNotebook && (
+                        <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => toggleExpanded(item.id)}>
+                          {expanded ? '收起全文' : '展开全文'}
+                        </Button>
+                      )}
+                      {kind === 'diary' && (
+                        <Button variant="outline" size="sm" onClick={() => toggleDiaryNotebook(item.id)}>
+                          <BookHeart className="w-3.5 h-3.5 mr-1" />
+                          {useDiaryNotebook ? '切回列表排版' : '手账本翻阅'}
+                        </Button>
+                      )}
+                      {onJumpToFloor && story && (!item.rangeDetached && Number.isSafeInteger(item.floorStart) || Number.isSafeInteger(item.source?.floor)) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const floor = !item.rangeDetached && Number.isSafeInteger(item.floorStart)
+                              ? item.floorStart
+                              : item.source!.floor;
+                            onJumpToFloor(story.id, item.branchId ?? null, floor);
+                          }}
+                          title={`打开大屏故事并直达第 #${!item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor} 楼回味原文`}
+                        >
+                          <LocateFixed className="w-3.5 h-3.5 mr-1" />
+                          跳到 #{!item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor} 楼回味
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setEditing(item)}>编辑记录</Button>
+                      <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
                       <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        onClick={() => onJumpToFloor(story.id, item.branchId ?? null, item.floorStart)}
-                        title={`打开故事并直达第 ${item.floorStart} 楼回味原文`}
+                        onClick={() => void navigator.clipboard.writeText(item.content)
+                          .then(() => toast({ title: '已复制正文' }))
+                          .catch((error) => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}
                       >
-                        <LocateFixed className="w-3.5 h-3.5 mr-1" />
-                        跳到 #{item.floorStart} 楼回味
+                        复制正文
                       </Button>
-                    )}
-                    <Button variant="outline" size="sm" onClick={() => setEditing(item)}>编辑记录</Button>
-                    <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
-                    <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(item.content).then(() => toast({ title: '已复制正文' })).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}>复制正文</Button>
-                  </div>}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -309,13 +420,40 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
         </div>
       )}
 
-      {editing && <EditRecordDialog record={editing} onClose={() => setEditing(null)} onSaved={() => { setRevision(value => value + 1); toast({ title: '记录已更新' }); }} />}
-      {moveRecord && story?.characterId && <MoveStoryRecordDialog record={moveRecord} kind={kind === 'tree' ? 'tree' : 'summary'} stories={stories}
-        characterId={story.characterId} onClose={() => setMoveRecord(null)} onMoved={() => setRevision(value => value + 1)} />}
-      {manualOpen && story && kind !== 'tree' && <CaptureRecordDialog storyId={story.id} branchId={selectedBranchId} initialKind={kind}
-        onClose={() => setManualOpen(false)} onSaved={() => { setRevision(value => value + 1); toast({ title: `已保存${KIND_LABELS[kind]}` }); }} />}
-      {worldbookOpen && story?.characterId && <RecordsToWorldbookDialog characterId={story.characterId} records={visibleSummaries.filter(item => selected.has(item.id))}
-        onClose={() => setWorldbookOpen(false)} onSaved={() => { exitBatchMode(); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }} />}
+      {editing && (
+        <EditRecordDialog
+          record={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setRevision((value) => value + 1); toast({ title: '记录已更新' }); }}
+        />
+      )}
+      {moveRecord && story?.characterId && (
+        <MoveStoryRecordDialog
+          record={moveRecord}
+          kind={kind === 'tree' ? 'tree' : 'summary'}
+          stories={stories}
+          characterId={story.characterId}
+          onClose={() => setMoveRecord(null)}
+          onMoved={() => setRevision((value) => value + 1)}
+        />
+      )}
+      {manualOpen && story && kind !== 'tree' && (
+        <CaptureRecordDialog
+          storyId={story.id}
+          branchId={selectedBranchId}
+          initialKind={kind}
+          onClose={() => setManualOpen(false)}
+          onSaved={() => { setRevision((value) => value + 1); toast({ title: `已保存${KIND_LABELS[kind]}` }); }}
+        />
+      )}
+      {worldbookOpen && story?.characterId && (
+        <RecordsToWorldbookDialog
+          characterId={story.characterId}
+          records={visibleSummaries.filter((item) => selected.has(item.id))}
+          onClose={() => setWorldbookOpen(false)}
+          onSaved={() => { exitBatchMode(); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }}
+        />
+      )}
     </div>
   );
 }

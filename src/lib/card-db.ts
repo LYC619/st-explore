@@ -1,6 +1,6 @@
 import type { RemoveOptions } from '@/lib/repo';
 import type { CardItem } from '@/types/character-card';
-import { createRepo, pruneAutoSaved } from '@/lib/repo';
+import { createRepo } from '@/lib/repo';
 
 const repo = createRepo<CardItem>('cards');
 
@@ -20,10 +20,7 @@ export async function deleteCard(id: string, options?: RemoveOptions): Promise<v
   return repo.remove(id, options);
 }
 
-/**
- * 只保留最近 `keep` 份「自动保留」(autoSaved) 的角色卡，超出的按 updatedAt 由旧到新删除。
- * 用户手动保存(autoSaved 非 true)的不受影响。返回被删除的 id 数组。
- */
-export async function pruneAutoSavedCards(keep = 5): Promise<string[]> {
-  return pruneAutoSaved(repo, keep);
+/** 历史兼容存根：已取消按上限静默删除旧角色卡记录的行为。 */
+export async function pruneAutoSavedCards(_keep = 5): Promise<string[]> {
+  return [];
 }

@@ -23,6 +23,7 @@ interface StoryTreeWorkspaceProps {
   story: ArchiveStory;
   currentBranchId: string | null;
   initialTarget?: { type: 'record' | 'tree'; id: string };
+  onJumpToFloor?: (floor: number, branchId?: string | null) => void;
 }
 
 function downloadJSON(name: string, content: string): void {
@@ -37,27 +38,34 @@ function downloadJSON(name: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: StoryTreeWorkspaceProps) {
+export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJumpToFloor }: StoryTreeWorkspaceProps) {
   const { toast } = useToast();
   const [trees, setTrees] = useState<StoryTree[]>([]);
   const [currentTreeId, setCurrentTreeId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const currentLine = getBranchLine(story, currentBranchId) ?? getBranchLine(story, null)!;
   const currentTree = trees.find((tree) => tree.id === currentTreeId) ?? null;
 
   const reload = useCallback(async (preferredId?: string | null) => {
-    const mine = (await getAllStoryTrees())
-      .filter((tree) => tree.bookId === story.id)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-    setTrees(mine);
-    setCurrentTreeId((current) => {
-      const target = preferredId ?? current;
-      if (target && mine.some((tree) => tree.id === target)) return target;
-      if (initialTarget?.type === 'tree' && mine.some((tree) => tree.id === initialTarget.id)) return initialTarget.id;
-      return mine[0]?.id ?? null;
-    });
-    setLoaded(true);
+    setLoadError(null);
+    try {
+      const mine = (await getAllStoryTrees())
+        .filter((tree) => tree.bookId === story.id)
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+      setTrees(mine);
+      setCurrentTreeId((current) => {
+        const target = preferredId ?? current;
+        if (target && mine.some((tree) => tree.id === target)) return target;
+        if (initialTarget?.type === 'tree' && mine.some((tree) => tree.id === initialTarget.id)) return initialTarget.id;
+        return mine[0]?.id ?? null;
+      });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : '读取故事树失败，请检查文件库连接后重试');
+    } finally {
+      setLoaded(true);
+    }
   }, [initialTarget, story.id]);
 
   useEffect(() => { void reload(); }, [reload]);
@@ -69,26 +77,42 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
       branchId: currentBranchId ?? undefined, title: `${story.title} 的故事树`, nodes: [],
       createdAt: now, updatedAt: now, autoSaved: false,
     };
-    await saveStoryTree(item);
-    await reload(item.id);
-    toast({ title: '已新建故事树' });
+    try {
+      await saveStoryTree(item);
+      await reload(item.id);
+      toast({ title: '已新建故事树' });
+    } catch (error) {
+      toast({
+        title: '新建故事树未成功',
+        description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+        variant: 'destructive',
+      });
+    }
   };
 
   const importTree = async (file: File) => {
-    const parsed = parseStoryTreeJSON(await file.text());
-    if (parsed.ok !== true) {
-      toast({ title: '导入失败', description: parsed.error, variant: 'destructive' });
-      return;
+    try {
+      const parsed = parseStoryTreeJSON(await file.text());
+      if (parsed.ok !== true) {
+        toast({ title: '导入失败', description: parsed.error, variant: 'destructive' });
+        return;
+      }
+      const now = Date.now();
+      const item: StoryTree = {
+        id: generateStoryTreeId(), bookId: story.id, bookTitle: story.title,
+        branchId: currentBranchId ?? undefined, title: parsed.title, nodes: parsed.nodes,
+        createdAt: now, updatedAt: now, autoSaved: false,
+      };
+      await saveStoryTree(item);
+      await reload(item.id);
+      toast({ title: '已导入故事树', description: `${item.nodes.length} 个节点` });
+    } catch (error) {
+      toast({
+        title: '导入故事树未成功',
+        description: error instanceof Error ? error.message : '请检查文件内容及库目录权限后重试',
+        variant: 'destructive',
+      });
     }
-    const now = Date.now();
-    const item: StoryTree = {
-      id: generateStoryTreeId(), bookId: story.id, bookTitle: story.title,
-      branchId: currentBranchId ?? undefined, title: parsed.title, nodes: parsed.nodes,
-      createdAt: now, updatedAt: now, autoSaved: false,
-    };
-    await saveStoryTree(item);
-    await reload(item.id);
-    toast({ title: '已导入故事树', description: `${item.nodes.length} 个节点` });
   };
 
   const deleteTree = async (options: RemoveOptions) => {
@@ -115,13 +139,13 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
   };
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto container mx-auto px-4 py-5">
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain container mx-auto px-4 py-5">
       <div className="max-w-7xl mx-auto space-y-4">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg gold-gradient flex items-center justify-center shadow-card"><Network className="w-5 h-5 text-primary-foreground" /></div>
             <div>
-              <div className="flex items-center gap-1"><h1 className="font-display text-xl font-semibold">故事树</h1><HelpCard>用可视化事实树整理人物、事件、关系与地点；每棵树关联当前故事。</HelpCard></div>
+              <div className="flex items-center gap-1"><h1 className="font-display text-xl font-semibold">故事树</h1><HelpCard>用可视化事实树整理人物、事件、关系与地点；点击节点即可在右侧展开详情编辑，支持跳回提及楼层。</HelpCard></div>
               <p className="text-xs text-muted-foreground">回顾故事的记忆锚点</p>
             </div>
           </div>
@@ -134,6 +158,7 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
             tree={currentTree}
             session={getBranchLine(story, currentTree.branchId ?? null)?.session ?? null}
             onChanged={() => { void reload(currentTree.id); }}
+            onJumpToFloor={onJumpToFloor ? (floor) => onJumpToFloor(floor, currentTree.branchId ?? null) : undefined}
             renderHeader={({ title, onTitleChange }) => (
               <Card data-story-tree-selector>
                 <CardContent className="p-3 flex items-center gap-2 flex-wrap">
@@ -152,6 +177,8 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget }: St
               </Card>
             )}
           />
+        ) : loadError ? (
+          <Card role="alert"><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="font-medium text-foreground">故事树列表暂时没能读出来，库里的原文件未受影响</p><p className="text-sm text-muted-foreground break-words">{loadError}</p><Button variant="outline" onClick={() => void reload()}>重新读取</Button></CardContent></Card>
         ) : loaded ? (
           <Card data-story-tree-selector><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="text-muted-foreground">用一棵事实树梳理这个故事的人物、事件与关系。</p><div className="flex gap-2 justify-center flex-wrap"><Button onClick={createTree} className="gap-1"><Plus className="w-4 h-4" />新建故事树</Button><label><Button variant="outline" className="gap-1" asChild><span><Download className="w-4 h-4" />导入</span></Button><input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTree(file); event.target.value = ''; }} /></label></div></CardContent></Card>
         ) : <div className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</div>}

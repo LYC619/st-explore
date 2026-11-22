@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { callOpenAIMessages, isLLMCancelled, isLLMConfigured } from '@/lib/llm';
 import type { NovelChapter } from '@/lib/novel-view';
 import type { RemoveOptions } from '@/lib/repo';
-import { deleteSummary, pruneAutoSavedSummaries, saveSummary } from '@/lib/summary-db';
+import { deleteSummary, saveSummary } from '@/lib/summary-db';
 import { buildSummaryMessages } from '@/lib/summary-engine';
 import { listTemplatesForKind, type AnySummaryTemplate } from '@/lib/summary-templates';
 import type { ArchiveStory } from '@/types/archive';
@@ -181,10 +181,9 @@ export function NovelPolishDialog({
 
     const id = generateSummaryId();
     try {
-      await saveSummary(buildPolishItem(polishOutputRef.current, true, id, targetChapter, activeTemplate));
+      await saveSummary(buildPolishItem(polishOutputRef.current, false, id, targetChapter, activeTemplate));
       setPolishSavedId(id);
-      await pruneAutoSavedSummaries().catch(() => {});
-      toast({ title: '已自动暂存', description: '去「整理与记录」可随时翻阅编辑；喜欢就点「永久保存」留档' });
+      toast({ title: '已保存润色正文', description: '去「整理与记录」可随时翻阅或继续编辑' });
     } catch (error) {
       toast({
         title: '正文已生成，但自动暂存没成功',

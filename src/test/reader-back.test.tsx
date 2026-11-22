@@ -2,7 +2,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import NovelView from '@/components/reader/NovelView';
-import ReaderView from '@/components/reader/ReaderView';
 import { backHandlerCount, handleBackPress, registerBackHandler, resetBackHandlers } from '@/lib/back-button';
 import { useReaderBack } from '@/lib/immersive-mode';
 import type { ChatSession } from '@/types/chat';
@@ -49,8 +48,7 @@ describe('reader back ownership', () => {
     const first = vi.fn();
     const second = vi.fn();
     const render = (onClose: () => void) => act(async () => root.render(
-      <ReaderView messages={session.messages} markers={[]} regexRules={[]}
-        characterName="C" userName="U" onClose={onClose} />,
+      <NovelView session={session} markers={[]} regexRules={[]} onClose={onClose} readOnly />,
     ));
     await render(first);
     const overlay = vi.fn(() => true);

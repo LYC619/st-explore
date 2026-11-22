@@ -13,9 +13,17 @@ interface OutlinePanelProps {
 }
 
 export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePanelProps) {
+  const indexById = useMemo(
+    () => new Map(session.messages.map((m, i) => [m.id, i])),
+    [session.messages],
+  );
+
   const sortedMarkers = useMemo(
-    () => [...markers].sort((a, b) => a.messageIndex - b.messageIndex),
-    [markers],
+    () =>
+      [...markers]
+        .map((m) => ({ ...m, liveIndex: indexById.get(m.messageId) ?? m.messageIndex }))
+        .sort((a, b) => a.liveIndex - b.liveIndex),
+    [indexById, markers],
   );
 
   const favoriteItems = useMemo(() => {
@@ -51,7 +59,7 @@ export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePan
                 <span className="flex-1 min-w-0 truncate" title={m.title}>
                   {m.volume ? `${m.volume} · ` : ''}{m.title}
                 </span>
-                <span className="text-xs text-muted-foreground shrink-0">#{m.messageIndex}</span>
+                <span className="text-xs text-muted-foreground shrink-0">#{m.liveIndex}</span>
               </button>
             ))}
           </div>
@@ -62,7 +70,7 @@ export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePan
         <p className="text-xs font-medium text-muted-foreground px-2 mb-1">书签</p>
         {favoriteItems.length === 0 ? (
           <p className="px-2 text-xs text-muted-foreground/70">
-            还没有书签。悬停左侧跳转条上的楼层可收藏。
+            还没有书签。点击每楼右上角的「☆」即可收藏。
           </p>
         ) : (
           <div className="space-y-0.5">

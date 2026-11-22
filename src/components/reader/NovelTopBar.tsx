@@ -20,12 +20,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import type { NovelBookmark, UserFloorMode } from '@/lib/novel-view';
+import type { ReadingMode } from './MobileReaderSettings';
 import { cn } from '@/lib/utils';
 
 interface NovelTopBarProps {
   title: string;
   isMobile: boolean;
   chromeVisible: boolean;
+  readingMode?: ReadingMode;
+  onReadingModeChange?: (mode: ReadingMode) => void;
+  scrollMaxWidth?: number;
+  onScrollMaxWidthChange?: (width: number) => void;
   userMode: UserFloorMode;
   onUserModeChange: (mode: UserFloorMode) => void;
   hiddenUserFloors: number;
@@ -51,6 +56,10 @@ export function NovelTopBar({
   title,
   isMobile,
   chromeVisible,
+  readingMode = 'page',
+  onReadingModeChange,
+  scrollMaxWidth = 760,
+  onScrollMaxWidthChange,
   userMode,
   onUserModeChange,
   hiddenUserFloors,
@@ -120,9 +129,9 @@ export function NovelTopBar({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="weaken">用户楼：弱化</SelectItem>
-                <SelectItem value="hide">用户楼：隐藏</SelectItem>
-                <SelectItem value="keep">用户楼：保留</SelectItem>
+                <SelectItem value="weaken">玩家发言：弱化</SelectItem>
+                <SelectItem value="hide">玩家发言：隐藏</SelectItem>
+                <SelectItem value="keep">玩家发言：保留</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -229,6 +238,53 @@ export function NovelTopBar({
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-64 space-y-4" align="end">
+                {onReadingModeChange && (
+                  <div>
+                    <div className="text-sm font-medium mb-2">阅读翻阅方式</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onReadingModeChange('page')}
+                        className={cn(
+                          'rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+                          readingMode === 'page'
+                            ? 'border-primary bg-primary/10 text-primary font-medium'
+                            : 'border-border text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        双页翻书
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onReadingModeChange('scroll')}
+                        className={cn(
+                          'rounded-md border px-2.5 py-1.5 text-xs transition-colors',
+                          readingMode === 'scroll'
+                            ? 'border-primary bg-primary/10 text-primary font-medium'
+                            : 'border-border text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        单栏滚动
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {readingMode === 'scroll' && onScrollMaxWidthChange && (
+                  <div>
+                    <div className="flex items-center justify-between text-sm font-medium mb-2">
+                      <span>单栏阅读宽度</span>
+                      <span className="text-xs text-muted-foreground font-normal tabular-nums">{scrollMaxWidth}px</span>
+                    </div>
+                    <Slider
+                      aria-label="小说单栏宽度"
+                      value={[scrollMaxWidth]}
+                      onValueChange={([v]) => onScrollMaxWidthChange(v)}
+                      min={560}
+                      max={1160}
+                      step={40}
+                    />
+                  </div>
+                )}
                 <div>
                   <div className="text-sm font-medium mb-2">字号</div>
                   <Slider aria-label="小说正文字号" value={[fontSize]} onValueChange={([v]) => onFontSizeChange(v)} min={14} max={26} step={1} />

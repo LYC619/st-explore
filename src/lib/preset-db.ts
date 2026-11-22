@@ -146,23 +146,9 @@ export async function deletePreset(id: string, options?: RemoveOptions): Promise
   });
 }
 
-/**
- * 只保留最近 `keep` 份「自动保留」(autoSaved) 的预设，超出的按 updatedAt 由旧到新删除。
- * 用户手动保存(autoSaved 非 true)的不受影响。返回被删除的 id 数组。
- */
-export async function pruneAutoSavedPresets(keep = 5): Promise<string[]> {
-  const epoch = getVaultEpoch(), target = getCurrentRepo<PresetItem>('presets');
-  const candidates = (await target.list()).filter(item => item.autoSaved).slice(keep);
-  const removed: string[] = [];
-  for (const item of candidates) await queue.enqueue(`${epoch}:${item.id}`, async () => {
-    if (epoch !== getVaultEpoch()) return;
-    const latest = await target.get(item.id);
-    // Marking an old import must protect it even if pruning read its old flag first.
-    if (!latest?.autoSaved || epoch !== getVaultEpoch()) return;
-    await target.remove(item.id);
-    removed.push(item.id);
-  });
-  return removed;
+/** 历史兼容存根：已取消按上限静默删除旧预设的行为。 */
+export async function pruneAutoSavedPresets(_keep = 5): Promise<string[]> {
+  return [];
 }
 
 /** Refresh only preset files, including external edits, additions, moves and deletions. */
