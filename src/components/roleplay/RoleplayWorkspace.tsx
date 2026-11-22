@@ -4,6 +4,7 @@ import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { PortraitCloudTasks } from '@/components/character/PortraitCloudTasks';
 import {
   closeDetachedTavernWindow,
+  getRoleplaySessionSnapshot,
   setRoleplayOpenChat,
   useRoleplaySessionState,
 } from '@/lib/roleplay/detached-window';
@@ -34,7 +35,7 @@ export function RoleplayWorkspace() {
   useEffect(() => {
     if (!match?.params.id) return;
     const query = new URLSearchParams(location.search);
-    if (session.detached) closeDetachedTavernWindow();
+    if (getRoleplaySessionSnapshot().detached) closeDetachedTavernWindow();
     setRoleplayOpenChat(
       {
         id: match.params.id,
@@ -44,7 +45,7 @@ export function RoleplayWorkspace() {
       },
       { detached: false, container: null },
     );
-  }, [match?.params.id, location.search, session.detached]);
+  }, [match?.params.id, location.search]);
 
   useEffect(() => {
     if (saved && saved.epoch !== epoch) {

@@ -224,10 +224,10 @@ export function PromptEditor({
                       {block?.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block?.injection_depth as number | undefined} /> : <RoleBadge role={block?.role} />}
                       {empty && <EmptyBadge />}
                       <Switch checked={entry.enabled} onCheckedChange={() => toggleEnabled(entry.identifier)} className="scale-90" />
-                      <Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 text-muted-foreground" disabled={index === 0} onClick={() => moveInOrder(index, -1)} aria-label="上移提示词" title="上移一位">
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === 0} onClick={() => moveInOrder(index, -1)} aria-label="上移提示词" title="上移一位">
                         <ArrowUp className="w-3.5 h-3.5" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon" className="shrink-0 h-7 w-7 text-muted-foreground" disabled={index === order.length - 1} onClick={() => moveInOrder(index, 1)} aria-label="下移提示词" title="下移一位">
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === order.length - 1} onClick={() => moveInOrder(index, 1)} aria-label="下移提示词" title="下移一位">
                         <ArrowDown className="w-3.5 h-3.5" />
                       </Button>
                       <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeFromOrder(entry.identifier)} aria-label="移回备用库" title="从当前激活链移回下方备用库">

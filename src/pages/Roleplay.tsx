@@ -498,6 +498,7 @@ export default function Roleplay({
     }
     setReady(false);
     setStatus('正在切换窗口…');
+    navigate(fromChats ? '/play' : buildStoryReadPath(targetStoryId, { branchId: targetBranchId }), { replace: true });
     launchRoleplayTarget({
       storyId: targetStoryId,
       branchId: targetBranchId,
@@ -506,7 +507,6 @@ export default function Roleplay({
       reservation,
       forceMode: 'detached',
     });
-    navigate(fromChats ? '/play' : buildStoryReadPath(targetStoryId, { branchId: targetBranchId }), { replace: true });
   };
 
   const dockBackInline = async () => {

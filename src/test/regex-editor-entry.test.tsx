@@ -13,18 +13,19 @@ import { NAV_AREAS } from '@/lib/navigation-model';
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?:boolean}).IS_REACT_ACT_ENVIRONMENT=true;
 let root:Root, router:ReturnType<typeof createMemoryRouter>;
 afterEach(async()=>{await act(async()=>root?.unmount());router?.dispose();setActiveVault(null);localStorage.clear();document.body.innerHTML='';vi.unstubAllGlobals();});
-it('opens the real regex editor from the editor rail and keeps library loading secondary',async()=>{
+it('opens the real regex editor without duplicate desktop editor rail and keeps library loading secondary',async()=>{
  vi.stubGlobal('ResizeObserver',class{observe(){}unobserve(){}disconnect(){}});
  setActiveVault(createVault(createMemFs()));setEditorOpenState(true);
  const host=document.createElement('div');document.body.append(host);root=createRoot(host);
  router=createMemoryRouter([{element:<AppLayout/>,children:[{path:'/chat',element:<div>聊天入口</div>},{path:'/regex',element:<RegexTool/>},{path:'/assets',element:<div>不应进入的附属库</div>}]}],{initialEntries:['/chat']});
  await act(async()=>root.render(<TooltipProvider><RouterProvider router={router}/></TooltipProvider>));
- const rail=document.querySelector('[data-editor-rail]')!;
- const button=[...rail.querySelectorAll('button')].find(b=>b.textContent==='正则')!;
+ expect(document.querySelector('[data-editor-rail]')).toBeNull();
+ const nav=NAV_AREAS.find(area=>area.key==='editor')!.children.find(item=>item.key==='regex')!;
+ const button=document.querySelector<HTMLButtonElement>(`button[title="${nav.description}"]`)!;
+ expect(button).not.toBeNull();
  await act(async()=>{button.click();await new Promise(r=>setTimeout(r,0));});
  expect(router.state.location.pathname).toBe('/regex');expect(document.body.textContent).toContain('正则工具');expect(document.body.textContent).not.toContain('不应进入的附属库');
  expect(document.querySelector('[aria-label="正则编辑"] [data-regex-sidebar]')).not.toBeNull();
  expect(document.querySelector<HTMLDetailsElement>('[data-regex-library]')?.open).toBe(false);
- const nav=NAV_AREAS.find(area=>area.key==='editor')!.children.find(item=>item.key==='regex')!;
  expect(document.querySelector(`button[title="${nav.description}"]`)?.getAttribute('aria-current')).toBe('page');
 });

@@ -185,7 +185,7 @@ test('observes library return state and detail reading without changing typograp
     return parent?.scrollTop ?? 0;
   });
   await tile.click(); await page.getByRole('button', { name: '阅读', exact: true }).click();
-  await expect(page).toHaveURL(/\/story\/list-story-/);
+  await expect(page).toHaveURL(/\/story\/astory_/);
   await page.screenshot({ path: '.cache/archive-maintenance-20261018/b6-detail-reading.png' });
   await page.getByRole('button', { name: /^列表返回/ }).click();
   await page.getByRole('button', { name: '角色库', exact: true }).first().click();

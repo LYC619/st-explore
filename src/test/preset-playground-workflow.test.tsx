@@ -55,7 +55,7 @@ it('only sends on action, compiles the chosen assets into the real request and n
   const [, options] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
   const body = JSON.parse(String(options.body));
   expect(body).toMatchObject({ model: 'fixture-model', temperature: 0.31, stream: true });
-  for (const text of ['启用预设 p1 阿林/User','角色描述：港城守卫','港城世界条目','请介绍港城']) expect(JSON.stringify(body.messages)).toContain(text);
+  for (const text of ['启用预设 p1 阿林/你','角色描述：港城守卫','港城世界条目','请介绍港城']) expect(JSON.stringify(body.messages)).toContain(text);
   expect(JSON.stringify(body.messages)).not.toContain('禁用预设块');
   expect(await Promise.all(['presets','characters','worldbooks','archiveStories'].map(store => vault.repo(store as 'presets').list()))).toEqual(before);
   await click('清空'); expect(document.querySelector('[role="log"]')?.textContent).not.toContain('夹具回复');

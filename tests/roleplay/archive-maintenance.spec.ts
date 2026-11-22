@@ -75,7 +75,7 @@ test('character asset editing flushes on Back and exports current worldbook in J
   });
   await page.goto(`/character/${fixture.characterId}`);
   await page.getByRole('tab', { name: /关联资产/ }).click();
-  await page.getByRole('button', { name: '处理', exact: true }).click();
+  await page.getByRole('tabpanel').getByRole('button', { name: /^归档世界书/ }).click();
   await expect(page).toHaveURL(/worldbook.*assetId=archive-wb/);
   await page.locator('[data-entry-key="7"]').click();
   await page.locator('textarea').first().fill('当前 B：第一卷总结');
@@ -100,7 +100,7 @@ test('character asset editing flushes on Back and exports current worldbook in J
   }, png.toString('base64'));
   expect(extracted).toEqual(json);
   await page.reload();
-  await page.getByRole('tab', { name: /关联资产/ }).click(); await page.getByRole('button', { name: '处理', exact: true }).click();
+  await page.getByRole('tab', { name: /关联资产/ }).click(); await page.getByRole('tabpanel').getByRole('button', { name: /^归档世界书/ }).click();
   await page.locator('[data-entry-key="7"]').click(); await expect(page.locator('textarea').first()).toHaveValue(current.content);
   await page.getByRole('button', { name: '恢复来源内容', exact: true }).click();
   await expect(page.locator('textarea').first()).toHaveValue('旧 A');

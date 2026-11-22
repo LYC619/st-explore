@@ -186,7 +186,8 @@ export function ChatHubStoryRow({
                   cancelRename();
                 }
               }}
-              className="h-8 text-base sm:text-sm"
+              className="text-base sm:text-sm"
+              size="md"
             />
           </div>
         </div>
@@ -212,7 +213,7 @@ export function ChatHubStoryRow({
                 {story.title}
               </span>
               {isLiveDetached && (
-                <Badge variant="secondary" className="shrink-0 text-[10px] font-normal text-brand">
+                <Badge variant="secondary" className="shrink-0 text-[11px] font-normal text-brand">
                   独立窗口中
                 </Badge>
               )}
@@ -242,7 +243,7 @@ export function ChatHubStoryRow({
                 variant="ghost"
                 size="sm"
                 disabled={busyPreset || isLiveDetached}
-                className="hidden md:inline-flex h-7 max-w-40 px-2 text-[11px] text-[color:var(--text-muted)] hover:text-foreground"
+                className="hidden md:inline-flex max-w-40 px-2 text-[11px] text-[color:var(--text-muted)] hover:text-foreground"
                 aria-label={`选择 ${story.title} 的预设`}
                 title={
                   isLiveDetached
@@ -273,7 +274,7 @@ export function ChatHubStoryRow({
           type="button"
           variant="ghost"
           size="sm"
-          className="hidden sm:inline-flex h-8 px-2 text-xs text-[color:var(--text-muted)] hover:text-foreground"
+          className="hidden sm:inline-flex px-2 text-xs text-[color:var(--text-muted)] hover:text-foreground"
           aria-label={`去阅读整理 ${story.title}`}
           title="前往大屏阅读与整理工作台"
           onClick={() => onOpenReader(story.id)}
@@ -288,7 +289,7 @@ export function ChatHubStoryRow({
               type="button"
               variant="ghost"
               size="icon"
-              className="tap-target h-11 w-11 sm:h-8 sm:w-8 shrink-0 text-[color:var(--text-muted)] hover:text-foreground"
+              className="tap-target shrink-0 text-[color:var(--text-muted)] hover:text-foreground"
               aria-label={`${story.title} 更多操作`}
               title="更多操作"
             >

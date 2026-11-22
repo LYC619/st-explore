@@ -300,7 +300,7 @@ export default function ChatHub() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="tap-target h-11 w-11 sm:h-7 sm:w-7 text-[color:var(--text-muted)] hover:text-brand"
+                className="tap-target text-[color:var(--text-muted)] hover:text-brand"
                 aria-label="续聊使用帮助"
                 title="查看主模型、记忆管家与柏宝书指南"
                 onClick={() => setGuideOpen(true)}
@@ -374,9 +374,10 @@ export default function ChatHub() {
               <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
+                size="lg"
                 aria-label="搜索聊天"
                 placeholder="搜索对话标题或角色名"
-                className="h-11 pl-8 pr-8 text-base sm:text-sm"
+                className="pl-8 pr-8"
                 value={search}
                 onChange={(event) => changeFilters({ search: event.target.value })}
                 onKeyDown={(event) => {

@@ -155,7 +155,7 @@ export async function contentInput(kind: EditorKind) {
     return document.querySelector<HTMLTextAreaElement>('textarea')!;
   }
   if (kind === 'preset') {
-    await tab('提示词');
+    await tab('提示词编排');
     if (!document.querySelector('textarea[placeholder="提示词内容"]')) await click(document.querySelector('[aria-label="展开"]'));
     return document.querySelector<HTMLTextAreaElement>('textarea[placeholder="提示词内容"]')!;
   }
@@ -171,7 +171,7 @@ export async function dirty(kind: EditorKind) {
   expect(input.value).toBe('unsaved A');
   return input;
 }
-export async function save(kind: EditorKind) { await click(button(kind === 'regex' ? '存入资产库' : kind === 'preset' ? '覆盖保存' : '保存') ?? button('保存')); }
+export async function save(kind: EditorKind) { await click(button(kind === 'regex' ? '存入资产库' : kind === 'preset' ? '保存修改' : '保存') ?? button('保存到预设库') ?? button('保存')); }
 export function savedContent(kind: EditorKind, item: Item) {
   if (kind === 'worldbook') return (item as WorldBookItem).worldbook.entries['1'].content;
   if (kind === 'preset') return (item as PresetItem).preset.prompts[0].content;
@@ -203,7 +203,7 @@ export function navigationTests(kind: EditorKind) {
       const input = await dirty(kind);
       await go('?assetId=B&characterId=owner-b&view=grid&filter=one&filter=two');
       expect(dialog()).not.toBeNull();
-      await click(button('取消', dialog()!));
+      await click(button('取消', dialog()!) ?? button('继续编辑', dialog()!));
       expect(input.value).toBe('unsaved A');
       expect(query().get('assetId')).toBe('A');
       expect(query().get('characterId')).toBe('owner-a');
@@ -256,7 +256,7 @@ export function navigationTests(kind: EditorKind) {
       await dirty(kind);
       await go('?assetId=B&characterId=owner-b&view=grid');
       expect(dialog()).not.toBeNull();
-      await click(button('确认加载', dialog()!));
+      await click(button('确认加载', dialog()!) ?? button('放弃并切换', dialog()!));
       expect(dialog()).toBeNull();
       expect(query().get('assetId')).toBe('B');
       await expectContent(kind, 'B');
@@ -272,7 +272,7 @@ export function navigationTests(kind: EditorKind) {
       await dirty(kind);
       await go('?assetId=A&characterId=owner-b');
       expect(dialog()).not.toBeNull();
-      await click(button('取消', dialog()!));
+      await click(button('取消', dialog()!) ?? button('继续编辑', dialog()!));
       await save(kind);
       expect(db.reference.mock.calls.at(-1)![0]).toBe('owner-a');
     });
@@ -310,15 +310,15 @@ export function navigationTests(kind: EditorKind) {
       const input = await dirty(kind);
       await go('?view=grid');
       expect(dialog()).not.toBeNull();
-      await click(button('取消', dialog()!));
+      await click(button('取消', dialog()!) ?? button('继续编辑', dialog()!));
       expect(query().get('assetId')).toBe('A');
       expect(input.value).toBe('unsaved A');
       await go('?view=grid');
-      await click(button('确认加载', dialog()!));
+      await click(button('确认加载', dialog()!) ?? button('放弃并切换', dialog()!));
       expect(query().get('assetId')).toBeNull();
       expect(dialog()).toBeNull();
       if (kind === 'regex') expect(document.querySelector('[aria-label="展开编辑"]')).toBeNull();
-      else expect(button('保存')).toBeUndefined();
+      else expect(button('保存') ?? button('保存修改')).toBeUndefined();
       await go('?assetId=C');
       expect(dialog()).toBeNull();
       await expectContent(kind, 'C');
@@ -390,7 +390,7 @@ export function navigationTests(kind: EditorKind) {
       expect(input.value).toBe('unsaved A');
       await go('?assetId=B');
       expect(dialog()).not.toBeNull();
-      await click(button('取消', dialog()!));
+      await click(button('取消', dialog()!) ?? button('继续编辑', dialog()!));
       expect(query().get('assetId')).toBe('A');
       expect(db[kind].save.mock.calls[0][0].id).toBe('A');
     });
@@ -402,7 +402,7 @@ export function navigationTests(kind: EditorKind) {
       expect(dialog()).not.toBeNull();
       await go('?assetId=B&view=grid&custom=keep');
       expect(db[kind].get.mock.calls.map(([id]) => id)).toEqual(['A', 'B']);
-      await click(button('取消', dialog()!));
+      await click(button('取消', dialog()!) ?? button('继续编辑', dialog()!));
       expect(query().get('assetId')).toBe('A');
       expect(query().get('view')).toBe('grid');
       expect(query().get('custom')).toBe('keep');
@@ -459,7 +459,7 @@ export function navigationTests(kind: EditorKind) {
         const row = Array.from(document.querySelectorAll('button')).find((element) => element.textContent?.includes('Asset A'))!;
         await click(row.parentElement!.querySelector('button[aria-label="从资产库删除"]'));
       } else if (kind === 'preset') {
-        await click(button('已存预设'));
+        await click(button('已存预设') ?? button('切换预设'));
         const row = document.querySelector('button[title="Asset A"]')!;
         await click(button('删除', row.parentElement!));
       } else {

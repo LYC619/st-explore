@@ -18,7 +18,7 @@ let root: Root | undefined;
 afterEach(async () => { if (root) await act(async () => root!.unmount()); root = undefined; document.body.innerHTML = ''; setActiveVault(null); });
 const original: PresetItem = { id: 'old', title: 'old preset', createdAt: 1, updatedAt: 1,
   preset: parsePreset({ prompts: [{ identifier: 'p', content: 'old prompt' }], prompt_order: [] }),
-  catalog: { author: '作者', series: '系列', version: 'v1', tags: ['状态/过期', '评价/良好'], status: 'retired', notes: 'old note' } };
+  catalog: { author: '作者', series: '系列', version: 'v1', tags: ['状态/过期', '评价/良好', '文风/日常'], status: 'retired', notes: 'old note' } };
 async function mount(seed: PresetCatalog) {
   setActiveVault(createVault(createMemFs()));
   await getCurrentRepo<PresetItem>('presets').put(structuredClone(original));
@@ -35,26 +35,28 @@ async function mount(seed: PresetCatalog) {
 function button(text: string) { const node = [...document.querySelectorAll('button')].find(node => node.textContent?.trim() === text); if (!node) throw new Error(`Missing button: ${text}`); return node; }
 async function click(node: HTMLElement) { await act(async () => node.click()); }
 async function save(imported: ReturnType<typeof vi.fn>) {
-  await vi.waitFor(() => expect(button('导入 1 份预设')).toBeEnabled());
-  await click(button('导入 1 份预设'));
+  await vi.waitFor(() => expect(button('导入所选（1 项）')).toBeEnabled());
+  await click(button('导入所选（1 项）'));
   await vi.waitFor(() => expect(imported).toHaveBeenCalledOnce());
   return (await getAllPresets()).find(item => item.id !== original.id)!;
 }
 
-it('inherits existing series tags through the real import dialog so a retired series stays hidden in ST', async () => {
+it('inherits shared series subject tags without forcing an old retired version status onto the newly imported version', async () => {
   const { imported } = await mount({ author: '作者', series: '系列' });
   const added = await save(imported);
-  expect(added.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好'], status: 'retired', version: 'v2' });
-  expect(added.preset.prompts[0].content).toBe('new prompt'); expect(await getPreset(original.id)).toEqual(original);
+  expect(added.catalog).toMatchObject({ tags: ['文风/日常'], version: 'v2' });
+  expect(added.catalog?.status).toBe('unreviewed');
+  expect(added.preset.prompts[0].content).toBe('new prompt');
+  expect(await getPreset(original.id)).toEqual(original);
   const assets = await createRoleplayAssets({ presets: getCurrentRepo<PresetItem>('presets'), worldbooks: getCurrentRepo<WorldBookItem>('worldbooks') });
-  expect(assets.presetData().size).toBe(0);
+  expect(assets.presetData().size).toBe(1);
 });
 
-it('applies an explicit import tag change to every existing version without replacing per-version data', async () => {
-  const { imported } = await mount({ author: '作者', series: '系列', tags: ['状态/过期', '评价/良好'] });
+it('syncs explicit series tags to existing versions while keeping per-version status and rating independent', async () => {
+  const { imported } = await mount({ author: '作者', series: '系列', tags: ['状态/过期', '评价/良好', '文风/悬疑'] });
   await click(button('在用'));
   const added = await save(imported), old = (await getPreset(original.id))!;
-  expect(added.catalog).toMatchObject({ tags: ['评价/良好', '状态/在用'], status: 'active' });
-  expect(old.catalog).toMatchObject({ tags: ['评价/良好', '状态/在用'], status: 'active', version: 'v1', notes: 'old note' });
+  expect(added.catalog).toMatchObject({ tags: ['评价/良好', '状态/在用', '文风/悬疑'], status: 'active' });
+  expect(old.catalog).toMatchObject({ tags: ['状态/过期', '评价/良好', '文风/悬疑'], status: 'retired', version: 'v1', notes: 'old note' });
   expect(old.preset).toEqual(original.preset);
 });

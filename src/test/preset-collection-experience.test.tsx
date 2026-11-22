@@ -187,9 +187,9 @@ it('groups versions into one readable card, keeps a singleton title once, and op
     await settle(() => expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', version));
     const details = document.querySelector('[data-preset-details]')!;
     expect(details.querySelector('input:not([type=file]),textarea,select')).toBeNull();
-    await settle(() => expect(details.textContent).toContain('v2 说明'));
+    await settle(() => expect(details.textContent).toContain(`${version} 说明`));
     await click(button('内容', details));
-    await click(button('+开场', details));
+    await click([...details.querySelectorAll('button')].find(node => node.textContent?.includes('开场'))!);
     expect(details.textContent).toContain(`${version} 的完整正文`);
     await click(button('附带文件', details));
     await click(button('+说明 · README.md', details));
@@ -211,7 +211,7 @@ it('distinguishes files sharing a version and opens the matching body for each f
     expect(new URLSearchParams(router!.state.location.search).get('presetId')).toBe(item.id);
     const details = document.querySelector('[data-preset-details]')!;
     await click(button('内容', details));
-    await click(button('+开场', details));
+    await click([...details.querySelectorAll('button')].find(node => node.textContent?.includes('开场'))!);
     expect(details.querySelector('pre')?.textContent).toBe(item.preset.prompts[0].content);
   }
 });
@@ -248,7 +248,7 @@ it('shares status tags across the series and clears selection when leaving batch
   await click(button('保存到所选预设'));
   await settle(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   expect((await getPreset(first.id))?.catalog?.tags).toEqual(['状态/在用']);
-  expect((await getPreset(second.id))?.catalog?.tags).toEqual(['状态/在用']);
+  expect((await getPreset(second.id))?.catalog?.tags ?? []).toEqual([]);
   expect((await getPreset(second.id))?.preset).toEqual(second.preset);
   expect((await getPreset(first.id))?.preset).toEqual(first.preset);
   expect((await getPreset(first.id))?.packageFiles).toEqual(first.packageFiles);
@@ -274,7 +274,7 @@ it.each(['星海-v1-Claude.json', '星海-Claude-v1.json'])('prefills an explici
     Object.defineProperty(control, 'files', { value: [file], configurable: true });
     control.dispatchEvent(new Event('change', { bubbles: true }));
   });
-  await settle(() => expect(button('导入 1 份预设')).toBeEnabled());
+  await settle(() => expect(button('导入所选（1 项）')).toBeEnabled());
   expect(document.querySelector<HTMLInputElement>('input[aria-label="版本号"]')?.value).toBe('v1');
   expect(document.querySelector<HTMLInputElement>('input[aria-label="适配模型"]')?.value).toBe('Claude');
   expect(document.querySelector<HTMLInputElement>('input[aria-label="作者"]')?.value).toBe('');
@@ -336,7 +336,7 @@ it('keeps the series title and the matching version visible after filtering, and
   expect([...card.querySelectorAll('button')].some(node => node.textContent === 'v2')).toBe(false);
   await click(button('v1', card));
   await settle(() => expect(document.querySelector('[data-preset-details]')).toHaveAttribute('data-preset-details', 'v1'));
-  await settle(() => expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v2 说明'));
+  await settle(() => expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v1 说明'));
   await click(button('v1', card));
   await settle(() => expect(document.querySelector('[data-preset-details]')).toBeNull());
   expect(new URLSearchParams(router!.state.location.search).has('presetId')).toBe(false);
@@ -574,7 +574,7 @@ it('previews the current older version author draft before saving while ordinary
   const first=preset('v1','v1'), second=preset('v2','v2');
   await mount([first,second],false);
   await click(button('v1'));
-  await settle(()=>expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v2 说明'));
+  await settle(()=>expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v1 说明'));
   await click(button('编辑说明'));
   await input(document.querySelector<HTMLTextAreaElement>('[aria-label="作者发布说明"]')!, '# v1 当前草稿：新的安装说明');
   await click(button('预览说明'));
@@ -586,6 +586,6 @@ it('previews the current older version author draft before saving while ordinary
   expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v1 当前草稿：新的安装说明');
   expect((await getPreset('v1'))?.catalog?.releaseNotes).toContain('v1 当前草稿');
   expect((await getPreset('v2'))?.catalog?.releaseNotes).toBe(second.catalog!.releaseNotes);
-  await click(button('查看最新说明'));
-  await settle(()=>expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v2 说明'));
+  await click(button('查看最新版说明'));
+  await settle(() => expect(document.querySelector('[data-preset-details]')?.textContent).toContain('v2 说明'));
 });

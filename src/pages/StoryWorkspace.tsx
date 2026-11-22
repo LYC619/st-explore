@@ -777,7 +777,7 @@ const StoryWorkspace = () => {
                       className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-4 py-2 text-xs text-[color:var(--text-primary)]"
                     >
                       <span>当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）</span>
-                      <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
+                      <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
                         <ExternalLink className="w-3.5 h-3.5 mr-1" />聚焦酒馆窗口
                       </Button>
                     </div>
