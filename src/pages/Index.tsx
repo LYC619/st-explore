@@ -507,6 +507,7 @@ const Index = () => {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ChatWorkbench
               key={`${currentStoryId ?? 'preview'}:${currentBranchId ?? 'main'}`}
+              characterId={currentStory?.characterId}
               recordContext={currentStoryId ? {
                 storyId: currentStoryId,
                 branchId: currentBranchId,

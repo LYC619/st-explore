@@ -17,10 +17,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
 import { Plus, BookOpen, ListFilter } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isPlainSingleKeyShortcut, shouldIgnoreGlobalShortcut } from '@/lib/keyboard-shortcuts';
 import { AppLayout } from '@/components/AppLayout';
 import { TagManagerDialog } from '@/components/library/TagManagerDialog';
 import { BatchTagDialog } from '@/components/library/BatchTagDialog';
 import { LibraryFilterRail } from '@/components/library/LibraryFilterRail';
+import { LibraryDropOverlay } from '@/components/library/LibraryDropOverlay';
 import {
   LibraryImportDialog,
   type LibraryImportTagSelection,
@@ -31,6 +33,7 @@ import { CARD_W_COMPACT, cardFontSizes, type ViewMode } from '@/lib/library-view
 import type { LibraryReviewHandle } from '@/components/library/review/LibraryReviewView';
 import { LibraryPager, LibraryBatchBar } from '@/components/library/LibraryPager';
 import { CharacterTile } from '@/components/library/CharacterTile';
+import { CharacterQuickPills } from '@/components/library/CharacterQuickPills';
 import { CharacterListRow } from '@/components/library/CharacterListRow';
 import { CharacterActionsMenu } from '@/components/library/CharacterActionsMenu';
 import { Button } from '@/components/ui/button';
@@ -102,6 +105,7 @@ const Library = () => {
   /** 窄屏（<1024px）把筛选栏搬进左抽屉；桌面档保持原来的可拖宽侧栏 */
   const { isMobile, isCompact } = useViewport();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [characters, setCharacters] = useState<CharacterIndexEntry[]>([]);
   const [storyIndex, setStoryIndex] = useState<StoryIndexEntry[]>([]);
   const [returnState] = useState(readLibraryReturnState);
@@ -111,6 +115,7 @@ const Library = () => {
   const reviewRef = useRef<LibraryReviewHandle>(null);
   const viewTransition = useRef(false);
   const [storyCounts, setStoryCounts] = useState<Record<string, number>>({});
+  const [latestStoryByChar, setLatestStoryByChar] = useState<Record<string, string>>({});
   /** 每角色最后游玩时间 = 名下故事 lastMessageAt 最大值（10.0 物化） */
   const [lastPlayed, setLastPlayed] = useState<Record<string, number>>({});
   /** 首屏：还没读到任何数据，给骨架 */
@@ -189,15 +194,21 @@ const Library = () => {
       setTagPreferences(preferences);
       const counts: Record<string, number> = {};
       const played: Record<string, number> = {};
+      const latestStory: Record<string, { id: string; rankTime: number }> = {};
       for (const s of stories) {
         if (!s.characterId) continue;
         counts[s.characterId] = (counts[s.characterId] ?? 0) + 1;
         if (s.lastMessageAt !== undefined) {
           played[s.characterId] = Math.max(played[s.characterId] ?? 0, s.lastMessageAt);
         }
+        const rankTime = Math.max(s.lastViewedAt ?? 0, s.lastMessageAt ?? 0, s.updatedAt ?? 0);
+        if (!latestStory[s.characterId] || rankTime >= latestStory[s.characterId].rankTime) {
+          latestStory[s.characterId] = { id: s.id, rankTime };
+        }
       }
       setStoryCounts(counts);
       setLastPlayed(played);
+      setLatestStoryByChar(Object.fromEntries(Object.entries(latestStory).map(([cid, item]) => [cid, item.id])));
     } catch {
       if (!isCurrent()) return;
       setLoadFailed(true);
@@ -432,6 +443,62 @@ const Library = () => {
   }, [queryKey]);
 
   const selection = useLibrarySelection(filtered, page);
+  const [startingStoryId, setStartingStoryId] = useState<string | null>(null);
+  const playBusyRef = useRef(false);
+
+  const continueStoryFromCard = useCallback(async (storyId: string) => {
+    if (playBusyRef.current) return;
+    playBusyRef.current = true;
+    setStartingStoryId(storyId);
+    const epoch = getVaultEpoch();
+    try {
+      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
+      const target = await prepareStoryPlay(storyId);
+      if (epoch !== getVaultEpoch()) return;
+      navigate(target.path);
+    } catch (err) {
+      toast({
+        title: '暂时未能进入聊天',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      playBusyRef.current = false;
+      setStartingStoryId(null);
+    }
+  }, [navigate, toast]);
+
+  // 桌面快捷键：/ 聚焦搜索，Esc 退出批量模式或清空搜索（回顾视图内留给内嵌阅读器/小说视图消费）
+  useEffect(() => {
+    if (prefs.viewMode === 'review' || pendingImport !== null || tagManagerOpen || batchTagOpen || !!pendingDelete || !!pendingWebExport) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.activeElement === searchInputRef.current) {
+          e.preventDefault();
+          if (searchQuery) setSearchQuery('');
+          else searchInputRef.current?.blur();
+          return;
+        }
+        if (shouldIgnoreGlobalShortcut(e)) return;
+        if (selection.batchMode) {
+          e.preventDefault();
+          selection.exitBatchMode();
+        } else if (searchQuery) {
+          e.preventDefault();
+          setSearchQuery('');
+        }
+        return;
+      }
+      if (!isPlainSingleKeyShortcut(e)) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [batchTagOpen, pendingDelete, pendingImport, pendingWebExport, prefs.viewMode, searchQuery, selection, tagManagerOpen]);
 
   const changeView = async (mode: ViewMode) => {
     if (viewTransition.current || mode === prefs.viewMode) return;
@@ -500,15 +567,21 @@ const Library = () => {
     if (selection.batchMode) selection.clickCharacter(c, shiftKey);
     else navigate(`/character/${c.id}`);
   };
-  const menuFor = (c: ArchiveCharacter, triggerClassName: string, iconClassName?: string) => (
-    <CharacterActionsMenu
-      onOpen={() => navigate(`/character/${c.id}`)}
-      onExport={() => void handleSingleExport(c)}
-      onDelete={() => setPendingDelete([c])}
-      triggerClassName={triggerClassName}
-      iconClassName={iconClassName}
-    />
-  );
+  const menuFor = (c: ArchiveCharacter, triggerClassName: string, iconClassName?: string) => {
+    const latestId = latestStoryByChar[c.id];
+    return (
+      <CharacterActionsMenu
+        onOpen={() => navigate(`/character/${c.id}`)}
+        onContinueChat={latestId ? () => { void continueStoryFromCard(latestId); } : undefined}
+        onReminisceStory={latestId ? () => navigate(`/character/${c.id}?story=${encodeURIComponent(latestId)}`) : undefined}
+        onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
+        onExport={() => void handleSingleExport(c)}
+        onDelete={() => setPendingDelete([c])}
+        triggerClassName={triggerClassName}
+        iconClassName={iconClassName}
+      />
+    );
+  };
 
   /** 筛选栏本体：窄屏塞进左抽屉，桌面留在页面左侧；两处只会同时存在一个 */
   const filterRail = (embedded: boolean) => (
@@ -532,12 +605,16 @@ const Library = () => {
 
   return (
     <AppLayout mobileDrawer={isCompact ? filterRail(true) : undefined}>
-      <div className="h-full flex flex-col overflow-hidden">
+      <LibraryDropOverlay
+        disabled={pendingImport !== null || importBusy}
+        onDropFiles={(files) => { void handleImportFiles(files); }}
+      >
         <LibraryToolbar
           characterCount={characters.length}
           filteredCount={filtered.length}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          searchInputRef={searchInputRef}
           onOpenTagManager={() => { setTagManagerCategory('人物'); setTagManagerOpen(true); }}
           batchMode={selection.batchMode}
           onToggleBatchMode={() =>
@@ -626,7 +703,20 @@ const Library = () => {
             ) : (
               <>
                 {filtered.length === 0 && (
-                  <p className="py-10 text-center text-sm text-muted-foreground">没有符合当前筛选的角色卡</p>
+                  <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+                    <p className="text-sm text-muted-foreground">没有找到符合当前筛选的角色卡</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setTypeFilter('all');
+                        setTagFilters({});
+                      }}
+                    >
+                      清除全部筛选
+                    </Button>
+                  </div>
                 )}
                 {prefs.viewMode === 'grid' ? (
                   /* 卡墙：auto-fill 按卡宽自动分列；卡图 2:3（红线：比例不可改、不加编号） */
@@ -662,6 +752,15 @@ const Library = () => {
                                 c,
                                 'hover-reveal tap-target w-6 h-6 rounded-full bg-[rgba(0,0,0,0.65)] backdrop-blur-sm text-white/80 flex items-center justify-center',
                               )}
+                              quickAction={prefs.cardWidth >= CARD_W_COMPACT ? (
+                                <CharacterQuickPills
+                                  hasStory={Boolean(latestStoryByChar[c.id])}
+                                  busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id])}
+                                  onReminisce={() => navigate(`/character/${c.id}?story=${encodeURIComponent(latestStoryByChar[c.id])}`)}
+                                  onContinueChat={() => { void continueStoryFromCard(latestStoryByChar[c.id]); }}
+                                  onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
+                                />
+                              ) : undefined}
                             />
                           ))}
                         </div>
@@ -720,7 +819,7 @@ const Library = () => {
           </div>
           )}
         </div>
-      </div>
+      </LibraryDropOverlay>
 
       {selection.batchMode && (
         <LibraryBatchBar

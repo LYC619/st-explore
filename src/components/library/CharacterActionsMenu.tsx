@@ -1,14 +1,18 @@
-import { ExternalLink, MoreVertical, Trash2, Upload } from 'lucide-react';
+import { BookOpen, ExternalLink, MessageSquare, MoreVertical, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
 interface CharacterActionsMenuProps {
   onOpen: () => void;
+  onReminisceStory?: () => void;
+  onContinueChat?: () => void;
+  onOpenGreetings?: () => void;
   onExport: () => void;
   onDelete: () => void;
   /** 触发按钮的类名：卡面上是悬浮圆钮，列表行里是方钮 */
@@ -17,16 +21,23 @@ interface CharacterActionsMenuProps {
 }
 
 /**
- * 角色卡的三项操作菜单（打开主页 / 导出 / 删除）。
- * 网格卡与列表行原先是两份逐字符相同的手抄，改一处必漏另一处。
+ * 角色卡的操作菜单（主页 / 回味或续聊 / 赏玩开场 / 导出 / 删除）。
+ * 触屏设备不把快捷胶囊铺满 2:3 小卡面，统一在此提供 44px 易点的快捷入口。
  */
 export function CharacterActionsMenu({
-  onOpen, onExport, onDelete, triggerClassName, iconClassName,
+  onOpen,
+  onReminisceStory,
+  onContinueChat,
+  onOpenGreetings,
+  onExport,
+  onDelete,
+  triggerClassName,
+  iconClassName,
 }: CharacterActionsMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button aria-label="更多操作" className={triggerClassName}>
+        <button type="button" aria-label="更多操作" className={triggerClassName}>
           <MoreVertical className={cn('w-3.5 h-3.5', iconClassName)} />
         </button>
       </DropdownMenuTrigger>
@@ -35,6 +46,25 @@ export function CharacterActionsMenu({
           <ExternalLink className="w-3.5 h-3.5 mr-2" />
           打开角色主页
         </DropdownMenuItem>
+        {onContinueChat && (
+          <DropdownMenuItem onClick={onContinueChat}>
+            <MessageSquare className="w-3.5 h-3.5 mr-2 text-brand" />
+            接着上次续聊
+          </DropdownMenuItem>
+        )}
+        {onReminisceStory && (
+          <DropdownMenuItem onClick={onReminisceStory}>
+            <BookOpen className="w-3.5 h-3.5 mr-2" />
+            回味最近故事
+          </DropdownMenuItem>
+        )}
+        {onOpenGreetings && (
+          <DropdownMenuItem onClick={onOpenGreetings}>
+            <Sparkles className="w-3.5 h-3.5 mr-2" />
+            赏玩开场白
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onExport}>
           <Upload className="w-3.5 h-3.5 mr-2" />
           导出角色卡

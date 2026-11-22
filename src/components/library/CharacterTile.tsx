@@ -8,12 +8,6 @@ import { formatFullTime, formatListTime } from '@/lib/time-display';
 import { cn } from '@/lib/utils';
 import type { ArchiveCharacter } from '@/types/archive';
 
-/**
- * 卡面上方左侧的「评分 + 时间」胶囊；首页与角色库共用同一形态。
- *
- * compact：卡片调到最小时评分和时间横向放不下，会和右上角的故事数角标挤成一团
- * （0830 反馈 1）。这时只留评分，时间退到 hover 的 title 里。
- */
 function RatingTimeBadge({ rating, timestamp, compact = false }: {
   rating?: number;
   timestamp: number;
@@ -34,7 +28,6 @@ function RatingTimeBadge({ rating, timestamp, compact = false }: {
   );
 }
 
-/** 卡面上方右侧的故事数角标（对比度已修正，勿改底色） */
 function StoryCountBadge({ count, className }: { count: number; className?: string }) {
   if (count <= 0) return null;
   return (
@@ -51,42 +44,35 @@ function StoryCountBadge({ count, className }: { count: number; className?: stri
 interface CharacterTileProps {
   character: ArchiveCharacter;
   storyCount: number;
-  /** 卡面左上角显示的时间：角色库=最后游玩，首页=最后查看 */
   timestamp: number;
-  /** 名称与简介字号（px）；首页固定值，角色库跟随外观里的字体缩放 */
   nameSize: number;
   introSize: number;
-  /** 无立绘时首字水印的字号；不传用 CSS 默认值 */
   markFontSize?: number | 'default';
-  /** 卡片很窄：角标只留评分，时间退到 hover */
   compact?: boolean;
-  /** 外层尺寸/定位类名，由使用场景决定（网格由 grid 撑开，横滑列自带宽度） */
   className?: string;
   onActivate: (shiftKey: boolean) => void;
-  /** 批量模式：左上角换成勾选框，菜单隐藏 */
   batchMode?: boolean;
   selected?: boolean;
-  /** 操作菜单；首页横滑列不给 */
   actions?: ReactNode;
-  /** 透传给外层节点的 data-* 标识 */
+  /** 卡面底部快捷动作条（仅在支持鼠标悬停的桌面端悬停/键盘聚焦时滑出，不常驻遮挡立绘） */
+  quickAction?: ReactNode;
   dataAttrs?: Record<string, string | undefined>;
 }
 
 /**
- * 2:3 立绘卡片。角色库网格卡与首页「最近角色」横滑列原本是两份手抄。
- *
+ * 2:3 立绘卡片。
  * 红线：2:3 比例（ST 标准卡 400×600）不可改、不加左上角编号。
  */
 export function CharacterTile({
   character: c, storyCount, timestamp, nameSize, introSize, markFontSize = 'default', className,
-  compact = false, onActivate, batchMode = false, selected = false, actions, dataAttrs,
+  compact = false, onActivate, batchMode = false, selected = false, actions, quickAction, dataAttrs,
 }: CharacterTileProps) {
   const displayName = displayCharacterName(c);
   const intro = introOf(c);
 
   return (
-    <div
-      role="button"
+    <article
+      aria-label={displayName}
       tabIndex={0}
       data-character-id={c.id}
       data-selected={batchMode && selected ? 'true' : undefined}
@@ -105,14 +91,12 @@ export function CharacterTile({
         }
       }}
     >
-      {/* 立绘满铺；无图用渐变占位 + 首字水印；NSFW 按设置模糊，hover 揭示 */}
       <CharacterPortrait
         character={c}
         className="group-hover:blur-none group-hover:scale-100"
         markFontSize={markFontSize}
       />
 
-      {/* 顶部角标条：左=批量勾选 或 评分+时间；右=故事数 + 菜单 */}
       <div className="absolute top-0 left-0 right-0 z-10 flex justify-between items-start px-2.5 py-2 gap-1.5">
         {batchMode ? (
           <span onClick={(e) => e.stopPropagation()}>
@@ -127,7 +111,6 @@ export function CharacterTile({
         </span>
       </div>
 
-      {/* 底部渐变信息条：只留名称（tooltip）+ 清洗简介 */}
       <div className="absolute left-0 right-0 bottom-0 z-10 px-3.5 pb-3 pt-12 bg-[linear-gradient(transparent,rgba(0,0,0,0.75)_40%,rgba(0,0,0,0.92))]">
         <p
           className="font-serif font-semibold text-white tracking-wide truncate [text-shadow:0_1px_4px_rgba(0,0,0,0.5)]"
@@ -141,8 +124,18 @@ export function CharacterTile({
             {intro}
           </p>
         )}
+        {!batchMode && quickAction && (
+          <div
+            className="hidden [@media(hover:hover)]:grid grid-rows-[0fr] opacity-0 transition-all duration-200 group-hover:mt-2 group-hover:grid-rows-[1fr] group-hover:opacity-100 group-focus-within:mt-2 group-focus-within:grid-rows-[1fr] group-focus-within:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="min-h-0 overflow-hidden flex items-center gap-1.5">
+              {quickAction}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
+    </article>
   );
 }
 

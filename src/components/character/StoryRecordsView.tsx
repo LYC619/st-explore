@@ -6,7 +6,7 @@
  * - 未配 AI 时空态提示去 AI 工具页配置
  */
 import { useState, useEffect, useMemo } from 'react';
-import { ExternalLink, NotebookPen, Plus } from 'lucide-react';
+import { ExternalLink, LocateFixed, NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -20,7 +20,7 @@ import type { StoryTree } from '@/types/story-tree';
 import { getAllSummaries } from '@/lib/summary-db';
 import { compareSummaryOrder, summaryVolumeLabel } from '@/lib/summary-order';
 import { getAllStoryTrees } from '@/lib/story-tree-db';
-import { loadAPIConfig } from '@/components/ai-tools';
+import { getActiveProfile, loadAPIConfig } from '@/components/ai-tools';
 import { formatFullTime, formatListTime } from '@/lib/time-display';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { MoveStoryRecordDialog } from './MoveStoryRecordDialog';
@@ -38,11 +38,13 @@ interface StoryRecordsViewProps {
   kind: RecordViewKind;
   /** 去处理区生成：进入 /story/:id 对应整理子页面 */
   onGoGenerate: (storyId: string, kind: RecordViewKind, branchId: string | null) => void;
+  /** 点击记录关联楼层直达故事阅读器对应位置 */
+  onJumpToFloor?: (storyId: string, branchId: string | null, floor: number) => void;
 }
 
 type RecordBranchFilter = 'all' | 'main' | string;
 
-export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsViewProps) {
+export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }: StoryRecordsViewProps) {
   const { toast } = useToast();
   const [storyId, setStoryId] = useState<string | null>(stories[0]?.id ?? null);
   const [summaries, setSummaries] = useState<SummaryItem[]>([]);
@@ -58,7 +60,8 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchMode, setBatchMode] = useState(false);
   const [worldbookOpen, setWorldbookOpen] = useState(false);
-  const hasAI = !!loadAPIConfig().apiKey;
+  const activeProfile = getActiveProfile();
+  const hasAI = Boolean(loadAPIConfig().apiKey || activeProfile?.apiUrl);
 
   const story = stories.find((s) => s.id === storyId) ?? null;
 
@@ -221,7 +224,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
             <p className="text-xs text-muted-foreground/70">
               {hasAI
                 ? `点「去处理区生成」用 AI 生成${kind !== 'tree' ? '，或「手动录入」直接粘贴' : ''}`
-                : '还没配置 AI：可先到「AI 工具」页配好 API，再回处理区生成' + (kind !== 'tree' ? '；也可以「手动录入」' : '')}
+                : '还没配置模型连接：可先到「设置 → AI 配置」配好接口，再回处理区生成' + (kind !== 'tree' ? '；也可以「手动录入」' : '')}
             </p>
           </CardContent>
         </Card>
@@ -238,7 +241,15 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                   </span>
                 </div>
                 <div className="mt-2">
-                  <StoryTreePreview key={t.id} tree={t} />
+                  <StoryTreePreview
+                    key={t.id}
+                    tree={t}
+                    onJumpToFloor={
+                      onJumpToFloor && story
+                        ? (floor) => onJumpToFloor(story.id, t.branchId ?? null, floor)
+                        : undefined
+                    }
+                  />
                 </div>
                 <Button variant="outline" size="sm" className="mt-2" onClick={() => setMoveRecord(t)}>移动到其他故事</Button>
               </CardContent>
@@ -275,6 +286,17 @@ export function StoryRecordsView({ stories, kind, onGoGenerate }: StoryRecordsVi
                   </div>
                   {!batchMode && <div className="mt-3 flex flex-wrap gap-2 [&>button]:min-h-11" onClick={event => event.stopPropagation()}>
                     <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => setExpandedId(expanded ? null : item.id)}>{expanded ? '收起全文' : '展开全文'}</Button>
+                    {onJumpToFloor && story && !item.rangeDetached && Number.isSafeInteger(item.floorStart) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onJumpToFloor(story.id, item.branchId ?? null, item.floorStart)}
+                        title={`打开故事并直达第 ${item.floorStart} 楼回味原文`}
+                      >
+                        <LocateFixed className="w-3.5 h-3.5 mr-1" />
+                        跳到 #{item.floorStart} 楼回味
+                      </Button>
+                    )}
                     <Button variant="outline" size="sm" onClick={() => setEditing(item)}>编辑记录</Button>
                     <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
                     <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(item.content).then(() => toast({ title: '已复制正文' })).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}>复制正文</Button>

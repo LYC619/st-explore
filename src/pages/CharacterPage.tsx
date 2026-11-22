@@ -7,7 +7,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChevronRight, BookOpen, Download, Package, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, BookOpen, Download, Package, MessageSquare } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
 import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
@@ -21,6 +21,7 @@ import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import {
   getCharacter,
   getArchiveStory,
+  getRoleplayPreferences,
   updateCharacter,
   getStoriesByCharacter,
   updateArchiveStory,
@@ -28,7 +29,10 @@ import {
   deleteCharacter,
   sortStoriesForDisplay,
   markCharacterViewed,
+  type ArchiveMetaRecord,
 } from '@/lib/archive-db';
+import { getCurrentRepo } from '@/lib/repo';
+import { stScriptToRule, type STRegexScript } from '@/lib/st-regex-interop';
 import { normalizeCharacterCard } from '@/lib/adapters/st';
 import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character-tag-domain';
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
@@ -57,13 +61,15 @@ import {
 } from '@/lib/editor-story-context';
 import { CharacterInfoRail } from '@/components/character/CharacterInfoRail';
 import { CharacterHeader } from '@/components/character/CharacterHeader';
+import { CharacterLoadoutBar } from '@/components/character/CharacterLoadoutBar';
 import { AssetSection } from '@/components/character/AssetSection';
+import { useCharacterNeighbors } from '@/hooks/use-character-neighbors';
 import { NotesSection } from '@/components/character/NotesSection';
 import { PortraitSection } from '@/components/character/PortraitSection';
 import { CharacterImportDialog } from '@/components/character/CharacterImportDialog';
 import { StoryListSection } from '@/components/character/StoryListSection';
 import { ReadingPackExportDialog } from '@/components/character/ReadingPackExportDialog';
-import { InlineStoryReader, type InlineStoryReaderHandle } from '@/components/character/InlineStoryReader';
+import { InlineStoryReader, type FloorJumpRequest, type InlineStoryReaderHandle } from '@/components/character/InlineStoryReader';
 import { StoryRecordsView, type RecordViewKind } from '@/components/character/StoryRecordsView';
 import { CharacterCardEditSection } from '@/components/character/CharacterCardEditSection';
 import { GreetingsSection } from '@/components/character/GreetingsSection';
@@ -97,29 +103,71 @@ const CharacterPage = () => {
   const [loading, setLoading] = useState(true);
   const [storyToDelete, setStoryToDelete] = useState<ArchiveStory | null>(null);
   const [charDeleteOpen, setCharDeleteOpen] = useState(false);
-  // 就地阅读：?story=<id> 深链（首页最近故事跳入）；readingBranchId 仅本页内点分支时带上
+  // 就地阅读：?story=<id> 深链（首页最近故事跳入）；readingBranchId 区分显式主线 null、指定支线 string 与默认恢复 undefined
   const readingStoryId = searchParams.get('story');
-  const [readingBranchId, setReadingBranchId] = useState<string | undefined>(undefined);
+  const requestedTab = searchParams.get('tab');
+  const [readingBranchId, setReadingBranchId] = useState<string | null | undefined>(undefined);
+  const [readingJumpRequest, setReadingJumpRequest] = useState<FloorJumpRequest | null>(null);
+  const [readingReturnSubView, setReadingReturnSubView] = useState<StorySubView | null>(null);
+  const jumpSeqRef = useRef(0);
   const [storySubView, setStorySubView] = useState<StorySubView>('list');
   // 统一导入弹窗（10.3c）：按当前 tab 预选类型
-  const [activeTab, setActiveTab] = useState('stories');
+  const [activeTab, setActiveTab] = useState(() => (
+    requestedTab && ['stories', 'notes', 'assets', 'portraits', 'card-edit', 'greetings'].includes(requestedTab)
+      ? requestedTab
+      : 'stories'
+  ));
   const [importOpen, setImportOpen] = useState(false);
   const [packExportOpen, setPackExportOpen] = useState(false);
   const [exportChoice, setExportChoice] = useState<{ format: 'json' | 'file'; choices: { id: string; title: string }[] } | null>(null);
   const [cardEdits, setCardEdits] = useState<CardEdits | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [tavernUserName, setTavernUserName] = useState('你');
   const [cardSaving, setCardSaving] = useState(false);
   const [startingPlay, setStartingPlay] = useState(false);
+  const [startingGreetingIdx, setStartingGreetingIdx] = useState<number | null>(null);
   const readerRef = useRef<InlineStoryReaderHandle>(null);
   const playPendingRef = useRef(false);
   const playStartLock = useRef(false);
   const contentColumnRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    // AppLayout 保留 main 节点跨路由复用时，浏览器可能恢复旧 scrollTop；
-    // 角色页每次切换角色都从标题开始，避免标题被顶部 chrome 截掉。
     contentColumnRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    setStorySubView('list');
+    setReadingReturnSubView(null);
+    setReadingJumpRequest(null);
   }, [id]);
+
+  useEffect(() => {
+    if (requestedTab && ['stories', 'notes', 'assets', 'portraits', 'card-edit', 'greetings'].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [requestedTab, id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getRoleplayPreferences(getCurrentRepo<ArchiveMetaRecord>('archiveMeta'))
+      .then((prefs) => {
+        if (!cancelled && typeof prefs.tavern?.username === 'string' && prefs.tavern.username.trim()) {
+          setTavernUserName(prefs.tavern.username.trim());
+        }
+      })
+      .catch(() => {
+        // 读取偏好失败时回退默认称呼“你”，不影响角色页浏览
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const changeActiveTab = useCallback((nextTab: string) => {
+    setActiveTab(nextTab);
+    if (searchParams.has('tab')) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('tab');
+        return next;
+      }, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -155,6 +203,18 @@ const CharacterPage = () => {
   }, [character?.displayMeta?.name]);
 
   const norm = useMemo(() => (character ? normalizeCharacterCard(character.card) : null), [character]);
+  const cardDirty = useMemo(() => {
+    if (!cardEdits || !norm) return false;
+    return JSON.stringify(cardEdits) !== JSON.stringify(editsFromNormalized(norm));
+  }, [cardEdits, norm]);
+  const displayNameDirty = Boolean(character && (displayNameDraft.trim() || undefined) !== character.displayMeta?.name);
+  const displayRegexRules = useMemo(() => {
+    const rawScripts = norm?.extensions?.regex_scripts;
+    if (!Array.isArray(rawScripts)) return [];
+    return (rawScripts as STRegexScript[])
+      .filter((s) => s && !s.disabled && !s.promptOnly)
+      .map((s) => stScriptToRule(s));
+  }, [norm]);
 
   /** 更新角色档案（整理信息属于本地元数据，updatedAt 跟随）。
    * 评分变化时联动评价档位标签（10.0，单向：评分→标签）；
@@ -269,7 +329,36 @@ const CharacterPage = () => {
     toast({ title: '故事已删除' });
   };
 
-  // ===== 操作抽屉四项 =====
+  const flushUnsavedCardEdits = useCallback(async (): Promise<boolean> => {
+    if (cardDirty) {
+      const ok = await saveCardEdits();
+      if (!ok) return false;
+    }
+    if (displayNameDirty) {
+      await saveDisplayName();
+    }
+    return true;
+  }, [cardDirty, displayNameDirty, saveCardEdits, saveDisplayName]);
+
+  const navigateWithGuard = useCallback(async (targetPath: string) => {
+    if (!(await flushUnsavedCardEdits())) return;
+    try {
+      await readerRef.current?.flushPendingSave();
+    } catch (error) {
+      toast({
+        title: '阅读进度尚未保存，已取消跳转',
+        description: error instanceof Error ? error.message : '请检查文件库是否可写',
+        variant: 'destructive',
+      });
+      return;
+    }
+    navigate(targetPath);
+  }, [flushUnsavedCardEdits, navigate, toast]);
+
+  const neighbors = useCharacterNeighbors(id, {
+    disabled: Boolean(readingStoryId || importOpen || packExportOpen || exportChoice || storyToDelete || charDeleteOpen || cardSaving),
+    onNavigateNeighbor: (targetId) => { void navigateWithGuard(`/character/${targetId}`); },
+  });
 
   /** 编辑角色卡：把卡原件经内存交接送进编辑区角色卡工具（处理归编辑区的动线） */
   const handleEditCard = () => {
@@ -341,8 +430,19 @@ const CharacterPage = () => {
 
   // ===== 就地阅读与故事子视图（10.3b） =====
 
-  const openReader = useCallback((storyId: string, branchId?: string) => {
+  const openReader = useCallback((
+    storyId: string,
+    branchId?: string | null,
+    floorOverride?: number,
+    returnSubView?: StorySubView | null,
+  ) => {
     setReadingBranchId(branchId);
+    setReadingJumpRequest(
+      floorOverride !== undefined
+        ? { floor: floorOverride, seq: ++jumpSeqRef.current }
+        : null,
+    );
+    if (returnSubView !== undefined) setReadingReturnSubView(returnSubView);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.set('story', storyId);
@@ -351,7 +451,11 @@ const CharacterPage = () => {
   }, [setSearchParams]);
 
   const closeReader = useCallback(() => {
+    const backToSubView = readingReturnSubView;
     setReadingBranchId(undefined);
+    setReadingJumpRequest(null);
+    setReadingReturnSubView(null);
+    if (backToSubView) setStorySubView(backToSubView);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('story');
@@ -359,7 +463,7 @@ const CharacterPage = () => {
     });
     // 阅读中可能改了标题/评分/进度，回列表重新拉一遍
     void load();
-  }, [setSearchParams, load]);
+  }, [setSearchParams, load, readingReturnSubView]);
 
   /** 列表行内改状态/评分（就地落库，不动 lastViewedAt） */
   const patchStory = useCallback(async (storyId: string, patch: Partial<ArchiveStory>) => {
@@ -422,9 +526,64 @@ const CharacterPage = () => {
       const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
       if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
       const target = await prepareStoryPlay(storyId, branchId);
+      if (epoch !== getVaultEpoch()) return;
       navigate(target.path);
     } catch (error) { toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' }); }
     finally { playPendingRef.current = false; }
+  };
+
+  const branchAndPlayFromFloor = async (
+    storyId: string,
+    branchId: string | null,
+    floor: number,
+    targetMessageId?: string | null,
+  ) => {
+    if (playPendingRef.current) return;
+    playPendingRef.current = true;
+    const epoch = getVaultEpoch();
+    try {
+      await readerRef.current?.flushPendingSave();
+      const { branchStoryFromFloor } = await import('@/lib/roleplay/branch-from-floor');
+      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
+      const created = await branchStoryFromFloor(storyId, branchId, floor, { targetMessageId });
+      if (epoch !== getVaultEpoch()) return;
+      toast({
+        title: `已开辟支线「${created.branchName}」`,
+        description: `已保留前 ${created.floorCount} 楼剧情与设定，正在进入酒馆续聊…`,
+      });
+      navigate(created.playPath);
+    } catch (error) {
+      toast({
+        title: '创建支线续聊未成功',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      playPendingRef.current = false;
+    }
+  };
+
+  const startWithGreeting = async (greetingIndex: number) => {
+    if (!character || character.id !== id || playStartLock.current) return;
+    playStartLock.current = true;
+    setStartingGreetingIdx(greetingIndex);
+    const epoch = getVaultEpoch();
+    try {
+      if (!(await flushUnsavedCardEdits())) return;
+      const { startCharacterStory } = await import('@/lib/roleplay/start-story');
+      const storyId = await startCharacterStory(character.id, { greetingIndex });
+      if (epoch !== getVaultEpoch()) return;
+      navigate('/play/' + encodeURIComponent(storyId));
+    } catch (error) {
+      toast({
+        title: '无法开启新对话',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      playStartLock.current = false;
+      setStartingGreetingIdx(null);
+    }
   };
 
   if (loading) {
@@ -487,10 +646,41 @@ const CharacterPage = () => {
   return (
     <AppLayout
       leftActions={
-        <Button variant="ghost" size="sm" onClick={() => navigate('/library')}>
-          <ArrowLeft className="w-4 h-4 mr-1" />
-          角色库
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={() => { void navigateWithGuard('/library'); }}>
+            <ArrowLeft className="w-4 h-4 mr-1" />
+            角色库
+          </Button>
+          {(neighbors.prev || neighbors.next) && !readingStoryId && (
+            <div className="hidden sm:flex items-center gap-0.5 border-l border-[color:var(--hairline-inner)] pl-1.5 text-xs text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={!neighbors.prev}
+                onClick={() => neighbors.prev && void navigateWithGuard(`/character/${neighbors.prev.id}`)}
+                aria-label={neighbors.prev ? `上一张角色卡：${neighbors.prev.name}` : '已是第一张角色卡'}
+                title={neighbors.prev ? `上一张：${neighbors.prev.name}（快捷键 [ ）` : '已是第一张'}
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </Button>
+              {neighbors.positionLabel && (
+                <span className="px-1 tabular-nums text-[11px]">{neighbors.positionLabel}</span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                disabled={!neighbors.next}
+                onClick={() => neighbors.next && void navigateWithGuard(`/character/${neighbors.next.id}`)}
+                aria-label={neighbors.next ? `下一张角色卡：${neighbors.next.name}` : '已是最后一张角色卡'}
+                title={neighbors.next ? `下一张：${neighbors.next.name}（快捷键 ] ）` : '已是最后一张'}
+              >
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          )}
+        </div>
       }
     >
        <div className={cn('character-page h-full overflow-hidden', isMobile ? 'flex flex-col' : 'flex')}>
@@ -534,9 +724,17 @@ const CharacterPage = () => {
             collapsed={readingStoryId ? true : undefined}
           />
 
+          {!readingStoryId && (
+            <CharacterLoadoutBar
+              character={character}
+              norm={norm}
+              onSelectTab={changeActiveTab}
+            />
+          )}
+
           <Tabs
             value={activeTab}
-            onValueChange={setActiveTab}
+            onValueChange={changeActiveTab}
             className={cn('flex-1 flex flex-col pt-3', isMobile ? 'px-3 pb-4' : 'px-6 pb-6')}
           >
             {/* TabsList 用 flex（布局铁律：防插件包裹破坏 grid）；行右侧=统一导入钮（10.3c） */}
@@ -550,10 +748,17 @@ const CharacterPage = () => {
                  <TabsTrigger value="greetings">开场白</TabsTrigger>
                </TabsList>
                {activeTab === 'stories' && <Button size="sm" disabled={startingPlay} onClick={() => {
-                 if (playStartLock.current) return;
+                 if (playStartLock.current || character.id !== id) return;
+                 const epoch = getVaultEpoch();
                  playStartLock.current = true; setStartingPlay(true);
-                 void import('@/lib/roleplay/start-story').then(module => module.startCharacterStory(character.id))
-                   .then(storyId => navigate('/play/' + encodeURIComponent(storyId)))
+                 void flushUnsavedCardEdits()
+                   .then(ok => {
+                     if (!ok) return null;
+                     return import('@/lib/roleplay/start-story').then(module => module.startCharacterStory(character.id));
+                   })
+                   .then(storyId => {
+                     if (storyId && epoch === getVaultEpoch()) navigate('/play/' + encodeURIComponent(storyId));
+                   })
                    .catch(error => toast({ title: '无法开始新聊天', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }))
                    .finally(() => { playStartLock.current = false; setStartingPlay(false); });
                }}><MessageSquare className="mr-1 h-3.5 w-3.5" />{startingPlay ? '正在打开…' : '新开聊天'}</Button>}
@@ -592,16 +797,29 @@ const CharacterPage = () => {
                   storyId={readingStoryId}
                   stories={sortedStories}
                   initialBranchId={readingBranchId}
-                  onSwitchStory={(sid) => openReader(sid)}
+                  jumpRequest={readingJumpRequest}
+                  backLabel={
+                    readingReturnSubView === 'volume'
+                      ? '返回总结'
+                      : readingReturnSubView === 'diary'
+                        ? '返回日记'
+                        : readingReturnSubView === 'tree'
+                          ? '返回故事树'
+                          : '故事列表'
+                  }
+                  onSwitchStory={(sid) => openReader(sid, undefined, undefined, null)}
                   onBack={closeReader}
                   onOpenEditor={(sid) => goWorkspace(sid)}
                   onOpenChat={(sid, branchId) => { void playStory(sid, branchId); }}
+                  onBranchChatFromFloor={(sid, branchId, floor, msgId) => { void branchAndPlayFromFloor(sid, branchId, floor, msgId); }}
+                  onCharacterUpdated={setCharacter}
                 />
               ) : (
                 <div className="space-y-3">
                   {/* 子视图切换：故事列表 › 总结/日记/故事树（设计稿的三个子 tab） */}
                   <div className="flex items-center gap-1 text-xs">
                     <button
+                      type="button"
                       className={cn(
                         'rounded-md px-2 py-1 transition-colors',
                         storySubView === 'list' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
@@ -613,6 +831,7 @@ const CharacterPage = () => {
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
                     {STORY_SUB_VIEWS.map((v) => (
                       <button
+                        type="button"
                         key={v.key}
                         className={cn(
                           'rounded-md px-2 py-1 transition-colors',
@@ -630,6 +849,11 @@ const CharacterPage = () => {
                       stories={sortedStories}
                       kind={storySubView}
                       onGoGenerate={(sid, kind, branchId) => goWorkspace(sid, kind, branchId)}
+                      onJumpToFloor={(sid, branchId, floor) => {
+                        const fromSubView = storySubView;
+                        setStorySubView('list');
+                        openReader(sid, branchId ?? null, floor, fromSubView);
+                      }}
                     />
                   ) : stories.length === 0 ? (
                     <Card>
@@ -719,17 +943,19 @@ const CharacterPage = () => {
 
              <TabsContent value="greetings" className="mt-3">
                {cardEdits && (
-                 <div className="space-y-3">
-                   <GreetingsSection
-                     edits={cardEdits}
-                     onEditChange={(key, value) => setCardEdits((current) => (current ? { ...current, [key]: value } : current))}
-                   />
-                   <div className="flex justify-end">
-                     <Button onClick={() => void saveCardEdits()} disabled={cardSaving}>
-                       保存开场白
-                     </Button>
-                   </div>
-                 </div>
+                 <GreetingsSection
+                   key={character.id}
+                   edits={cardEdits}
+                   characterName={character.displayMeta?.name || character.name}
+                   userName={tavernUserName}
+                   displayRegexRules={displayRegexRules}
+                   dirty={cardDirty}
+                   saving={cardSaving}
+                   onSave={() => { void saveCardEdits(); }}
+                   onEditChange={(key, value) => setCardEdits((current) => (current ? { ...current, [key]: value } : current))}
+                   onStartWithGreeting={(greetingIdx) => { void startWithGreeting(greetingIdx); }}
+                   startingGreetingIndex={startingGreetingIdx}
+                 />
                )}
              </TabsContent>
           </Tabs>

@@ -1,7 +1,7 @@
 import type { ReactNode, RefObject } from 'react';
 import {
   ArrowDownWideNarrow, ArrowUpNarrowWide, LayoutGrid, List as ListIcon,
-  Plus, Search, SlidersHorizontal, Tags, PanelsTopLeft,
+  Plus, Search, SlidersHorizontal, Tags, PanelsTopLeft, X,
 } from 'lucide-react';
 import { HelpCard } from '@/components/HelpCard';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ interface LibraryToolbarProps {
   filteredCount?: number;
   searchQuery: string;
   onSearchChange: (value: string) => void;
+  searchInputRef?: RefObject<HTMLInputElement>;
   onOpenTagManager: () => void;
   batchMode: boolean;
   onToggleBatchMode: () => void;
@@ -48,7 +49,7 @@ interface LibraryToolbarProps {
 
 /** 顶栏一行：标题 / 搜索 / 排序+方向 / 分组 / 外观 / 导入 */
 export function LibraryToolbar({
-  characterCount, filteredCount = characterCount, searchQuery, onSearchChange, onOpenTagManager,
+  characterCount, filteredCount = characterCount, searchQuery, onSearchChange, searchInputRef, onOpenTagManager,
   batchMode, onToggleBatchMode,
   sortKey, onSortKeyChange, sortAsc, onSortAscToggle,
   viewMode, onViewModeChange, groupBy, onGroupByChange,
@@ -64,13 +65,31 @@ export function LibraryToolbar({
         角色库是私人收藏馆：导入 ST 角色卡（PNG/JSON）建立档案，聊天记录以「故事」形式挂在角色名下。类型、标签、评分都是 STE 本地整理信息，不会写回角色卡文件。
       </HelpCard>
       <div className="relative">
-        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
         <Input
+          ref={searchInputRef}
           placeholder="搜索角色或标签"
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
-          className="w-40 pl-7 text-sm"
+          className="w-44 pl-7 pr-6 text-sm"
         />
+        {searchQuery ? (
+          <button
+            type="button"
+            aria-label="清空搜索"
+            onClick={() => onSearchChange('')}
+            className="tap-target absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        ) : (
+          <kbd
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-block rounded border border-border/70 bg-muted/60 px-1 text-[10px] font-mono text-muted-foreground"
+          >
+            /
+          </kbd>
+        )}
       </div>
       <Button aria-label="标签管理" variant="outline" size="sm" onClick={onOpenTagManager}>
         <Tags className="w-3.5 h-3.5 mr-1.5" />
@@ -217,7 +236,7 @@ export function LibraryToolbar({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.json"
+        accept=".png,.jpg,.jpeg,.webp,.json"
         multiple
         className="hidden"
         onChange={(e) => onPickFiles(e.target.files)}

@@ -175,51 +175,64 @@ export function CharacterInfoRail({
       </div>
       </div>
 
-      {/* 操作抽屉 */}
-      <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
-        <SheetTrigger asChild>
-          <Button variant="outline" size="sm" className="w-full mt-4">
-            <Wrench className="w-3.5 h-3.5 mr-1.5" />
-            操作
-          </Button>
-        </SheetTrigger>
-        <SheetContent side="right" className="w-80">
-          <SheetHeader>
-            <SheetTitle>角色卡操作</SheetTitle>
-            <SheetDescription>对这张卡的文件级操作；整理信息（类型/标签/评分）在页面上直接改。</SheetDescription>
-          </SheetHeader>
-          <div className="mt-5 flex flex-col gap-2">
-            <Button variant="outline" className="justify-start" onClick={() => { setDrawerOpen(false); onEditCard(); }}>
-              <PenLine className="w-4 h-4 mr-2" />
-              编辑角色卡（进编辑区）
+      {/* 常用操作直达 + 更多抽屉 */}
+      <div className="mt-4 flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-1"
+          onClick={onExport}
+          title="按当前角色卡原格式（PNG 或 JSON）一键导出"
+        >
+          <Upload className="w-3.5 h-3.5 mr-1.5" />
+          导出角色卡
+        </Button>
+
+        <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm" aria-label="更多角色卡操作" title="更多文件级操作">
+              <Wrench className="w-3.5 h-3.5 mr-1" />
+              更多
             </Button>
-            <Button
-              variant="outline"
-              className="justify-start"
-              title="重新扫描卡内嵌的世界书/正则并入库挂关联"
-              onClick={() => { setDrawerOpen(false); onReadEmbedded(); }}
-            >
-              <PackageOpen className="w-4 h-4 mr-2" />
-              读取内置资源
-            </Button>
-            <Button variant="outline" className="justify-start" onClick={onExport}>
-              <Upload className="w-4 h-4 mr-2" />
-              导出角色卡（原格式）
-            </Button>
-            {onExportJson && <Button variant="outline" className="justify-start" onClick={onExportJson}>
-              <FileJson className="w-4 h-4 mr-2" /> 导出角色卡 JSON
-            </Button>}
-            <Button
-              variant="outline"
-              className="justify-start text-destructive hover:text-destructive"
-              onClick={() => { setDrawerOpen(false); onDelete(); }}
-            >
-              <Trash2 className="w-4 h-4 mr-2" />
-              删除角色卡
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+          </SheetTrigger>
+          <SheetContent side="right" className="w-80">
+            <SheetHeader>
+              <SheetTitle>角色卡操作</SheetTitle>
+              <SheetDescription>对这张卡的文件级操作；整理信息（类型/标签/评分）在页面上直接改。</SheetDescription>
+            </SheetHeader>
+            <div className="mt-5 flex flex-col gap-2">
+              <Button variant="outline" className="justify-start" onClick={() => { setDrawerOpen(false); onEditCard(); }}>
+                <PenLine className="w-4 h-4 mr-2" />
+                编辑角色卡（进编辑区）
+              </Button>
+              <Button
+                variant="outline"
+                className="justify-start"
+                title="重新扫描卡内嵌的世界书/正则并入库挂关联"
+                onClick={() => { setDrawerOpen(false); onReadEmbedded(); }}
+              >
+                <PackageOpen className="w-4 h-4 mr-2" />
+                读取内置资源
+              </Button>
+              <Button variant="outline" className="justify-start" onClick={onExport}>
+                <Upload className="w-4 h-4 mr-2" />
+                导出角色卡（原格式）
+              </Button>
+              {onExportJson && <Button variant="outline" className="justify-start" onClick={onExportJson}>
+                <FileJson className="w-4 h-4 mr-2" /> 导出角色卡 JSON
+              </Button>}
+              <Button
+                variant="outline"
+                className="justify-start text-destructive hover:text-destructive"
+                onClick={() => { setDrawerOpen(false); onDelete(); }}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                删除角色卡
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+      </div>
 
       </div>
 

@@ -1,6 +1,6 @@
 import { scopedKey } from '@/lib/vault/vault-scope';
 
-export type ReviewTab = 'overview' | 'notes' | 'stories' | 'volume' | 'diary';
+export type ReviewTab = 'overview' | 'notes' | 'stories' | 'volume' | 'diary' | 'tree';
 export interface ReviewCharacterSession { storyId?: string; storyScroll?: number; scroll: Partial<Record<ReviewTab, number>> }
 export interface ReviewSession {
   selectedId?: string;

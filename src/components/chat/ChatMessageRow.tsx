@@ -1,4 +1,4 @@
-import { memo, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import {
   Bookmark,
   BookmarkPlus,
@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   EyeOff,
+  GitBranch,
   MessageSquareDashed,
   Pencil,
   Quote,
@@ -72,6 +73,7 @@ export interface MessageRowProps {
   onCaptureMessage?: (messageId: string, content: string) => void;
   onQuoteMessage?: (messageId: string, floor: number, content: string, speakerName: string) => void;
   onShareMessage?: (floor: number, content: string, speakerName: string) => void;
+  onBranchFromMessage?: (messageId: string, rawFloor: number) => void;
   message: ProcessedMessage;
   marker?: ChapterMarker;
   index: number;
@@ -118,8 +120,12 @@ export const MessageRow = memo(function MessageRow({
   onCaptureMessage,
   onQuoteMessage,
   onShareMessage,
+  onBranchFromMessage,
 }: MessageRowProps) {
   const captureText = useRef('');
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [selectedSnippet, setSelectedSnippet] = useState('');
+  const realFloor = message.rawFloor ?? index;
   const isUser = message.role === 'user';
   const hasMarker = !!marker;
   const rawData = message.rawData as STRawMessage | undefined;
@@ -132,11 +138,23 @@ export const MessageRow = memo(function MessageRow({
 
   const readSelectedSnippet = (button: HTMLElement) => {
     const selection = window.getSelection();
-    const rowRoot = button.closest('[data-message-header]')?.parentElement;
+    const rowRoot = rowRef.current ?? button.closest('[data-message-header]')?.parentElement;
     if (selection?.anchorNode && rowRoot?.contains(selection.anchorNode)) {
       return selection.toString().trim();
     }
     return '';
+  };
+
+  const syncSelectionSnippet = () => {
+    if (!onQuoteMessage && !onShareMessage) return;
+    const selection = window.getSelection();
+    const rowRoot = rowRef.current;
+    if (!selection || selection.isCollapsed || !rowRoot || !selection.anchorNode || !rowRoot.contains(selection.anchorNode)) {
+      if (selectedSnippet) setSelectedSnippet('');
+      return;
+    }
+    const text = selection.toString().trim();
+    setSelectedSnippet(text.length >= 2 ? text : '');
   };
 
   return (
@@ -160,7 +178,11 @@ export const MessageRow = memo(function MessageRow({
       )}
 
       <div
+        ref={rowRef}
         data-floor-row={index}
+        data-raw-floor={realFloor}
+        onMouseUp={syncSelectionSnippet}
+        onTouchEnd={() => setTimeout(syncSelectionSnippet, 60)}
         className={`${theme === 'social' ? 'mb-4' : classes.message} ${theme === 'social' ? '' : isUser ? classes.userBubble : classes.charBubble} animate-fade-in group relative w-full ${
           editMode ? 'cursor-pointer hover:bg-primary/5 rounded-lg transition-colors pt-9 px-2' : ''
         } ${isActiveMatch ? 'rounded-lg ring-2 ring-primary/60 ring-offset-2 ring-offset-background' : ''} ${
@@ -261,21 +283,40 @@ export const MessageRow = memo(function MessageRow({
                   收录
                 </button>
               )}
+              {onBranchFromMessage && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                      aria-label={`从第 ${realFloor} 楼开支线续聊`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onBranchFromMessage(message.id, realFloor);
+                      }}
+                    >
+                      <GitBranch className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>从这楼拉支线续聊（保留截止本楼剧情与设定）</TooltipContent>
+                </Tooltip>
+              )}
               {onQuoteMessage && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
                       className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`将第 ${index} 楼收进角色语录`}
+                      aria-label={`将第 ${realFloor} 楼收进角色语录`}
                       onMouseDown={(event) => {
                         captureText.current = readSelectedSnippet(event.currentTarget);
                         event.preventDefault();
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onQuoteMessage(message.id, index, captureText.current || message.content, speakerName);
+                        onQuoteMessage(message.id, realFloor, captureText.current || selectedSnippet || message.content, speakerName);
                         captureText.current = '';
+                        setSelectedSnippet('');
                       }}
                     >
                       <Quote className="h-3.5 w-3.5" />
@@ -290,15 +331,16 @@ export const MessageRow = memo(function MessageRow({
                     <button
                       type="button"
                       className="hover-reveal tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`生成第 ${index} 楼分享图`}
+                      aria-label={`生成第 ${realFloor} 楼分享图`}
                       onMouseDown={(event) => {
                         captureText.current = readSelectedSnippet(event.currentTarget);
                         event.preventDefault();
                       }}
                       onClick={(event) => {
                         event.stopPropagation();
-                        onShareMessage(index, captureText.current || message.content, speakerName);
+                        onShareMessage(realFloor, captureText.current || selectedSnippet || message.content, speakerName);
                         captureText.current = '';
+                        setSelectedSnippet('');
                       }}
                     >
                       <Share2 className="h-3.5 w-3.5" />
@@ -378,6 +420,47 @@ export const MessageRow = memo(function MessageRow({
                 ? renderPreviewHighlight(message.content, previewRule)
                 : <ChatMarkdown text={message.content} search={searchQuery} />}
             </div>
+          </div>
+        )}
+
+        {selectedSnippet && !editMode && (onQuoteMessage || onShareMessage) && (
+          <div
+            data-selection-action-bar
+            className="mt-2 inline-flex flex-wrap items-center gap-1.5 rounded-full border border-primary/30 bg-[color:var(--bg-elevated)] px-2.5 py-1 text-xs shadow-sm"
+          >
+            <span className="text-[11px] text-muted-foreground">已划选 {selectedSnippet.length} 字</span>
+            {onQuoteMessage && (
+              <button
+                type="button"
+                className="tap-target inline-flex items-center gap-1 rounded-full bg-[var(--brand-active-bg)] px-2 py-0.5 font-medium text-brand hover:bg-[var(--brand-active-bg-strong)]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onQuoteMessage(message.id, realFloor, selectedSnippet, speakerName);
+                  setSelectedSnippet('');
+                  window.getSelection()?.removeAllRanges();
+                }}
+              >
+                <Quote className="h-3 w-3" />
+                收进语录
+              </button>
+            )}
+            {onShareMessage && (
+              <button
+                type="button"
+                className="tap-target inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShareMessage(realFloor, selectedSnippet, speakerName);
+                  setSelectedSnippet('');
+                  window.getSelection()?.removeAllRanges();
+                }}
+              >
+                <Share2 className="h-3 w-3" />
+                分享图
+              </button>
+            )}
           </div>
         )}
 

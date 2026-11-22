@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, BookOpen, BookOpenCheck, BookOpenText, ArrowDownUp, MessageSquare, Cpu,
-  ScrollText, NotebookPen, PenLine, Network, Link2,
+  ScrollText, NotebookPen, PenLine, Network, Link2, GitBranch,
 } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ import { StoryTreeWorkspace } from '@/components/organize/StoryTreeWorkspace';
 import { BindStoryDialog } from '@/components/chat/BindStoryDialog';
 import ReaderView from '@/components/reader/ReaderView';
 import NovelView from '@/components/reader/NovelView';
-import { toast as globalToast, useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import type { ArchiveCharacter, ArchiveStory } from '@/types/archive';
 import type { ChatSession } from '@/types/chat';
@@ -80,6 +80,8 @@ const StoryWorkspace = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   // 窄屏：宽二级栏放不进 375px（224 + 主区 384 下限，flex-wrap 也只是换行后照旧溢出）。
   // 拆成两处——六个视图进左抽屉的页面插槽（同角色库筛选栏的位置），
   // 分支/章节/书签进右抽屉（当前这篇故事自己的上下文）。
@@ -102,6 +104,8 @@ const StoryWorkspace = () => {
   const [immersive, setImmersive] = useState(false);
   const [novelOpen, setNovelOpen] = useState(false);
   const [bindOpen, setBindOpen] = useState(false);
+  const [playBusy, setPlayBusy] = useState(false);
+  const playBusyRef = useRef(false);
   const workbenchRef = useRef<ChatWorkbenchHandle>(null);
 
   useEffect(() => {
@@ -160,7 +164,7 @@ const StoryWorkspace = () => {
   }, [story, toast]);
   useEffect(() => () => {
     void saverRef.current.flush().catch((error: unknown) => {
-      globalToast({
+      toastRef.current({
         title: '离开页面时保存故事未成功',
         description: error instanceof Error ? error.message : '请重新打开故事检查最新改动',
         variant: 'destructive',
@@ -237,7 +241,7 @@ const StoryWorkspace = () => {
     return () => {
       cancelled = true;
       void loadedSaver?.flush().catch((error: unknown) => {
-        globalToast({
+        toastRef.current({
           title: '切换故事时保存改动未成功',
           description: error instanceof Error ? error.message : '请重新打开原故事检查最新改动',
           variant: 'destructive',
@@ -426,6 +430,7 @@ const StoryWorkspace = () => {
             )}
             {groupEnd && <div className="pt-1" />}
             <button
+              type="button"
               onClick={() => changeView(item.key)}
               className={cn(
                 'w-full flex items-center gap-2 rounded-md text-sm transition-colors',
@@ -468,16 +473,59 @@ const StoryWorkspace = () => {
     </>
   ) : null;
 
+  const runContinuePlay = async () => {
+    if (playBusyRef.current) return;
+    playBusyRef.current = true;
+    setPlayBusy(true);
+    const epoch = getVaultEpoch();
+    try {
+      await saverRef.current.flush();
+      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
+      const target = await prepareStoryPlay(story.id, branchId);
+      if (epoch !== getVaultEpoch()) return;
+      navigate(target.path);
+    } catch (error) {
+      toast({
+        title: '保存未完成，暂未进入聊天',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      playBusyRef.current = false;
+      setPlayBusy(false);
+    }
+  };
+
+  const runBranchPlay = async (targetFloor: number, targetMessageId?: string | null) => {
+    if (playBusyRef.current) return;
+    playBusyRef.current = true;
+    setPlayBusy(true);
+    const epoch = getVaultEpoch();
+    try {
+      await saverRef.current.flush();
+      const { branchStoryFromFloor } = await import('@/lib/roleplay/branch-from-floor');
+      const created = await branchStoryFromFloor(story.id, branchId, targetFloor, { targetMessageId });
+      if (epoch !== getVaultEpoch()) return;
+      toast({
+        title: `已开辟支线「${created.branchName}」`,
+        description: `已保留前 ${created.floorCount} 楼剧情与设定`,
+      });
+      navigate(created.playPath);
+    } catch (error) {
+      toast({
+        title: '创建支线未成功',
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      playBusyRef.current = false;
+      setPlayBusy(false);
+    }
+  };
+
   return (
     <AppLayout
-      actions={<Button size="sm" onClick={async () => {
-        try {
-          await saverRef.current.flush();
-          navigate(`/play/${encodeURIComponent(story.id)}${branchId ? `?branch=${encodeURIComponent(branchId)}` : ''}`);
-        } catch (error) {
-          toast({ title: '保存未完成，暂未打开游玩', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
-        }
-      }}><MessageSquare className="mr-1 h-4 w-4" />开始游玩</Button>}
+      actions={<Button size="sm" disabled={playBusy} onClick={() => { void runContinuePlay(); }}><MessageSquare className="mr-1 h-4 w-4" />开始游玩</Button>}
       /* 窄屏：六个视图进左抽屉的页面插槽，分支/章节/书签进右抽屉。
          桌面档两个插槽都不传，二级栏照旧在页面里。 */
       mobileDrawer={isCompact ? (
@@ -574,6 +622,13 @@ const StoryWorkspace = () => {
                 {/* key 按脉络切：换分支重挂工作台，UI 态（搜索/编辑模式/滚动）随之复位 */}
                 <ChatWorkbench
                   recordContext={{ storyId: story.id, branchId, flush: () => saverRef.current.flush() }}
+                  characterId={story.characterId}
+                  onCharacterUpdated={setCharacter}
+                  onBranchFromMessage={
+                    story.characterId
+                      ? (messageId, rawFloor) => { void runBranchPlay(rawFloor, messageId); }
+                      : undefined
+                  }
                   key={branchId ?? 'trunk'}
                   ref={workbenchRef}
                   session={line.session}
@@ -595,6 +650,37 @@ const StoryWorkspace = () => {
                   }
                   toolbarExtras={
                     <>
+                      {story.characterId && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={playBusy}
+                            onClick={() => { void runContinuePlay(); }}
+                            title="接着当前剧情进入酒馆继续聊"
+                          >
+                            <MessageSquare className="w-4 h-4 mr-1.5" />
+                            继续聊
+                          </Button>
+                          {line.session.messages.length > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={playBusy}
+                              onClick={() => {
+                                const msgId = workbenchRef.current?.getCurrentMessageId() ?? null;
+                                const rawIdx = msgId ? line.session.messages.findIndex((m) => m.id === msgId) : -1;
+                                const fallbackFloor = workbenchRef.current?.getCurrentFloor() ?? line.lastFloor ?? (line.session.messages.length - 1);
+                                void runBranchPlay(rawIdx >= 0 ? rawIdx : fallbackFloor, msgId);
+                              }}
+                              title="保留截止当前阅读楼层的剧情与设定，拉出一条新支线续聊（也可点任意楼层右上角的分叉按钮）"
+                            >
+                              <GitBranch className="w-4 h-4 mr-1.5" />
+                              从当前楼开支线
+                            </Button>
+                          )}
+                        </>
+                      )}
                       <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）">
                         <BookOpenCheck className="w-4 h-4 mr-1.5" />
                         小说视图
@@ -661,6 +747,35 @@ const StoryWorkspace = () => {
           onFloorChange={handleFloorChange}
           progressKey={`${story.id}:${branchId ?? 'main'}`}
           polish={{ story, branchId }}
+          renderTopActions={story.characterId ? ({ currentFloor }) => (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1 text-xs"
+                disabled={playBusy}
+                onClick={() => { void runContinuePlay(); }}
+              >
+                <MessageSquare className="h-3.5 w-3.5" />
+                继续聊
+              </Button>
+              {line.session.messages.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1 text-xs"
+                  disabled={playBusy}
+                  onClick={() => {
+                    const msgId = line.session.messages[currentFloor]?.id ?? null;
+                    void runBranchPlay(currentFloor, msgId);
+                  }}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  从 #{currentFloor} 楼开支线
+                </Button>
+              )}
+            </>
+          ) : undefined}
         />
       )}
 

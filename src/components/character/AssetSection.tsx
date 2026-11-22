@@ -41,6 +41,7 @@ import { getAllRegexCollections } from '@/lib/regex-db';
 import { addAssetRef, removeAssetRef } from '@/lib/asset-cow';
 import { formatListTime, formatFullTime } from '@/lib/time-display';
 import { buildQuotePreview } from '@/lib/asset-preview';
+import { normalizeCharacterCard } from '@/lib/adapters/st';
 import { getActiveVault } from '@/lib/vault/active';
 import {
   attachmentsSupported,
@@ -204,6 +205,18 @@ export function AssetSection({
     };
   });
   const canAttach = attachmentsSupported();
+  const embeddedSummary = useMemo(() => {
+    const n = normalizeCharacterCard(character.card);
+    const rawEntries =
+      typeof n.characterBook === 'object' && n.characterBook !== null && 'entries' in n.characterBook
+        ? (n.characterBook as { entries?: unknown }).entries
+        : null;
+    const bookEntries =
+      typeof rawEntries === 'object' && rawEntries !== null ? Object.keys(rawEntries).length : 0;
+    const regexCount = Array.isArray(n.extensions?.regex_scripts) ? n.extensions.regex_scripts.length : 0;
+    const scriptCount = Array.isArray(n.extensions?.TavernHelper_scripts) ? n.extensions.TavernHelper_scripts.length : 0;
+    return { bookEntries, regexCount, scriptCount, total: bookEntries + regexCount + scriptCount };
+  }, [character.card]);
   const canOpenExternally = externalOpenSupported();
   const fileViews = attachments.map((file): AssetView => ({
     kind: 'file', id: file.id, title: file.title, updatedAt: file.addedAt,
@@ -399,6 +412,39 @@ export function AssetSection({
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-[color:var(--text-body)]">
           <span>关联文件状态暂时没能读取出来，原文件仍保存在库里。</span>
           <Button variant="outline" size="sm" onClick={() => void reloadAttachments()}>重新读取</Button>
+        </div>
+      )}
+
+      {embeddedSummary.total > 0 && (
+        <div
+          data-embedded-card-assets
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/25 bg-[var(--brand-active-bg)] px-3.5 py-2.5 text-xs text-[color:var(--text-body)]"
+        >
+          <div className="space-y-0.5">
+            <p className="font-medium text-[color:var(--text-primary)]">
+              卡内自带装备：
+              {[
+                embeddedSummary.bookEntries > 0 ? `世界书 ${embeddedSummary.bookEntries} 条` : null,
+                embeddedSummary.regexCount > 0 ? `正则 ${embeddedSummary.regexCount} 条` : null,
+                embeddedSummary.scriptCount > 0 ? `状态栏/助手脚本 ${embeddedSummary.scriptCount} 项` : null,
+              ].filter(Boolean).join(' · ')}
+            </p>
+            <p className="text-[color:var(--text-muted)]">
+              进入酒馆对话时会自动随卡生效；世界书与正则也可提取为独立资产方便查阅与精修。
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {(embeddedSummary.bookEntries > 0 || embeddedSummary.regexCount > 0) && (
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void handleReadEmbedded()}>
+                提取到资产库
+              </Button>
+            )}
+            {embeddedSummary.scriptCount > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-brand" onClick={() => navigate('/beautify')}>
+                前往美化页
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

@@ -50,8 +50,12 @@ export interface ChatPreviewProps {
   onQuoteMessage?: (messageId: string, floor: number, content: string, speakerName: string) => void;
   /** 将某楼或划选句子生成名场面分享图 */
   onShareMessage?: (floor: number, content: string, speakerName: string) => void;
+  /** 从指定楼层分叉新支线 */
+  onBranchFromMessage?: (messageId: string, rawFloor: number) => void;
   /** 外部定位跳转的目标楼层高亮 */
   highlightedFloor?: number | null;
+  /** 按稳定 messageId 高亮目标楼层（不受隐藏楼过滤影响） */
+  highlightedMessageId?: string | null;
   showModel?: boolean;
   scrollPaddingStart?: number;
 }
@@ -82,7 +86,9 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     onCaptureMessage,
     onQuoteMessage,
     onShareMessage,
+    onBranchFromMessage,
     highlightedFloor = null,
+    highlightedMessageId = null,
     showModel = true,
     scrollPaddingStart = 0,
   }, ref) => {
@@ -115,6 +121,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
         const paragraphs = processedContent.split(/\n+/).map((s) => s.trim()).filter(Boolean);
         out.push({
           ...msg,
+          rawFloor: index,
           depth,
           content: processedContent,
           paragraphs,
@@ -368,7 +375,11 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     previewRule={previewRule && isRegexRuleApplicable(previewRule, message.role === 'user', message.depth) ? previewRule : null}
                     searchQuery={searchQuery}
                     isActiveMatch={vItem.index === activeMatchIndex}
-                    isHighlightedFloor={highlightedFloor === vItem.index}
+                    isHighlightedFloor={
+                      highlightedMessageId != null
+                        ? message.id === highlightedMessageId
+                        : highlightedFloor === vItem.index
+                    }
                     userName={session.user.name}
                     charName={session.character.name}
                     onMessageClick={onMessageClick}
@@ -379,6 +390,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
                     onCaptureMessage={onCaptureMessage}
                     onQuoteMessage={onQuoteMessage}
                     onShareMessage={onShareMessage}
+                    onBranchFromMessage={onBranchFromMessage}
                   />
                 </div>
               );

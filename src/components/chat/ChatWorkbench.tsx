@@ -22,8 +22,12 @@ import { applyRegexRules } from '@/lib/regex-processor';
 import { selectSwipe, syncEditedMessage, isOOCMessage, isManagedHidden, hideMessage, unhideMessage, setManualHiddenRange } from '@/lib/chat-edit';
 import { FloorProcessingMenu } from './FloorProcessingMenu';
 import { CaptureRecordDialog } from '@/components/summary/CaptureRecordDialog';
+import { ShareImage } from '@/components/reader/ShareImage';
+import { updateCharacter } from '@/lib/archive-db';
+import { getVaultEpoch } from '@/lib/vault/active';
 import { useViewport } from '@/hooks/use-viewport';
 import { cn } from '@/lib/utils';
+import type { ArchiveCharacter } from '@/types/archive';
 import type { ChatSession, ExportSettings, ChapterMarker, ChatMessage, RegexRule } from '@/types/chat';
 import { useToast } from '@/hooks/use-toast';
 import { ToastAction } from '@/components/ui/toast';
@@ -33,10 +37,24 @@ export interface ChatWorkbenchHandle {
   scrollToFloor: (floor: number) => void;
   /** 按 messageId 跳转（章节/书签列表用） */
   scrollToMessageId: (messageId: string) => void;
+  /** 当前顶部可见楼层号（0-based） */
+  getCurrentFloor: () => number;
+  /** 当前顶部可见楼层的稳定 messageId（用于分叉定锚，不受隐藏楼过滤影响） */
+  getCurrentMessageId: () => string | null;
 }
 
 interface ChatWorkbenchProps {
   recordContext?: { storyId: string; branchId: string | null; flush: () => Promise<void> };
+  /** 所属角色 ID：提供时支持一键将某楼或划选段落收进角色名场面语录 */
+  characterId?: string;
+  /** 收进角色语录落盘后的角色档案同步回调，避免父页内存快照陈旧 */
+  onCharacterUpdated?: (character: ArchiveCharacter) => void;
+  /** 从具体楼层分叉支线续聊 */
+  onBranchFromMessage?: (messageId: string, rawFloor: number) => void;
+  /** 外部定位跳转高亮的目标楼层 */
+  highlightedFloor?: number | null;
+  /** 按稳定 messageId 高亮目标楼层 */
+  highlightedMessageId?: string | null;
   session: ChatSession;
   markers: ChapterMarker[];
   favorites: string[];
@@ -68,11 +86,17 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     onFloorChange, initialFloor, titleBadge, toolbarExtras, onReset, readerMode,
     readerStickyTop = 0,
     recordContext,
+    characterId,
+    onCharacterUpdated,
+    onBranchFromMessage,
+    highlightedFloor = null,
+    highlightedMessageId = null,
   },
   ref,
 ) {
   const { toast } = useToast();
   const [capture, setCapture] = useState<{ messageId: string; content: string } | null>(null);
+  const [shareTarget, setShareTarget] = useState<{ floor: number; text: string; speakerName: string } | null>(null);
   const { isCompact, isMobile } = useViewport();
   // 撤销闭包/连续操作要读「最新」数据，props 在闭包里会过期，走 ref 中转
   const sessionRef = useRef(session);
@@ -183,7 +207,69 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   useImperativeHandle(ref, () => ({
     scrollToFloor: jumpToFloor,
     scrollToMessageId: jumpToMessageId,
-  }), [jumpToFloor, jumpToMessageId]);
+    getCurrentFloor: () => currentFloor,
+    getCurrentMessageId: () => currentFloorMsgId ?? floorMessageIds[currentFloor] ?? null,
+  }), [jumpToFloor, jumpToMessageId, currentFloor, currentFloorMsgId, floorMessageIds]);
+
+  const handleQuoteMessage = useCallback(async (
+    _messageId: string,
+    floor: number,
+    content: string,
+    speakerName: string,
+  ) => {
+    if (!characterId) return;
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const epoch = getVaultEpoch();
+    const quoteId = crypto.randomUUID();
+    try {
+      const title = `${speakerName} · 第 ${floor} 楼名场面`;
+      const saved = await updateCharacter(characterId, (cur) => ({
+        quotes: [
+          ...(cur.quotes ?? []),
+          { id: quoteId, title, body: trimmed, addedAt: Date.now() },
+        ],
+        updatedAt: Date.now(),
+      }));
+      if (epoch !== getVaultEpoch()) return;
+      if (!saved) throw new Error('未找到对应角色档案，请返回角色库刷新后再试');
+      onCharacterUpdated?.(saved);
+      toast({
+        title: '已收进角色名场面语录',
+        description: `「${title}」已存进关联资产（共 ${saved.quotes?.length ?? 1} 条）`,
+        action: (
+          <ToastAction
+            altText="撤销收录"
+            onClick={() => {
+              void updateCharacter(characterId, (cur) => ({
+                quotes: (cur.quotes ?? []).filter((q) => q.id !== quoteId),
+                updatedAt: Date.now(),
+              })).then((reverted) => {
+                if (reverted && epoch === getVaultEpoch()) {
+                  onCharacterUpdated?.(reverted);
+                  toast({ title: '已撤销刚才收录的语录' });
+                }
+              }).catch((err) => {
+                toast({
+                  title: '撤销语录未成功',
+                  description: err instanceof Error ? err.message : '请在角色关联资产页手动移除',
+                  variant: 'destructive',
+                });
+              });
+            }}
+          >
+            撤销
+          </ToastAction>
+        ),
+      });
+    } catch (error) {
+      toast({
+        title: '收进角色语录未成功',
+        description: error instanceof Error ? error.message : '请检查文件库目录是否可写',
+        variant: 'destructive',
+      });
+    }
+  }, [characterId, onCharacterUpdated, toast]);
 
   // 章节标记模式：点任意楼弹出章节标记对话框
   const handleMessageClick = useCallback((messageId: string, messageIndex: number) => {
@@ -587,6 +673,11 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                     onSearchResult={handleSearchResult}
                     showHidden={showHidden}
                     onCaptureMessage={!readerMode && recordContext ? (messageId, content) => setCapture({ messageId, content }) : undefined}
+                    onQuoteMessage={characterId ? (_id, floor, text, speaker) => { void handleQuoteMessage(_id, floor, text, speaker); } : undefined}
+                    onShareMessage={(floor, text, speaker) => setShareTarget({ floor, text, speakerName: speaker })}
+                    onBranchFromMessage={onBranchFromMessage}
+                    highlightedFloor={highlightedFloor}
+                    highlightedMessageId={highlightedMessageId}
                     showOOC={showOOC}
                     scrollPaddingStart={(readerMode ? readerStickyTop : 0) + toolbarHeight + 8}
                   />
@@ -632,6 +723,19 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
           message={session.messages.find(m => m.id === selectedMessage.id) || null}
           onSave={handleSaveMessage}
           onDelete={handleDeleteMessage}
+        />
+      )}
+
+      {shareTarget && (
+        <ShareImage
+          allowAllPlatforms
+          hideTrigger
+          controlledOpen={!!shareTarget}
+          onOpenChange={(open) => { if (!open) setShareTarget(null); }}
+          storyTitle={session.title || session.character.name || '未命名故事'}
+          characterName={shareTarget.speakerName || session.character.name}
+          currentFloor={shareTarget.floor}
+          currentText={shareTarget.text}
         />
       )}
     </div>

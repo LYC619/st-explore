@@ -1,6 +1,8 @@
 import type { ThemeStyle } from '@/types/chat';
 
 export interface ProcessedMessage {
+  /** 在原始 session.messages 中的真实下标（0-based），不受隐藏楼过滤影响 */
+  rawFloor: number;
   depth: number;
   id: string;
   role: 'user' | 'assistant' | 'system';
