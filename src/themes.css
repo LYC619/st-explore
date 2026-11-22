@@ -27,6 +27,7 @@
 :root {
   /* Native controls and all scroll containers follow the active surface palette. */
   color-scheme: dark;
+  accent-color: var(--brand);
   --scrollbar-thumb: hsl(var(--text-muted-hsl, var(--muted-foreground)) / 0.36);
   --scrollbar-thumb-hover: hsl(var(--text-muted-hsl, var(--muted-foreground)) / 0.6);
   --scrollbar-track: transparent;
@@ -113,6 +114,7 @@
    ① 主题 · 深咖啡（默认，推荐主色）
    ============================================================ */
 [data-theme="cocoa"] {
+  color-scheme: dark;
   /* HSL 三元组 = 这套主题的单一事实源。下面项目变量用 hsl() 包一层，
      shadcn 适配层直接吃裸三元组，改色只改这一处。理由见文件头。 */
   --canvas-hsl: 25.7 30.4% 9%;
@@ -201,6 +203,7 @@
    ② 主题 · 墨黑
    ============================================================ */
 [data-theme="ink"] {
+  color-scheme: dark;
   --canvas-hsl: 240 6.7% 5.9%;
   --chrome-hsl: 240 8.3% 4.7%;
   --elevated-hsl: 240 7.3% 8%;
@@ -277,6 +280,7 @@
    ③ 主题 · 深夜蓝
    ============================================================ */
 [data-theme="midnight"] {
+  color-scheme: dark;
   --canvas-hsl: 221.5 30.2% 8.4%;
   --chrome-hsl: 223.6 31.4% 6.9%;
   --elevated-hsl: 222.4 30.9% 10.8%;

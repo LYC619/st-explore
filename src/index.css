@@ -10,7 +10,7 @@
 .chat-markdown > :last-child { margin-bottom: 0; }
 .chat-markdown .chat-dialogue { color: hsl(var(--primary)); font-weight: 500; }
 .chat-markdown em { color: hsl(var(--muted-foreground)); }
-.chat-markdown .chat-search-hit { background: #fde68a; color: #422006; border-radius: 2px; }
+.chat-markdown .chat-search-hit { background: var(--mark-bg); color: var(--mark-text); padding: 0 2px; border-radius: 3px; }
 .chat-markdown ul, .chat-markdown ol { padding-left: 1.5em; margin: .7em 0; }
 .chat-markdown ul { list-style: disc; } .chat-markdown ol { list-style: decimal; }
 .chat-markdown pre { white-space: pre-wrap; padding: .8em; background: hsl(var(--muted)); border-radius: .5em; overflow-x: auto; }
@@ -85,8 +85,8 @@
   }
 
   [data-theme="cream"] {
-    --user-bubble: 200 60% 50%;
-    --user-bubble-foreground: 200 60% 98%;
+    --user-bubble: 28 38% 36%;
+    --user-bubble-foreground: 36 45% 97%;
     --char-bubble: var(--elevated-strong-hsl);
     --char-bubble-foreground: var(--text-primary-hsl);
 
@@ -133,6 +133,16 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Noto Serif SC', serif;
+    overflow-wrap: break-word;
+  }
+
+  :where(h1, h2, h3) {
+    text-wrap: balance;
+  }
+
+  .reading-flow p,
+  .record-reading p {
+    text-wrap: pretty;
   }
 }
 
@@ -161,6 +171,64 @@
     min-width: 32px;
     min-height: 32px;
     transform: translate(-50%, -50%);
+  }
+
+  @media (pointer: coarse) {
+    .tap-target::after {
+      min-width: 44px;
+      min-height: 44px;
+    }
+  }
+
+  /* 去后台感的原生下拉选择器：保留 <select> 语义、键盘可达性与移动端系统滚轮，去除刺眼系统灰框 */
+  .ste-select {
+    appearance: none;
+    background-color: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border-normal);
+    border-radius: var(--radius-md);
+    padding-inline: 0.75rem 2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239c8f7a' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.6rem center;
+    transition: border-color 150ms ease, background-color 150ms ease;
+    cursor: pointer;
+  }
+
+  [data-theme="cream"] .ste-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b5e4c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+
+  .ste-select option {
+    background-color: var(--bg-elevated-strong);
+    color: var(--text-primary);
+  }
+
+  .ste-select:hover:not(:disabled) {
+    border-color: var(--brand-hairline);
+    background-color: var(--bg-elevated-strong);
+  }
+
+  .ste-select:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 1px;
+  }
+
+  .ste-select:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* 复杂卡片列表渲染隔离：避免局部交互引发全页重排 */
+  .contain-section {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+  }
+
+  @supports not (content-visibility: auto) {
+    .contain-section {
+      contain: layout style paint;
+    }
   }
 
   /* 交接包 layout.css：立绘占位容器 + 首字水印（生产环境有图时不渲染） */

@@ -15,7 +15,7 @@ export default defineConfig({
     watch: {
       // 参考项目(_reference/projects/*)是借鉴用的外部源码(含 Vue/Astro 等异构栈)，
       // 不属于本项目，排除以免 vite 扫描其依赖报错(vue/pinia/pixi.js 未安装)
-      ignored: ["**/_reference/**", "**/vendor/**", "**/.cache/tavern/**"],
+      ignored: ["**/_reference/**", "**/vendor/**", "**/.cache/**", "**/_archive/**"],
     },
   },
   plugins: [tavernFrontend(), react(), {

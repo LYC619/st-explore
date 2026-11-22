@@ -97,7 +97,7 @@ export function LibraryDropOverlay({
       {dragging && !disabled && (
         <div
           data-library-drop-overlay
-          className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand bg-[var(--bg-canvas)]/88 backdrop-blur-sm text-center shadow-xl"
+          className="pointer-events-none absolute inset-3 z-40 flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-brand bg-[var(--reader-scrim)] backdrop-blur-sm text-center shadow-xl"
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-active-bg)] text-brand">
             <Upload className="h-6 w-6" />

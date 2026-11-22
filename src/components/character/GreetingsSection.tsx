@@ -51,6 +51,7 @@ function shortSnippet(raw: string): string {
   const oneLine = raw
     .replace(/<[^>]+>/g, ' ')
     .replace(/\{\{(?:char|user)\}\}/gi, '')
+    .replace(/[*_`~「」『』"']/g, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!oneLine) return '空台词';
@@ -202,10 +203,11 @@ export function GreetingsSection({
 
       {mode === 'stage' ? (
         <div
-          className="space-y-3.5 focus-visible:outline-none"
+          className="space-y-3.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           tabIndex={0}
           aria-label="开场白剧场切换区（支持左右方向键切换）"
           onKeyDown={(e) => {
+            if (e.altKey || e.ctrlKey || e.metaKey) return;
             const target = e.target instanceof HTMLElement ? e.target : null;
             if (target && (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT')) return;
             if (e.key === 'ArrowLeft' && activeIndex > 0) {
@@ -233,7 +235,7 @@ export function GreetingsSection({
                     className={cn(
                       'tap-target shrink-0 rounded-full px-3 py-1 text-xs transition-colors border',
                       isSelected
-                        ? 'border-brand/50 bg-[var(--brand-active-bg)] text-brand font-medium'
+                        ? 'border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] text-brand font-medium'
                         : 'border-[color:var(--border-subtle)] bg-chrome text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]',
                       isEmpty && 'opacity-60',
                     )}
@@ -381,7 +383,7 @@ export function GreetingsSection({
               备选开场白（{edits.alternateGreetings.length}）
             </h3>
             {edits.alternateGreetings.map((greeting, index) => (
-              <div key={index} className="rounded-lg border border-[color:var(--border-subtle)] bg-chrome/60 p-3 space-y-2">
+              <div key={index} className="rounded-lg border border-[color:var(--border-subtle)] bg-chrome p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-medium text-[color:var(--text-muted)]">
                     备选开场 #{index + 1}

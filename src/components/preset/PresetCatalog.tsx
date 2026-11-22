@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Download, Search, Star, LayoutGrid, List, CheckSquare, SlidersHorizontal, Eye, Tags, Trash2 } from 'lucide-react';
+import { Download, Search, Star, LayoutGrid, List, CheckSquare, SlidersHorizontal, Eye, Tags, Trash2, X } from 'lucide-react';
 import type { PresetCatalog as Catalog } from '@/types/preset';
 import { listAssetIndex } from '@/lib/asset-index';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
@@ -15,6 +15,8 @@ import { subscribeRecordChanges } from '@/lib/repo/changes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
+import { AssetGridSkeleton } from '@/components/ui/skeleton';
+import { isPlainSingleKeyShortcut } from '@/lib/keyboard-shortcuts';
 import { PresetBulkEdit, applyPresetBulkPatch, type PresetBulkPatch } from './PresetBulkEdit';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { getPresetPresentation, presetSeriesKey } from '@/lib/preset-presentation';
@@ -77,6 +79,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null), restored = useRef(false), sequence = useRef(0);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const refreshing = useRef<Promise<void> | null>(null);
   const mounted = useRef(true), dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
@@ -124,6 +127,19 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     return () => { off(); window.removeEventListener('focus', focus); };
   }, [load]);
   useEffect(() => {
+    if (importSeed || bulkOpen || tagsOpen || !!deleteId || !!deleteIds.length || !!pending) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPlainSingleKeyShortcut(e)) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [bulkOpen, deleteId, deleteIds.length, importSeed, pending, tagsOpen]);
+  useEffect(() => {
     if (!loading && scrollRef.current && !restored.current) { scrollRef.current.scrollTop = view.scroll; restored.current = true; }
   }, [loading, view.scroll]);
   const changeView = (patch: Partial<ViewState>) => { setView(value => ({ ...value, ...patch, scroll: 0 })); setChecked([]); if (scrollRef.current) scrollRef.current.scrollTop = 0; };
@@ -151,7 +167,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
       : (pa.series || pa.displayName).localeCompare(pb.series || pb.displayName, 'zh-CN', { numeric: true })
       || (pb.version ?? '').localeCompare(pa.version ?? '', 'zh-CN', { numeric: true });
   }), [items, references, view, onlyDiy]);
-  const filterCount = [view.author, view.model, view.tag].filter(Boolean).length;
+  const filterCount = [view.author, view.model, view.tag, view.query.trim(), view.favorite ? '1' : '', onlyDiy ? '1' : ''].filter(Boolean).length;
   const selected = items.find(item => item.id === view.selected);
   const applyBulk = async (patch: PresetBulkPatch) => {
     if (busy) return;
@@ -181,8 +197,30 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
             <Button size="sm" variant={view.favorite ? 'secondary' : 'ghost'} aria-pressed={view.favorite} onClick={() => changeView({ favorite: true, onlyDiy: false })}><Star className="w-3.5 h-3.5 mr-1" />收藏</Button>
             <Button size="sm" variant={onlyDiy ? 'secondary' : 'ghost'} aria-pressed={onlyDiy} onClick={() => changeView({ favorite: false, onlyDiy: true })}>我的 DIY</Button>
           </div>
-          <div className="relative min-w-40 flex-1"><Search className="absolute left-2.5 top-2 w-4 h-4 text-muted-foreground" /><Input aria-label="搜索预设" className="pl-9" placeholder="搜索名称、作者、说明…" value={view.query} onChange={e => changeView({ query: e.target.value })} /></div>
-          <Button variant={view.preview ? 'secondary' : 'outline'} aria-pressed={view.preview} onClick={() => request(() => { changeView({ preview: !view.preview, selected: '' }); syncSelectionUrl(''); })}><Eye className="w-3.5 h-3.5 mr-1" />预览</Button>
+          <div className="relative min-w-40 flex-1">
+            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+            <Input
+              ref={searchInputRef}
+              aria-label="搜索预设"
+              className="pl-9 pr-8"
+              placeholder="搜索名称、作者、说明…（按 / 聚焦）"
+              value={view.query}
+              onChange={e => changeView({ query: e.target.value })}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  e.preventDefault();
+                  if (view.query) changeView({ query: '' });
+                  else searchInputRef.current?.blur();
+                }
+              }}
+            />
+            {view.query && (
+              <button type="button" aria-label="清空预设搜索" onClick={() => changeView({ query: '' })} className="tap-target absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+          <Button variant={view.preview ? 'secondary' : 'outline'} aria-pressed={view.preview} title={view.preview ? '当前：点击预设在右侧打开速览侧栏（再次点击切换为直接进入详情页）' : '开启后点击预设在右侧展开速览侧栏，不离开当前列表'} onClick={() => request(() => { changeView({ preview: !view.preview, selected: '' }); syncSelectionUrl(''); })}><Eye className="w-3.5 h-3.5 mr-1" />预览</Button>
           <Button variant={batchMode ? 'secondary' : 'outline'} onClick={() => request(() => { setBatchMode(value => !value); setChecked([]); changeView({ selected: '' }); syncSelectionUrl(''); })}><CheckSquare className="w-3.5 h-3.5 mr-1" />{batchMode ? '完成' : '批量管理'}</Button>
         </div>
       <Button onClick={() => request(() => setImportSeed({ author: view.author === '未分类作者' ? '' : view.author }))}><Download className="w-4 h-4 mr-1.5" />导入预设</Button>
@@ -202,14 +240,14 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
       </aside>
       <main className="flex-1 flex flex-col min-h-0 min-w-0 gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
-          <select aria-label="筛选模型" className={`${catalogSelectClass} md:hidden max-w-36`} value={view.model} onChange={e => changeView({ model: e.target.value })}><option value="">全部模型</option>{options.models.map(value => <option key={value}>{value}</option>)}<option value="__unlabeled__">未标记</option></select>
-          <select aria-label="筛选标签" className={`${catalogSelectClass} md:hidden max-w-36`} value={view.tag} onChange={e => changeView({ tag: e.target.value })}><option value="">全部标签</option>{options.tags.filter(tag => !tagPreferences.hidden.includes(tag)).map(value => <option key={value}>{value}</option>)}</select>
+          <select aria-label="筛选模型" className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.model} onChange={e => changeView({ model: e.target.value })}><option value="">全部模型</option>{options.models.map(value => <option key={value}>{value}</option>)}<option value="__unlabeled__">未标记</option></select>
+          <select aria-label="筛选标签" className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.tag} onChange={e => changeView({ tag: e.target.value })}><option value="">全部标签</option>{options.tags.filter(tag => !tagPreferences.hidden.includes(tag)).map(value => <option key={value}>{value}</option>)}</select>
           <Button size="sm" variant="ghost" className="md:hidden" onClick={() => setTagsOpen(true)}>管理标签</Button>
           <span className="text-muted-foreground">{new Set(filtered.map(presetSeriesKey)).size} 个系列 · {filtered.length} 份预设</span>
-          {!!filterCount && <Button size="sm" variant="ghost" onClick={() => changeView({ author: '', model: '', tag: '' })}>清除筛选</Button>}
+          {!!filterCount && <Button size="sm" variant="ghost" onClick={() => changeView({ author: '', model: '', tag: '', query: '', favorite: false, onlyDiy: false })}>清除筛选</Button>}
           <span className="flex-1" />
           <select aria-label="预设分组" className={catalogSelectClass} value={view.groupBy} onChange={e => changeView({ groupBy: e.target.value as ViewState['groupBy'] })}><option value="none">不分组</option><option value="series">按系列分组</option><option value="author">按作者分组</option></select>
-          <select aria-label="预设排序" className={`${catalogSelectClass} border-0 bg-transparent text-xs max-w-32`} value={view.sort} onChange={e => changeView({ sort: e.target.value as ViewState['sort'] })}><option value="version">系列与版本</option><option value="updated">最近更新</option></select>
+          <select aria-label="预设排序" className={`${catalogSelectClass} max-w-36`} value={view.sort} onChange={e => changeView({ sort: e.target.value as ViewState['sort'] })}><option value="version">系列与版本</option><option value="updated">最近更新</option></select>
           <Button variant="ghost" size="icon" aria-label={view.layout === 'cards' ? '切换列表' : '切换卡片'} onClick={() => changeView({ layout: view.layout === 'cards' ? 'table' : 'cards' })}>{view.layout === 'cards' ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}</Button>
         </div>
         {batchMode && <div className="flex flex-wrap items-center gap-3 rounded-lg bg-[var(--brand-active-bg)] px-3 py-2 text-xs shrink-0"><label className="flex items-center gap-2"><Checkbox aria-label="选择当前筛选结果" checked={!!filtered.length && filtered.every(item => checked.includes(item.id))} onCheckedChange={value => setChecked(value ? filtered.map(item => item.id) : [])} />全选当前结果</label><span>已选 {checked.length} 份 · 点击卡片选择系列</span><Button size="sm" variant="outline" disabled={!checked.length || dirty} onClick={() => { setBulkOpen(true); setBulkErrors([]); }}>整理所选</Button><Button size="sm" variant="outline" disabled={!checked.length || busy} onClick={() => request(() => setDeleteIds([...checked]))}><Trash2 className="w-3.5 h-3.5 mr-1" />删除所选</Button></div>}
@@ -222,7 +260,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     )}
     <div className={`flex-1 min-h-0 grid gap-4 ${view.selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]' : ''}`}>
       <div ref={scrollRef} className={`min-h-0 overflow-y-auto pb-3 pr-1 ${view.selected ? 'hidden xl:block' : ''}`} onScroll={e => { const scroll = e.currentTarget.scrollTop; setView(value => ({ ...value, scroll })); }}>
-        {loading ? <p className="p-8 text-sm text-center text-muted-foreground">正在读取预设库…</p> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '选择作者的 JSON 和配套文件，模型与版本会先帮你识别。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}
+        {loading ? <AssetGridSkeleton count={6} /> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="font-serif text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '选择作者发布的预设 JSON 和说明附件，适配模型与版本号会自动帮你识别。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}
         <PresetCollection items={filtered} selected={view.selected} onSelect={select} batch={batchMode} checked={checked} onCheck={id => setChecked(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} layout={view.layout} groupBy={view.groupBy} />
       </div>
       {view.selected && <aside className="min-h-0 flex flex-col rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] overflow-hidden" aria-label="预设资料">

@@ -207,8 +207,8 @@ export function CharacterLoadoutBar({
             className={cn(
               'tap-target flex items-center gap-1.5 shrink-0 rounded-lg px-2.5 py-1 text-xs transition-colors border',
               pill.active
-                ? 'border-brand/30 bg-[var(--brand-active-bg)] text-[color:var(--text-primary)] hover:border-brand/60'
-                : 'border-transparent bg-chrome/70 text-[color:var(--text-muted)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--text-body)]',
+                ? 'border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] text-[color:var(--text-primary)] hover:border-brand'
+                : 'border-transparent bg-chrome text-[color:var(--text-muted)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--text-body)]',
             )}
           >
             <Icon className={cn('h-3.5 w-3.5 shrink-0', pill.active ? 'text-brand' : 'text-[color:var(--text-muted)]')} />

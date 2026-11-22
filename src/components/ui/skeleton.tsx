@@ -2,10 +2,7 @@ import { cn } from '@/lib/utils';
 
 /**
  * 骨架占位块。
- *
- * 首屏用骨架而不是「加载中…」文字，是因为读档要等 IndexedDB，
- * 一行居中文字换成卡墙的瞬间整页会跳一下；骨架把版面先占住，数据到了只是填色。
- * 动画统一用 Tailwind 自带的 animate-pulse，不额外加 shimmer keyframe。
+ * 首屏用骨架代替裸文字跳变，数据到位时平滑填色。
  */
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
@@ -18,9 +15,7 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
   );
 }
 
-/**
- * 卡墙骨架：跟真卡一样 2:3 图 + 名字行 + 简介行，列宽由外面的 gridTemplateColumns 决定。
- */
+/** 卡墙骨架：跟真卡一样 2:3 图 + 名字行 + 简介行 */
 export function CharacterGridSkeleton({
   count = 8,
   gridTemplateColumns,
@@ -41,21 +36,55 @@ export function CharacterGridSkeleton({
   );
 }
 
-/**
- * 故事/条目列表骨架：缩略图 + 两行文字，高度对齐真实行。
- */
+/** 故事/聊天列表骨架：立绘缩略图 + 两行文字 */
 export function StoryListSkeleton({ count = 6, className }: { count?: number; className?: string }) {
   return (
-    <div className={cn('flex flex-col gap-2', className)} data-story-list-skeleton>
+    <div className={cn('flex flex-col gap-2', className)} role="status" aria-label="正在加载故事列表" data-story-list-skeleton>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
-          className="flex items-center gap-2.5 rounded-lg bg-chrome px-3 py-2.5"
+          className="flex items-center gap-3 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] px-3.5 py-3"
         >
-          <Skeleton className="aspect-[3/4] h-11 shrink-0 rounded" />
-          <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-            <Skeleton className="h-3.5 w-1/2" />
+          <Skeleton className="aspect-[3/4] h-12 shrink-0 rounded-lg" />
+          <div className="min-w-0 flex-1 flex flex-col gap-2">
+            <Skeleton className="h-4 w-2/5" />
             <Skeleton className="h-3 w-1/4" />
+          </div>
+          <Skeleton className="h-3 w-12 shrink-0" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** 预设库 / 附属库资产卡片网格骨架 */
+export function AssetGridSkeleton({ count = 6, className }: { count?: number; className?: string }) {
+  return (
+    <div
+      data-asset-grid-skeleton
+      role="status"
+      aria-label="正在加载收藏条目"
+      className={cn(
+        'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))]',
+        className,
+      )}
+    >
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="flex flex-col gap-3 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] p-4"
+        >
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-10 w-10 shrink-0 rounded-lg" />
+            <div className="min-w-0 flex-1 space-y-1.5">
+              <Skeleton className="h-4 w-3/5" />
+              <Skeleton className="h-3 w-2/5" />
+            </div>
+          </div>
+          <Skeleton className="h-3 w-4/5" />
+          <div className="flex gap-2 pt-1">
+            <Skeleton className="h-5 w-14 rounded-full" />
+            <Skeleton className="h-5 w-16 rounded-full" />
           </div>
         </div>
       ))}
@@ -63,10 +92,32 @@ export function StoryListSkeleton({ count = 6, className }: { count?: number; cl
   );
 }
 
-/**
- * 顶部刷新指示条：刷新（已经有数据）时用它，不要把已读到的内容换回骨架。
- * 挂在滚动容器外层，sticky 贴顶，够细，不占版面。
- */
+/** 双栏工作台骨架（用于美化配置、成品前端等面板载入） */
+export function PanelSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      data-panel-skeleton
+      role="status"
+      aria-label="正在读取配置"
+      className={cn('grid gap-5 lg:grid-cols-2', className)}
+    >
+      <div className="space-y-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] p-5">
+        <Skeleton className="h-5 w-1/3" />
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-10 w-full rounded-lg" />
+          <Skeleton className="h-10 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-36 w-full rounded-lg" />
+      </div>
+      <div className="space-y-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] p-5">
+        <Skeleton className="h-5 w-1/4" />
+        <Skeleton className="h-64 w-full rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+/** 顶部刷新指示条 */
 export function RefreshIndicator({ active, className }: { active: boolean; className?: string }) {
   if (!active) return null;
   return (

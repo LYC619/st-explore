@@ -28,7 +28,9 @@ import { isEmptyVault } from '@/lib/vault/empty-vault';
 import { AppLayout } from '@/components/AppLayout';
 import { Skeleton, StoryListSkeleton } from '@/components/ui/skeleton';
 import { CharacterPortrait } from '@/components/library/CharacterPortrait';
+import { CharacterQuickPills } from '@/components/library/CharacterQuickPills';
 import { CharacterTile } from '@/components/library/CharacterTile';
+import { useToast } from '@/hooks/use-toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { listCharacterIndex, listStoryIndex, type CharacterIndexEntry, type StoryIndexEntry } from '@/lib/archive-index';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
@@ -79,6 +81,7 @@ function greeting(): string {
 function PillLink({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-[color:var(--border-normal)] text-[color:var(--text-body)] hover:border-[color:var(--brand-hairline)] hover:text-brand transition-colors shrink-0"
     >
@@ -102,9 +105,13 @@ const EDIT_TOOLS = [
 
 const Home = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [scopeEpoch] = useState(getVaultEpoch);
   const loadSequence = useRef(0);
   const { isMobile } = useViewport();
+  const [showAllMobileStories, setShowAllMobileStories] = useState(false);
+  const [startingStoryId, setStartingStoryId] = useState<string | null>(null);
+  const playBusyRef = useRef(false);
   const [characters, setCharacters] = useState(() => homeSnapshot.characters);
   const [stories, setStories] = useState(() => homeSnapshot.stories);
   const [recentStories, setRecentStories] = useState(() => homeSnapshot.recentStories);
@@ -199,12 +206,38 @@ const Home = () => {
   }, [refreshStConnected, loadData]);
 
   const characterById = Object.fromEntries(characters.map((c) => [c.id, c]));
-  /** 每个角色的故事数；角色级最近查看时间单独存于角色档案。 */
+  /** 每个角色的故事数与最近故事 ID；角色级最近查看时间单独存于角色档案。 */
   const storyCounts: Record<string, number> = {};
+  const latestStoryByChar: Record<string, { id: string; t: number }> = {};
   for (const s of stories) {
     if (!s.characterId) continue;
     storyCounts[s.characterId] = (storyCounts[s.characterId] ?? 0) + 1;
+    const t = Math.max(s.lastViewedAt ?? 0, s.lastMessageAt ?? 0, s.updatedAt);
+    const cur = latestStoryByChar[s.characterId];
+    if (!cur || t > cur.t) latestStoryByChar[s.characterId] = { id: s.id, t };
   }
+
+  const continueStoryFromHome = async (storyId: string) => {
+    if (playBusyRef.current) return;
+    playBusyRef.current = true;
+    setStartingStoryId(storyId);
+    const epoch = getVaultEpoch();
+    try {
+      const { prepareStoryPlay } = await import('@/lib/roleplay/open-story');
+      const target = await prepareStoryPlay(storyId);
+      if (epoch !== getVaultEpoch()) return;
+      navigate(target.path);
+    } catch (err) {
+      toast({
+        title: '暂时未能进入聊天',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      playBusyRef.current = false;
+      setStartingStoryId(null);
+    }
+  };
   /** 最近查看的角色 12 张：角色页访问按角色级字段排序，其余按 updatedAt 垫后。 */
   const recentCharacters = [...characters]
     .sort((a, b) => {
@@ -289,6 +322,7 @@ const Home = () => {
               <p className="text-xs text-[color:var(--text-muted)]">下面显示的不是空档案，是这次没读出来。数据仍在库里。</p>
             </div>
             <button
+              type="button"
               onClick={() => void loadData()}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-[color:var(--border-normal)] text-[color:var(--text-body)] hover:border-[color:var(--brand-hairline)] hover:text-brand transition-colors shrink-0"
             >
@@ -389,6 +423,15 @@ const Home = () => {
                       )}
                       dataAttrs={{ 'data-home-character-card': '' }}
                       onActivate={() => navigate(`/character/${c.id}`)}
+                      quickAction={!isMobile ? (
+                        <CharacterQuickPills
+                          hasStory={Boolean(latestStoryByChar[c.id])}
+                          busy={Boolean(latestStoryByChar[c.id] && startingStoryId === latestStoryByChar[c.id].id)}
+                          onReminisce={() => navigate(`/character/${c.id}?story=${encodeURIComponent(latestStoryByChar[c.id].id)}`)}
+                          onContinueChat={() => { void continueStoryFromHome(latestStoryByChar[c.id].id); }}
+                          onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
+                        />
+                      ) : undefined}
                     />
                   ))}
                 </div>
@@ -402,7 +445,7 @@ const Home = () => {
             >
               <div className="shrink-0 mb-2.5 flex items-end justify-between gap-3" data-home-story-heading>
                 <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">最近在看的故事</h2>
-                <span className="pb-0.5 text-xs text-[color:var(--text-muted)]">滚动查看更多故事。</span>
+                {!isMobile && <span className="pb-0.5 text-xs text-[color:var(--text-muted)]">滚动查看更多故事。</span>}
               </div>
               {loading ? (
                 <StoryListSkeleton className={cn(!isMobile && 'flex-1 min-h-0')} count={isMobile ? 3 : 4} />
@@ -426,12 +469,13 @@ const Home = () => {
                   )}
                   data-home-story-scroll
                 >
-                  {recentStories.map((s) => {
+                  {(isMobile && !showAllMobileStories ? recentStories.slice(0, 4) : recentStories).map((s) => {
                     const char = s.characterId ? characterById[s.characterId] : undefined;
                     return (
                       <button
+                        type="button"
                         key={s.id}
-                        onClick={() => navigate(s.characterId ? `/character/${s.characterId}?story=${s.id}` : `/story/${s.id}`)}
+                        onClick={() => navigate(s.characterId ? `/character/${encodeURIComponent(s.characterId)}?story=${encodeURIComponent(s.id)}` : `/story/${encodeURIComponent(s.id)}`)}
                         className="flex h-full min-h-0 min-w-0 items-center gap-2.5 rounded-lg bg-chrome px-3 py-2.5 text-left transition-colors hover:bg-elevated-strong"
                       >
                         <div className="relative aspect-[3/4] h-full max-h-14 shrink-0 overflow-hidden rounded bg-[var(--hover-overlay)]">
@@ -445,6 +489,15 @@ const Home = () => {
                     );
                   })}
                 </div>
+              )}
+              {isMobile && recentStories.length > 4 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllMobileStories((v) => !v)}
+                  className="mt-2 self-center rounded-full px-3 py-1 text-xs text-brand hover:bg-[var(--brand-active-bg)]"
+                >
+                  {showAllMobileStories ? '收起故事列表' : `展开其余 ${recentStories.length - 4} 篇故事`}
+                </button>
               )}
             </section>
           </div>
@@ -478,6 +531,7 @@ const Home = () => {
                     <Tooltip key={tool.label}>
                       <TooltipTrigger asChild>
                         <button
+                          type="button"
                           onClick={() => navigate(tool.path)}
                           className="min-h-0 flex items-center gap-2.5 rounded-lg bg-chrome px-3 py-2 text-left transition-colors hover:bg-elevated-strong"
                         >
@@ -513,6 +567,7 @@ const Home = () => {
               <div className={cn('grid grid-cols-2 gap-2', isMobile ? 'auto-rows-auto' : 'flex-1 min-h-0 auto-rows-fr')}>
                 {ASSET_CELLS.map((cell) => (
                   <button
+                    type="button"
                     key={cell.label}
                     onClick={cell.onClick}
                     className="min-h-0 flex items-start justify-between gap-2 rounded-lg bg-chrome px-3 py-3 text-left transition-colors hover:bg-elevated-strong"
@@ -526,6 +581,7 @@ const Home = () => {
                 ))}
                 {isTauri() && (
                   <button
+                    type="button"
                     onClick={() => setStConfigOpen(true)}
                     className="min-h-0 flex items-start justify-between gap-2 rounded-lg bg-chrome px-3 py-3 text-left transition-colors hover:bg-elevated-strong"
                   >

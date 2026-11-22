@@ -64,6 +64,7 @@ const App = () => {
       <Route errorElement={<RouteErrorBoundary />}>
       <Route path="/" element={<Home />} />
       <Route path="/play" element={<ChatHub />} />
+      <Route path="/chats" element={<Navigate to="/play" replace />} />
       <Route path="/library" element={<Library />} />
       <Route path="/character/:id" element={<CharacterPage />} />
       <Route path="/story/:id" element={<StoryWorkspace />} />

@@ -2,12 +2,14 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <title>ST Explorer</title>
     <!-- Paint before the theme stylesheet and app bundle arrive. -->
     <style>
       html { color-scheme: dark; }
       html, body { background-color: var(--bg-canvas, #121212); }
+      html[data-theme="cream"], html[data-theme="cream"] body { color-scheme: light; background-color: var(--bg-canvas, #f5efe1); }
     </style>
     <script>
       (() => {
@@ -22,6 +24,7 @@
         const root = document.documentElement;
         root.setAttribute('data-theme', theme);
         root.classList.toggle('dark', theme !== 'cream');
+        root.style.colorScheme = theme === 'cream' ? 'light' : 'dark';
       })();
     </script>
     <meta name="description" content="ST Explorer - SillyTavern 角色卡与聊天记录的一站式归档库" />

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 
-export const catalogSelectClass = 'h-8 min-w-0 rounded-md border border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-2 text-sm';
+export const catalogSelectClass = 'ste-select h-8 min-w-0 text-xs';
 
 /** Common values are chosen with one click; uncommon fields stay folded. */
 export function PresetCatalogFields({ value, onChange, compact = false, multiple = false }: {

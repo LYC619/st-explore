@@ -31,7 +31,7 @@ export function CharacterQuickPills({
           type="button"
           disabled={busy}
           onClick={onContinueChat}
-          className="tap-target inline-flex min-h-7 items-center gap-1 rounded-full bg-[var(--brand-active-bg)] hover:bg-brand/30 backdrop-blur-sm border border-brand/40 px-2.5 py-0.5 text-[11px] text-[color:var(--brand-hi)] transition-colors disabled:opacity-60"
+          className="tap-target inline-flex min-h-7 items-center gap-1 rounded-full bg-[rgba(224,138,74,0.22)] hover:bg-[rgba(224,138,74,0.36)] backdrop-blur-sm border border-[rgba(240,161,92,0.45)] px-2.5 py-0.5 text-[11px] text-[#F6B273] transition-colors disabled:opacity-60"
           title="直接进入酒馆接着上次故事聊"
         >
           <MessageSquare className="w-3 h-3" />

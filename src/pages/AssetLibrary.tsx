@@ -25,8 +25,15 @@ import {
   Link2,
   Download,
   Layers,
+  Search,
+  X,
 } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
+import { AssetGridSkeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { useViewport } from '@/hooks/use-viewport';
+import { isPlainSingleKeyShortcut } from '@/lib/keyboard-shortcuts';
+import { parseSTRegexImport } from '@/lib/st-regex-interop';
 import { OtherAssetsBrowser, ReadOnlyBadge } from '@/components/assets/OtherAssetsBrowser';
 import {
   OTHER_ASSET_SECTIONS,
@@ -46,11 +53,10 @@ import type { WorldBookItem } from '@/types/worldbook';
 import type { RegexCollectionItem } from '@/types/regex';
 import { getAllWorldBooks, deleteWorldBook, saveWorldBook } from '@/lib/worldbook-db';
 import { readWorldBookUpload, worldBookItemFromUpload } from '@/lib/worldbook-file-import';
-import { getAllRegexCollections, deleteRegexCollection } from '@/lib/regex-db';
+import { getAllRegexCollections, deleteRegexCollection, buildRegexCollection, saveRegexCollection } from '@/lib/regex-db';
 import { listCharacterIndex } from '@/lib/archive-index';
 import { buildAssetLibraryRows, type AssetLibraryRow } from '@/lib/asset-library-rows';
 import { executeDeleteAction } from '@/lib/destructive-action';
-import { LOADING_LABEL } from '@/lib/ui-copy';
 import { presetLibraryRedirect } from '@/lib/navigation-model';
 
 type AssetTab = 'worldbook' | 'regex';
@@ -143,6 +149,7 @@ function FilterChip({
 const AssetLibrary = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { isCompact, isMobile } = useViewport();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (['worldbook', 'regex'].includes(searchParams.get('tab') ?? '')
     ? searchParams.get('tab')
@@ -160,7 +167,24 @@ const AssetLibrary = () => {
   const [toDelete, setToDelete] = useState<AssetLibraryRow | null>(null);
   const [refFilter, setRefFilter] = useState<RefFilter>('all');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const worldBookInputRef = useRef<HTMLInputElement>(null);
+  const regexInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (tab === null || !!toDelete) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isPlainSingleKeyShortcut(e)) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [tab, toDelete]);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -240,6 +264,33 @@ const AssetLibrary = () => {
     }
   };
 
+  const handleRegexImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const rules = parseSTRegexImport(parsed);
+      if (rules.length === 0) throw new Error('文件中没有有效的正则规则');
+      const title = file.name.replace(/\.json$/i, '').trim() || '导入正则规则集';
+      const item = buildRegexCollection(title, rules);
+      await saveRegexCollection(item);
+      await load();
+      toast({
+        title: '正则导入成功',
+        description: `「${item.title}」，共 ${rules.length} 条规则`,
+      });
+    } catch (error) {
+      toast({
+        title: '正则导入失败',
+        description: error instanceof Error ? error.message : '请确认文件是有效的 SillyTavern 正则 JSON',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const meta = TAB_META[tab ?? 'worldbook'];
   const openAsset = (id: string) => navigate(`${meta.toolPath}?assetId=${encodeURIComponent(id)}`);
   /** 换类别：整份替换 query，把上一类别留下的 `?section=` 一起清掉 */
@@ -261,12 +312,20 @@ const AssetLibrary = () => {
     filter === 'all' || classifyAssetSource(asset) === filter
   ), []);
 
-  const filtered = useMemo(() => tabList.filter((a) => {
-    const refs = refNames[a.id]?.length ?? 0;
-    if (refFilter === 'referenced' && refs === 0) return false;
-    if (refFilter === 'unreferenced' && refs > 0) return false;
-    return matchSource(a, sourceFilter);
-  }), [tabList, refNames, refFilter, sourceFilter, matchSource]);
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLocaleLowerCase();
+    return tabList.filter((a) => {
+      const refs = refNames[a.id] ?? [];
+      if (refFilter === 'referenced' && refs.length === 0) return false;
+      if (refFilter === 'unreferenced' && refs.length > 0) return false;
+      if (!matchSource(a, sourceFilter)) return false;
+      if (q) {
+        const hay = `${a.title} ${refs.join(' ')}`.toLocaleLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [tabList, refNames, refFilter, sourceFilter, matchSource, searchQuery]);
 
   const refCounts = useMemo(() => ({
     referenced: tabList.filter((a) => (refNames[a.id]?.length ?? 0) > 0).length,
@@ -276,11 +335,47 @@ const AssetLibrary = () => {
     (Object.keys(SOURCE_LABELS) as Exclude<SourceFilter, 'all'>[]).map((f) => [f, tabList.filter((a) => matchSource(a, f)).length]),
   ) as Record<Exclude<SourceFilter, 'all'>, number>, [tabList, matchSource]);
 
+  const railContent = (
+    <>
+      {(Object.keys(TAB_META) as AssetTab[]).map((t) => (
+        <RailItem
+          key={t}
+          label={TAB_META[t].label}
+          icon={TAB_META[t].icon}
+          count={showCounts ? counts[t] : undefined}
+          active={t === tab}
+          onClick={() => selectTab(t)}
+        />
+      ))}
+      <RailItem
+        label="其他资产"
+        icon={Layers}
+        active={tab === null}
+        title="从 SillyTavern 归档过来的扩展、快速回复、人设和媒体（只读）"
+        onClick={() => selectSection('overview')}
+      />
+      {tab === null && (
+        <div className="mt-px mb-1.5">
+          {OTHER_ASSET_SECTIONS.map((item) => (
+            <RailItem
+              key={item.id}
+              label={item.label}
+              icon={SECTION_ICONS[item.id]}
+              indent
+              active={section === item.id}
+              title={item.description}
+              onClick={() => selectSection(item.id)}
+            />
+          ))}
+        </div>
+      )}
+    </>
+  );
+
   return (
-    <AppLayout>
+    <AppLayout mobileDrawer={isCompact ? <div className="py-1">{railContent}</div> : undefined}>
       <div className="h-full flex flex-col overflow-hidden">
-        {/* ===== 页头（demo .main-header）：两种视图共用一个 ===== */}
-        <div className="shrink-0 flex items-baseline gap-3.5 px-6 pt-4 pb-1 flex-wrap">
+        <div className={cn('shrink-0 flex items-center gap-2.5 pt-4 pb-1 flex-wrap', isMobile ? 'px-3' : 'px-6')}>
           <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">附属库</h1>
           {showCounts && (
             <span className="text-[11px] text-[color:var(--text-muted)]">
@@ -290,6 +385,36 @@ const AssetLibrary = () => {
           <HelpCard>
             世界书、正则规则集的收藏馆。这里入库的资产可以在角色页「关联资产」里被引用；对共享资产的修改会生成派生副本，不影响别的角色。点卡片进入对应工具编辑。「其他资产」是从 SillyTavern 归档过来的扩展、快速回复、人设和媒体，只读。预设通过主导航的「预设库」管理。
           </HelpCard>
+          {tab !== null && (
+            <div className="relative w-44 sm:w-56">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <Input
+                ref={searchInputRef}
+                aria-label={`搜索${meta.label}`}
+                placeholder={`搜索${meta.label}或关联角色…`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (searchQuery) setSearchQuery('');
+                    else searchInputRef.current?.blur();
+                  }
+                }}
+                className="pl-8 pr-7 h-8 text-xs"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  aria-label="清空搜索"
+                  onClick={() => setSearchQuery('')}
+                  className="tap-target absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
           <span className="flex-1" />
           {tab === null ? (
             <ReadOnlyBadge />
@@ -317,6 +442,28 @@ const AssetLibrary = () => {
                   </Button>
                 </>
               )}
+              {tab === 'regex' && (
+                <>
+                  <input
+                    ref={regexInputRef}
+                    id="asset-library-regex-import"
+                    type="file"
+                    accept=".json,application/json"
+                    className="sr-only"
+                    onChange={handleRegexImport}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="self-center"
+                    aria-label="导入正则"
+                    onClick={() => regexInputRef.current?.click()}
+                  >
+                    <Download className="w-4 h-4 mr-1.5" />
+                    导入正则
+                  </Button>
+                </>
+              )}
               <Button size="sm" className="self-center" onClick={() => navigate(meta.toolPath)}>
                 <Plus className="w-4 h-4 mr-1.5" />
                 打开{meta.toolLabel}
@@ -325,53 +472,34 @@ const AssetLibrary = () => {
           )}
         </div>
 
+        {isCompact && (
+          <div className={cn('shrink-0 flex items-center gap-1.5 overflow-x-auto py-2 border-b border-[color:var(--hairline-inner)] scrollbar-thin', isMobile ? 'px-3' : 'px-6')}>
+            <FilterChip label="世界书" count={showCounts ? counts.worldbook : undefined} active={tab === 'worldbook'} onClick={() => selectTab('worldbook')} />
+            <FilterChip label="正则" count={showCounts ? counts.regex : undefined} active={tab === 'regex'} onClick={() => selectTab('regex')} />
+            <FilterChip label="其他资产" active={tab === null && section === 'overview'} onClick={() => selectSection('overview')} />
+            {tab === null && section !== 'overview' && (
+              <FilterChip label="← 返回其他资产概览" active onClick={() => selectSection('overview')} />
+            )}
+          </div>
+        )}
+
         {/* ===== 内容区：类别侧栏 + 正文 ===== */}
         <div className="flex-1 min-h-0 flex">
-          <aside
-            className="w-[var(--filter-side-width)] shrink-0 overflow-y-auto scrollbar-thin py-3 pl-6 pr-2.5 border-r border-[color:var(--hairline-inner)]"
-            aria-label="资产类别"
-          >
-            {(Object.keys(TAB_META) as AssetTab[]).map((t) => (
-              <RailItem
-                key={t}
-                label={TAB_META[t].label}
-                icon={TAB_META[t].icon}
-                count={showCounts ? counts[t] : undefined}
-                active={t === tab}
-                onClick={() => selectTab(t)}
-              />
-            ))}
-            <RailItem
-              label="其他资产"
-              icon={Layers}
-              active={tab === null}
-              title="从 SillyTavern 归档过来的扩展、快速回复、人设和媒体（只读）"
-              onClick={() => selectSection('overview')}
-            />
-            {/* 子分类只在选中「其他资产」时展开：另外两种类别下面挂七条无关项只是噪音 */}
-            {tab === null && (
-              <div className="mt-px mb-1.5">
-                {OTHER_ASSET_SECTIONS.map((item) => (
-                  <RailItem
-                    key={item.id}
-                    label={item.label}
-                    icon={SECTION_ICONS[item.id]}
-                    indent
-                    active={section === item.id}
-                    title={item.description}
-                    onClick={() => selectSection(item.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </aside>
+          {!isCompact && (
+            <aside
+              className="w-[var(--filter-side-width)] shrink-0 overflow-y-auto scrollbar-thin py-3 pl-6 pr-2.5 border-r border-[color:var(--hairline-inner)]"
+              aria-label="资产类别"
+            >
+              {railContent}
+            </aside>
+          )}
 
           {tab === null ? (
-            <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto scrollbar-thin px-6 py-3">
+            <div className={cn('flex-1 min-w-0 min-h-0 flex flex-col overflow-y-auto scrollbar-thin py-3', isMobile ? 'px-3' : 'px-6')}>
               <OtherAssetsBrowser />
             </div>
           ) : (
-          <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin px-6 py-3">
+          <div className={cn('flex-1 min-w-0 overflow-y-auto scrollbar-thin py-3', isMobile ? 'px-3' : 'px-6')}>
             {/* 筛选首行：状态 + 来源。原来在左栏，现在和类别导航分开。 */}
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mb-3.5 pb-3 border-b border-[color:var(--border-normal)]">
               <span className="text-[11px] tracking-[1.5px] text-[color:var(--text-muted)] mr-0.5">状态</span>
@@ -398,7 +526,7 @@ const AssetLibrary = () => {
               </div>
             )}
             {loading ? (
-              <p className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</p>
+              <AssetGridSkeleton count={isMobile ? 3 : 6} />
             ) : loadError ? (
               <div className="flex flex-col items-center justify-center py-20 text-center gap-3" data-asset-library-load-error>
                 <p className="text-sm text-destructive">读取资产库失败：{loadError}</p>
@@ -417,9 +545,22 @@ const AssetLibrary = () => {
                 </Button>
               </div>
             ) : filtered.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">没有符合当前筛选的{meta.label}</p>
+              <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
+                <p className="text-sm text-muted-foreground">没有符合当前筛选的{meta.label}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRefFilter('all');
+                    setSourceFilter('all');
+                    setSearchQuery('');
+                  }}
+                >
+                  清除筛选
+                </Button>
+              </div>
             ) : (
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-3 content-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 content-start">
                 {filtered.map((a) => {
                   const refs = refNames[a.id] ?? [];
                   return (
@@ -483,15 +624,15 @@ const AssetLibrary = () => {
                       {/* 统计行（demo .a-stats-row） */}
                       <div className="flex gap-3 py-2 border-y border-[color:var(--hairline-inner)]">
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[9.5px] tracking-wide text-[color:var(--text-muted)]">{meta.unit}</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">{meta.unit}</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{a.itemCount}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[9.5px] tracking-wide text-[color:var(--text-muted)]">引用角色</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">引用角色</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{refLoadFailed ? '—' : refs.length}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[9.5px] tracking-wide text-[color:var(--text-muted)]">STE 最后修改</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">最后修改</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">
                             {new Date(a.updatedAt).toLocaleDateString('zh-CN')}
                           </span>
@@ -503,7 +644,7 @@ const AssetLibrary = () => {
                         </p>
                       )}
                       {/* 绑定关系（demo .a-bindings） */}
-                      <div className="flex items-center gap-1.5 flex-wrap text-[10.5px] text-[color:var(--text-muted)] min-h-5">
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-[color:var(--text-muted)] min-h-5">
                         <Link2 className="w-3 h-3 shrink-0" />
                         {refs.length === 0 ? (
                           <span>{refLoadFailed ? '引用状态暂未读出' : '未被角色引用'}</span>
