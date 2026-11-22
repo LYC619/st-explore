@@ -235,7 +235,7 @@ async function stageCopy(fs: VaultFs, value: Snapshot, directory: string, check:
       assert(!(await fs.stat(full)).exists, '副本暂存文件已存在，已停止以免覆盖');
       written.push(full); check(); await fs.writeText(full, text);
     }
-    for (const [path, text] of expected) assert(await fs.readText(directory + '/' + path) === text, '副本暂存文件校验失败');
+    for (const [path, text] of expected) assert(await fs.readText(directory + '/' + path) === text, '复制故事时写入的文件内容不一致，原故事未受影响，请重试一次');
     check();
     return cleanup;
   } catch (error) {
@@ -254,9 +254,9 @@ export async function duplicateArchiveStory(storyId: string): Promise<ArchiveSto
   const check = () => assert(current(), '文件库已切换，故事复制已停止');
   const release = acquireStoryMaintenance(storyId);
   try {
-    const initial = await stories.get(storyId); check(); assert(initial, '故事不存在');
+    const initial = await stories.get(storyId); check(); assert(initial, '找不到要复制的故事（可能已被移除），请刷新故事列表后再试');
     const perform = () => operations.enqueue(String(epoch), () => withArchiveStoryLock(storyId, async () => {
-      check(); const story = await stories.get(storyId); assert(story, '故事不存在');
+      check(); const story = await stories.get(storyId); assert(story, '找不到要复制的故事（可能已被移除），请刷新故事列表后再试');
       assert(story.characterId === initial.characterId, '故事归属已改变，请重新复制');
       const run = async () => {
         check();
@@ -277,7 +277,7 @@ export async function duplicateArchiveStory(storyId: string): Promise<ArchiveSto
         while (titles.has(title)) title = `${base} ${number++}`;
         const copy = cloneSnapshot(source, title); check();
         if (vault) {
-          assert(vault.publishStoryDirectory, '当前文件库不支持完整故事发布');
+          assert(vault.publishStoryDirectory, '当前文件库暂不支持复制完整故事，请在「设置 → 数据与备份」检查文件库状态后再试');
           const directory = `.ste-control/story-packages/${digest(copy.story.id)}/story`;
           const cleanup = await stageCopy(vault.fs, copy, directory, check);
           try { check(); await vault.publishStoryDirectory(copy.story.id, directory, current); }
@@ -293,7 +293,7 @@ export async function duplicateArchiveStory(storyId: string): Promise<ArchiveSto
             let failure: unknown;
             const unsubscribe = subscribeActiveVault(() => { if (!current()) { failure = new Error('文件库已切换，故事复制已取消'); try { tx.abort(); } catch { /* already settled */ } } });
             tx.oncomplete = () => { unsubscribe(); resolve(); };
-            tx.onabort = () => { unsubscribe(); reject(failure ?? tx.error ?? new Error('故事复制事务失败')); };
+            tx.onabort = () => { unsubscribe(); reject(failure ?? tx.error ?? new Error('复制故事时未能完成保存，原故事未受影响，请重试一次')); };
             tx.onerror = () => { failure ??= tx.error; };
             const request = tx.objectStore('archiveStories').get(storyId);
             request.onsuccess = () => {

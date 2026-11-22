@@ -51,6 +51,7 @@ export interface StoryPackageAdapterOptions { isCurrent?: () => boolean }
 
 const imports = new KeyedSerialQueue();
 const stores: Record<Kind, StoreName> = { story: 'archiveStories', character: 'characters', worldbook: 'worldbooks', preset: 'presets', regex: 'regexes' };
+const kindLabels: Record<Kind, string> = { story: '故事', character: '角色卡', worldbook: '世界书', preset: '预设', regex: '正则' };
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value);
 function assert(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
 // eslint-disable-next-line no-control-regex -- JSON identifiers and filenames must not contain control characters.
@@ -61,9 +62,9 @@ const stamp = (value: unknown) => typeof value === 'number' && Number.isFinite(v
 const keyOf = (kind: Kind, value: string) => stableJson([kind, value]);
 const versionOf = (value: unknown) => value === undefined ? null : digest(stableJson(value));
 function byteLength(text: string, maximum: number, description: string): number {
-  assert(text.length <= maximum, `${description}超过大小限制`);
+  assert(text.length <= maximum, `${description}体积超出安全上限，请确认选中的是 STE 故事包，或精简过大的内嵌图片后再试`);
   const size = new TextEncoder().encode(text).length;
-  assert(size <= maximum, `${description}超过大小限制`); return size;
+  assert(size <= maximum, `${description}体积超出安全上限，请确认选中的是 STE 故事包，或精简过大的内嵌图片后再试`); return size;
 }
 
 /** Validate the JSON tree before inspecting permissive ST extension fields. */
@@ -118,7 +119,7 @@ function validateRecord(kind: Kind, value: unknown) {
   if (kind === 'story') {
     session(value.session); markers(value.markers); refs(value.assets);
     assert(value.characterId === undefined || id(value.characterId), '故事包角色引用无效');
-    assert(object(value.meta) && strings(value.meta.modelsUsed) && (value.meta.playTimeMs === null || stamp(value.meta.playTimeMs)), '故事包元数据无效');
+    assert(object(value.meta) && strings(value.meta.modelsUsed) && (value.meta.playTimeMs === null || stamp(value.meta.playTimeMs)), '故事包里的统计记录格式异常，请重新导出故事包后再试');
     assert(value.branches === undefined || Array.isArray(value.branches), '故事包分支格式无效');
     const seen = new Set<string>();
     for (const branch of value.branches as unknown[] ?? []) {
@@ -201,7 +202,7 @@ function portablePng(base64: string, card: unknown): string {
     const length = view.getUint32(offset), end = offset + 12 + length;
     assert(end <= bytes.length, '故事包 PNG 数据截断');
     const type = String.fromCharCode(...bytes.slice(offset + 4, offset + 8));
-    assert(crc32(bytes.subarray(offset + 4, end - 4)) === view.getUint32(end - 4), '故事包 PNG 校验失败');
+    assert(crc32(bytes.subarray(offset + 4, end - 4)) === view.getUint32(end - 4), '故事包里的角色卡图片已损坏，请换一份完好的故事包导入');
     assert(offset !== 8 || type === 'IHDR' && length === 13, '故事包 PNG 缺少图像头');
     if (keep.has(type)) pieces.push(bytes.slice(offset, end));
     if (type === 'IDAT') data = true;
@@ -268,7 +269,7 @@ function validatePackage(value: unknown): asserts value is StoryPackage {
     assert(!omitted.length, '故事包包含凭据、本机路径或可执行插件包');
     if (entry.kind === 'character' && (entry.value as ArchiveCharacter).pngBase64) {
       const character = entry.value as ArchiveCharacter;
-      assert(portablePng(character.pngBase64!, character.card) === character.pngBase64, '故事包 PNG 元数据未清理或角色卡不匹配');
+      assert(portablePng(character.pngBase64!, character.card) === character.pngBase64, '故事包里的卡面与角色设定不一致，请从原库重新导出故事包');
     }
   }
   assert(pack.characters.length === (pack.story.characterId ? 1 : 0)
@@ -337,8 +338,9 @@ export function createStoryPackageAdapter(options: StoryPackageAdapterOptions = 
       const key = keyOf(kind, value.id), actual = state.records.get(key), prior = baseline?.records.get(key);
       const action: Action = actual === undefined ? prior === undefined ? 'create' : 'conflict'
         : versionOf(actual) === versionOf(value) ? 'identical' : 'conflict';
-      if (action === 'conflict') conflicts.push(`${kind}：${value.id} 已有不同内容或在预览后变化`);
-      return { kind, id: value.id, title: 'name' in value ? value.name : value.title, action };
+      const title = 'name' in value ? value.name : value.title;
+      if (action === 'conflict') conflicts.push(`${kindLabels[kind]}「${title || value.id}」在当前库中已有不同内容或预览后发生了变化，为免覆盖已暂停导入；请先处理本地同名冲突或切换到新文件库导入`);
+      return { kind, id: value.id, title, action };
     });
     const paths = new Set(value.files.map(file => file.path));
     const files = value.files.map(file => {
@@ -363,7 +365,7 @@ export function createStoryPackageAdapter(options: StoryPackageAdapterOptions = 
       const tx = db.transaction([...Object.values(stores), 'roleplayFiles'], 'readwrite');
       let failure: unknown, result: StoryPackageImportResult;
       const unsubscribe = subscribeActiveVault(() => { if (!current()) { failure = new Error('文件库已切换，故事包导入已取消'); try { tx.abort(); } catch { /* Already settled. */ } } });
-      const failed = () => { unsubscribe(); reject(failure ?? tx.error ?? new Error('故事包导入事务已取消')); };
+      const failed = () => { unsubscribe(); reject(failure ?? tx.error ?? new Error('故事包未能完成写入，当前库内原有数据未受影响，请重新选择故事包再试')); };
       tx.onabort = failed; tx.onerror = () => { failure ??= tx.error; };
       tx.oncomplete = () => { unsubscribe(); resolve(result); };
       const state: TargetState = { records: new Map(), files: new Map() }; let remaining = entries.length + 1;
@@ -441,10 +443,10 @@ export function createStoryPackageAdapter(options: StoryPackageAdapterOptions = 
     async exportStory(storyId: string): Promise<StoryPackageExport> {
       check(); assert(id(storyId), '故事身份无效');
       return withArchiveStoryLock(storyId, async () => {
-        check(); const story = await readRecord('story', storyId) as ArchiveStory | undefined; assert(story, '故事不存在');
+        check(); const story = await readRecord('story', storyId) as ArchiveStory | undefined; assert(story, '找不到要导出的故事（可能已被移除），请返回列表刷新后再试');
         return withCharacter(story.characterId, async () => {
           const characters: ArchiveCharacter[] = [];
-          if (story.characterId) { const card = await readRecord('character', story.characterId) as ArchiveCharacter | undefined; assert(card, '故事引用的角色不存在'); characters.push(card); }
+          if (story.characterId) { const card = await readRecord('character', story.characterId) as ArchiveCharacter | undefined; assert(card, '这篇故事绑定的角色卡已不在库中，请先在故事工作区重新绑定角色后再导出'); characters.push(card); }
           const omissions: StoryPackageOmission[] = [], files: StoryPackage['files'] = [], store = runtime(storyId);
           for (const path of await store.list()) {
             check();
@@ -454,7 +456,7 @@ export function createStoryPackageAdapter(options: StoryPackageAdapterOptions = 
           const assets: StoryPackage['assets'] = { worldbooks: [], presets: [], regexes: [] }, seen = new Set<string>();
           for (const ref of referencedAssets({ story, characters, files })) {
             const key = keyOf(ref.kind, ref.assetId); if (seen.has(key)) continue; seen.add(key);
-            const record = await readRecord(ref.kind, ref.assetId); assert(record, `故事引用的资产不存在：${ref.kind}/${ref.assetId}`); check();
+            const record = await readRecord(ref.kind, ref.assetId); assert(record, `这篇故事关联的${kindLabels[ref.kind]}已不在库中，请先前往角色详情的关联资产或故事工作区移除失效关联后再导出`); check();
             if (ref.kind === 'worldbook') assets.worldbooks.push(record as WorldBookItem);
             else if (ref.kind === 'preset') assets.presets.push(record as PresetItem); else assets.regexes.push(record as RegexCollectionItem);
           }
@@ -490,14 +492,14 @@ export function createStoryPackageAdapter(options: StoryPackageAdapterOptions = 
       });
     },
     async applyImport(preview: StoryPackagePreview): Promise<StoryPackageImportResult> {
-      check(); const stored = previews.get(preview); assert(stored, '请使用当前故事包适配器生成的预览');
+      check(); const stored = previews.get(preview); assert(stored, '导入预览已过期，请关闭窗口后重新选择 .ste-play 故事包文件');
       assert(!stored.conflicted, '故事包预览存在冲突，不能应用');
       const value = parseStoryPackage(JSON.stringify(stored.value));
       return imports.enqueue(String(epoch), () => withArchiveStoryLock(value.story.id, () => withCharacter(value.story.characterId, async () => {
         check(); const plan = allowed(value, await target(value), stored.target);
         if (![...plan.records, ...plan.files].some(item => item.action === 'create')) return { storyId: value.story.id, status: 'identical' };
         if (!vault) return applyBrowser(value, stored.target);
-        assert(vault.publishStoryDirectory && vault.publishPackageDependency, '当前文件库不支持故事包原子发布');
+        assert(vault.publishStoryDirectory && vault.publishPackageDependency, '当前文件库暂不支持直接导入完整故事包，请在左侧栏底部切换或新建客户端文件库后再试');
         const newStory = plan.records[0].action === 'create'; const staged = newStory ? await stage(value) : undefined;
         for (const entry of recordEntries(value).filter(entry => entry.kind !== 'story')) {
           const actual = await readRecord(entry.kind, entry.value.id); check();

@@ -80,7 +80,7 @@ export function QuickModelSwitcher({ value, onChange, disabled, busy, onManage, 
         <div className="flex items-center gap-2"><Button variant="ghost" size="sm" className="flex-1" disabled={!profiles.length} onClick={() => setCustomOpen(current => !current)}><Plus className="h-3.5 w-3.5 mr-1" />自定义模型</Button>
           <Button variant="ghost" size="sm" className="flex-1" onClick={() => { setOpen(false); if (onManage) onManage(); else { saveSettingsSection('ai'); navigate('/settings'); } }}><Settings2 className="h-3.5 w-3.5 mr-1" />管理服务</Button></div>
         {customOpen && <div className="rounded-md border border-border p-2 space-y-2">
-          <select aria-label="自定义模型所属服务" className="h-8 w-full rounded border border-input bg-background px-2 text-xs" value={customTarget?.id ?? ''} onChange={event => setCustomProfile(event.target.value)}>
+          <select aria-label="自定义模型所属服务" className="ste-select h-8 w-full text-xs" value={customTarget?.id ?? ''} onChange={event => setCustomProfile(event.target.value)}>
             {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
           </select>
           <Input aria-label="自定义模型名称" value={customModel} onChange={event => setCustomModel(event.target.value)} placeholder="填写服务要求的完整模型 ID" />

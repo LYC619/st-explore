@@ -5,16 +5,16 @@ import type { NormalizedPreset } from '@/types/preset';
 
 /** 工具型 / 格式型字段（顶层字符串字段），配置数组驱动，易扩展 */
 const UTILITY_FIELDS: { key: string; label: string; desc?: string }[] = [
-  { key: 'impersonation_prompt', label: '替身（Impersonation）提示词', desc: 'AI 替用户发言时的指令' },
+  { key: 'impersonation_prompt', label: '代回 / 替身提示词', desc: '让 AI 代替你（玩家视角）发言时的引导指令' },
   { key: 'new_chat_prompt', label: '新对话提示词' },
   { key: 'new_group_chat_prompt', label: '新群聊提示词' },
   { key: 'new_example_chat_prompt', label: '新示例对话提示词' },
   { key: 'continue_nudge_prompt', label: '续写引导提示词' },
   { key: 'group_nudge_prompt', label: '群聊引导提示词' },
-  { key: 'wi_format', label: '世界书格式（wi_format）', desc: '世界书条目注入时的包裹格式' },
-  { key: 'scenario_format', label: '场景格式（scenario_format）' },
-  { key: 'personality_format', label: '性格格式（personality_format）' },
-  { key: 'assistant_prefill', label: '助手预填充（assistant_prefill）' },
+  { key: 'wi_format', label: '世界书注入格式', desc: '世界书条目触发注入时的包裹格式' },
+  { key: 'scenario_format', label: '场景包裹格式' },
+  { key: 'personality_format', label: '性格包裹格式' },
+  { key: 'assistant_prefill', label: '回复开头预填（防空回引导词）' },
 ];
 
 interface PresetUtilityFieldsProps {

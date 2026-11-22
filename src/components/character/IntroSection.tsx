@@ -187,7 +187,7 @@ export function IntroSection({ character, norm, onPatch }: IntroSectionProps) {
           )}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">这张卡没有 Description，可以用 AI 从其他字段生成一份档案简介。</p>
+        <p className="text-xs text-muted-foreground">这张卡还没有填写人设描述，可以用 AI 根据卡内其他设定整理一份角色简介。</p>
       )}
 
       {/* 状态行 + 操作 */}

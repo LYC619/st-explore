@@ -50,7 +50,7 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
   }, [testId, testInput, rules, testDepth, testAsUser]);
 
   if (rules.length === 0) {
-    return <p className="text-sm text-muted-foreground text-center py-8">该预设没有内嵌正则脚本（extensions.regex_scripts）</p>;
+    return <p className="text-sm text-muted-foreground text-center py-8">这份预设没有随附内嵌正则规则</p>;
   }
 
   return (

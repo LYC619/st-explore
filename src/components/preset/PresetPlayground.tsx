@@ -20,7 +20,7 @@ import type { ChatCompletionMessage } from '@/lib/llm';
 
 interface TrialMessage extends ChatCompletionMessage { id: string; model?: string; state?: 'pending' | 'done' | 'stopped' | 'error' }
 interface Choice { id: string; title: string }
-const selectClass = 'w-full min-w-0 rounded-md border border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-2 py-2 text-sm';
+const selectClass = 'ste-select h-9 w-full min-w-0 text-sm';
 
 /** Local to this mounted version and vault: there is no role/story creation or persistence path. */
 export function PresetPlayground({ presetId }: { presetId: string }) {

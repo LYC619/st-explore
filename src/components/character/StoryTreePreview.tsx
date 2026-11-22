@@ -78,7 +78,7 @@ export function StoryTreePreview({
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs gap-1"
+                className="text-xs gap-1"
                 onClick={() => onJumpToFloor(floorHint)}
               >
                 <LocateFixed className="h-3 w-3" />

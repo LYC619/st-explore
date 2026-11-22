@@ -132,16 +132,16 @@ export function CharacterCardEditor({ card, edits, onEditChange, onLoadFile, por
               <div className="space-y-4">
                 {/* 基本信息：单行字段 */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <EditableField icon={IdCard} label="名称 (name)" value={edits.name} onChange={(v) => onEditChange('name', v)} multiline={false} />
-                  <EditableField icon={IdCard} label="昵称 (nickname)" value={edits.nickname} onChange={(v) => onEditChange('nickname', v)} multiline={false} />
-                  <EditableField icon={User} label="作者 (creator)" value={edits.creator} onChange={(v) => onEditChange('creator', v)} multiline={false} />
-                  <EditableField icon={Info} label="版本 (character_version)" value={edits.characterVersion} onChange={(v) => onEditChange('characterVersion', v)} multiline={false} />
+                  <EditableField icon={IdCard} label="角色名称" value={edits.name} onChange={(v) => onEditChange('name', v)} multiline={false} />
+                  <EditableField icon={IdCard} label="角色昵称" value={edits.nickname} onChange={(v) => onEditChange('nickname', v)} multiline={false} />
+                  <EditableField icon={User} label="卡师 / 作者" value={edits.creator} onChange={(v) => onEditChange('creator', v)} multiline={false} />
+                  <EditableField icon={Info} label="卡面版本" value={edits.characterVersion} onChange={(v) => onEditChange('characterVersion', v)} multiline={false} />
                 </div>
 
                 {/* 标签 */}
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                    <Tag className="w-3.5 h-3.5" /> 标签 (tags)
+                    <Tag className="w-3.5 h-3.5" /> 角色标签
                     <Button variant="ghost" size="icon" className="ml-1" onClick={() => addArrayItem('tags')} aria-label="添加标签">
                       <Plus className="w-3.5 h-3.5" />
                     </Button>
@@ -155,19 +155,19 @@ export function CharacterCardEditor({ card, edits, onEditChange, onLoadFile, por
                         </button>
                       </div>
                     ))}
-                    {edits.tags.length === 0 && <span className="text-xs text-muted-foreground">无标签</span>}
+                    {edits.tags.length === 0 && <span className="text-xs text-muted-foreground">暂无标签</span>}
                   </div>
                 </div>
 
-                <EditableField icon={User} label="描述 (description)" value={edits.description} onChange={(v) => onEditChange('description', v)} />
-                <EditableField icon={User} label="性格 (personality)" value={edits.personality} onChange={(v) => onEditChange('personality', v)} />
-                <EditableField icon={Info} label="场景 (scenario)" value={edits.scenario} onChange={(v) => onEditChange('scenario', v)} />
-                <EditableField icon={MessageSquare} label="开场白 (first_mes)" value={edits.firstMessage} onChange={(v) => onEditChange('firstMessage', v)} />
+                <EditableField icon={User} label="人设与外观" value={edits.description} onChange={(v) => onEditChange('description', v)} />
+                <EditableField icon={User} label="性格特质" value={edits.personality} onChange={(v) => onEditChange('personality', v)} />
+                <EditableField icon={Info} label="故事背景与舞台" value={edits.scenario} onChange={(v) => onEditChange('scenario', v)} />
+                <EditableField icon={MessageSquare} label="默认开场白" value={edits.firstMessage} onChange={(v) => onEditChange('firstMessage', v)} />
 
                 {/* 备选开场白（数组） */}
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-                    <MessageSquare className="w-3.5 h-3.5" /> 备选开场白 (alternate_greetings) · {edits.alternateGreetings.length}
+                    <MessageSquare className="w-3.5 h-3.5" /> 备选开场白 · {edits.alternateGreetings.length}
                     <Button variant="ghost" size="icon" className="ml-1" onClick={() => addArrayItem('alternateGreetings')} aria-label="添加备选开场白">
                       <Plus className="w-3.5 h-3.5" />
                     </Button>
@@ -182,17 +182,17 @@ export function CharacterCardEditor({ card, edits, onEditChange, onLoadFile, por
                   ))}
                 </div>
 
-                <EditableField icon={FileText} label="对话示例 (mes_example)" value={edits.messageExample} onChange={(v) => onEditChange('messageExample', v)} />
-                <EditableField icon={Sparkles} label="系统提示 (system_prompt)" value={edits.systemPrompt} onChange={(v) => onEditChange('systemPrompt', v)} />
-                <EditableField icon={Sparkles} label="历史后指令 (post_history_instructions)" value={edits.postHistoryInstructions} onChange={(v) => onEditChange('postHistoryInstructions', v)} />
-                <EditableField icon={FileText} label="作者备注 (creator_notes)" value={edits.creatorNotes} onChange={(v) => onEditChange('creatorNotes', v)} />
+                <EditableField icon={FileText} label="台词与文风示例" value={edits.messageExample} onChange={(v) => onEditChange('messageExample', v)} />
+                <EditableField icon={Sparkles} label="扮演守则（卡内系统提示）" value={edits.systemPrompt} onChange={(v) => onEditChange('systemPrompt', v)} />
+                <EditableField icon={Sparkles} label="楼层尾随提醒（防跑偏指令）" value={edits.postHistoryInstructions} onChange={(v) => onEditChange('postHistoryInstructions', v)} />
+                <EditableField icon={FileText} label="作者手记与游玩说明" value={edits.creatorNotes} onChange={(v) => onEditChange('creatorNotes', v)} />
 
                 {/* 内嵌世界书（只读，编辑请用世界书编辑器） */}
                 {bookEntries.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                       <BookOpen className="w-3.5 h-3.5" />
-                      内嵌世界书 (character_book) · {bookEntries.length} 条（只读，导出时原样保留）
+                      随卡附带世界书 · {bookEntries.length} 条（只读，导出角色卡时原样保留）
                       {onStashWorldBook && (
                         <Button
                           variant="outline"
@@ -231,7 +231,7 @@ export function CharacterCardEditor({ card, edits, onEditChange, onLoadFile, por
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
                       <Regex className="w-3.5 h-3.5" />
-                      内嵌正则 (regex_scripts) · {regexCount} 条（导出时原样保留）
+                      随卡附带正则 · {regexCount} 条（导出角色卡时原样保留）
                       {onStashRegex && (
                         <Button
                           variant="outline"

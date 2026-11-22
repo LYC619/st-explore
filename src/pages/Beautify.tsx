@@ -51,7 +51,7 @@ export default function Beautify() {
   const dirty = templateDirty || frontendDirty;
   const blocker = useBlocker(() => (dirty || saving) && !allowNavigationRef.current);
   const currentStory = stories.find(story => story.id === storyId);
-  const showError = (error: unknown) => toast({ title: '操作未完成', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+  const showError = (error: unknown) => toast({ title: '未能完成保存或载入', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
 
   useEffect(() => subscribeActiveVault(() => {
     setSavedSignature('');
@@ -137,10 +137,10 @@ export default function Beautify() {
   const importFile = async (file: File) => {
     const epoch = getVaultEpoch(), target = storyId + ':' + branchId;
     try {
-      if (file.size > 4 * 1024 * 1024) throw new Error('脚本文件不能超过 4 MiB');
+      if (file.size > 4 * 1024 * 1024) throw new Error('脚本文件超过 4 MB 上限，请确认选中的是酒馆助手脚本 JSON，而非整包压缩档');
       const scripts = importHelperScripts(JSON.parse(await file.text()));
       if (epoch !== getVaultEpoch() || target !== contextRef.current) return;
-      if (scripts.some(script => ['ste-beautify-status', 'ste-beautify-mvu'].includes(script.id))) throw new Error('脚本 ID 与内置美化模板冲突');
+      if (scripts.some(script => ['ste-beautify-status', 'ste-beautify-mvu'].includes(script.id))) throw new Error('这份脚本与内置状态栏模板重名冲突；如需挂载外部完整状态栏，请切换到「成品前端」页签添加');
       setImports(previous => [...previous, ...scripts]);
     } catch (error) { showError(error); }
   };
@@ -179,10 +179,10 @@ export default function Beautify() {
               <div className="flex items-center justify-between"><h2 className="font-serif font-medium text-[color:var(--text-primary)]">简易状态栏</h2><Switch aria-label="启用状态栏" checked={config.statusEnabled} onCheckedChange={statusEnabled => setConfig(c => ({ ...c, statusEnabled }))} /></div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5"><Label htmlFor="beautify-mode">展示位置</Label><select id="beautify-mode" className={selectClass + ' w-full'} value={config.mode} onChange={e => setConfig(c => ({ ...c, mode: e.target.value as BeautifyConfig['mode'] }))}><option value="inline">输入框上方</option><option value="floating">右上悬浮小窗</option></select></div>
-                <div className="space-y-1.5"><Label htmlFor="beautify-source">数值读取来源</Label><select id="beautify-source" className={selectClass + ' w-full'} value={config.source} onChange={e => setConfig(c => ({ ...c, source: e.target.value as BeautifyConfig['source'] }))}><option value="message">最近一楼角色状态（stat_data）</option><option value="chat">整场聊天全局变量</option></select></div>
+                <div className="space-y-1.5"><Label htmlFor="beautify-source">数值读取来源</Label><select id="beautify-source" className={selectClass + ' w-full'} value={config.source} onChange={e => setConfig(c => ({ ...c, source: e.target.value as BeautifyConfig['source'] }))}><option value="message">最近一楼的角色状态</option><option value="chat">整场聊天全局变量</option></select></div>
               </div>
               <div className="flex gap-3"><div className="flex-1 space-y-1.5"><Label htmlFor="beautify-title">面板标题</Label><Input id="beautify-title" value={config.title} onChange={e => setConfig(c => ({ ...c, title: e.target.value }))} /></div>
-                <div className="space-y-1.5"><Label htmlFor="beautify-color">点缀色</Label><Input id="beautify-color" type="color" className="h-10 w-16 cursor-pointer rounded-lg border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-1" value={config.color} onChange={e => setConfig(c => ({ ...c, color: e.target.value }))} /></div></div>
+                <div className="space-y-1.5"><Label htmlFor="beautify-color">点缀色</Label><Input id="beautify-color" type="color" className="w-16 cursor-pointer rounded-lg border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-1" value={config.color} onChange={e => setConfig(c => ({ ...c, color: e.target.value }))} /></div></div>
               <div className="space-y-1.5"><Label htmlFor="beautify-fields">状态栏条目</Label><Textarea id="beautify-fields" rows={5} value={fields} onChange={e => setFields(e.target.value)} className="font-mono text-sm" />
                 <p className="text-xs text-[color:var(--text-muted)]">每行写一条“显示名称 | 变量路径”，例如“好感度 | 角色.好感度”。</p></div>
             </section>

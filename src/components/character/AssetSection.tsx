@@ -435,12 +435,12 @@ export function AssetSection({
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {(embeddedSummary.bookEntries > 0 || embeddedSummary.regexCount > 0) && (
-              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => void handleReadEmbedded()}>
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => void handleReadEmbedded()}>
                 提取到资产库
               </Button>
             )}
             {embeddedSummary.scriptCount > 0 && (
-              <Button variant="ghost" size="sm" className="h-7 text-xs text-brand" onClick={() => navigate('/beautify')}>
+              <Button variant="ghost" size="sm" className="text-xs text-brand" onClick={() => navigate('/beautify')}>
                 前往美化页
               </Button>
             )}

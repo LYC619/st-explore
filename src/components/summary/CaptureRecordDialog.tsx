@@ -25,14 +25,14 @@ export function CaptureRecordDialog({ storyId, branchId, messageId, initialConte
     let active = true;
     void (async () => {
       await beforeSave?.(); const story = await getArchiveStory(storyId);
-      if (!story) throw new Error('来源故事不存在');
-      const line = getBranchLine(story, branchId); if (!line) throw new Error('来源分支不存在');
+      if (!story) throw new Error('找不到对应的故事（可能已被移动或删除），请关闭窗口后刷新页面重试');
+      const line = getBranchLine(story, branchId); if (!line) throw new Error('找不到对应的故事支线，请关闭窗口后重新打开主线或有效支线');
       if (!active || getVaultEpoch() !== epoch.current) return;
       setHasCharacter(!!story.characterId);
       setStoryTitle(`${story.title} · ${branchId ? story.branches?.find(branch => branch.id === branchId)?.name : '主线'}`);
       if (sourceId) { const floor = line.session.messages.findIndex(message => message.id === sourceId);
-        if (floor < 0) throw new Error('来源消息不存在'); setSource({ floor, text: line.session.messages[floor].content }); }
-    })().catch(error => { if (active) setError(String(error)); });
+        if (floor < 0) throw new Error('找不到要收录的那一楼消息，请关闭窗口后重新选择楼层'); setSource({ floor, text: line.session.messages[floor].content }); }
+    })().catch(error => { if (active) setError(error instanceof Error ? error.message : String(error)); });
     return () => { active = false; };
   }, [storyId, branchId, sourceId, beforeSave]);
   const save = async (keepOpen: boolean) => {
@@ -40,7 +40,7 @@ export function CaptureRecordDialog({ storyId, branchId, messageId, initialConte
     pending.current = true; setBusy(true); setError('');
     try {
       if (epoch.current !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
-      if (sourceId && !source) throw new Error('来源尚未载入');
+      if (sourceId && !source) throw new Error('故事内容还在读取中，请稍候片刻再点保存');
       await beforeSave?.();
       if (epoch.current !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开');
       if (kind !== 'note' && (start.trim() || end.trim()) && (!/^\d+$/.test(start) || !/^\d+$/.test(end))) throw new Error('请填写完整覆盖范围，或两端均留空');
@@ -58,7 +58,7 @@ export function CaptureRecordDialog({ storyId, branchId, messageId, initialConte
   return <Dialog open onOpenChange={open => { if (!open && !pending.current) onClose(); }}><DialogContent className="w-[calc(100vw-2rem)] max-w-4xl max-h-[90dvh] overflow-y-auto">
     <DialogHeader><DialogTitle>{messageId ? '收录' : `手动录入${initialKind === 'diary' ? '日记' : '总结'}`}</DialogTitle>
       <DialogDescription>{storyTitle || '正在读取来源…'}{source ? ` · 收录自第 ${source.floor} 楼` : ''}。{kind === 'note' ? '保存到当前绑定角色的备注。' : '覆盖范围可单独指定。'}</DialogDescription></DialogHeader>
-    <label className="space-y-1 text-sm">记录类型<select aria-label="记录类型" value={kind} disabled={busy} className="w-full rounded-md border bg-background p-2" onChange={event => setKind(event.target.value as SummaryKind | 'note')}>
+    <label className="space-y-1 text-sm">记录类型<select aria-label="记录类型" value={kind} disabled={busy} className="ste-select h-9 w-full text-sm" onChange={event => setKind(event.target.value as SummaryKind | 'note')}>
       <option value="volume">总结</option><option value="diary">日记</option><option value="note" disabled={!hasCharacter}>备注{!hasCharacter ? "（需先绑定角色）" : ""}</option>
     </select></label>
     <Input aria-label="记录标题" placeholder="标题（留空自动命名）" value={title} disabled={busy} onChange={event => setTitle(event.target.value)} />

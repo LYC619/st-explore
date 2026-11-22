@@ -32,11 +32,11 @@ export function MoveStoryRecordDialog({ record, kind, stories, characterId, onCl
   return <Dialog open onOpenChange={value => { if (!value && !pending.current) onClose(); }}><DialogContent>
     <DialogHeader><DialogTitle>移动到其他故事</DialogTitle>
       <DialogDescription>移动“{record.title}”。只列当前角色的其他故事；正文与原始来源保留，目标脉络需重新选择。</DialogDescription></DialogHeader>
-    <label className="space-y-1 text-sm">目标故事<select aria-label="目标故事" className="w-full rounded-md border bg-background p-2" value={targetId} disabled={busy || stale}
+    <label className="space-y-1 text-sm">目标故事<select aria-label="目标故事" className="ste-select h-9 w-full text-sm" value={targetId} disabled={busy || stale}
       onChange={event => { setTargetId(event.target.value); setBranchId(''); }}>
       <option value="">请选择故事</option>{targets.map(story => <option key={story.id} value={story.id}>{story.title}</option>)}
     </select></label>
-    {target && <label className="space-y-1 text-sm">目标脉络<select aria-label="目标脉络" className="w-full rounded-md border bg-background p-2" value={branchId} disabled={busy || stale} onChange={event => setBranchId(event.target.value)}>
+    {target && <label className="space-y-1 text-sm">目标脉络<select aria-label="目标脉络" className="ste-select h-9 w-full text-sm" value={branchId} disabled={busy || stale} onChange={event => setBranchId(event.target.value)}>
       <option value="">主线</option>{target.branches?.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}
     </select></label>}
     {!targets.length && <p className="text-sm text-muted-foreground">当前角色还没有其他故事。</p>}

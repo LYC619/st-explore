@@ -390,6 +390,7 @@ const AssetLibrary = () => {
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
+                size="sm"
                 aria-label={`搜索${meta.label}`}
                 placeholder={`搜索${meta.label}或关联角色…`}
                 value={searchQuery}
@@ -401,7 +402,7 @@ const AssetLibrary = () => {
                     else searchInputRef.current?.blur();
                   }
                 }}
-                className="pl-8 pr-7 h-8 text-xs"
+                className="pl-8 pr-7 text-xs"
               />
               {searchQuery && (
                 <button
@@ -632,7 +633,7 @@ const AssetLibrary = () => {
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{refLoadFailed ? '—' : refs.length}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">最后修改</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">STE 最后修改</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">
                             {new Date(a.updatedAt).toLocaleDateString('zh-CN')}
                           </span>

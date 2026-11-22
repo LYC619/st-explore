@@ -153,7 +153,7 @@ const StoryWorkspace = () => {
     if (!story || !saverRef.current.isDirty()) return;
     const t = setTimeout(() => {
       void saverRef.current.flush().catch((error: unknown) => {
-        toast({
+        toastRef.current({
           title: '保存故事未成功',
           description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
           variant: 'destructive',
@@ -161,7 +161,7 @@ const StoryWorkspace = () => {
       });
     }, 600);
     return () => clearTimeout(t);
-  }, [story, toast]);
+  }, [story]);
   useEffect(() => () => {
     void saverRef.current.flush().catch((error: unknown) => {
       toastRef.current({
@@ -228,7 +228,7 @@ const StoryWorkspace = () => {
           setStory(null);
           const msg = error instanceof Error ? error.message : '请检查文件库目录是否可读后重试';
           setLoadError(msg);
-          toast({
+          toastRef.current({
             title: '读取故事失败',
             description: msg,
             variant: 'destructive',
@@ -248,7 +248,7 @@ const StoryWorkspace = () => {
         });
       });
     };
-  }, [id, loadRetry, toast]);
+  }, [id, loadRetry]);
 
   // 同故事 id 下通过导航传入新的 branchId / sourceFloor 时原地定位，不重拉磁盘覆盖未保存草稿
   useEffect(() => {
@@ -752,7 +752,7 @@ const StoryWorkspace = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-8 gap-1 text-xs"
+                className="gap-1 text-xs"
                 disabled={playBusy}
                 onClick={() => { void runContinuePlay(); }}
               >
@@ -763,7 +763,7 @@ const StoryWorkspace = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-1 text-xs"
+                  className="gap-1 text-xs"
                   disabled={playBusy}
                   onClick={() => {
                     const msgId = line.session.messages[currentFloor]?.id ?? null;

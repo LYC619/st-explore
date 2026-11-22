@@ -85,9 +85,10 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     void saveBeforeExit().then(() => { if (worldRequestedRef.current) onRelease(); }).catch(() => { /* Retain iframe and existing save recovery controls. */ });
   }, [worldRequested, ready, status, saveFailed, saveBeforeExit, onRelease]);
 
+  const flushedForPark = useRef(false);
   const navigateToModule = useCallback(async (path: string) => {
     if (!generating.current) {
-      try { await saveBeforeExit(); } catch { return; }
+      try { await saveBeforeExit(); flushedForPark.current = true; } catch { return; }
     }
     navigate(path);
   }, [navigate, saveBeforeExit]);
@@ -102,7 +103,10 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     // while retaining the document; an in-progress generation must keep running.
     // World entry has its own readiness barrier; flushing before ST finishes
     // loading can reject saveSettings and strand the pending transition.
-    if (parked && !generating.current && !worldRequested) void saveBeforeExit().catch(() => {});
+    if (active) { flushedForPark.current = false; return; }
+    const alreadyFlushed = flushedForPark.current;
+    flushedForPark.current = false;
+    if (parked && !alreadyFlushed && !generating.current && !worldRequested) void saveBeforeExit().catch(() => {});
   }, [active, worldRequested, saveBeforeExit]);
 
   useEffect(() => {
@@ -242,7 +246,7 @@ export default function Roleplay({ id, branchId, fromChats, active, onRelease, t
     if (leaving) return;
     const destination = backDestination();
     if (!generating.current) {
-      try { await saveBeforeExit(); } catch { return; }
+      try { await saveBeforeExit(); flushedForPark.current = true; } catch { return; }
     }
     if (destination.kind === 'route') navigate(destination.path, { state: destination.state });
   }, [leaving, backDestination, navigate, saveBeforeExit]);

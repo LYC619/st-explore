@@ -158,7 +158,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
           title: scan.warnings.length ? '未发现可安全导入的内容' : '没有找到 ST 内容',
           description: scan.warnings.length
             ? `已跳过 ${scan.warnings.length} 项：${warningPaths}${scan.warnings.length > 3 ? '；…' : ''}`
-            : '该目录下没有 characters / chats / worlds 等内容，确认选的是 ST 目录？',
+            : '这个文件夹里没有找到角色卡、聊天记录或世界书，请重新定位到 SillyTavern 安装目录或用户目录（如 data/default-user）。',
           variant: 'destructive',
         });
         return;

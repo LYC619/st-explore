@@ -197,9 +197,9 @@ export default function ChatHub() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="chat-organizing-tag" className="text-xs text-[color:var(--text-muted)]">角色标签</label>
+          <label htmlFor="chat-organizing-tag" className="text-xs text-[color:var(--text-muted)]">标签筛选</label>
           <select id="chat-organizing-tag" value={selectedTag} disabled={loading || !!loadError}
-            className="ste-select h-9 min-w-36 text-sm"
+            className="ste-select h-11 min-w-40 text-sm"
             onChange={event => changeFilters({ tag: event.target.value })}>
             <option value="">全部标签</option>
             {tagOptions.map(tag => <option key={tag.raw} value={tag.raw}>{tag.label}</option>)}
@@ -219,7 +219,7 @@ export default function ChatHub() {
             <h3 className="font-serif text-base font-medium text-[color:var(--text-primary)]">{hasFilters ? '没有找到匹配的聊天' : '还没有开启过对话'}</h3>
             <p className="mt-1 text-sm text-[color:var(--text-muted)]">{hasFilters ? '试试换个关键词、切换标签，或清除筛选条件。' : '挑一张收藏馆里的角色卡，就能直接进入酒馆展开初遇。'}</p>
             <Button className="mt-4" variant="outline" onClick={() => (hasFilters ? changeFilters(defaultFilters) : newChat())}>
-              {hasFilters ? '清除筛选' : '选择角色开始'}
+              {hasFilters ? '显示全部聊天' : '选择角色开始'}
             </Button>
           </div>
           : <div className="divide-y divide-[color:var(--hairline-inner)] rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)]">

@@ -85,7 +85,7 @@ export function LibraryToolbar({
         ) : (
           <kbd
             aria-hidden="true"
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-block rounded border border-border/70 bg-muted/60 px-1 text-[10px] font-mono text-muted-foreground"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 hidden sm:inline-block rounded border border-border/70 bg-muted/60 px-1 text-[11px] font-mono text-muted-foreground"
           >
             /
           </kbd>

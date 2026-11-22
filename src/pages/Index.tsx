@@ -43,7 +43,7 @@ import {
   getDefaultExportSettings,
   saveSettings,
 } from '@/lib/session-storage';
-import { toast as globalToast, useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import {
   buildEditorChatPath,
   getEditorStoryId,
@@ -59,6 +59,8 @@ const Index = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
   const routeStoryId = searchParams.get('storyId');
   const routeBranchId = searchParams.get('branch') || null;
   const [showTour, setShowTour] = useState(false);
@@ -256,7 +258,7 @@ const Index = () => {
   useEffect(() => () => {
     if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current);
     void latestPersistRef.current().catch((error: unknown) => {
-      globalToast({
+      toastRef.current({
         title: '离开页面时保存暂存故事未成功',
         description: error instanceof Error ? error.message : '请回到聊天处理页检查最新改动',
         variant: 'destructive',
@@ -294,7 +296,11 @@ const Index = () => {
       toast({ title: '导入成功', description });
     } catch (error) {
       console.error('Auto-save failed:', error instanceof Error ? error.name : 'UnknownError');
-      toast({ title: '自动暂存失败', variant: 'destructive' });
+      toast({
+        title: '自动暂存失败',
+        description: '聊天已在当前页面打开，但未能写入本地库；请先点右上角「导出」留存备份，再检查磁盘空间或文件库权限。',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -376,7 +382,11 @@ const Index = () => {
       navigate(buildEditorChatPath(story.id) + (currentBranchId ? '&branch=' + encodeURIComponent(currentBranchId) : ''), { replace: true });
     } catch (error) {
       console.error('Bind failed:', error instanceof Error ? error.name : 'UnknownError');
-      toast({ title: '绑定失败', variant: 'destructive' });
+      toast({
+        title: '归入角色名下没成功',
+        description: '当前暂存对话并未丢失，请稍后重新点「绑定到角色」再试一次。',
+        variant: 'destructive',
+      });
     }
   };
 

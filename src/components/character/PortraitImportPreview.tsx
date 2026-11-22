@@ -36,7 +36,7 @@ export function PortraitImportPreview({ rows, character, disabled, onChange }: {
           onKeyDown={event => { if (event.key === 'Enter') onChange(row.id, {}, true); }} />
       </div>
     </div>
-    <label className="flex items-center gap-2 text-xs">目标分行<select aria-label={`第 ${row.line} 行目标分行`} className="min-w-0 rounded border bg-background p-1.5" value={row.rowId ?? ''} disabled={disabled}
+    <label className="flex items-center gap-2 text-xs">目标分行<select aria-label={`第 ${row.line} 行目标分行`} className="ste-select h-8 min-w-0 text-xs" value={row.rowId ?? ''} disabled={disabled}
       onChange={event => onChange(row.id, { rowId: event.target.value || null, manualRow: true })}><option value="">未分行</option>
       {row.rowId && !character.portraitRows?.some(item => item.id === row.rowId) && <option value={row.rowId}>原目标已删除</option>}
       {character.portraitRows?.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}

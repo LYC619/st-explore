@@ -272,7 +272,6 @@ export function GreetingsSection({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
                       disabled={activeIndex <= 0}
                       onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
                       aria-label="上一段开场白"
@@ -285,7 +284,6 @@ export function GreetingsSection({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7"
                       disabled={activeIndex >= allGreetings.length - 1}
                       onClick={() => setActiveIndex((i) => Math.min(allGreetings.length - 1, i + 1))}
                       aria-label="下一段开场白"
@@ -359,7 +357,7 @@ export function GreetingsSection({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 text-xs text-primary"
+                  className="text-xs text-primary"
                   disabled={startingGreetingIndex !== null}
                   onClick={() => onStartWithGreeting(0)}
                 >
@@ -393,7 +391,7 @@ export function GreetingsSection({
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-7 text-xs text-primary"
+                        className="text-xs text-primary"
                         disabled={startingGreetingIndex !== null}
                         onClick={() => onStartWithGreeting(index + 1)}
                       >
@@ -404,7 +402,7 @@ export function GreetingsSection({
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-[color:var(--text-muted)] hover:text-destructive"
+                      className="text-[color:var(--text-muted)] hover:text-destructive"
                       onClick={() =>
                         onEditChange('alternateGreetings', edits.alternateGreetings.filter((_, i) => i !== index))
                       }

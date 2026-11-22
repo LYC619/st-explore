@@ -293,7 +293,7 @@ export function ShareImage({
               background: `linear-gradient(135deg, ${previewColors.start}, ${previewColors.end})`,
             }}
           >
-            <div className="rounded-lg bg-[#fcf9f2]/95 px-4 py-3.5 text-[#241c15] shadow-sm">
+            <div className="rounded-lg bg-[rgba(252,249,242,0.95)] px-4 py-3.5 text-[rgba(36,28,21,1)] shadow-sm">
               <p className="font-serif text-xs leading-relaxed whitespace-pre-wrap line-clamp-6">
                 {cleanedText || '在下方输入想留念的台词或描写…'}
               </p>

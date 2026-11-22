@@ -20,11 +20,11 @@ export function captureRequest(body: unknown, secrets: string[] = [], limit = 51
     return safe;
   };
   function visit(item: unknown, depth: number): unknown {
-    if (++nodes > 12000 || depth > 32 || remaining <= 0) { truncated = true; return '…（快照截断）'; }
+    if (++nodes > 12000 || depth > 32 || remaining <= 0) { truncated = true; return '…（过长已省略）'; }
     remaining -= 8;
     if (typeof item === 'string') {
       const safe = scrub(item);
-      if (safe.length > remaining) { const clipped = safe.slice(0, Math.max(0, remaining)); remaining = 0; truncated = true; return clipped + '…（快照截断）'; }
+      if (safe.length > remaining) { const clipped = safe.slice(0, Math.max(0, remaining)); remaining = 0; truncated = true; return clipped + '…（过长已省略）'; }
       remaining -= safe.length; return safe;
     }
     if (item && typeof item === 'object') {
@@ -59,25 +59,25 @@ export function captureRequest(body: unknown, secrets: string[] = [], limit = 51
 
 export function importRequest(text: string, secrets: string[] = []): RequestSnapshot {
   if (text.length > 4 * 1024 * 1024) throw new Error('请求 JSON 不能超过 4 MiB');
-  let value: unknown; try { value = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error('不是有效的请求 JSON'); }
+  let value: unknown; try { value = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error('读取失败：粘贴或选中的内容不是完整 JSON，请从浏览器网络面板重新复制完整的请求正文后再试'); }
   let data = object(value);
   const entries = object(data?.log)?.entries;
   if (Array.isArray(entries)) {
     const bodies = entries.flatMap(entry => { const request = object(object(entry)?.request); const text = object(request?.postData)?.text;
       if (typeof text !== 'string') return []; try { const body = JSON.parse(text); return Array.isArray(body?.messages) ? [body] : []; } catch { return []; } });
-    if (bodies.length !== 1) throw new Error(`HAR 中找到 ${bodies.length} 个聊天请求，请只保留一个请求或复制其请求体 JSON`);
+    if (bodies.length !== 1) throw new Error(`HAR 中找到 ${bodies.length} 个聊天请求，请只保留一个请求或复制其实际请求 JSON`);
     data = bodies[0];
   } else {
     // STE exported snapshots and common request/body wrappers; headers are discarded.
     const wrapped = data?.body ?? object(data?.request)?.body ?? object(object(data?.request)?.postData)?.text ?? object(data?.postData)?.text;
-    if (wrapped !== undefined) { try { data = object(typeof wrapped === 'string' ? JSON.parse(wrapped) : wrapped); } catch { throw new Error('包装内的 body 不是有效 JSON'); } }
+    if (wrapped !== undefined) { try { data = object(typeof wrapped === 'string' ? JSON.parse(wrapped) : wrapped); } catch { throw new Error('读取失败：请求文件中的正文（body）格式不完整，请重新导出或复制完整请求 JSON'); } }
   }
   if (!Array.isArray(data?.messages) || data.messages.some(message => !object(message) || typeof object(message)?.role !== 'string')) {
-    throw new Error('请选择实际 Chat Completion 请求体（messages 与 role），不是预设文件');
+    throw new Error('请选择实际发出的对话请求 JSON（含 messages 与 role），不是预设文件');
   }
   const snapshot = captureRequest(data, secrets);
   // A previously truncated exported snapshot stays incomplete when imported.
-  if (object(value)?.complete === false) { snapshot.complete = false; snapshot.notes.push('导入文件原本就是不完整快照'); }
+  if (object(value)?.complete === false) { snapshot.complete = false; snapshot.notes.push('这份请求记录在导出时因超长做过省略，仅展示已保留的部分'); }
   return snapshot;
 }
 export function compareRequests(left: RequestSnapshot, right: RequestSnapshot) {

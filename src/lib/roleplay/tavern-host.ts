@@ -91,11 +91,11 @@ export async function createTavernHost(options: TavernHostOptions) {
   const [startup, assets, initialPreferences] = await Promise.all([
     (async () => {
       const story = await repos.stories.get(options.storyId);
-      if (!story) throw new Error('故事不存在');
-      if (options.branchId && !getBranchLine(story, options.branchId)) throw new Error('故事分支不存在');
+      if (!story) throw new Error('找不到这篇故事（可能已被移动或删除），请点左上角「返回聊天列表」重新选择');
+      if (options.branchId && !getBranchLine(story, options.branchId)) throw new Error('找不到这条故事支线，请点左上角「返回聊天列表」重新打开主线或其他支线');
       const branchId = resolveInitialBranchId(story, options.branchId);
       const line = getBranchLine(story, branchId);
-      if (!line) throw new Error('故事分支不存在');
+      if (!line) throw new Error('找不到这条故事支线，请点左上角「返回聊天列表」重新打开主线或其他支线');
       return { storyId: story.id, branchId, characterId: story.characterId, assets: story.assets, userName: line.session.user.name };
     })(), createRoleplayAssets({ ...repos, isCurrent }), getRoleplayPreferences(repos.meta),
   ]);
@@ -303,17 +303,17 @@ export async function createTavernHost(options: TavernHostOptions) {
       let prepared = prepareCompletion(auxiliary ? toolProfile() : mainProfile(), body);
       if (configuration.mode === 'agent' && !['quiet', 'impersonate'].includes(String(context.type))) {
         await runtime.resume();
-        if (context.worldHandled !== true || !Array.isArray(context.chat)) throw new Error('Agent 需要原始聊天与世界书的生成准备，请重新打开聊天');
+        if (context.worldHandled !== true || !Array.isArray(context.chat)) throw new Error('记忆管家还没拿到当前对话与世界书内容，请点左上角返回重进这场聊天后再试');
         const story = await repos.stories.get(locator.storyId);
         const current = story && getBranchLine(story, locator.branchId);
-        if (!current) throw new Error('生成目标不存在');
+        if (!current) throw new Error('当前故事或支线不存在，请返回聊天列表重新选择');
         const scope = Array.isArray(context.worldEntries) ? context.worldEntries as WorldScopeEntry[] : [];
         const result = await runtime.prepare(prepared, source, scope, controller.signal);
         prepared = result.prepared; turnId = result.turnId; processLog.agent(processId, turnId);
         if (typeof context.maxContext === 'number') {
           const estimate = Number(tokenizeTavern('/api/tokenizers/openai/count?model=' + encodeURIComponent(mainProfile().model), prepared.body.messages).token_count);
           const completion = Number(prepared.body.max_completion_tokens ?? prepared.body.max_tokens ?? 0);
-          if (estimate + completion > context.maxContext) throw new Error('本轮资料超出上下文预算，请提高上下文窗口或开启新上下文周期');
+          if (estimate + completion > context.maxContext) throw new Error('这轮带上的设定与记忆超出了模型单次阅读上限；请在「预设」里调大上下文长度，或在「玩法设置」里精简记忆后再试');
         }
       }
       if (!isCurrent() || selected.key !== locator.key) throw new Error('生成期间已切换故事');
@@ -476,7 +476,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           ] });
         }
         if (pathname === '/ste/story-package/export') {
-          if (generation || controllers.size) throw new Error('请先结束当前生成再导出故事');
+          if (generation || controllers.size) throw new Error('AI 正在回复中，请先点输入框旁的停止按钮或等本轮回复完成后再导出故事包');
           const output = await packageAdapter.exportStory(selected.storyId);
           return json({ result: await saveStoryPackageFile(output), fileName: output.fileName, omissions: output.package.omissions });
         }
@@ -486,7 +486,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           return json({ token, preview });
         }
         if (pathname === '/ste/story-package/import') {
-          if (generation || controllers.size) throw new Error('请先结束当前生成再导入故事');
+          if (generation || controllers.size) throw new Error('AI 正在回复中，请先点输入框旁的停止按钮或等本轮回复完成后再导入故事包');
           const preview = packagePreviews.get(String(body.token));
           if (!preview) throw new Error('导入预览已失效，请重新选择文件');
           const result = await packageAdapter.applyImport(preview); packagePreviews.delete(String(body.token));
@@ -494,7 +494,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/ste/open-story') {
           const id = String(body.storyId);
-          if (!await repos.stories.get(id)) throw new Error('故事不存在');
+          if (!await repos.stories.get(id)) throw new Error('找不到这篇故事（可能已被移动或删除），请返回聊天列表重新选择');
           options.onOpenStory?.(id); return json({});
         }
         if (pathname === '/ste/helpers' || pathname === '/ste/helpers/save' || pathname === '/ste/helpers/import') {
@@ -523,7 +523,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           helper: preferences.installedTavernHelper ? { version: preferences.installedTavernHelper.version } : null, helperSupported: HELPER_PIN });
         if (pathname === '/ste/extensions/helper/install') {
           if (generation || controllers.size) throw new Error('请等待生成结束后再安装插件');
-          if (!Array.isArray(body.bytes)) throw new Error('缺少插件 ZIP');
+          if (!Array.isArray(body.bytes)) throw new Error('没有读到插件压缩包，请重新选择完整的 .zip 文件后再试');
           const installedTavernHelper = readTavernHelperZip(new Uint8Array(body.bytes));
           await persistPreferences({ installedTavernHelper }); return json({ version: installedTavernHelper.version });
         }
@@ -534,7 +534,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         if (pathname === '/ste/extensions/helper/package') return json(preferences.installedTavernHelper ? validateTavernHelper(preferences.installedTavernHelper) : null);
         if (pathname === '/ste/extensions/install') {
           if (generation || controllers.size) throw new Error('请等待当前生成与后台请求结束后再安装插件');
-          if (!Array.isArray(body.bytes)) throw new Error('缺少插件 ZIP');
+          if (!Array.isArray(body.bytes)) throw new Error('没有读到插件压缩包，请重新选择完整的 .zip 文件后再试');
           const installedBaiBai = readBaiBaiZip(new Uint8Array(body.bytes));
           await persistPreferences({ installedBaiBai });
           return json({ version: installedBaiBai.version });
@@ -650,7 +650,7 @@ export async function createTavernHost(options: TavernHostOptions) {
         }
         if (pathname === '/ste/runtime/retry-memory') { await runtimeFor(selected).resume(true); return json({}); }
         if (pathname === '/ste/runtime/reset-context') {
-          if (generation) throw new Error('请先停止生成');
+          if (generation) throw new Error('AI 正在回复中，请先停止当前生成后再重置记录');
           await runtimeFor(selected).ledger.reset(); return json({});
         }
         if (pathname === '/ste/configuration') {
@@ -708,7 +708,7 @@ export async function createTavernHost(options: TavernHostOptions) {
             }
             return json(null);
           }
-          return json({ error: { message: `尚未接入的宿主命令：${String(body.command)}` } }, 501);
+          return json({ error: { message: '内置酒馆暂未开放这项功能（不影响正常对话与存档），如需使用可导出到原版 SillyTavern' } }, 501);
         }
         if (pathname.startsWith('/api/tokenizers/')) return json(tokenizeTavern(path, value));
         if (pathname === '/api/secrets/settings') return json({ allowKeysExposure: false });
@@ -825,7 +825,7 @@ export async function createTavernHost(options: TavernHostOptions) {
             throw new Error('角色不存在');
           }
           const avatarFile = object(body.avatar);
-          if (typeof avatarFile.size === 'number' && avatarFile.size > 0) throw new Error('请在 STE 角色库中更换卡面');
+          if (typeof avatarFile.size === 'number' && avatarFile.size > 0) throw new Error('内置酒馆暂不支持直接换头像，请点左上角返回后前往「角色库 → 角色详情 → 立绘」更换卡面');
           if (!isCurrent()) throw new Error('文件库已切换');
           // Embedded collections are authoritative; keep the card's exported copy synchronized.
           const incomingExtensions = object(object(body.data).extensions);
@@ -987,7 +987,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           await assets.deletePreset(String(body.name));
           return json({});
         }
-        return json({ error: { message: `尚未接入的酒馆接口：${pathname}` } }, 501);
+        return json({ error: { message: '内置酒馆暂未开放这项功能（不影响正常对话与存档），如需使用可导出到原版 SillyTavern' } }, 501);
       } catch (error) {
         if (signal?.aborted) throw error;
         const message = error instanceof Error ? error.message : String(error);

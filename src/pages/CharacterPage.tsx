@@ -656,7 +656,6 @@ const CharacterPage = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
                 disabled={!neighbors.prev}
                 onClick={() => neighbors.prev && void navigateWithGuard(`/character/${neighbors.prev.id}`)}
                 aria-label={neighbors.prev ? `上一张角色卡：${neighbors.prev.name}` : '已是第一张角色卡'}
@@ -670,7 +669,6 @@ const CharacterPage = () => {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7"
                 disabled={!neighbors.next}
                 onClick={() => neighbors.next && void navigateWithGuard(`/character/${neighbors.next.id}`)}
                 aria-label={neighbors.next ? `下一张角色卡：${neighbors.next.name}` : '已是最后一张角色卡'}

@@ -284,7 +284,7 @@ export function ReviewCharacterContent({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 text-xs gap-1"
+                    className="px-2 text-xs gap-1"
                     onClick={() => onJumpToRecordFloor(sid, bid, record.floorStart)}
                   >
                     <LocateFixed className="h-3 w-3" />

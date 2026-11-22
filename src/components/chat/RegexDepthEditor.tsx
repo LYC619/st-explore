@@ -24,7 +24,7 @@ function DepthEditor({ rule, onChange, readOnly }: { rule: RegexRule; onChange: 
     if (next === 'older') onChange({ minDepth: Math.max(count, 1), maxDepth: null });
   };
   return <div className="space-y-2">
-    <label className="block space-y-1 text-xs"><span>楼层范围</span><select aria-label="楼层范围" className="min-h-9 w-full rounded-md border border-input bg-background px-2 text-sm" value={mode} disabled={readOnly} onChange={event => changeMode(event.target.value as Mode)}>
+    <label className="block space-y-1 text-xs"><span>楼层范围</span><select aria-label="楼层范围" className="ste-select min-h-9 w-full text-sm" value={mode} disabled={readOnly} onChange={event => changeMode(event.target.value as Mode)}>
       <option value="all">全部楼层</option><option value="recent">最近 N 楼</option><option value="older">最近 N 楼以外</option><option value="custom">自定义深度</option>
     </select></label>
     {(mode === 'recent' || mode === 'older') && <label className="flex items-center gap-2 text-xs"><span className="shrink-0">最近楼层数</span><DepthNumberInput key={mode} label="最近楼层数" min={1} value={count} disabled={readOnly} onChange={n => { if (n !== null) onChange(mode === 'recent' ? { minDepth: null, maxDepth: n - 1 } : { minDepth: n, maxDepth: null }); }} /></label>}

@@ -92,7 +92,7 @@ function PresetSeriesCards({ items, selected, onSelect, batch, checked, onCheck,
             const repeated = versionLabels.filter(label => label === versionLabels[index]).length > 1;
             const label = `${versionLabels[index]}${repeated ? ` · 文件 ${versionLabels.slice(0, index + 1).filter(label => label === versionLabels[index]).length}` : ''}`;
             return batch ? <label key={version.id} className="flex items-center gap-2 rounded px-2 py-1.5 text-xs cursor-pointer hover:bg-[var(--hover-overlay)]"><Checkbox aria-label={`选择 ${version.title}`} checked={checked.includes(version.id)} onCheckedChange={() => onCheck(version.id)} /><span className="truncate max-w-52" title={version.title}>{label}</span></label>
-              : <Button key={version.id} size="sm" variant={version.id === selected ? 'secondary' : 'ghost'} className="max-w-full text-xs h-7 px-2.5" title={version.title} onClick={() => onSelect(version.id)}><span className="truncate">{label}</span></Button>;
+              : <Button key={version.id} size="sm" variant={version.id === selected ? 'secondary' : 'ghost'} className="max-w-full text-xs px-2.5" title={version.title} onClick={() => onSelect(version.id)}><span className="truncate">{label}</span></Button>;
           })}
         </div>
       </article>;

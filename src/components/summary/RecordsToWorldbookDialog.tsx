@@ -40,11 +40,11 @@ export function RecordsToWorldbookDialog({ characterId, records, onClose, onSave
   };
   return <Dialog open onOpenChange={open => { if (!open && !pending.current) onClose(); }}><DialogContent className="max-h-[90vh] overflow-y-auto">
     <DialogHeader><DialogTitle>加入世界书</DialogTitle><DialogDescription>预览所选 {records.length} 篇记录，每篇一个条目。新增条目默认禁用，保存后可在世界书中逐项启用。</DialogDescription></DialogHeader>
-    <select aria-label="目标世界书" className="w-full rounded-md border bg-background p-2" value={target} disabled={loading || busy} onChange={event => setTarget(event.target.value)}>
+    <select aria-label="目标世界书" className="ste-select h-9 w-full text-sm" value={target} disabled={loading || busy} onChange={event => setTarget(event.target.value)}>
       {books.map(book => <option key={book.id} value={book.id}>{book.title}</option>)}<option value="new">新建角色专用世界书</option>
     </select>
     {target === 'new' && <Input aria-label="新世界书标题" value={title} disabled={busy} onChange={event => setTitle(event.target.value)} />}
-    <label className="space-y-1 text-sm">已存在记录<select aria-label="重复记录处理" className="w-full rounded-md border bg-background p-2" value={mode} disabled={busy} onChange={event => setMode(event.target.value as DuplicateRecordMode)}>
+    <label className="space-y-1 text-sm">已存在记录<select aria-label="重复记录处理" className="ste-select h-9 w-full text-sm" value={mode} disabled={busy} onChange={event => setMode(event.target.value as DuplicateRecordMode)}>
       <option value="skip">跳过已存在</option><option value="update">更新对应条目（保留启用状态）</option><option value="copy">另存新条目</option>
     </select></label>
     <ul className="max-h-60 overflow-auto space-y-2 text-sm">{records.map(record => <li key={record.id} className="rounded border border-border p-2">

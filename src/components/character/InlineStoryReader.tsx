@@ -148,7 +148,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
     if (!story || !saverRef.current.isDirty()) return;
     const t = setTimeout(() => {
       void saverRef.current.flush().catch((error: unknown) => {
-        toast({
+        toastRef.current({
           title: '保存故事失败',
           description: error instanceof Error ? error.message : '请检查库目录是否可写',
           variant: 'destructive',
@@ -156,7 +156,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
       });
     }, 600);
     return () => clearTimeout(t);
-  }, [story, toast]);
+  }, [story]);
   useEffect(() => () => {
     void saverRef.current.flush().catch((error: unknown) => {
       toastRef.current({
@@ -205,7 +205,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
       } catch (error) {
         if (isCurrent()) {
           setLoadError(error instanceof Error ? error.message : '请稍后重试');
-          toast({
+          toastRef.current({
             title: '读取故事失败',
             description: error instanceof Error ? error.message : '请稍后重试',
             variant: 'destructive',
@@ -225,7 +225,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         });
       });
     };
-  }, [storyId, initialBranchId, toast, retry]);
+  }, [storyId, initialBranchId, retry]);
 
   // 消费单次外部楼层定位请求：按稳定 messageId 定位与高亮，且消费后绝不随滚动重触发
   useEffect(() => {
@@ -348,7 +348,10 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           title={`返回${backLabel}`}
         >
           <ArrowLeft className={cn('w-4 h-4', !isCompact && 'mr-1')} />
-          {!isCompact && backLabel}
+          {backLabel !== '故事列表' ? (!isCompact && backLabel) : null}
+          {backLabel === '故事列表' && <>
+            {!isCompact && '故事列表'}
+          </>}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -463,7 +466,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-1 text-xs"
+                  className="gap-1 text-xs"
                   onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
                 >
                   <MessageSquare className="h-3.5 w-3.5" />
@@ -474,7 +477,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 gap-1 text-xs"
+                  className="gap-1 text-xs"
                   onClick={() => {
                     const msgId = line.session.messages[currentFloor]?.id ?? null;
                     void transitionAfterFlush(() => onBranchChatFromFloor(story.id, branchId, currentFloor, msgId));

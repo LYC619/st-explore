@@ -62,14 +62,14 @@ export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props)
       </DialogHeader>
       <Input aria-label="搜索目标故事" placeholder="搜索故事或角色" value={search} disabled={pending || stale} onChange={event => setSearch(event.target.value)} />
       <label className="space-y-1 text-sm">目标故事
-        <select aria-label="目标故事" className="w-full rounded-md border bg-background p-2" value={target} disabled={pending || loading || stale}
+        <select aria-label="目标故事" className="ste-select h-9 w-full text-sm" value={target} disabled={pending || loading || stale}
           onChange={event => { setTarget(event.target.value); setBranch(''); }}>
           <option value="">{loading ? '正在加载…' : '请选择故事'}</option>
           {filtered.map(story => <option key={story.id} value={story.id}>{names[story.characterId ?? ''] ?? '未绑定'} · {story.title}</option>)}
         </select>
       </label>
       {selected && <label className="space-y-1 text-sm">目标脉络
-        <select aria-label="目标脉络" className="w-full rounded-md border bg-background p-2" value={branch} disabled={pending || stale} onChange={event => setBranch(event.target.value)}>
+        <select aria-label="目标脉络" className="ste-select h-9 w-full text-sm" value={branch} disabled={pending || stale} onChange={event => setBranch(event.target.value)}>
           <option value="">主线</option>
           {(selected.branchIndex ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>

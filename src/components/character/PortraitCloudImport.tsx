@@ -100,7 +100,7 @@ export function PortraitCloudImport({ character }: { character: ArchiveCharacter
         <DialogHeader><DialogTitle>从图床导入立绘</DialogTitle><DialogDescription>粘贴即可自动预览，名称、链接和分行可逐行修改。有效行可先导入；开始后可关闭弹窗，前往其他模块。</DialogDescription></DialogHeader>
         <fieldset disabled={busy} className="space-y-3 min-w-0">
           <label className="block text-sm">名称或世界书片段<Textarea aria-label="名称或世界书片段" value={source} onChange={event => setSource(event.target.value)} rows={5} placeholder={'不开心: 不开心_hv26xb.png\nAndrea_happy_2ctstv.png\nhttps://files.catbox.moe/abcd.png'} /></label>
-          <label className="flex gap-2 items-center text-sm">保存到<select aria-label="保存到分行" className="min-w-0 bg-background border rounded p-1.5" value={globalRow} onChange={event => {
+          <label className="flex gap-2 items-center text-sm">保存到<select aria-label="保存到分行" className="ste-select h-8 min-w-0 text-sm" value={globalRow} onChange={event => {
             const value = event.target.value; setGlobalRow(value);
             const recommended = buildPortraitPreview(parsedRef.current, [], character);
             setRows(previous => previous.map(row => ({ ...row, rowId: value === '__auto__' ? recommended.find(item => item.id === row.id)?.rowId ?? null : value || null, manualRow: value !== '__auto__' })));
@@ -108,7 +108,7 @@ export function PortraitCloudImport({ character }: { character: ArchiveCharacter
             <option value="__auto__">按名称推荐，可逐行修改</option><option value="">全部保存到未分行</option>{character.portraitRows?.map(row => <option value={row.id} key={row.id}>{row.title}</option>)}
           </select></label>
           <details open={mode === 'advanced'}><summary className="cursor-pointer text-sm">高级设置</summary><div className="space-y-2 pt-2">
-            <label className="flex gap-2 text-sm">解析模式<select aria-label="解析模式" className="rounded border bg-background p-1.5" value={mode} onChange={event => setMode(event.target.value as 'auto' | 'advanced')}><option value="auto">自动识别</option><option value="advanced">模板与正则</option></select></label>
+            <label className="flex gap-2 items-center text-sm">解析模式<select aria-label="解析模式" className="ste-select h-8 text-sm" value={mode} onChange={event => setMode(event.target.value as 'auto' | 'advanced')}><option value="auto">自动识别</option><option value="advanced">模板与正则</option></select></label>
             <label className="block text-sm">裸文件码使用的图床<Input aria-label="图床地址" value={host} onChange={event => setHost(event.target.value)} /></label>
             <Button variant="secondary" size="sm" onClick={() => { setMode('advanced'); setPattern(CATBOX_WORLDBOOK_PRESET.pattern); setTemplate(CATBOX_WORLDBOOK_PRESET.template); }}>Catbox 世界书列表</Button>
             {mode === 'advanced' && <><label className="block text-sm">提取正则（空为逐行）<Input aria-label="提取正则" value={pattern} onChange={event => setPattern(event.target.value)} /></label>

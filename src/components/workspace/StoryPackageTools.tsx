@@ -33,7 +33,7 @@ export function StoryPackageTools({ storyId }: { storyId?: string }) {
     try {
       const output = await createStoryPackageAdapter().exportStory(storyId), result = await saveStoryPackageFile(output);
       if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已开始下载完整故事包' : '完整故事包已导出',
-        description: output.package.omissions.length ? '连接凭据、安装脚本和本机外部文件不随包迁移；详见包内 omissions。' : undefined });
+        description: output.package.omissions.length ? 'API 密钥、已安装插件和本机外部文件不会随包带走，导入时可在预览窗口查看未包含清单。' : undefined });
     } catch (reason) { toast({ title: '导出失败', description: String(reason instanceof Error ? reason.message : reason), variant: 'destructive' }); }
     finally { setBusy(false); }
   }

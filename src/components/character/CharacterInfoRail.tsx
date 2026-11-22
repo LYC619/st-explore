@@ -82,7 +82,7 @@ export function CharacterInfoRail({
       if (s.lastMessageAt !== undefined && (lastPlayed === undefined || s.lastMessageAt > lastPlayed)) {
         lastPlayed = s.lastMessageAt;
       }
-      if (s.meta.playTimeMs !== null) {
+      if (typeof s.meta?.playTimeMs === 'number' && Number.isFinite(s.meta.playTimeMs)) {
         playMs += s.meta.playTimeMs;
         hasPlay = true;
       }
@@ -190,9 +190,9 @@ export function CharacterInfoRail({
 
         <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
           <SheetTrigger asChild>
-            <Button variant="outline" size="sm" aria-label="更多角色卡操作" title="更多文件级操作">
+            <Button variant="outline" size="sm" title="更多文件级操作">
               <Wrench className="w-3.5 h-3.5 mr-1" />
-              更多
+              操作
             </Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-80">

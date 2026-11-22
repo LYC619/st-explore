@@ -241,7 +241,11 @@ export default function CardViewer() {
         action: <ToastAction altText="立即前往" onClick={() => navigate('/worldbook')}>立即前往</ToastAction>,
       });
     } catch {
-      toast({ title: '暂存失败', variant: 'destructive' });
+      toast({
+        title: '暂存到世界书没成功',
+        description: '未能写入本地世界书库，请检查存储空间或前往「设置 → 数据与备份」确认文件库状态后再试。',
+        variant: 'destructive',
+      });
     }
   }, [card, edits, fileName, toast, navigate]);
 

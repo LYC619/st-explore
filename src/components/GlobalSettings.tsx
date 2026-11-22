@@ -143,8 +143,12 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
       setLoading(true);
       await exportFullBackup();
       toast({ title: '备份成功', description: '已导出完整备份（角色/故事/世界书/预设/正则/总结/故事树/沙盘世界）' });
-    } catch {
-      toast({ title: '备份失败', variant: 'destructive' });
+    } catch (err) {
+      toast({
+        title: '导出备份失败',
+        description: `${err instanceof Error ? err.message : '无法生成备份文件'}；请检查磁盘剩余空间或浏览器下载权限后重试。`,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -163,7 +167,7 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
     } catch (err) {
       toast({
         title: '无法读取备份文件',
-        description: err instanceof Error ? err.message : '文件校验未通过',
+        description: err instanceof Error ? err.message : '备份文件格式异常或已损坏，请确认选中的是 STE 导出的备份 JSON。',
         variant: 'destructive',
       });
     } finally {
@@ -212,8 +216,12 @@ export function DataSettingsPanel({ onDataChanged }: DataSettingsPanelProps) {
       toast({ title: '已清空', description: '所有本地数据已删除（角色/故事/世界书/预设/正则/总结）' });
       await refreshStorage();
       onDataChanged?.();
-    } catch {
-      toast({ title: '清空失败', variant: 'destructive' });
+    } catch (err) {
+      toast({
+        title: '清空数据失败',
+        description: `${err instanceof Error ? err.message : '未能完成清空'}；请关闭其他已打开的 STE 窗口或标签页后重试。`,
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
       setClearDialogOpen(false);

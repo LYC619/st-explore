@@ -9,7 +9,7 @@ export function RecordVolumeFields({ volume, category, onVolumeChange, onCategor
   return <div className="flex flex-wrap items-end gap-3">
     <label className="space-y-1 text-xs text-muted-foreground">卷数类型
       <select aria-label="记录卷数类型" value={category ?? 'numbered'} disabled={disabled}
-        className="block h-8 rounded-md border bg-background px-2 text-base md:text-sm"
+        className="ste-select block h-8 text-base md:text-sm"
         onChange={event => onCategoryChange(event.target.value === 'other' ? 'other' : undefined)}>
         <option value="numbered">分卷</option><option value="other">其他（番外等）</option>
       </select>

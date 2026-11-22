@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+import { placeholderArtClass } from '@/lib/character-placeholder';
 import type { PreparedLibraryCharacterImport } from '@/lib/library-character-import';
 import type { ManagedTagOption } from '@/lib/library-tag-preferences';
 import { CHARACTER_TYPES } from '@/lib/archive-db';
@@ -107,7 +108,7 @@ export function LibraryImportDialog({
               </div>
               {blankCount > 0 && (
                 <p className="mt-1.5 text-xs leading-relaxed text-[color:var(--text-muted)]">
-                  {blankCount} 张普通图片将创建为空白角色卡；封面会保留，并写入可被 SillyTavern 识别的 V2 元数据。
+                  {blankCount} 张普通图片将创建为空白角色卡；封面会原样保留，并保存为可直接拖回 SillyTavern 使用的标准角色卡（V2）。
                 </p>
               )}
             </div>
@@ -116,8 +117,15 @@ export function LibraryImportDialog({
               {items.map((item) => (
                 <div
                   key={`${item.fileName}:${item.character.id}`}
-                  className="flex items-center justify-between gap-2 rounded-md border border-[color:var(--hairline-inner)] px-2.5 py-2 text-xs"
+                  className="flex items-center justify-between gap-2.5 rounded-md border border-[color:var(--hairline-inner)] px-2.5 py-1.5 text-xs"
                 >
+                  <span aria-hidden="true" className="relative aspect-[3/4] w-7 shrink-0 overflow-hidden rounded bg-chrome">
+                    {item.character.pngBase64 ? (
+                      <img src={`data:image/png;base64,${item.character.pngBase64}`} alt="" className="absolute inset-0 h-full w-full object-cover object-top" />
+                    ) : (
+                      <span className={cn('absolute inset-0', placeholderArtClass(item.character.name))} />
+                    )}
+                  </span>
                   <span className="min-w-0 flex-1 truncate text-[color:var(--text-body)]" title={item.fileName}>
                     {item.character.name}
                   </span>
