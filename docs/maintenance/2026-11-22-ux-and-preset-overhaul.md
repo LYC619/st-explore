@@ -51,5 +51,25 @@
 | `node scripts/verify.mjs`（11 步全量） | **11/11 全部通过** | `version`、`script-tests`（64/64）、`lint`（0 错误）、`types-app`、`types-node`、`vitest`（**332/332 文件、2,703 项通过、1 跳过、0 失败**，含 `control-height-grid` 与 `frontend-mechanical-fixes` 栅格契约）、`tavern-source`、`smoke-tests`、`build`、`rust-tests`（66 通过 / 1 原有忽略）、`clippy` 全部通过 |
 | 生产构建 Web E2E（`playwright.production.config.ts`） | **7/7 全部通过** | 针对打包产出的正式 `dist/` 运行 `closeout.spec.ts` 与 `core-regression.spec.ts`（`1360px` + `390px`） |
 | 内嵌酒馆、独立分屏窗口与归档流 E2E（`playwright.roleplay.config.ts`） | **57/57 通过**（1 原有跳过） | 全套 10 个 spec 文件零失败通过，含新增真实 Edge 多窗口分屏测试（`runtime.spec.ts:1015`：页内弹出独立酒馆窗口 → 主窗口自动退回大屏阅读器并开启只读实时楼层同步 → 独立窗口流式回复落库主窗口即时可见 → 一键收回页内） |
-| Windows 免安装体验包（`--portable-only`） | **已生成（未运行）** | 目录：`release/2026-11-22-ux-and-preset-overhaul/`；文件：`STE-0.9.9-2026-11-22-ux-and-preset-overhaul-portable.exe`（`37,740,032` 字节，SHA256 `b2b7bbe4b5d18d361b79277f186289941995e53fa55d0409c1f406b0015612aa`，构建号 `ff43df8e49b1`，`dirty: false`，`packaged-not-run`） |
+| Windows 免安装体验包（首包，已由下节修正包取代） | **已生成（未运行）** | 目录：`release/2026-11-22-ux-and-preset-overhaul/`；文件：`STE-0.9.9-2026-11-22-ux-and-preset-overhaul-portable.exe`（构建号 `ff43df8e49b1`，`dirty: false`，`packaged-not-run`） |
 | Android 真机 / 正式安装版 / 远端发布 | **本轮未执行** | 未打 NSIS 安装器，未合入 `main` 或推送远端，无 Android 真机验证，待用户桌面实测验收 |
+
+---
+
+## 四、2026-11-23 用户实测反馈 6 项回退与原生酒馆窗口根治（`b22a1e1`）
+
+用户在桌面实测 `ff43df8e49b1` 免安装包后提出 6 项明确修正与回退要求，已逐项定位根因、完成代码回退／修复并通过独立 Tauri WebView2 原生实测与全套门禁，重新打出免安装体验包 `2026-11-23-ux-and-preset-fix`（`b22a1e1bb8c8`）：
+
+1. **「回味」跳转统一拨正至当前聊天处理工作台 `/chat?storyId=...`**：修正此前误将 `/story/:id`（旧阅读子页）当作主阅读器的问题；`buildEditorChatPath` / `buildStoryReadPath` / `editorStoryPathForNavKey('chat')`、角色库卡面「回味」、首页最近故事、聊天大厅「阅读整理」、回顾视图「在编辑器中打开」及全局搜索故事项统一进入 `src/pages/Index.tsx`（`/chat?storyId=...`），支持已绑定与未绑定故事同场打开、顶栏角色徽章跳角色主页、主线／支线切换、`?branch=&floor=` 聚光灯跳楼，以及独立酒馆窗口在聊同篇故事时的实时楼层同步与只读保护。
+2. **回退楼层「☆ 收藏本楼」与 `⋯` 折叠菜单**：`ChatMessageRow.tsx` 移除与 `MessageNavBar` 书签栏重复的星标及藏起常用操作的 `MoreHorizontal` 下拉框，恢复直列一键「收录 · 隐藏本楼 · 编辑本楼」（保持不恢复低频的每楼拉支线与划词海报浮条）。
+3. **聊天处理界面正则默认展开＋记忆状态 & 默认纸宽自适应**：桌面端 `ChatWorkbench`（非 `readerMode`）默认展开右侧 `RegexSidebar` 并持久化用户手动开合状态至 `GlobalReadingAppearance.regexSidebarOpen`；新增 `PAPER_WIDTH_ADAPTIVE = 0` 作为 `DEFAULT_PAPER_WIDTH`，自适应中间阅读井宽度（上限 `min(100%, 960px)`，随正则栏开关平滑伸缩，并在外观面板保留手动滑块与「铺满」按钮）。
+4. **回退故事行、关联资产与角色库筛选栏误简化项**：按 `29b8076` 完整恢复 `StoryListSection.tsx`（保留 `阅读 · 处理 · 继续聊天 · 导出 · 重命名 · 删除 · 复制故事` 直列按钮，补齐输入法 `isComposing` 改名保护与独立窗口在聊防删改锁；角色页点「阅读」恢复页内 `InlineStoryReader`，点「处理」直进 `/chat?storyId=...`）、`AssetSection.tsx`（点行抽屉速览与快捷导出，点「处理」进大屏编辑）、`LibraryFilterRail.tsx`（恢复可拖宽，撤下顶部清空条）与 `LibraryToolbar.tsx`；同时保留用户明确认可的 `CharacterHeader.tsx` 紧凑装备微章、`CharacterCardEditSection.tsx` 人设阅读＋就地写回原卡及第三批预设库全部重整成果。
+5. **根治桌面进入酒馆聊天 `Failed to fetch dynamically imported module: .../open-story-*.js` 报错并打通原生独立窗口**：
+   - **原生复现与根因**：在隔离原生包 `com.ste.explorer.regression` 中通过 CDP 100% 复现 `http://tauri.localhost/assets/open-story-*.js -> net::ERR_CONNECTION_REFUSED`。原因是 Tauri v2 默认未注册 `on_new_window`，点击时同步调用 `window.open('', 'ste-tavern-detached', ...)` 触发 WebView2 `NewWindowRequested` 同步拒绝（返回 `null`），紧随其后的动态 `import()` 在该拒绝周期内绕过 `WebResourceRequested` 落入 TCP `tauri.localhost:80` 导致连接拒绝。
+   - **三层根治**：① `src-tauri/tauri.conf.json`（`create: false`）+ `src-tauri/src/lib.rs` 为主窗口挂载桌面端 `.on_new_window(...)`（严格白名单放行 `about:blank` / `tauri://` / `tauri.localhost`，创建原生同源子窗口 `tavern-detached-{id}` 并在 `main` 销毁时自动清理残留子窗口）；② 各入口静态导入 `prepareStoryPlay` / `startCharacterStory` 并在建窗前预热 `preloadRoleplayPage()`，彻底消灭点击时的动态 chunk 请求；③ `detached-window.ts` 新增 `reserveDetachedWindowForAsyncAction()`，浏览器保持同步点击栈预约防拦截，Tauri 桌面端延后至异步准备完成后由原生 `on_new_window` 建窗。
+6. **恢复「山海之间」显眼入口**：`ChatHub.tsx` 首屏恢复 `min-h-28` 品牌渐变横幅大卡片（`原生世界 · 无需配置模型 / 山海之间`）。
+
+### 修正包验证与产物清单（2026-11-23）
+- **独立原生 WebView2 实测（`com.ste.explorer.regression`）**：通过 `build-isolated-native.mjs` + `verify-native-artifact.mjs` 核验构建凭据，在 `.cache/verify/native-tavern/` 合成库实测通过「导入卡片 → 新开聊天弹出原生 `tavern-detached-1` 子窗口并渲染酒馆首楼 → 角色库点『回味』跳入 `/chat?storyId=...` 并显示分屏同步横条 → 关闭主窗口 `exitCode = 0`」，全程 `tauri.localhost` 零请求失败、零页面异常。
+- **全量自动门禁**：`node scripts/verify.mjs` **11/11 通过**（332 文件／2,705 项 Vitest、64 宿主脚本、类型、Lint、构建、66 Rust 单测 + Clippy）；生产 Web E2E **7/7 通过**；内嵌酒馆、独立分屏窗口与归档流 Playwright E2E **57/57 通过**（1 原有跳过）。
+- **最新免安装体验包**：`release/2026-11-23-ux-and-preset-fix/STE-0.9.9-2026-11-23-ux-and-preset-fix-portable.exe`（`37,824,000` 字节，SHA256 `6a19f233aba5d7870c740756d3f5bfab18d812b06021349abf7a0db7c3527e33`，构建号 `b22a1e1bb8c8`，`dirty: false`，`packaged-not-run`）。
