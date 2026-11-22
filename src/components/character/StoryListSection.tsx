@@ -5,11 +5,11 @@
  * 当前就地阅读中的故事左侧高亮条。
  */
 import { useState } from 'react';
-import { BookOpen, GitBranch, Pencil, Settings2, Trash2, Upload, MessageSquare } from 'lucide-react';
+import { BookOpen, Copy, GitBranch, MoreHorizontal, Pencil, Settings2, Trash2, Upload, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -48,7 +48,7 @@ function StatusChip({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button onClick={(e) => e.stopPropagation()} title="点击修改故事状态" className="tap-target shrink-0">
+        <button type="button" onClick={(e) => e.stopPropagation()} title="点击修改故事状态" className="tap-target shrink-0">
           <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal cursor-pointer hover:bg-accent', tone[status])}>
             {status}
           </Badge>
@@ -124,7 +124,7 @@ export function StoryListSection({
                 'group relative rounded-lg border border-border bg-card hover:shadow-warm transition-all cursor-pointer',
                 active && 'border-primary/50',
               )}
-              onClick={() => onRead(story.id)}
+              onClick={() => { if (!editingId) onRead(story.id); }}
             >
               {/* 当前故事高亮条 */}
               {active && <div className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-primary" />}
@@ -139,6 +139,7 @@ export function StoryListSection({
                         onClick={(event) => event.stopPropagation()}
                         onBlur={() => { void commitRename(story); }}
                         onKeyDown={(event) => {
+                          if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                           if (event.key === 'Enter') { event.preventDefault(); void commitRename(story); }
                           if (event.key === 'Escape') setEditingId(null);
                         }}
@@ -160,40 +161,76 @@ export function StoryListSection({
                     {story.lastMessageAt != null && <span>游玩于 {formatFullTime(story.lastMessageAt)}</span>}
                   </p>
                 </div>
-                {/* 三按钮：阅读 · 处理 · 导出（+hover 删除） */}
+                {/* 主操作只留「阅读」与「继续聊天」，低频管理与导出收纳进「⋯」 */}
                 <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onRead(story.id)}>
                     <BookOpen className="w-3.5 h-3.5 mr-1" />
                     阅读
                   </Button>
-                  <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onProcess(story.id)} title="进入故事工作区（编辑器）">
-                    <Settings2 className="w-3.5 h-3.5 mr-1" />
-                    处理
-                  </Button>
-                  {onPlay && <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onPlay(story.id, null)}>
-                    <MessageSquare className="w-3.5 h-3.5 mr-1" />继续聊天
-                  </Button>}
-                  {exportMenu(story.id)}
-                  {onRenameStory && editingId !== story.id && (
-                    <Button variant="ghost" size="icon" className="shrink-0" onClick={() => beginRename(story)} aria-label="重命名故事" title="重命名故事">
-                      <Pencil className="w-3.5 h-3.5" />
+                  {onPlay && (
+                    <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onPlay(story.id, null)}>
+                      <MessageSquare className="w-3.5 h-3.5 mr-1" />继续聊天
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="hover-reveal text-destructive"
-                    onClick={() => onDelete(story)}
-                    aria-label="删除故事"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
-                  {onCopy && <Button variant="ghost" size="sm" title="复制正文、分支、总结、日记和故事树，原故事保持不变" disabled={!!copying} onClick={() => {
-                    setCopying(story.id);
-                    void Promise.resolve().then(() => onCopy(story.id))
-                      .catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
-                      .finally(() => setCopying(null));
-                  }}>{copying === story.id ? '正在复制…' : '复制故事'}</Button>}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="shrink-0" aria-label="更多故事操作" title="更多操作">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuItem onClick={() => onProcess(story.id)}>
+                        <Settings2 className="w-3.5 h-3.5 mr-2" />
+                        整理与总结
+                      </DropdownMenuItem>
+                      {onRenameStory && editingId !== story.id && (
+                        <DropdownMenuItem onClick={() => beginRename(story)}>
+                          <Pencil className="w-3.5 h-3.5 mr-2" />
+                          重命名故事
+                        </DropdownMenuItem>
+                      )}
+                      {onCopy && (
+                        <DropdownMenuItem
+                          disabled={!!copying}
+                          onClick={() => {
+                            setCopying(story.id);
+                            void Promise.resolve().then(() => onCopy(story.id))
+                              .catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
+                              .finally(() => setCopying(null));
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5 mr-2" />
+                          {copying === story.id ? '正在复制…' : '复制故事'}
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator />
+                      {onExportFile && (
+                        <>
+                          <DropdownMenuItem onClick={() => onExportFile(story.id, null, 'jsonl-slim')}>
+                            <Upload className="w-3.5 h-3.5 mr-2" />
+                            导出 JSONL（精简）
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onExportFile(story.id, null, 'jsonl')}>
+                            <Upload className="w-3.5 h-3.5 mr-2" />
+                            导出完整 JSONL
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onExportFile(story.id, null, 'json')}>
+                            <Upload className="w-3.5 h-3.5 mr-2" />
+                            导出完整 JSON
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem onClick={() => onExport(story.id)}>
+                        <Upload className="w-3.5 h-3.5 mr-2" />
+                        更多导出与清理选项…
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => onDelete(story)}>
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        删除故事
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
             </div>

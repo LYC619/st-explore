@@ -106,15 +106,39 @@ export function LibraryToolbar({
         </Button>
       )}
       <span className="flex-1" />
-      <Button
-        variant={viewMode === 'review' ? 'default' : 'outline'}
-        size="sm"
-        aria-pressed={viewMode === 'review'}
-        onClick={() => onViewModeChange(viewMode === 'review' ? 'grid' : 'review')}
-        title={viewMode === 'review' ? '退出回顾，返回网格视图' : '连续切换角色，回顾故事与总结'}
+      <div
+        role="group"
+        aria-label="切换浏览视图"
+        className="flex items-center rounded-md border border-border bg-[var(--bg-canvas)] overflow-hidden shrink-0"
       >
-        <PanelsTopLeft className="w-4 h-4 mr-1.5" />回顾
-      </Button>
+        {([
+          { mode: 'grid' as const, label: '网格视图', shortLabel: '网格', Icon: LayoutGrid, extra: '' },
+          { mode: 'list' as const, label: '列表视图', shortLabel: '列表', Icon: ListIcon, extra: 'border-l border-border' },
+          { mode: 'review' as const, label: '回顾视图', shortLabel: '回顾', Icon: PanelsTopLeft, extra: 'border-l border-border' },
+        ]).map(({ mode, label, shortLabel, Icon, extra }) => {
+          const active = viewMode === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              aria-label={label}
+              aria-pressed={active}
+              title={mode === 'review' && active ? '退出回顾，返回网格视图' : label}
+              onClick={() => onViewModeChange(mode === 'review' && active ? 'grid' : mode)}
+              className={cn(
+                'tap-target h-8 px-2.5 flex items-center gap-1 text-xs transition-colors',
+                extra,
+                active
+                  ? 'bg-[var(--brand-active-bg)] text-brand font-medium'
+                  : 'text-[color:var(--sidebar-text-muted)] hover:text-[color:var(--sidebar-text)] hover:bg-[var(--hover-overlay)]',
+              )}
+            >
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span>{shortLabel}</span>
+            </button>
+          );
+        })}
+      </div>
       {viewMode === 'review' && reviewFilters}
       <Select value={sortKey} onValueChange={(v) => onSortKeyChange(v as LibrarySortKey)}>
         <SelectTrigger aria-label="角色排序" className="h-8 w-32 text-xs">
@@ -167,41 +191,15 @@ export function LibraryToolbar({
           )}
         </>
       )}
-      {/* 外观：视图 / 卡片大小 / 字体大小 */}
+      {/* 外观：卡片大小 / 字体大小 */}
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" title="外观：视图、卡片与字体大小">
+          <Button variant="outline" size="sm" title="外观：卡片与字体大小">
             <SlidersHorizontal className="w-3.5 h-3.5 mr-1.5" />
             外观
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-64 space-y-4">
-          <div>
-            <p className="text-xs font-medium text-[color:var(--sidebar-text-muted)] mb-2">视图</p>
-            <div className="flex items-center rounded-md border border-border overflow-hidden w-fit">
-              {([
-                { mode: 'grid' as const, label: '网格视图', Icon: LayoutGrid, extra: '' },
-                { mode: 'list' as const, label: '列表视图', Icon: ListIcon, extra: 'border-l border-border' },
-                { mode: 'review' as const, label: '回顾视图', Icon: PanelsTopLeft, extra: 'border-l border-border' },
-              ]).map(({ mode, label, Icon, extra }) => (
-                <button
-                  key={mode}
-                  aria-label={label}
-                  aria-pressed={viewMode === mode}
-                  onClick={() => onViewModeChange(mode)}
-                  className={cn(
-                    'tap-target h-8 w-10 flex items-center justify-center transition-colors',
-                    extra,
-                    viewMode === mode
-                      ? 'bg-[var(--brand-active-bg)] text-brand'
-                      : 'text-[color:var(--sidebar-text-muted)] hover:text-[color:var(--sidebar-text)]',
-                  )}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-          </div>
           {viewMode === 'grid' && (
             <div>
               <p className="text-xs font-medium text-[color:var(--sidebar-text-muted)] mb-2">卡片大小</p>
@@ -228,11 +226,13 @@ export function LibraryToolbar({
           </div>
         </PopoverContent>
       </Popover>
-      {storyPackageTools}
-      <Button size="sm" onClick={() => fileInputRef.current?.click()}>
-        <Plus className="w-4 h-4 mr-1.5" />
-        导入角色卡
-      </Button>
+      <div className="flex items-center gap-1">
+        <Button size="sm" onClick={() => fileInputRef.current?.click()}>
+          <Plus className="w-4 h-4 mr-1.5" />
+          导入角色卡
+        </Button>
+        {storyPackageTools}
+      </div>
       <input
         ref={fileInputRef}
         type="file"

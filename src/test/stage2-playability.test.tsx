@@ -191,11 +191,11 @@ describe('Stage 2 playability loop: greetings theater, branch-from-floor & loado
     });
 
     expect(host.textContent).toContain('北境编年史');
-    expect(host.textContent).toContain('卡内自带 (1 项)');
-    expect(host.textContent).toContain('2 段可赏玩');
+    expect(host.textContent).toContain('卡内自带 1 项');
+    expect(host.textContent).toContain('2 段开场白');
 
     const greetingPill = Array.from(host.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('2 段可赏玩'),
+      b.textContent?.includes('2 段开场白'),
     );
     await act(async () => {
       greetingPill!.click();

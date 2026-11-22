@@ -28,6 +28,7 @@ interface GreetingsSectionProps {
   dirty?: boolean;
   saving?: boolean;
   onSave?: () => void | Promise<void>;
+  onDiscard?: () => void;
   onEditChange: <K extends keyof CardEdits>(key: K, value: CardEdits[K]) => void;
   /** 用选定下标的开场白直接开启新对话（0 = 默认开场白，1..N = 备选开场白） */
   onStartWithGreeting?: (greetingIndex: number) => void;
@@ -66,6 +67,7 @@ export function GreetingsSection({
   dirty = false,
   saving = false,
   onSave,
+  onDiscard,
   onEditChange,
   onStartWithGreeting,
   startingGreetingIndex = null,
@@ -186,6 +188,18 @@ export function GreetingsSection({
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             新增备选
           </Button>
+
+          {dirty && onDiscard && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={onDiscard}
+            >
+              放弃修改
+            </Button>
+          )}
 
           {onSave && (dirty || mode === 'edit') && (
             <Button

@@ -64,7 +64,22 @@ function NotesBrowserContent({ characterId, notes, onCreate, onEdit, onDelete, f
     </div>
     {!sorted.length ? <Card><CardContent className="flex flex-col items-center gap-2 py-10 text-center">
       <StickyNote className="h-8 w-8 text-muted-foreground/40" /><p className="text-sm text-muted-foreground">还没有备注</p>
-    </CardContent></Card> : <div className="grid items-start gap-3 md:grid-cols-[minmax(0,1fr)_12rem] xl:grid-cols-[minmax(0,1fr)_14rem]">
+    </CardContent></Card> : (sorted.length === 1 && !activeNote?.document.headings.length) ? (
+      activeNote && (
+        <Card key={activeNote.id} id={activeNote.anchor} tabIndex={-1} className="group scroll-mt-4">
+          <CardContent className="px-4 py-3">
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted-foreground" title={formatFullTime(activeNote.at)}>{formatFullTime(activeNote.at)} · {formatListTime(activeNote.at)}</span>
+              <div className="hover-reveal ml-auto flex shrink-0 gap-1">
+                <Button variant="ghost" size="icon" aria-label="编辑备注" onClick={() => onEdit(activeNote)}><PenLine className="h-3.5 w-3.5" /></Button>
+                {onDelete && <Button variant="ghost" size="icon" aria-label="删除备注" className="text-muted-foreground hover:text-destructive" onClick={() => onDelete(activeNote)}><Trash2 className="h-3.5 w-3.5" /></Button>}
+              </div>
+            </div>
+            <div className="chat-markdown break-words text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: activeNote.document.html }} />
+          </CardContent>
+        </Card>
+      )
+    ) : <div className="grid items-start gap-3 md:grid-cols-[minmax(0,1fr)_12rem] xl:grid-cols-[minmax(0,1fr)_14rem]">
       {activeNote && <div className="min-w-0">
         <Card key={activeNote.id} id={activeNote.anchor} tabIndex={-1} className="group scroll-mt-4">
           <CardContent className="px-4 py-3">

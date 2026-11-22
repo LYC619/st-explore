@@ -567,7 +567,12 @@ const Library = () => {
     if (selection.batchMode) selection.clickCharacter(c, shiftKey);
     else navigate(`/character/${c.id}`);
   };
-  const menuFor = (c: ArchiveCharacter, triggerClassName: string, iconClassName?: string) => {
+  const menuFor = (
+    c: ArchiveCharacter,
+    triggerClassName: string,
+    iconClassName?: string,
+    hasQuickPills = false,
+  ) => {
     const latestId = latestStoryByChar[c.id];
     return (
       <CharacterActionsMenu
@@ -577,6 +582,7 @@ const Library = () => {
         onOpenGreetings={() => navigate(`/character/${c.id}?tab=greetings`)}
         onExport={() => void handleSingleExport(c)}
         onDelete={() => setPendingDelete([c])}
+        hasQuickPills={hasQuickPills}
         triggerClassName={triggerClassName}
         iconClassName={iconClassName}
       />
@@ -600,6 +606,10 @@ const Library = () => {
       onTypeChange={(value) => setTypeFilter(value as TypeFilter)}
       onTagToggle={toggleTagFilter}
       onUncategorizedExpandedChange={setUncategorizedExpanded}
+      onClearAll={() => {
+        setTypeFilter('all');
+        setTagFilters({});
+      }}
     />
   );
 
@@ -636,7 +646,7 @@ const Library = () => {
           onFontScaleChange={prefs.setFontScale}
           fileInputRef={fileInputRef}
           onPickFiles={handleImportFiles}
-          storyPackageTools={<StoryPackageTools />}
+          storyPackageTools={<StoryPackageTools compact />}
           reviewFilters={!isCompact && (
             <Button variant="outline" size="sm" aria-expanded={reviewFiltersOpen} onClick={() => setReviewFiltersOpen((open) => !open)}>
               <ListFilter className="w-4 h-4 mr-1.5" />筛选
@@ -751,6 +761,8 @@ const Library = () => {
                               actions={menuFor(
                                 c,
                                 'hover-reveal tap-target w-6 h-6 rounded-full bg-[rgba(0,0,0,0.65)] backdrop-blur-sm text-white/80 flex items-center justify-center',
+                                undefined,
+                                prefs.cardWidth >= CARD_W_COMPACT,
                               )}
                               quickAction={prefs.cardWidth >= CARD_W_COMPACT ? (
                                 <CharacterQuickPills

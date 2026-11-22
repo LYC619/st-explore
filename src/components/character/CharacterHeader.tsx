@@ -34,7 +34,7 @@ import type { CharacterPatch } from '@/lib/character-write';
 import type { NormalizedCharacterCard } from '@/lib/png-parser';
 import { introOf } from '@/lib/character-intro';
 import {
-  RATING_TIER_LABELS, RATING_TIER_PREFILL, normalizeRatingTag, type RatingTier, type TagCategory,
+  RATING_TIER_LABELS, RATING_TIER_PREFILL, normalizeRatingTag, parseTag, validateUserTagInput, type RatingTier, type TagCategory,
 } from '@/lib/tag-taxonomy';
 import { getLibraryTagPreferences } from '@/lib/archive-db';
 import {
@@ -44,19 +44,22 @@ import {
   type LibraryTagPreferences,
 } from '@/lib/library-tag-preferences';
 import { IntroSection } from '@/components/character/IntroSection';
+import { useCharacterLoadoutBadges } from '@/components/character/useCharacterLoadoutBadges';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface CharacterHeaderProps {
   character: ArchiveCharacter;
   norm: NormalizedCharacterCard;
   onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter>;
+  onSelectTab?: (tab: string) => void;
   /** 受控折叠（10.3b 就地阅读时外部收起）；不传则内部自理 */
   collapsed?: boolean;
   onCollapsedChange?: (v: boolean) => void;
 }
 
-export function CharacterHeader({ character, norm, onPatch, collapsed, onCollapsedChange }: CharacterHeaderProps) {
+export function CharacterHeader({ character, norm, onPatch, onSelectTab, collapsed, onCollapsedChange }: CharacterHeaderProps) {
   const { toast } = useToast();
+  const loadoutBadges = useCharacterLoadoutBadges(character, norm);
   const [innerCollapsed, setInnerCollapsed] = useState(false);
   const isCollapsed = collapsed ?? innerCollapsed;
   const setCollapsed = onCollapsedChange ?? setInnerCollapsed;
@@ -160,10 +163,20 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
     }
   };
 
-  const addTag = async (raw: string) => {
-    if (!raw || tagDraftRef.current.includes(raw)) return;
+  const addTag = async (input: string) => {
+    if (!input) return;
+    const raw = parseTag(input).raw;
+    const rejected = validateUserTagInput(raw);
+    if (rejected) {
+      toast({ title: rejected, variant: 'destructive' });
+      return;
+    }
+    if (tagDraftRef.current.includes(raw)) {
+      setNewTag('');
+      return;
+    }
     if (await setTagChecked(raw, true)) {
-      setNewTag((current) => (current.trim() === raw ? '' : current));
+      setNewTag('');
     }
   };
 
@@ -207,10 +220,41 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
             transition={{ duration: 0.22, ease: 'easeOut' }}
             className="overflow-hidden"
           >
-            {(creator || source) && (
-              <p className="text-sm text-[color:var(--character-label)] mt-1">
-                {[creator, source].filter(Boolean).join(' · ')}
-              </p>
+            {(creator || source || loadoutBadges.length > 0) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+                {(creator || source) && (
+                  <p className="text-sm text-[color:var(--character-label)]">
+                    {[creator, source].filter(Boolean).join(' · ')}
+                  </p>
+                )}
+                {loadoutBadges.length > 0 && (
+                  <div
+                    data-header-loadout
+                    aria-label="已挂载的随卡装备"
+                    className="flex flex-wrap items-center gap-1.5"
+                  >
+                    {(creator || source) && (
+                      <span className="text-[color:var(--border-normal)] select-none" aria-hidden="true">·</span>
+                    )}
+                    {loadoutBadges.map((badge) => {
+                      const Icon = badge.icon;
+                      return (
+                        <button
+                          key={badge.key}
+                          type="button"
+                          title={badge.hint}
+                          onClick={() => onSelectTab?.('assets')}
+                          className="tap-target inline-flex items-center gap-1 rounded-full border border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-2 py-0.5 text-xs text-[color:var(--text-primary)] transition-colors hover:border-brand"
+                        >
+                          <Icon className="h-3 w-3 shrink-0 text-brand" />
+                          <span className="text-[11px] text-[color:var(--character-label)]">{badge.title}</span>
+                          <span className="max-w-36 truncate font-medium">{badge.value}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
             <p className={`text-sm leading-relaxed mt-2 max-w-3xl ${intro ? 'text-[color:var(--text-body)]' : 'text-[color:var(--character-label)]'}`}>
               {intro ?? '暂无简介 — 点标题旁的铅笔编辑，或在弹窗里用 AI 生成'}
@@ -279,8 +323,34 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  className="w-[min(760px,calc(100vw-2rem))] max-h-[min(70vh,36rem)] overflow-y-auto p-3"
+                  className="w-[min(760px,calc(100vw-2rem))] max-h-[min(70vh,36rem)] overflow-y-auto p-3 space-y-3"
                 >
+                  <form
+                    className="flex items-center gap-2 border-b border-[color:var(--hairline-inner)] pb-2.5"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void addTag(newTag.trim());
+                    }}
+                  >
+                    <Input
+                      size="sm"
+                      value={newTag}
+                      onChange={(e) => setNewTag(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void addTag(newTag.trim());
+                        }
+                      }}
+                      placeholder="自建标签：类别/子标签（回车添加）"
+                      aria-label="自建标签"
+                      className="max-w-64 text-base sm:text-xs"
+                    />
+                    <Button type="submit" variant="outline" size="sm" disabled={!newTag.trim()} className="text-xs">
+                      添加
+                    </Button>
+                  </form>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {quickTagCategories.map((cat) => (
                     <section key={cat} className="min-w-0 rounded-md border border-[color:var(--hairline-inner)] p-2">
@@ -311,17 +381,6 @@ export function CharacterHeader({ character, norm, onPatch, collapsed, onCollaps
                   </div>
                 </PopoverContent>
               </Popover>
-              <Input size="sm"
-                value={newTag}
-                onChange={(e) => setNewTag(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    void addTag(newTag.trim());
-                  }
-                }}
-                placeholder="自建：类别/子标签"
-                className="w-32 text-xs"
-              />
             </div>
           </motion.div>
         )}

@@ -38,14 +38,23 @@ import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character
 import { importEmbeddedAssets } from '@/lib/card-embedded-assets';
 import { characterExportName, downloadCharacterFile, downloadCharacterJson } from '@/lib/character-file';
 import { CharacterWorldbookChoiceRequired } from '@/lib/character-export-snapshot';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { buildStoryFileExport, type StoryFileFormat } from '@/lib/story-file-export';
 import { saveTextFile } from '@/lib/roleplay/export-package-file';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { subscribePortraitCloudSaves } from '@/lib/portrait-cloud-task';
-import { editsFromNormalized, exportCardJson, type CardEdits } from '@/lib/card-export';
+import { editsFromNormalized, type CardEdits } from '@/lib/card-export';
 import { applyCharacterPageCardEdits, applyCharacterPageDisplayMeta } from '@/lib/character-page-edit';
-import { setPendingToolFile } from '@/lib/tool-handoff';
 import { cn } from '@/lib/utils';
 import { useViewport } from '@/hooks/use-viewport';
 import { renameArchiveStory } from '@/lib/story-rename';
@@ -61,7 +70,6 @@ import {
 } from '@/lib/editor-story-context';
 import { CharacterInfoRail } from '@/components/character/CharacterInfoRail';
 import { CharacterHeader } from '@/components/character/CharacterHeader';
-import { CharacterLoadoutBar } from '@/components/character/CharacterLoadoutBar';
 import { AssetSection } from '@/components/character/AssetSection';
 import { useCharacterNeighbors } from '@/hooks/use-character-neighbors';
 import { NotesSection } from '@/components/character/NotesSection';
@@ -94,10 +102,14 @@ const TAB_IMPORT_KIND: Record<string, CharacterImportKind> = {
 
 function CharacterRouteBlocker({
   dirty,
+  saving,
   flush,
+  onDiscard,
 }: {
   dirty: boolean;
+  saving: boolean;
   flush: () => Promise<boolean>;
+  onDiscard: () => void;
 }) {
   const blocker = useBlocker(({ currentLocation, nextLocation }) => (
     dirty && currentLocation.pathname !== nextLocation.pathname
@@ -113,21 +125,55 @@ function CharacterRouteBlocker({
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [dirty]);
 
-  useEffect(() => {
-    if (blocker.state !== 'blocked') return;
-    let cancelled = false;
-    void flush().then((ok) => {
-      if (cancelled) return;
-      if (ok) blocker.proceed();
-      else blocker.reset();
-    });
-    return () => { cancelled = true; };
-  }, [blocker, flush]);
+  if (blocker.state !== 'blocked') return null;
 
-  return null;
+  return (
+    <AlertDialog open onOpenChange={(open) => { if (!open && !saving) blocker.reset(); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>角色卡设定还未保存</AlertDialogTitle>
+          <AlertDialogDescription>
+            你刚修改了人设、展示名或开场白，离开当前页面会丢失未保存的改动。
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel autoFocus disabled={saving} onClick={() => blocker.reset()}>
+            继续编辑
+          </AlertDialogCancel>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={() => {
+              onDiscard();
+              blocker.proceed();
+            }}
+          >
+            放弃修改并离开
+          </Button>
+          <AlertDialogAction
+            disabled={saving}
+            onClick={(event) => {
+              event.preventDefault();
+              void flush().then((ok) => {
+                if (ok) blocker.proceed();
+              });
+            }}
+          >
+            {saving ? '保存中…' : '保存并离开'}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
-function SafeCharacterRouteBlocker(props: { dirty: boolean; flush: () => Promise<boolean> }) {
+function SafeCharacterRouteBlocker(props: {
+  dirty: boolean;
+  saving: boolean;
+  flush: () => Promise<boolean>;
+  onDiscard: () => void;
+}) {
   const router = useContext(UNSAFE_DataRouterContext);
   return router ? <CharacterRouteBlocker {...props} /> : null;
 }
@@ -311,36 +357,42 @@ const CharacterPage = () => {
     }
   }, [id, toast]);
 
-  const saveCardEdits = useCallback(async (): Promise<boolean> => {
+  const discardCardEdits = useCallback(() => {
+    if (!character) return;
+    setCardEdits(editsFromNormalized(normalizeCharacterCard(character.card)));
+    setDisplayNameDraft(character.displayMeta?.name ?? '');
+  }, [character]);
+
+  const saveCardEdits = useCallback(async (): Promise<ArchiveCharacter | null> => {
     // 直跳到另一角色而新档案尚未加载完成时，character 仍是旧卡；禁止把旧卡整卡写进新 id。
-    if (!character || character.id !== id || !cardEdits || cardSaving) return false;
+    if (!character || character.id !== id || !cardEdits || cardSaving) return null;
     setCardSaving(true);
     try {
       const next = applyCharacterPageCardEdits(character, cardEdits);
-      await patchCharacter({ name: next.name, subtitle: next.subtitle, card: next.card, pngBase64: next.pngBase64 });
-      setCardEdits(editsFromNormalized(normalizeCharacterCard(next.card)));
+      const saved = await patchCharacter({ name: next.name, subtitle: next.subtitle, card: next.card, pngBase64: next.pngBase64 });
+      setCardEdits(editsFromNormalized(normalizeCharacterCard(saved.card)));
       toast({ title: '角色卡已保存', description: '实际名、核心字段和开场白已更新。' });
-      return true;
+      return saved;
     } catch (error) {
       toast({ title: '角色卡保存失败', description: error instanceof Error ? error.message : '请检查内容后重试', variant: 'destructive' });
-      return false;
+      return null;
     } finally {
       setCardSaving(false);
     }
   }, [cardEdits, cardSaving, character, id, patchCharacter, toast]);
 
-  const saveDisplayName = useCallback(async (): Promise<boolean> => {
-    if (!character || character.id !== id) return false;
+  const saveDisplayName = useCallback(async (): Promise<ArchiveCharacter | null> => {
+    if (!character || character.id !== id) return null;
     // 与档案值相同则跳过：避免多余写入和「已保存」噪音提示。
-    if ((displayNameDraft.trim() || undefined) === character.displayMeta?.name) return true;
+    if ((displayNameDraft.trim() || undefined) === character.displayMeta?.name) return character;
     try {
       const next = applyCharacterPageDisplayMeta(character, { name: displayNameDraft });
-      await patchCharacter({ displayMeta: next.displayMeta });
+      const saved = await patchCharacter({ displayMeta: next.displayMeta });
       toast({ title: '展示名已保存' });
-      return true;
+      return saved;
     } catch (error) {
       toast({ title: '展示名保存失败', description: error instanceof Error ? error.message : '请重试', variant: 'destructive' });
-      return false;
+      return null;
     }
   }, [character, displayNameDraft, id, patchCharacter, toast]);
 
@@ -389,43 +441,31 @@ const CharacterPage = () => {
     toast({ title: '故事已删除' });
   };
 
-  const flushUnsavedCardEdits = useCallback(async (): Promise<boolean> => {
+  const ensureLatestSavedCharacter = useCallback(async (): Promise<ArchiveCharacter | null> => {
+    if (!character || character.id !== id) return null;
+    let latest: ArchiveCharacter = character;
     if (cardDirty) {
-      const ok = await saveCardEdits();
-      if (!ok) return false;
+      const saved = await saveCardEdits();
+      if (!saved) return null;
+      latest = saved;
     }
     if (displayNameDirty) {
-      const ok = await saveDisplayName();
-      if (!ok) return false;
+      const saved = await saveDisplayName();
+      if (!saved) return null;
+      latest = saved;
     }
-    return true;
-  }, [cardDirty, displayNameDirty, saveCardEdits, saveDisplayName]);
+    return latest;
+  }, [cardDirty, character, displayNameDirty, id, saveCardEdits, saveDisplayName]);
 
-  const navigateWithGuard = useCallback(async (targetPath: string) => {
-    if (!(await flushUnsavedCardEdits())) return;
-    navigate(targetPath);
-  }, [flushUnsavedCardEdits, navigate]);
+  const flushUnsavedCardEdits = useCallback(async (): Promise<boolean> => {
+    const latest = await ensureLatestSavedCharacter();
+    return Boolean(latest);
+  }, [ensureLatestSavedCharacter]);
 
   const neighbors = useCharacterNeighbors(id, {
     disabled: Boolean(importOpen || packExportOpen || exportChoice || storyToDelete || charDeleteOpen || cardSaving),
-    onNavigateNeighbor: (targetId) => { void navigateWithGuard(`/character/${targetId}`); },
+    onNavigateNeighbor: (targetId) => { navigate(`/character/${targetId}`); },
   });
-
-  /** 编辑角色卡：把卡原件经内存交接送进编辑区角色卡工具（处理归编辑区的动线） */
-  const handleEditCard = async () => {
-    if (!character) return;
-    if (!(await flushUnsavedCardEdits())) return;
-    const latest = (await getCharacter(character.id).catch(() => undefined)) ?? character;
-    let file: File;
-    if (latest.pngBase64) {
-      const bytes = Uint8Array.from(atob(latest.pngBase64), (ch) => ch.charCodeAt(0));
-      file = new File([bytes], `${latest.name}.png`, { type: 'image/png' });
-    } else {
-      file = new File([exportCardJson(latest.card)], `${latest.name}.json`, { type: 'application/json' });
-    }
-    setPendingToolFile('card', file);
-    navigate('/card-viewer');
-  };
 
   /** 读取内置资源：重扫卡内嵌世界书/正则入库并挂关联（sourcePath 去重，不重复建） */
   const handleReadEmbedded = async () => {
@@ -488,37 +528,41 @@ const CharacterPage = () => {
     floorOverride?: number,
   ) => {
     setEditorStoryId(storyId);
-    void flushUnsavedCardEdits().then((ok) => {
-      if (!ok) return;
-      navigate(buildStoryReadPath(storyId, { branchId, floor: floorOverride }));
-    });
-  }, [flushUnsavedCardEdits, navigate]);
+    navigate(buildStoryReadPath(storyId, { branchId, floor: floorOverride }));
+  }, [navigate]);
 
   /** 列表行内改状态/评分（就地落库，不动 lastViewedAt） */
   const patchStory = useCallback(async (storyId: string, patch: Partial<ArchiveStory>) => {
-    await updateArchiveStory(storyId, () => ({ ...patch, updatedAt: Date.now() }));
-    await load();
-  }, [load]);
+    try {
+      await updateArchiveStory(storyId, () => ({ ...patch, updatedAt: Date.now() }));
+      await load();
+    } catch (error) {
+      toast({
+        title: '保存故事状态失败',
+        description: error instanceof Error ? error.message : '请检查文件库是否可写后重试',
+        variant: 'destructive',
+      });
+    }
+  }, [load, toast]);
 
   /** 故事阅读与编辑、总结整理、导入导出统一进入大屏故事工作区 `/story/:id`。 */
   const goWorkspace = useCallback((storyId: string, view?: EditorStoryView, branchId?: string | null) => {
     setEditorStoryId(storyId);
-    void flushUnsavedCardEdits().then((ok) => {
-      if (!ok) return;
-      if (!view || view === 'read') {
-        navigate(buildStoryReadPath(storyId, { branchId }));
-        return;
-      }
-      const state = branchId !== undefined ? { state: { branchId } } : undefined;
-      navigate(buildEditorStoryPath(storyId, view), state);
-    });
-  }, [flushUnsavedCardEdits, navigate]);
+    if (!view || view === 'read') {
+      navigate(buildStoryReadPath(storyId, { branchId }));
+      return;
+    }
+    const state = branchId !== undefined ? { state: { branchId } } : undefined;
+    navigate(buildEditorStoryPath(storyId, view), state);
+  }, [navigate]);
 
   const exportJsonCard = async (worldbookId?: string) => {
     if (!character) return;
+    const target = (cardDirty || displayNameDirty) ? await ensureLatestSavedCharacter() : character;
+    if (!target) return;
     try {
-      const result = await downloadCharacterJson(character, worldbookId);
-      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡 JSON', description: `${characterExportName(character)}.json` });
+      const result = await downloadCharacterJson(target, worldbookId);
+      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡 JSON', description: `${characterExportName(target)}.json` });
     } catch (error) {
       if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'json', choices: error.choices });
       else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
@@ -527,10 +571,12 @@ const CharacterPage = () => {
 
   const exportCardFile = async (worldbookId?: string) => {
     if (!character) return;
+    const target = (cardDirty || displayNameDirty) ? await ensureLatestSavedCharacter() : character;
+    if (!target) return;
     try {
-      const result = await downloadCharacterFile(character, worldbookId);
+      const result = await downloadCharacterFile(target, worldbookId);
       if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡',
-        description: `${characterExportName(character)}.${character.pngBase64 ? 'png' : 'json'}` });
+        description: `${characterExportName(target)}.${target.pngBase64 ? 'png' : 'json'}` });
     } catch (error) {
       if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'file', choices: error.choices });
       else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
@@ -653,17 +699,20 @@ const CharacterPage = () => {
     );
   }
 
-  // tab 计数（10.3c）：资产含引用摘录与关联文件；立绘=各行图片合计
+  // tab 计数（10.3c）：资产含引用摘录与关联文件；立绘=各行图片合计；开场白=首段+备选
   const assetCount = (character.assets?.length ?? 0)
     + (character.quotes?.length ?? 0)
     + (character.attachments?.length ?? 0);
   const portraitCount = (character.portraitRows ?? []).reduce((n, r) => n + r.items.length, 0);
+  const greetingCount = (norm.firstMessage.trim() ? 1 : 0)
+    + norm.alternateGreetings.filter((g) => g.trim()).length;
+  const showTopImport = activeTab === 'stories' || activeTab === 'notes';
 
   return (
     <AppLayout
       leftActions={
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={() => { void navigateWithGuard('/library'); }}>
+          <Button variant="ghost" size="sm" onClick={() => navigate('/library')}>
             <ArrowLeft className="w-4 h-4 mr-1" />
             角色库
           </Button>
@@ -673,7 +722,7 @@ const CharacterPage = () => {
                 variant="ghost"
                 size="icon"
                 disabled={!neighbors.prev}
-                onClick={() => neighbors.prev && void navigateWithGuard(`/character/${neighbors.prev.id}`)}
+                onClick={() => neighbors.prev && navigate(`/character/${neighbors.prev.id}`)}
                 aria-label={neighbors.prev ? `上一张角色卡：${neighbors.prev.name}` : '已是第一张角色卡'}
                 title={neighbors.prev ? `上一张：${neighbors.prev.name}（快捷键 [ ）` : '已是第一张'}
               >
@@ -686,7 +735,7 @@ const CharacterPage = () => {
                 variant="ghost"
                 size="icon"
                 disabled={!neighbors.next}
-                onClick={() => neighbors.next && void navigateWithGuard(`/character/${neighbors.next.id}`)}
+                onClick={() => neighbors.next && navigate(`/character/${neighbors.next.id}`)}
                 aria-label={neighbors.next ? `下一张角色卡：${neighbors.next.name}` : '已是最后一张角色卡'}
                 title={neighbors.next ? `下一张：${neighbors.next.name}（快捷键 ] ）` : '已是最后一张'}
               >
@@ -705,7 +754,6 @@ const CharacterPage = () => {
             norm={norm}
             stories={sortedStories}
             onPatch={patchCharacter}
-            onEditCard={handleEditCard}
             onReadEmbedded={handleReadEmbedded}
             onExport={() => { void exportCardFile(); }}
             onExportJson={() => { void exportJsonCard(); }}
@@ -722,7 +770,6 @@ const CharacterPage = () => {
               norm={norm}
               stories={sortedStories}
               onPatch={patchCharacter}
-              onEditCard={handleEditCard}
               onReadEmbedded={handleReadEmbedded}
               onExport={() => { void exportCardFile(); }}
               onExportJson={() => { void exportJsonCard(); }}
@@ -734,11 +781,6 @@ const CharacterPage = () => {
             character={character}
             norm={norm}
             onPatch={patchCharacter}
-          />
-
-          <CharacterLoadoutBar
-            character={character}
-            norm={norm}
             onSelectTab={changeActiveTab}
           />
 
@@ -747,7 +789,7 @@ const CharacterPage = () => {
             onValueChange={changeActiveTab}
             className={cn('flex-1 flex flex-col pt-3', isMobile ? 'px-3 pb-4' : 'px-6 pb-6')}
           >
-            {/* TabsList 用 flex（布局铁律：防插件包裹破坏 grid）；行右侧=统一导入钮（10.3c） */}
+            {/* TabsList 用 flex（布局铁律：防插件包裹破坏 grid）；行右侧=统一导入钮（关联资产与立绘自带导入栏不重复渲染） */}
             <div className="flex flex-wrap items-center gap-2">
                <TabsList className="flex w-fit flex-wrap gap-1">
                  <TabsTrigger value="stories">故事 {stories.length > 0 && <span className="ml-1 text-[11px] opacity-70">{stories.length}</span>}</TabsTrigger>
@@ -755,7 +797,7 @@ const CharacterPage = () => {
                  <TabsTrigger value="assets">关联资产 {assetCount > 0 && <span className="ml-1 text-[11px] opacity-70">{assetCount}</span>}</TabsTrigger>
                  <TabsTrigger value="portraits">立绘 {portraitCount > 0 && <span className="ml-1 text-[11px] opacity-70">{portraitCount}</span>}</TabsTrigger>
                  <TabsTrigger value="card-edit">角色卡编辑</TabsTrigger>
-                 <TabsTrigger value="greetings">开场白</TabsTrigger>
+                 <TabsTrigger value="greetings">开场白 {greetingCount > 0 && <span className="ml-1 text-[11px] opacity-70">{greetingCount}</span>}</TabsTrigger>
                </TabsList>
                {activeTab === 'stories' && <Button size="sm" disabled={startingPlay} onClick={() => {
                  if (playStartLock.current || character.id !== id) return;
@@ -786,7 +828,7 @@ const CharacterPage = () => {
                    {isCompact ? '阅读包' : '导出阅读包'}
                  </Button>
                )}
-               {TAB_IMPORT_KIND[activeTab] && (
+               {showTopImport && TAB_IMPORT_KIND[activeTab] && (
                  <Button
                    variant="outline"
                    size="sm"
@@ -847,7 +889,7 @@ const CharacterPage = () => {
                     stories={sortedStories}
                     activeStoryId={null}
                     onRead={(sid, branchId) => openReader(sid, branchId)}
-                    onProcess={(sid) => goWorkspace(sid)}
+                    onProcess={(sid) => goWorkspace(sid, 'volume')}
                     onExport={(sid) => goWorkspace(sid, 'io')}
                     onExportFile={(sid, branchId, format) => { void exportStoryFile(sid, branchId, format); }}
                     onPlay={(sid, branchId) => { void playStory(sid, branchId); }}
@@ -899,23 +941,23 @@ const CharacterPage = () => {
             {/* 立绘 tab（10.3c 分行式，网页版 IDB 与客户端行文件夹同构） */}
              <TabsContent value="portraits" className="mt-3">
               <PortraitSection
+                key={character.id}
                 character={character}
                 onPatch={patchCharacter}
-                onOpenImport={() => setImportOpen(true)}
               />
              </TabsContent>
 
              <TabsContent value="card-edit" className="mt-3">
                {cardEdits && (
                  <CharacterCardEditSection
+                   key={character.id}
                    edits={cardEdits}
                    displayName={displayNameDraft}
+                   dirty={cardDirty || displayNameDirty}
                    onEditChange={(key, value) => setCardEdits((current) => (current ? { ...current, [key]: value } : current))}
                    onDisplayNameChange={setDisplayNameDraft}
-                   onSave={async () => {
-                     // 卡片保存失败时不再继续保存展示名，避免「失败+已保存」两条矛盾提示。
-                     if (await saveCardEdits()) await saveDisplayName();
-                   }}
+                   onSave={flushUnsavedCardEdits}
+                   onDiscard={discardCardEdits}
                    saving={cardSaving}
                  />
                )}
@@ -932,6 +974,7 @@ const CharacterPage = () => {
                    dirty={cardDirty}
                    saving={cardSaving}
                    onSave={() => { void saveCardEdits(); }}
+                   onDiscard={discardCardEdits}
                    onEditChange={(key, value) => setCardEdits((current) => (current ? { ...current, [key]: value } : current))}
                    onStartWithGreeting={(greetingIdx) => { void startWithGreeting(greetingIdx); }}
                    startingGreetingIndex={startingGreetingIdx}
@@ -992,7 +1035,12 @@ const CharacterPage = () => {
         fileTarget={storyToDelete ? { store: 'archiveStories', id: storyToDelete.id } : undefined}
         onConfirm={handleConfirmDeleteStory} />
 
-      <SafeCharacterRouteBlocker dirty={cardDirty || displayNameDirty} flush={flushUnsavedCardEdits} />
+      <SafeCharacterRouteBlocker
+        dirty={cardDirty || displayNameDirty}
+        saving={cardSaving}
+        flush={flushUnsavedCardEdits}
+        onDiscard={discardCardEdits}
+      />
       <DeleteConfirmDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}
         title={`删除「${character.name}」？`}
         description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"

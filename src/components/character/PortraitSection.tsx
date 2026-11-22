@@ -36,8 +36,8 @@ import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault
 interface PortraitSectionProps {
   character: ArchiveCharacter;
   onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter>;
-  /** 打开统一导入弹窗（预选立绘类） */
-  onOpenImport: () => void;
+  /** 打开统一导入弹窗（兼容旧调用方） */
+  onOpenImport?: () => void;
 }
 
 /** 提前一屏开始读，滚起来看不出在加载 */
@@ -72,11 +72,15 @@ function PortraitThumb({
     const io = new IntersectionObserver((entries) => {
       if (!entries.some((e) => e.isIntersecting)) return;
       io.disconnect(); // 读一次就够，之后由 url 状态兜住
-      void loadPortraitImage(item).then((loaded) => {
-        if (cancelled) return;
-        if (loaded) setUrl(loaded);
-        else setFailed(true); // 文件刚被挪走：说出来，别留个点不动的空框
-      });
+      void loadPortraitImage(item)
+        .then((loaded) => {
+          if (cancelled) return;
+          if (loaded) setUrl(loaded);
+          else setFailed(true); // 文件刚被挪走：说出来，别留个点不动的空框
+        })
+        .catch(() => {
+          if (!cancelled) setFailed(true);
+        });
     }, { rootMargin: PRELOAD_MARGIN });
     io.observe(el);
     return () => {
@@ -118,12 +122,17 @@ function PortraitThumb({
   );
 }
 
-export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSectionProps) {
+export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
   const { toast } = useToast();
   const [views, setViews] = useState<PortraitViewRow[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadSeq, setReloadSeq] = useState(0);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [lightbox, setLightbox] = useState<{ rowId: string; index: number; item: PortraitViewItem; url: string } | null>(null);
   const [renameDrafts, setRenameDrafts] = useState<Record<string, string>>({});
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [itemNameDraft, setItemNameDraft] = useState('');
+  const [lightboxRenaming, setLightboxRenaming] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
@@ -150,17 +159,29 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
     setSelected(new Set());
     setMoveOpen(false);
     setMoveTarget('');
+    setLightbox(null);
+    setEditingItemId(null);
+    setLightboxRenaming(false);
+    setRenameDrafts({});
+    setLoadError(null);
   }, [character.id, vaultEpoch]);
 
   useEffect(() => {
     let cancelled = false;
-    loadPortraitViews(character).then((v) => {
-      if (!cancelled) setViews(v);
-    });
+    setLoadError(null);
+    loadPortraitViews(character)
+      .then((v) => {
+        if (!cancelled) setViews(v);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadError(error instanceof Error ? error.message : '读取立绘目录失败，请检查文件库是否可访问');
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [character]);
+  }, [character, reloadSeq]);
 
   const rows = character.portraitRows ?? [];
   /** 可以作为移动目标的分行（散图是虚拟行，不能收东西） */
@@ -250,15 +271,27 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
     }
   };
 
-  const handleRenameItem = async (item: PortraitViewItem) => {
+  const beginRenameItem = (item: PortraitViewItem, inLightbox = false) => {
     if (!item.itemId) return;
-    const next = window.prompt('重命名立绘', item.name);
-    if (next == null || next.trim() === item.name) return;
+    setItemNameDraft(item.name);
+    if (inLightbox) {
+      setLightboxRenaming(true);
+    } else {
+      setEditingItemId(item.itemId);
+    }
+  };
+
+  const commitRenameItem = async (item: PortraitViewItem, rawDraft: string) => {
+    if (!item.itemId) return;
+    const trimmed = rawDraft.trim();
+    setEditingItemId(null);
+    setLightboxRenaming(false);
+    if (!trimmed || trimmed === item.name) return;
     try {
-      await onPatch((current) => renamePortraitItem(current, item.itemId!, next));
-      setViews((current) => current?.map((row) => ({ ...row, items: row.items.map((entry) => entry.itemId === item.itemId ? { ...entry, name: next.trim() } : entry) })) ?? null);
+      await onPatch((current) => renamePortraitItem(current, item.itemId!, trimmed));
+      setViews((current) => current?.map((row) => ({ ...row, items: row.items.map((entry) => entry.itemId === item.itemId ? { ...entry, name: trimmed } : entry) })) ?? null);
       setLightbox((current) => current && current.item.itemId === item.itemId
-        ? { ...current, item: { ...current.item, name: next.trim() } }
+        ? { ...current, item: { ...current.item, name: trimmed } }
         : current);
     } catch (error) {
       toast({ title: '重命名失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
@@ -400,7 +433,14 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
             <Plus className="w-3.5 h-3.5 mr-1" />
             新建分行
           </Button>
-          <Button variant="outline" size="sm" onClick={onOpenImport}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              importRowId.current = managedRows[0]?.rowId ?? null;
+              fileRef.current?.click();
+            }}
+          >
             <Download className="w-3.5 h-3.5 mr-1" />
             导入立绘
           </Button>
@@ -436,7 +476,14 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
         </div>
       )}
 
-      {views === null ? (
+      {loadError ? (
+        <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-3 text-xs text-[color:var(--text-body)]">
+          <span>立绘目录暂时没能读取出来：{loadError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setReloadSeq((n) => n + 1)}>
+            重新读取
+          </Button>
+        </div>
+      ) : views === null ? (
         <p className="text-sm text-muted-foreground py-6 text-center">{LOADING_LABEL}</p>
       ) : views.length === 0 ? (
         <Card>
@@ -467,6 +514,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                     className="h-7 w-40 rounded-md border border-transparent bg-transparent px-2 text-sm font-medium hover:border-border focus:border-ring focus:outline-none transition-colors"
                     onBlur={(e) => void handleRename(row.rowId, e.target.value)}
                     onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
                       if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
                     }}
                   />
@@ -533,17 +581,38 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                           }}
                         />
                         <div className="mt-1 flex items-center gap-1 text-[11px] leading-tight">
-                          <span
-                            className="min-w-0 truncate text-muted-foreground"
-                            title={`${item.name}${item.source === 'replaced' ? '（被替换的旧卡面自动存档）' : item.source === 'stray' ? '（文件夹里的图片，未入库）' : ''}`}
-                          >
-                            {item.name}
-                          </span>
+                          {item.itemId && editingItemId === item.itemId ? (
+                            <input
+                              autoFocus
+                              value={itemNameDraft}
+                              onChange={(e) => setItemNameDraft(e.target.value)}
+                              onBlur={() => { void commitRenameItem(item, itemNameDraft); }}
+                              onKeyDown={(e) => {
+                                if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  void commitRenameItem(item, itemNameDraft);
+                                } else if (e.key === 'Escape') {
+                                  e.preventDefault();
+                                  setEditingItemId(null);
+                                }
+                              }}
+                              aria-label="立绘名称"
+                              className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs"
+                            />
+                          ) : (
+                            <span
+                              className="min-w-0 truncate text-muted-foreground"
+                              title={`${item.name}${item.source === 'replaced' ? '（被替换的旧卡面自动存档）' : item.source === 'stray' ? '（文件夹里的图片，未入库）' : ''}`}
+                            >
+                              {item.name}
+                            </span>
+                          )}
                           {item.isCurrent ? (
                             <span className="ml-auto shrink-0 text-primary font-medium">当前</span>
-                          ) : !selectMode && (
+                          ) : !selectMode && editingItemId !== item.itemId && (
                             <button
-                              className="ml-auto shrink-0 text-primary opacity-0 group-hover/pc:opacity-100 transition-opacity"
+                              className="ml-auto shrink-0 text-primary opacity-0 group-hover/pc:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                               onClick={() => void handleSetCard(item)}
                               title="把这张图设为角色卡面（卡数据嵌入图内，原卡面自动存档）"
                             >
@@ -551,11 +620,11 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                             </button>
                           )}
                         </div>
-                        {item.itemId && !selectMode && (
-                          <div className="mt-1 flex gap-1 opacity-0 group-hover/pc:opacity-100 focus-within:opacity-100 transition-opacity">
-                            <button className="tap-target text-muted-foreground" onClick={() => void handleRenameItem(item)} title="重命名立绘" aria-label="重命名立绘"><Pencil className="w-3 h-3" /></button>
-                            <button className="tap-target text-muted-foreground" onClick={() => handleReplaceItem(item)} title="替换立绘" aria-label="替换立绘"><Replace className="w-3 h-3" /></button>
-                            <button className="tap-target text-destructive" onClick={() => setPendingDelete({ kind: 'items', itemIds: [item.itemId!] })} title="删除立绘" aria-label="删除立绘"><Trash2 className="w-3 h-3" /></button>
+                        {item.itemId && !selectMode && editingItemId !== item.itemId && (
+                          <div className="mt-1 flex items-center gap-2 opacity-0 group-hover/pc:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
+                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => beginRenameItem(item, false)} title="重命名立绘" aria-label="重命名立绘"><Pencil className="w-3 h-3" /></button>
+                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => handleReplaceItem(item)} title="替换立绘" aria-label="替换立绘"><Replace className="w-3 h-3" /></button>
+                            <button type="button" className="tap-target ml-auto rounded p-1.5 text-destructive hover:bg-destructive/10" onClick={() => setPendingDelete({ kind: 'items', itemIds: [item.itemId!] })} title="删除立绘" aria-label="删除立绘"><Trash2 className="w-3 h-3" /></button>
                           </div>
                         )}
                       </div>
@@ -588,7 +657,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
       />
 
       {/* lightbox：图下方带操作条，放大着就能改名/替换/设卡面/删（0826 反馈 3） */}
-      <Dialog open={!!lightbox} onOpenChange={(v) => !v && setLightbox(null)}>
+      <Dialog open={!!lightbox} onOpenChange={(v) => { if (!v) { setLightboxRenaming(false); setLightbox(null); } }}>
         <DialogContent className="max-w-3xl p-2 bg-transparent border-0 shadow-none">
           <DialogTitle className="sr-only">{lightbox?.item.name}</DialogTitle>
           {lightbox && (
@@ -599,10 +668,31 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                 <button className="tap-target absolute right-1 top-1/2 -translate-y-1/2 z-10 rounded-full bg-background/80 p-2" onClick={() => void moveLightbox(1)} title="下一张" aria-label="下一张"><ChevronRight className="w-5 h-5" /></button>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
-                <span className="min-w-0 truncate text-xs text-muted-foreground" title={lightbox.item.name}>
-                  {lightbox.item.name}
-                  {lightboxRowSize > 1 && <span className="ml-1.5">{lightbox.index + 1}/{lightboxRowSize}</span>}
-                </span>
+                {lightboxRenaming && lightbox.item.itemId ? (
+                  <input
+                    autoFocus
+                    value={itemNameDraft}
+                    onChange={(e) => setItemNameDraft(e.target.value)}
+                    onBlur={() => { void commitRenameItem(lightbox.item, itemNameDraft); }}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        void commitRenameItem(lightbox.item, itemNameDraft);
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault();
+                        setLightboxRenaming(false);
+                      }
+                    }}
+                    aria-label="立绘名称"
+                    className="min-w-0 flex-1 max-w-xs rounded border border-primary/50 bg-background px-2 py-1 text-xs"
+                  />
+                ) : (
+                  <span className="min-w-0 truncate text-xs text-muted-foreground" title={lightbox.item.name}>
+                    {lightbox.item.name}
+                    {lightboxRowSize > 1 && <span className="ml-1.5">{lightbox.index + 1}/{lightboxRowSize}</span>}
+                  </span>
+                )}
                 <div className="ml-auto flex flex-wrap gap-1.5">
                   {lightbox.item.isCurrent ? (
                     <span className="self-center text-xs text-primary">当前卡面</span>
@@ -614,7 +704,7 @@ export function PortraitSection({ character, onPatch, onOpenImport }: PortraitSe
                   )}
                   {lightbox.item.itemId && (
                     <>
-                      <Button variant="outline" size="sm" onClick={() => void handleRenameItem(lightbox.item)}>
+                      <Button variant="outline" size="sm" onClick={() => beginRenameItem(lightbox.item, true)}>
                         <Pencil className="w-3.5 h-3.5 mr-1" />
                         重命名
                       </Button>

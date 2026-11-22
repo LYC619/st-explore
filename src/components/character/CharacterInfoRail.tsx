@@ -4,7 +4,7 @@
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Wrench, PenLine, PackageOpen, Trash2, Upload, FileJson, ChevronLeft, ChevronRight } from 'lucide-react';
+import { BookOpen, Wrench, PackageOpen, Trash2, Upload, FileJson, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -31,7 +31,6 @@ interface CharacterInfoRailProps {
   norm: NormalizedCharacterCard;
   stories: ArchiveStory[];
   onPatch: (patch: CharacterPatch) => Promise<ArchiveCharacter>;
-  onEditCard: () => void;
   onReadEmbedded: () => void;
   onExport: () => void;
   onExportJson?: () => void;
@@ -56,7 +55,7 @@ function InfoRow({ label, value, title }: { label: string; value: React.ReactNod
 }
 
 export function CharacterInfoRail({
-  character, norm, stories, onPatch, onEditCard, onReadEmbedded, onExport, onExportJson, onDelete, stacked = false,
+  character, norm, stories, onPatch, onReadEmbedded, onExport, onExportJson, onDelete, stacked = false,
 }: CharacterInfoRailProps) {
   const [collapsed, setCollapsed] = useState(() => scopedGet('ste-character-info-collapsed') === '1');
   const toggleCollapsed = () => {
@@ -137,9 +136,11 @@ export function CharacterInfoRail({
         )}
       </button>
 
-      {/* 信息行 */}
+      {/* 信息行：仅在自定义了不同展示名时显示原卡名，避免与右侧标题重复 */}
       <div className={cn(stacked ? 'min-w-0 flex-1' : 'mt-4')}>
-        <InfoRow label="名称" value={character.name} title={character.name} />
+        {character.displayMeta?.name && character.displayMeta.name !== character.name && (
+          <InfoRow label="原卡名" value={character.name} title={character.name} />
+        )}
         <div className="flex items-center justify-between gap-3 py-2.5 border-b border-[color:var(--hairline-inner)]">
           <span className="text-sm text-[color:var(--character-label)] shrink-0">类型</span>
           <Select
@@ -201,10 +202,6 @@ export function CharacterInfoRail({
               <SheetDescription>对这张卡的文件级操作；整理信息（类型/标签/评分）在页面上直接改。</SheetDescription>
             </SheetHeader>
             <div className="mt-5 flex flex-col gap-2">
-              <Button variant="outline" className="justify-start" onClick={() => { setDrawerOpen(false); onEditCard(); }}>
-                <PenLine className="w-4 h-4 mr-2" />
-                编辑角色卡（进编辑区）
-              </Button>
               <Button
                 variant="outline"
                 className="justify-start"
