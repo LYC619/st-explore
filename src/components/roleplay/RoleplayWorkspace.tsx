@@ -37,7 +37,7 @@ export function RoleplayWorkspace() {
   useEffect(() => {
     if (!match?.params.id) return;
     const query = new URLSearchParams(location.search);
-    if (getRoleplaySessionSnapshot().detached) closeDetachedTavernWindow();
+    if (getRoleplaySessionSnapshot().detached && !closeDetachedTavernWindow()) return;
     setRoleplayOpenChat(
       {
         id: match.params.id,
@@ -65,7 +65,7 @@ export function RoleplayWorkspace() {
     ) {
       return;
     }
-    closeDetachedTavernWindow();
+    if (!closeDetachedTavernWindow()) return;
     setRoleplayOpenChat(null);
     if (matchPath('/play/:id', locationRef.current.pathname)) {
       navigate('/play', { replace: true });

@@ -280,7 +280,7 @@ export default function ChatHub() {
         });
         return false;
       }
-      closeDetachedTavernWindow();
+      if (!closeDetachedTavernWindow()) return false;
       setRoleplayOpenChat(null);
     }
     const ok = await executeDeleteAction(

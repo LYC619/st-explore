@@ -3,8 +3,13 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button-variants";
+import { ForeignDialogContent } from './foreign-dialog';
+import { ForeignDialogContext, isForeignContainer, PortalDialogContext, usePortalDialogState } from './foreign-dialog-context';
 
-const AlertDialog = AlertDialogPrimitive.Root;
+const AlertDialog = (props: React.ComponentProps<typeof AlertDialogPrimitive.Root>) => {
+  const state = usePortalDialogState(props);
+  return <PortalDialogContext.Provider value={state}><AlertDialogPrimitive.Root {...props} {...state} /></PortalDialogContext.Provider>;
+};
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 
@@ -28,7 +33,10 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> & { container?: HTMLElement | null }
->(({ className, container, ...props }, ref) => (
+>(({ className, container, ...props }, ref) => {
+  if (isForeignContainer(container)) return <ForeignDialogContent container={container} ref={ref} role="alertdialog"
+    className={cn('fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg', className)} {...props} />;
+  return (
   <AlertDialogPortal container={container}>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
@@ -40,7 +48,8 @@ const AlertDialogContent = React.forwardRef<
       {...props}
     />
   </AlertDialogPortal>
-));
+  );
+});
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
 const AlertDialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -80,13 +89,15 @@ AlertDialogAction.displayName = AlertDialogPrimitive.Action.displayName;
 const AlertDialogCancel = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Cancel>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Cancel>
->(({ className, ...props }, ref) => (
-  <AlertDialogPrimitive.Cancel
+>(({ className, ...props }, ref) => {
+  const foreign = React.useContext(ForeignDialogContext);
+  const Cancel = foreign ? AlertDialogPrimitive.Action : AlertDialogPrimitive.Cancel;
+  return <Cancel
     ref={ref}
     className={cn(buttonVariants({ variant: "outline" }), "mt-2 sm:mt-0", className)}
     {...props}
-  />
-));
+  />;
+});
 AlertDialogCancel.displayName = AlertDialogPrimitive.Cancel.displayName;
 
 export {

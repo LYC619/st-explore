@@ -463,7 +463,7 @@ const CharacterPage = () => {
         });
         return;
       }
-      closeDetachedTavernWindow();
+      if (!closeDetachedTavernWindow()) return;
       setRoleplayOpenChat(null);
     }
     await deleteArchiveStory(storyToDelete.id, options);

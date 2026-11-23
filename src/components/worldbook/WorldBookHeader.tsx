@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Clock, Globe, Plus, Save, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -59,9 +59,11 @@ export function WorldBookHeader({
   onSave, saveStatus, saveError, onBeforeExport, sourceTitle, onRestoreSource, children,
 }: WorldBookHeaderProps) {
   const [nameDraft, setNameDraft] = useState(filename);
+  const cancelBlur = useRef(false);
   useEffect(() => { setNameDraft(filename); }, [filename]);
 
   const commitName = () => {
+    if (cancelBlur.current) { cancelBlur.current = false; return; }
     const trimmed = nameDraft.trim();
     if (!trimmed) {
       setNameDraft(filename);
@@ -87,6 +89,8 @@ export function WorldBookHeader({
                 e.preventDefault();
                 (e.target as HTMLInputElement).blur();
               } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelBlur.current = true;
                 setNameDraft(filename);
                 (e.target as HTMLInputElement).blur();
               }

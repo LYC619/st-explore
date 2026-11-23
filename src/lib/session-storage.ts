@@ -1,6 +1,6 @@
 import type { ChatSession, ExportSettings, ChapterMarker, RegexRule } from '@/types/chat';
 import { DEFAULT_REGEX_RULES } from '@/types/chat';
-import { getArchiveStory } from '@/lib/archive-db';
+import { getArchiveStory, getBranchLine } from '@/lib/archive-db';
 
 const SESSION_KEY = 'st-beautifier-session';
 const SETTINGS_KEY = 'st-beautifier-settings';
@@ -43,6 +43,8 @@ export interface GlobalReadingAppearance {
  */
 export interface SessionPointer {
   currentBookId: string | null;
+  /** Older pointers without this field refer to the main line. */
+  branchId?: string | null;
   markers: ChapterMarker[];
   /** 收藏的楼层（存 messageId，轻量个人书签，不进导出，区别于会进 TXT 标题的章节标记） */
   favorites?: string[];
@@ -102,7 +104,7 @@ export async function loadActiveSession(): Promise<ChatSession | null> {
   if (!pointer?.currentBookId) return null;
   try {
     const story = await getArchiveStory(pointer.currentBookId);
-    return story?.session ?? null;
+    return story ? getBranchLine(story, pointer.branchId ?? null)?.session ?? null : null;
   } catch (e) {
     console.error('Failed to load active session:', e);
     return null;

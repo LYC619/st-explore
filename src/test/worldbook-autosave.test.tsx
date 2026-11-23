@@ -8,15 +8,15 @@ import { setActiveVault } from '@/lib/vault/active';
 
 let root: Root, container: HTMLDivElement;
 let api: ReturnType<typeof useWorldbookAutosave<string>>;
-let value: string, dirty: boolean;
+let value: string, dirty: boolean, scope: string;
 let save: ReturnType<typeof vi.fn<(value: string) => Promise<void>>>;
 function Harness() {
-  api = useWorldbookAutosave({ value, dirty, enabled: true, scope: 'book', save });
+  api = useWorldbookAutosave({ value, dirty, enabled: true, scope, save });
   return <output>{api.status}</output>;
 }
 async function render(next = value) { value = next; await act(async () => root.render(<Harness />)); }
 beforeEach(() => {
-  vi.useFakeTimers(); value = 'A'; dirty = false; save = vi.fn().mockResolvedValue(undefined);
+  vi.useFakeTimers(); value = 'A'; dirty = false; scope = 'book'; save = vi.fn().mockResolvedValue(undefined);
   container = document.createElement('div'); document.body.append(container); root = createRoot(container);
 });
 afterEach(() => { act(() => root.unmount()); container.remove(); vi.useRealTimers(); });
@@ -49,4 +49,21 @@ it('a library switch cancels a queued debounce instead of writing the old draft 
   dirty = true; await render('B'); setActiveVault(null);
   await act(async () => vi.advanceTimersByTimeAsync(700));
   expect(save).not.toHaveBeenCalled(); expect(api.status).toBe('error');
+});
+it('a replacement flush waits for the new asset write after the previous asset finishes', async () => {
+  let finishOld!: () => void, finishNew!: () => void;
+  save.mockImplementationOnce(() => new Promise<void>(resolve => { finishOld = resolve; }))
+    .mockImplementationOnce(() => new Promise<void>(resolve => { finishNew = resolve; }));
+  dirty = true; await render('old');
+  await act(async () => { void api.flush(); });
+  scope = 'imported'; await render('new');
+  let completed = false;
+  let pending!: Promise<void>;
+  await act(async () => { pending = api.flush(true).then(() => { completed = true; }); });
+  expect(save).toHaveBeenCalledTimes(1);
+  await act(async () => finishOld());
+  expect(save.mock.calls).toEqual([['old'], ['new']]);
+  expect(completed).toBe(false);
+  await act(async () => { finishNew(); await pending; });
+  expect(completed).toBe(true);
 });

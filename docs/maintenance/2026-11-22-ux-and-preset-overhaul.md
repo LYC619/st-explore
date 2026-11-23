@@ -24,7 +24,7 @@
 - **页签去重与收藏馆减负**：`StoryListSection` 每行只外露「阅读 / 续聊」；清理关联资产与立绘的重复导入按钮（立绘行内改名替代原生 `window.prompt`，点击已关联世界书/预设直进大屏编辑）；`LibraryFilterRail` 缩至 `248px` 并常驻已选筛选与一键清空，`LibraryToolbar` 统一图标分段切换。
 
 ### 批次三：预设系统（Preset Subsystem）与世界书深度重整（`2d04c35`）
-- **统一预设上下文编译引擎**：新建 `src/lib/preset-compiler.ts`，自动识别真实非空激活组（优先 `100001`，同步修齐 `Preset.tsx`、`PromptEditor`、`PresetOverview`、`preset-parser`）、严格校验 `@depth` 深度块开关与顺序、消除角色世界书双倍重复注入、补传采样参数 `params` 与 `assistant_prefill`；修复 `tavern-host.ts` 角色/故事关联预设被旧全局 `oai_settings` 覆盖及 DIY 保存返回酒馆热刷新；升级 `preset-playground-stream.ts` 与 `completion-monitor.ts` 兼容原生 Claude / Gemini 流式协议与末尾无空行帧冲刷，补齐试用台开场白选择与用户名实时替换。
+- **预设上下文处理修整**：逻辑分别位于 `src/lib/preset-parser.ts`、`src/lib/preset-playground.ts`、`src/lib/summary-engine.ts` 及酒馆运行链路（原记录误写为不存在的 `src/lib/preset-compiler.ts`，2026-11-23 核对更正，未形成单一编译引擎），自动识别真实非空激活组（优先 `100001`，同步修齐 `Preset.tsx`、`PromptEditor`、`PresetOverview`、`preset-parser`）、严格校验 `@depth` 深度块开关与顺序、消除角色世界书双倍重复注入、补传采样参数 `params` 与 `assistant_prefill`；修复 `tavern-host.ts` 角色/故事关联预设被旧全局 `oai_settings` 覆盖及 DIY 保存返回酒馆热刷新；升级 `preset-playground-stream.ts` 与 `completion-monitor.ts` 兼容原生 Claude / Gemini 流式协议与末尾无空行帧冲刷，补齐试用台开场白选择与用户名实时替换。
 - **拨正「系列与版本」数据模型**：修复填「作者」强行合并不同预设系列的 Bug；将单版 `status`（在用/备用/过期）与 `rating`（评价）同全系列共享主题标签解耦（标旧版过期不再连坐废掉新版，`createPresetDiy` 不再继承过期隐藏状态）；保护原版版本号文件名不被短展示名覆盖；用语义化版本比较器替代裸 `localeCompare`（排除 `Sonnet / Opus / R1` 模型号误判）；规范化 `parsePreset` 正则默认键，消除无谓的 `__ste_normalized_v1` 体积翻倍。
 - **`.zip` 直导、双版本 Diff 与 DIY 全功能工坊**：`preset-package.ts` 支持预过滤解压 `.zip` 预设包并自动识别配套世界书勾选入库；`PresetCatalogDetails` 默认展示当前版本自己的说明，「内容」页按真实激活顺序展示开关并支持同系列两版本一键 Diff；`Preset.tsx` 补齐改预设名称、采样参数与开头预填、完整撤销/重做栈（含文本编辑防抖入栈）、删除废提示词块、内嵌脚本启用开关、移动端上下移动排序按钮及「边改边试」抽屉；`WorldBook.tsx` 补齐「新建空白世界书」与标题重命名（支持角色派生 COW 保护）。
 

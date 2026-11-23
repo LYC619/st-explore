@@ -409,6 +409,9 @@ export async function createTavernHost(options: TavernHostOptions) {
       ?? linkedPresetName
       ?? savedGlobalPreset;
     const managedPresetSettings = effectivePresetName ? allPresetData.get(effectivePresetName) : undefined;
+    const factoryPresetSettings = group('openai_preset').find(p => p.name === effectivePresetName)?.data
+      ?? (effectivePresetName === defaultOaiPresetName ? object(defaults.settings.oai_settings) : undefined);
+    const selectedPresetSettings = managedPresetSettings ?? factoryPresetSettings;
     const isFactoryPreset = Boolean(effectivePresetName && !managedPresetSettings && knownPresetNames.has(effectivePresetName));
     const currentPresetRev = effectivePresetName ? assets.presetRevisions()[effectivePresetName] : undefined;
     const keepSavedTavernDraft = Boolean(
@@ -416,9 +419,18 @@ export async function createTavernHost(options: TavernHostOptions) {
       && savedOai.preset_settings_openai === effectivePresetName
       && (isFactoryPreset || (managedPresetSettings && typeof savedOai._ste_preset_revision === 'string' && savedOai._ste_preset_revision === currentPresetRev)),
     );
-    const mergedOaiBase = keepSavedTavernDraft
-      ? { ...object(defaults.settings.oai_settings), ...managedPresetSettings, ...savedOai }
-      : { ...object(defaults.settings.oai_settings), ...savedOai, ...managedPresetSettings };
+    // Connection/UI preferences survive a preset switch; prompt/sampler fields do not.
+    const runtimeSettings = Object.fromEntries([
+      'custom_url', 'custom_model', 'chat_completion_source', 'stream_openai',
+      'reverse_proxy', 'proxy_password', 'show_external_models', 'api_url_scale',
+      'custom_include_body', 'custom_exclude_body', 'custom_include_headers',
+      'additional_parameters_by_source', 'custom_claude_prompt_caching',
+      'custom_api_format', 'custom_models_by_source', 'additional_parameters_migration_version',
+      'custom_prompt_post_processing',
+    ].filter(key => key in savedOai).map(key => [key, savedOai[key]]));
+    const mergedOaiBase = keepSavedTavernDraft || !selectedPresetSettings
+      ? { ...object(defaults.settings.oai_settings), ...selectedPresetSettings, ...savedOai }
+      : { ...object(defaults.settings.oai_settings), ...selectedPresetSettings, ...runtimeSettings };
     delete mergedOaiBase._ste_preset_revision;
     const settings = {
       ...base, firstRun: false, username: typeof preferences.tavern?.username === 'string' && preferences.tavern.username.trim() ? preferences.tavern.username : startup.userName,
@@ -432,9 +444,7 @@ export async function createTavernHost(options: TavernHostOptions) {
           extraBooks: (character.assets ?? []).filter(ref => ref.kind === 'worldbook' && ref.relations?.includes('extra')).map(ref => assets.worldName(ref.assetId)).filter(Boolean) })),
       } },
       oai_settings: { ...mergedOaiBase,
-        openai_max_context: keepSavedTavernDraft
-          ? (savedOai.openai_max_context ?? managedPresetSettings?.openai_max_context ?? 32768)
-          : (managedPresetSettings?.openai_max_context ?? savedOai.openai_max_context ?? 32768),
+        openai_max_context: mergedOaiBase.openai_max_context ?? 32768,
         ...(effectivePresetName ? { preset_settings_openai: effectivePresetName } : {}),
         chat_completion_source: 'custom', custom_url: profile?.apiUrl ?? '', custom_model: profile?.model ?? '', stream_openai: true },
     };

@@ -9,6 +9,7 @@ export function useWorldbookAutosave<T>(options: Options<T>) {
   const [status, setStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved');
   const [error, setError] = useState<Error | null>(null);
   const running = useRef<Promise<void> | null>(null);
+  const runningScope = useRef<string>();
   const timer = useRef<ReturnType<typeof setTimeout>>();
   const acknowledged = useRef<{ value: T; scope: string }>();
   const epoch = useRef(getVaultEpoch());
@@ -16,10 +17,18 @@ export function useWorldbookAutosave<T>(options: Options<T>) {
 
   const flush = useCallback((force = false): Promise<void> => {
     clearTimeout(timer.current);
-    if (running.current) return running.current;
+    if (running.current) {
+      const requestedScope = latest.current.scope;
+      if (runningScope.current === requestedScope) return running.current;
+      // An explicit replacement owns a different draft. Its caller must wait for
+      // that draft's write, not mistake the previous asset's completion for it.
+      const resume = () => latest.current.scope === requestedScope ? flush(force) : Promise.resolve();
+      return running.current.then(resume, resume);
+    }
     const start = latest.current;
     if (!force && (!start.dirty || (acknowledged.current?.scope === start.scope && acknowledged.current.value === start.value))) return Promise.resolve();
     const capturedEpoch = epoch.current;
+    runningScope.current = start.scope;
     const pending = (async () => {
       await Promise.resolve(); // Publish running before a synchronous guard can reject.
       try {

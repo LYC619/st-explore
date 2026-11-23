@@ -233,8 +233,8 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   useEffect(() => {
     const floor = pendingRestoreFloorRef.current;
     if (floor == null || floorCount === 0) return;
-    pendingRestoreFloorRef.current = null;
     const t = setTimeout(() => {
+      pendingRestoreFloorRef.current = null;
       jumpToFloor(floor);
     }, 150);
     return () => clearTimeout(t);

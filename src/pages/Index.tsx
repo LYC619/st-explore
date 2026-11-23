@@ -105,7 +105,7 @@ const Index = () => {
   const playBusyRef = useRef(false);
   const settingsRef = useRef(settings); settingsRef.current = settings;
   const savedDraft = useRef<{ storyId: string; branchId: string | null; session: ChatSession;
-    markers: ChapterMarker[]; favorites: string[]; settings: ExportSettings }>();
+    markers: ChapterMarker[]; favorites: string[]; settings: ExportSettings; lastFloor?: number }>();
   const [bindDialogOpen, setBindDialogOpen] = useState(false);
   // 小说视图（阶段6）：未绑定聊天也可用；润色上下文用当前暂存的归档故事
   const [novelStory, setNovelStory] = useState<ArchiveStory | null>(null);
@@ -118,8 +118,12 @@ const Index = () => {
   const [handoffFile] = useState<File | null>(() => takePendingToolFile('chat'));
 
   const isLiveInDetachedTavern = Boolean(
-    currentStoryId && roleplaySession.detached && roleplaySession.openChat?.id === currentStoryId,
+    currentStoryId && (roleplaySession.detached || roleplaySession.closing) && roleplaySession.openChat?.id === currentStoryId,
   );
+  const wasDetached = useRef(false);
+  const syncBarrier = useRef(false);
+  const [syncPending, setSyncPending] = useState(false);
+  if (isLiveInDetachedTavern) syncBarrier.current = true;
 
   const recentStories = useMemo(() => pickRecentEditorStories(allStories), [allStories]);
   const unboundStories = useMemo(() => allStories.filter((story) => !story.characterId), [allStories]);
@@ -166,7 +170,7 @@ const Index = () => {
     const settings = applyGlobalAppearanceToSettings(
       normalizeAppearanceSettings(story.settings ?? settingsRef.current),
     );
-    savedDraft.current = { storyId: story.id, branchId, session: line.session, markers, favorites, settings };
+    savedDraft.current = { storyId: story.id, branchId, session: line.session, markers, favorites, settings, lastFloor: line.lastFloor };
     setLoadedStory(story);
     setCurrentBranchId(branchId);
     setSession(line.session);
@@ -180,40 +184,53 @@ const Index = () => {
         ? Math.min(requestedFloor, line.session.messages.length - 1)
         : requestedFloor;
       setRestoreFloor(clamped);
+      setCurrentFloor(clamped);
       setHighlightedFloor(clamped);
     } else {
-      const lastFloor = branchId === null && pointer?.currentBookId === story.id ? pointer.lastFloor : line.lastFloor;
+      const lastFloor = pointer?.currentBookId === story.id && (pointer.branchId ?? null) === branchId ? pointer.lastFloor ?? line.lastFloor : line.lastFloor;
       setRestoreFloor(typeof lastFloor === 'number' && lastFloor > 0 ? lastFloor : undefined);
+      setCurrentFloor(lastFloor ?? 0);
       setHighlightedFloor(null);
     }
   }, []);
 
   useEffect(() => {
-    if (!isLiveInDetachedTavern || !currentStoryId) return undefined;
+    const finishing = wasDetached.current && !isLiveInDetachedTavern;
+    wasDetached.current = isLiveInDetachedTavern;
+    if ((!isLiveInDetachedTavern && !finishing) || !currentStoryId) return undefined;
+    syncBarrier.current = true;
+    setSyncPending(true);
     let alive = true;
+    let request = 0;
     const syncLatest = () => {
+      const sequence = ++request;
       const epoch = getVaultEpoch();
       void getArchiveStory(currentStoryId)
         .then((latest) => {
-          if (!alive || !latest || epoch !== getVaultEpoch()) return;
+          if (!alive || sequence !== request || !latest || epoch !== getVaultEpoch()) return;
           const line = getBranchLine(latest, currentBranchId) ?? getBranchLine(latest, null);
           if (!line) return;
+          savedDraft.current = { storyId: currentStoryId, branchId: currentBranchId,
+            session: line.session, markers: line.markers ?? [], favorites: line.favorites ?? [],
+            settings: savedDraft.current?.settings ?? settingsRef.current, lastFloor: line.lastFloor };
           setLoadedStory(latest);
           setSession(line.session);
-          setMarkers(line.markers ?? []);
-          setFavorites(line.favorites ?? []);
+          setMarkers(savedDraft.current.markers);
+          setFavorites(savedDraft.current.favorites);
+          if (!isLiveInDetachedTavern) syncBarrier.current = false;
+          setSyncPending(false);
         })
-        .catch((err) => {
-          console.warn('[Index] 实时同步独立窗口最新楼层未成功:', err);
+        .catch(() => {
+          if (alive) toastRef.current({ title: '最新聊天尚未读回', description: '请重新打开这条故事后再编辑，以保留酒馆刚保存的内容。', variant: 'destructive' });
         });
     };
     syncLatest();
-    const off = subscribeRecordChanges((change) => {
+    const off = isLiveInDetachedTavern ? subscribeRecordChanges((change) => {
       if (change.store === 'archiveStories' && change.id === currentStoryId) syncLatest();
-    });
+    }) : undefined;
     return () => {
       alive = false;
-      off();
+      off?.();
     };
   }, [currentBranchId, currentStoryId, isLiveInDetachedTavern]);
 
@@ -284,17 +301,12 @@ const Index = () => {
     }
   }, [toast]);
 
-  // 保存「跨页临时态」到 sessionStorage（防抖）。只存轻量指针，session 本体在 IndexedDB。
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The small pointer must also survive immediate branch/page navigation.
   useEffect(() => {
     if (session) {
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = setTimeout(() => {
-        saveSessionPointer({ currentBookId: currentStoryId, markers, favorites, lastFloor: currentFloor });
-      }, 500);
+      saveSessionPointer({ currentBookId: currentStoryId, branchId: currentBranchId, markers, favorites, lastFloor: currentFloor });
     }
-    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [session, markers, currentStoryId, favorites, currentFloor]);
+  }, [session, markers, currentStoryId, currentBranchId, favorites, currentFloor]);
 
   // 保存设置变更到 localStorage
   useEffect(() => {
@@ -306,12 +318,20 @@ const Index = () => {
   const storySyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveQueue = useRef(new KeyedSerialQueue());
   const persistCurrentStory = useCallback(async () => {
-    if (!session || !currentStoryId || isLiveInDetachedTavern) return;
+    if (!session || !currentStoryId) return;
     return saveQueue.current.enqueue('editor', async () => {
       const base = savedDraft.current;
       if (!base || base.storyId !== currentStoryId || base.branchId !== currentBranchId) return;
-      if (base.session === session && base.markers === markers && base.favorites === favorites && base.settings === settings) return;
-      const next = { storyId: currentStoryId, branchId: currentBranchId, session, markers, favorites, settings };
+      // A live Tavern owns content, but reading progress remains local to this line.
+      if (isLiveInDetachedTavern || syncPending || syncBarrier.current) {
+        if ((base.lastFloor ?? 0) !== currentFloor) {
+          await updateArchiveStory(currentStoryId, current => updateBranchLine(current, currentBranchId, { lastFloor: currentFloor }));
+          if (savedDraft.current === base) savedDraft.current = { ...base, lastFloor: currentFloor };
+        }
+        return;
+      }
+      if (base.session === session && base.markers === markers && base.favorites === favorites && base.settings === settings && (base.lastFloor ?? 0) === currentFloor) return;
+      const next = { storyId: currentStoryId, branchId: currentBranchId, session, markers, favorites, settings, lastFloor: currentFloor };
       await updateArchiveStory(currentStoryId, (current) => {
         const line = getBranchLine(current, currentBranchId);
         if (!line) throw new Error('故事分支不存在');
@@ -319,6 +339,7 @@ const Index = () => {
           throw new Error('这条分支有新的聊天内容，请重新打开后再编辑；当前内容未覆盖');
         }
         const updated = updateBranchLine(current, currentBranchId, {
+          lastFloor: currentFloor,
           ...(base.session !== session ? { session } : {}),
           ...(base.markers !== markers ? { markers } : {}),
           ...(base.favorites !== favorites ? { favorites } : {}),
@@ -331,7 +352,7 @@ const Index = () => {
       });
       if (savedDraft.current?.storyId === currentStoryId && savedDraft.current.branchId === currentBranchId) savedDraft.current = next;
     });
-  }, [currentStoryId, currentBranchId, favorites, markers, session, settings]);
+  }, [currentStoryId, currentBranchId, favorites, markers, session, settings, currentFloor, isLiveInDetachedTavern, syncPending]);
 
   const latestPersistRef = useRef(persistCurrentStory);
   latestPersistRef.current = persistCurrentStory;
@@ -446,7 +467,7 @@ const Index = () => {
       await updateArchiveStory(currentStoryId, (cur) => ({
         ...cur,
         lastViewedBranchId: nextBranchId ?? undefined,
-      })).catch(() => undefined);
+      }));
       hydrateStory(fresh, loadSessionPointer(), nextBranchId);
       navigate(buildEditorChatPath(currentStoryId, { branchId: nextBranchId }), { replace: true });
     } catch (error) {
@@ -672,7 +693,7 @@ const Index = () => {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <ChatWorkbench
               key={`${currentStoryId ?? 'preview'}:${currentBranchId ?? 'main'}`}
-              readerMode={isLiveInDetachedTavern}
+              readerMode={isLiveInDetachedTavern || syncPending}
               characterId={boundCharacterId}
               highlightedFloor={highlightedFloor}
               recordContext={currentStoryId ? {

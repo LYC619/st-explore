@@ -451,6 +451,7 @@ export default function Preset() {
           characterId: cowCharacterId,
           characterName: cowCharacterName,
           title: effectiveTitle,
+          titleExplicit: effectiveTitle !== originalFileName,
           content: { preset, autoSaved: false },
           newId: generatePresetId,
           save: savePreset,

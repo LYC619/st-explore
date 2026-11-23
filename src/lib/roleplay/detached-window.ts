@@ -16,6 +16,8 @@ export interface RoleplaySessionSnapshot {
   detached: boolean;
   container: HTMLElement | null;
   generating: boolean;
+  /** The OS window is gone, but its final save still owns the story. */
+  closing?: boolean;
 }
 
 export interface DetachedWindowReservation {
@@ -39,6 +41,7 @@ let snapshot: RoleplaySessionSnapshot = {
 let detachedWin: Window | null = null;
 let detachedCleanup: (() => void) | null = null;
 let closeFlushHandler: (() => Promise<void>) | null = null;
+let requestedClose: Window | null = null;
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -51,6 +54,7 @@ function updateSnapshot(patch: Partial<RoleplaySessionSnapshot>): void {
     next.detached === snapshot.detached
     && next.container === snapshot.container
     && next.generating === snapshot.generating
+    && next.closing === snapshot.closing
     && next.openChat?.id === snapshot.openChat?.id
     && next.openChat?.branchId === snapshot.openChat?.branchId
     && next.openChat?.fromChats === snapshot.openChat?.fromChats
@@ -152,17 +156,27 @@ function syncStylesAndTheme(sourceDoc: Document, targetDoc: Document): () => voi
 
 function teardownDetachedWindow(closeOsWindow: boolean): void {
   const win = detachedWin;
+  if (closeOsWindow && win && !win.closed) {
+    try { win.close(); } catch { return; }
+    if (!win.closed) return;
+  }
   detachedWin = null;
   detachedCleanup?.();
   detachedCleanup = null;
-  if (closeOsWindow && win && !win.closed) {
-    try { win.close(); } catch { /* ignore */ }
-  }
 }
 
-export function closeDetachedTavernWindow(): void {
-  teardownDetachedWindow(true);
-  updateSnapshot({ detached: false, container: null });
+export function closeDetachedTavernWindow(): boolean {
+  const win = detachedWin;
+  if (win && !win.closed) {
+    requestedClose = win;
+    try { win.close(); } catch { return false; }
+    finally { requestedClose = null; }
+    // A beforeunload cancellation must retain the live portal and listeners.
+    if (!win.closed) return false;
+  }
+  teardownDetachedWindow(false);
+  updateSnapshot({ detached: false, container: null, closing: false });
+  return true;
 }
 
 export function focusDetachedTavernWindow(): boolean {
@@ -234,21 +248,22 @@ export function preopenDetachedTavernWindow(forceDetached = false): DetachedWind
       detachedCleanup?.();
       const stopStyleSync = syncStylesAndTheme(window.document, doc);
       const handleChildClosed = () => {
-        if (detachedWin !== win) return;
+        if (detachedWin !== win || requestedClose === win) return;
         teardownDetachedWindow(false);
         const flush = closeFlushHandler;
+        const closingChat = snapshot.openChat;
         // Keep openChat mounted until flush finishes so <Roleplay /> & host do not unmount prematurely.
-        updateSnapshot({ detached: false, container: null, generating: false });
+        updateSnapshot({ detached: false, container: null, generating: false, closing: !!flush });
         if (flush) {
           void flush()
             .then(() => {
-              if (!snapshot.detached) updateSnapshot({ openChat: null });
+              if (!snapshot.detached && snapshot.openChat === closingChat) updateSnapshot({ openChat: null, closing: false });
             })
             .catch((err) => {
               console.warn('[detached-window] 关闭独立酒馆窗口时保存未完成，已在主窗口保留恢复入口:', err);
             });
         } else {
-          updateSnapshot({ openChat: null });
+          updateSnapshot({ openChat: null, closing: false });
         }
       };
       const pollTimer = window.setInterval(() => {
@@ -291,7 +306,8 @@ export function setRoleplayOpenChat(openChat: OpenRoleplayChat | null, options?:
     openChat,
     ...(options?.detached !== undefined ? { detached: options.detached } : {}),
     ...(options?.container !== undefined ? { container: options.container } : {}),
-    ...(!openChat ? { detached: false, container: null, generating: false } : {}),
+    ...(!openChat ? { detached: false, container: null, generating: false, closing: false } : {}),
+    ...(options?.detached ? { closing: false } : {}),
   });
 }
 
@@ -325,8 +341,8 @@ export function launchRoleplayTarget(params: {
 
   if (forceMode === 'inline') {
     reservation?.cancelIfUnused();
+    if (!closeDetachedTavernWindow()) return 'detached';
     setPreferredTavernWindowMode('inline');
-    closeDetachedTavernWindow();
     navigate(path);
     return 'inline';
   }

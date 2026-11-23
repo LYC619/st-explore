@@ -4,8 +4,13 @@ import { X } from "lucide-react";
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
+import { ForeignDialogContent } from './foreign-dialog';
+import { isForeignContainer, PortalDialogContext, usePortalDialogState } from './foreign-dialog-context';
 
-const Sheet = SheetPrimitive.Root;
+const Sheet = (props: React.ComponentProps<typeof SheetPrimitive.Root>) => {
+  const state = usePortalDialogState(props);
+  return <PortalDialogContext.Provider value={state}><SheetPrimitive.Root {...props} {...state} /></PortalDialogContext.Provider>;
+};
 
 const SheetTrigger = SheetPrimitive.Trigger;
 
@@ -56,7 +61,14 @@ interface SheetContentProps
 }
 
 const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Content>, SheetContentProps>(
-  ({ side = "right", className, children, container, ...props }, ref) => (
+  ({ side = "right", className, children, container, ...props }, ref) => {
+    if (isForeignContainer(container)) return <ForeignDialogContent container={container} ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
+      {children}
+      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring">
+        <X className="h-4 w-4" /><span className="sr-only">Close</span>
+      </SheetPrimitive.Close>
+    </ForeignDialogContent>;
+    return (
     <SheetPortal container={container}>
       <SheetOverlay />
       <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
@@ -67,7 +79,8 @@ const SheetContent = React.forwardRef<React.ElementRef<typeof SheetPrimitive.Con
         </SheetPrimitive.Close>
       </SheetPrimitive.Content>
     </SheetPortal>
-  ),
+    );
+  },
 );
 SheetContent.displayName = SheetPrimitive.Content.displayName;
 

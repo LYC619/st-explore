@@ -3,8 +3,13 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { ForeignDialogContent } from './foreign-dialog';
+import { isForeignContainer, PortalDialogContext, usePortalDialogState } from './foreign-dialog-context';
 
-const Dialog = DialogPrimitive.Root;
+const Dialog = (props: React.ComponentProps<typeof DialogPrimitive.Root>) => {
+  const state = usePortalDialogState(props);
+  return <PortalDialogContext.Provider value={state}><DialogPrimitive.Root {...props} {...state} /></PortalDialogContext.Provider>;
+};
 
 const DialogTrigger = DialogPrimitive.Trigger;
 
@@ -30,7 +35,15 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & { container?: HTMLElement | null }
->(({ className, children, container, ...props }, ref) => (
+>(({ className, children, container, ...props }, ref) => {
+  const contentClass = cn('fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg sm:rounded-lg', className);
+  if (isForeignContainer(container)) return <ForeignDialogContent container={container} ref={ref} className={contentClass} {...props}>
+    {children}
+    <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring">
+      <X className="h-4 w-4" /><span className="sr-only">Close</span>
+    </DialogPrimitive.Close>
+  </ForeignDialogContent>;
+  return (
   <DialogPortal container={container}>
     <DialogOverlay />
     <DialogPrimitive.Content
@@ -48,7 +61,8 @@ const DialogContent = React.forwardRef<
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </DialogPortal>
-));
+  );
+});
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (

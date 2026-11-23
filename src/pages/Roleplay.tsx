@@ -94,6 +94,7 @@ export default function Roleplay({
   const pendingExit = useRef<ExitDestination>();
   const flushRef = useRef<() => Promise<void>>(async () => {});
   const allowExit = useRef(false);
+  const allowChildClose = useRef(false);
   const exitTask = useRef<Promise<void>>();
   const runtimeStatus = useRef<string>();
   const saveFailureKind = useRef<'chat' | 'flush'>();
@@ -251,6 +252,7 @@ export default function Roleplay({
       });
     };
     const onChildBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (allowChildClose.current) { allowChildClose.current = false; return; }
       const child = frame.current?.contentWindow as TavernFrameWindow | null;
       if (allowExit.current || (!generating.current && !child?.__STE_TAVERN_DIRTY__?.())) return;
       event.preventDefault();
@@ -518,6 +520,9 @@ export default function Roleplay({
     } catch {
       return;
     }
+    allowChildClose.current = true;
+    try { if (!closeDetachedTavernWindow()) return; }
+    finally { allowChildClose.current = false; }
     setReady(false);
     setStatus('正在切换窗口…');
     launchRoleplayTarget({
@@ -533,6 +538,9 @@ export default function Roleplay({
     pendingExit.current = { kind: 'release' };
     try {
       await saveBeforeExit();
+      allowChildClose.current = true;
+      try { if (!closeDetachedTavernWindow()) return; }
+      finally { allowChildClose.current = false; }
       await goToDestination({ kind: 'release' });
     } catch { /* Keep recovery available. */ }
   };

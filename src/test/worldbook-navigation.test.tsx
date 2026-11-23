@@ -24,8 +24,11 @@ it('does not let an older save retarget a newly imported worldbook', async () =>
   }] });
   await act(async () => input.dispatchEvent(new Event('change', { bubbles: true })));
   await click(button('替换当前'));
-  const importedId = db.worldbook.save.mock.calls[1][0].id;
+  // The replacement joins the serial writer; it cannot complete the old write.
+  expect(db.worldbook.save).toHaveBeenCalledTimes(1);
   await act(async () => oldSave.resolve());
+  expect(db.worldbook.save).toHaveBeenCalledTimes(2);
+  const importedId = db.worldbook.save.mock.calls[1][0].id;
   await expectContent('worldbook', 'B');
   await save('worldbook');
   expect(db.worldbook.save.mock.calls.at(-1)![0]).toMatchObject({ id: importedId, title: 'Imported B' });
