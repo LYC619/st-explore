@@ -13,6 +13,8 @@ mod st_import_cleanup;
 mod diagnostics;
 mod environment;
 mod library_lease;
+#[cfg(windows)]
+mod detached_window;
 
 /// 文件库(FileVault)的 Rust 侧原语：列目录/读写文本与二进制/删除/改名 + 应用配置读写。
 /// 策略与映射逻辑全部在 TS 层（src/lib/vault/），这里保持薄且可单测。
@@ -1403,7 +1405,17 @@ pub fn run() {
                                 let _ = window.set_title(&title);
                             });
                             match builder.build() {
-                                Ok(window) => tauri::webview::NewWindowResponse::Create { window },
+                                Ok(window) => {
+                                    #[cfg(windows)]
+                                    if let Err(error) = detached_window::close_native_shell_with_webview(&window) {
+                                        log::error!("Unable to register detached window close handler: {error}");
+                                        if let Err(error) = window.destroy() {
+                                            log::error!("Unable to discard detached window: {error}");
+                                        }
+                                        return tauri::webview::NewWindowResponse::Deny;
+                                    }
+                                    tauri::webview::NewWindowResponse::Create { window }
+                                }
                                 Err(_) => tauri::webview::NewWindowResponse::Deny,
                             }
                         })
