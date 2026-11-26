@@ -1,8 +1,8 @@
 # ST Explorer 当前状态
 
-## 2026-11-26 国际化与公开交付已完成 F1–F7 全部补修与全量复验，待提交验收
-- 已完成独立审查定位的 `F1–F7` 全部修复与去过度防御瘦身（4,984 条英文词条 / 6,016 处调用；统一 `Lorebook`、`Standby`、`Chat styling`；修复回顾页英文状态写库、角色类型标签开关、预设包导出路径、`?lang=` 深链持久化、短词碎句碰撞、漏译模块、`nginx.conf` 安全头继承及 `i18n:check` 静态门禁），支持零环境变量 `docker compose up` 与内网 HTTP 自托管。
-- 完整 `verify:web` 10/10（23 宿主脚本单测、i18n 门禁、lint、双 `tsc`、340 文件 / 2,734 前端单测通过［1 原有跳过］、64 酒馆来源单测、3 冒烟脚本单测、生产构建）及生产浏览器 E2E 14/14（含新增 `/?lang=en` 深链持久化）全绿；`dist/`（1,229 文件）与 `site-dist/`（12 文件）已刷新为无假域名本地包。见[审查与收口记录](../reviews/2026-11-26-gemini-i18n-review.md)、[执行记录](2026-11-26-international-release.md)。未提交/推送/打原生包/上线，版本仍 0.9.9。
+## 2026-11-26 国际化与公开交付已合入 main、推送远端 CI 并打出新免安装包（待用户验收）
+- 已完成 `F1–F7` 全部补修、去过度防御瘦身及打开故事草稿防冲掉保护（`ba7b570`）：4,984 条英文词条 / 6,016 处调用，统一 `Lorebook`、`Standby`、`Chat styling`，保持内部枚举/标签键/预设导出路径跨语言一致，支持 `?lang=` 深链持久化、零环境变量 `docker compose up` 与 Nginx 全路由安全头。
+- 完整 `verify` 12/12（`verify:web` 10/10 含 340 文件 / 2,734 前端单测、Rust 66 + Clippy）、`cap sync android`、生产浏览器 E2E 14/14、内嵌酒馆与分屏 E2E 62/62（1 原有跳过）全绿。已打出干净免安装包 [2026-11-26-i18n-and-delivery](../../release/2026-11-26-i18n-and-delivery/使用与体验更新.md)（构建 `ba7b570b4e6f`，`dirty:false`，`packaged-not-run`），快进合入 `main` 并推送 `origin/main`；未升版、未打 `v*` 标签、未发公开站。见[审查与收口记录](../reviews/2026-11-26-gemini-i18n-review.md)、[执行记录](2026-11-26-international-release.md)。
 
 ## 2026-11-23 R1–R9 已提交并打出干净免安装包，待用户验收
 - 修复与正式回归 `24d97c7`；原生复验补修 WebView2 空白外壳 `053bf99`，保留既定 0.9 交互。见[执行与证据](2026-11-23-gemini-review-fixes.md)、[原审查](../reviews/2026-11-23-gemini-ux-review.md)。
@@ -21,9 +21,9 @@
 
 ## 分支、版本与交付
 
-- 当前分支：`refactor/ux-and-polish`，本轮基线 HEAD `058308a5fd87`，国际化改动尚未提交；恢复时核对实际 HEAD/工作区。未合并／推送／升版／发标签。
+- 当前分支：`main`（已快进合入 `refactor/ux-and-polish` 全部改动并推送 `origin/main`）；恢复时核对实际 HEAD/工作区。未升版、未发 `v*` 标签、未上线公开站。
 - 应用版本：`0.9.9`，本轮不提升版本号。
-- 最新体验包：[R1–R9 免安装版](../../release/2026-11-23-ux-and-preset-r1-r9/使用与体验更新.md)，源码 `053bf9915651`，`dirty:false`、`packaged-not-run`，包含原生外壳补修；仅免安装，待用户桌面验收。main 历史双包仍为 2026-11-22-five-stage-hardening（689b19e723b5）。
+- 最新体验包：[中英双语与公开交付免安装版](../../release/2026-11-26-i18n-and-delivery/使用与体验更新.md)，源码 `ba7b570b4e6f`，`dirty:false`、`packaged-not-run`（37,948,416 字节，SHA256 `7e14632ad2ffeaa86d6f809163a940c99694daefe7bfffa201139fc43ff767ac`），仅免安装，待用户桌面验收。含 NSIS 安装器的历史双包仍为 `2026-11-22-five-stage-hardening`（`689b19e723b5`）。
 - 本批仅免安装包，文件大小／SHA256 与清单一致；正式程序未运行。源码、自动检查、隔离原生、打包、用户验收、发布分别记录。
 
 ## 现行产品决定
@@ -55,7 +55,8 @@
 
 ## 记录索引
 
-- [体验减负与预设重整执行记录（refactor/ux-and-polish 最新）](2026-11-22-ux-and-preset-overhaul.md)
+- [国际化与公开产品交付执行记录（main 最新）](2026-11-26-international-release.md)
+- [体验减负与预设重整执行记录（refactor/ux-and-polish）](2026-11-22-ux-and-preset-overhaul.md)
 - [前序体验与文案打磨记录（refactor/ux-and-polish）](2026-11-22-ux-and-playability-overhaul.md)
 - [五阶段加固执行记录（main）](2026-11-21-five-stage-hardening.md)
 - [收口执行与恢复点](2026-11-10-closeout-execution.md)

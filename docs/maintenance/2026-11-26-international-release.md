@@ -66,7 +66,11 @@ Compose、Pages 和 issue 模板 YAML 解析通过；公开文档内部链接检
   - 修复回顾页英文状态保存污染、角色库类型弹窗/聊天可见开关失灵、预设包导出目录受语言影响、`Preset.tsx` 空标题假脏态、`?lang=` 深链持久化、模块顶层提前求值、`React.memo` 漏订、短词碎句拼接与漏译模块，英文目录整理为 4,984 条词条 / 6,016 处调用；
   - 升级 `scripts/i18n/check.mjs` 静态门禁（拦截英文目录残留中文、JSX 全角标点、`tr()` 裸中文参数与模块顶层求值），补齐 `nginx.conf` 各 `location` 安全响应头与酒馆静态后缀，支持零配置 `docker compose up` 与内网 HTTP 地址。
 - 复验结果：
-  - `npm run verify:web` **10/10** 通过（340 文件 / 2,734 Vitest 用例通过、1 原有跳过，日志 `.cache/verify/2026-11-26T14-48-16-124Z/results.json`）；
+  - `npm run verify:web` **10/10** 通过（340 文件 / 2,734 Vitest 用例通过、1 原有跳过，日志 `.cache/verify/2026-11-26T14-48-16-124Z/results.json`），Rust `cargo test --lib` 66 通过（1 原有忽略）+ `cargo clippy --lib -- -D warnings` + `npx cap sync android` 全部通过；
   - 生产浏览器 Playwright **14/14** 通过（24.1s，含新增 `/?lang=en` 深链跨路由/刷新保持英文用例，日志 `.cache/verify/production-gemini-final.log`）；
+  - 内嵌酒馆与分屏续聊 Playwright **62/62** 通过（1 项原有跳过；顺手补齐 `draft-recovery.ts` 打开故事加载恢复草稿期间快速输入的防冲掉保护、`NewChatPickerDialog.tsx` 中文按钮无空格键名及 `organizing-tags.spec.ts` `.popup-button-ok` 选择器）；
   - 无域名本地构建演练生成干净 `noindex` 产物：`dist/` 1,229 文件、`site-dist/` 12 文件，`git diff --check` 无空白或冲突异常。
-- 交付边界保持不变：源码 HEAD `058308a5fd87`（工作区未提交），版本 `0.9.9`；未推送、未打原生安装包、未执行线上部署，无 Docker 守护进程与 Android 真机实测。
+- 提交、打包与合并交付：
+  - 干净提交源码批次 `ba7b570b4e6fd062c58ae7b9e2a4c3310c54d02a`（`dirty: false`）；
+  - 打出免安装便携包 [2026-11-26-i18n-and-delivery](../../release/2026-11-26-i18n-and-delivery/使用与体验更新.md)：`STE-0.9.9-2026-11-26-i18n-and-delivery-portable.exe`（`37948416` 字节，SHA256 `7e14632ad2ffeaa86d6f809163a940c99694daefe7bfffa201139fc43ff767ac`，`packaged-not-run`）；
+  - 快进合并 `refactor/ux-and-polish` 回 `main` 并推送 `origin/main` 触发远端 CI。版本仍为 `0.9.9`，未打 `v*` 标签、未发布公开介绍站；无 Docker 守护进程与 Android 真机实测。
