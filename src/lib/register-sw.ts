@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { tr } from '@/lib/i18n';
 import { hasNativeFs } from '@/lib/runtime';
 
 /**
@@ -53,10 +54,10 @@ export function registerServiceWorker(): void {
 
     const promptUpdate = (waiting: ServiceWorker | null) => {
       if (!waiting) return;
-      toast('新版本可用', {
-        description: '点刷新加载最新版本（建议先保存当前编辑）',
+      toast(tr('新版本可用'), {
+        description: tr('点刷新加载最新版本（建议先保存当前编辑）'),
         duration: Infinity,
-        action: { label: '刷新', onClick: () => acceptUpdate(waiting) },
+        action: { label: tr('刷新'), onClick: () => acceptUpdate(waiting) },
       });
     };
 

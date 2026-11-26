@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { useCallback } from 'react';
 import { DEFAULT_ENTRY } from '@/types/worldbook';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
@@ -41,7 +42,7 @@ export function useWorldbookEntries({
     if (!worldbook?.entries[key]) return;
     try { changeWorldbookUid(worldbook, key, updated.uid); }
     catch (error) {
-      toast({ title: '无法修改 UID', description: String((error as Error).message), variant: 'destructive' });
+      toast({ title: tr("无法修改 UID"), description: String((error as Error).message), variant: 'destructive' });
       return;
     }
     setWorldbook((prev) => {
@@ -81,8 +82,8 @@ export function useWorldbookEntries({
     if (removed) {
       const restore = removed;
       toast({
-        title: '已删除条目',
-        description: restore.comment || `条目 ${restore.uid}`,
+        title: tr("已删除条目"),
+        description: restore.comment || tr("条目 {{v0}}", { v0: restore.uid }),
         action: renderUndoAction(() => {
           setWorldbook((prev) => {
             if (!prev) return prev;
@@ -108,7 +109,7 @@ export function useWorldbookEntries({
     switchToEditTab();
     // 等状态更新完再提示，避免 toast 抢在列表刷新前弹出
     setTimeout(() => {
-      toast({ title: '追加成功', description: `已追加 ${newCount} 个条目` });
+      toast({ title: tr("追加成功"), description: tr("已追加 {{v0}} 个条目", { v0: newCount }) });
     }, 0);
   }, [setWorldbook, switchToEditTab, toast]);
 
@@ -122,7 +123,7 @@ export function useWorldbookEntries({
       return prev ? { ...prev, entries: updated } : { entries: updated };
     });
     switchToEditTab();
-    toast({ title: '已添加', description: `${newEntries.length} 个条目已添加到世界书` });
+    toast({ title: tr("已添加"), description: tr("{{v0}} 个条目已添加到世界书", { v0: newEntries.length }) });
   }, [setWorldbook, switchToEditTab, toast]);
 
   const applyPrefixCategorize = useCallback((updates: Record<string, { group: string; comment: string; order: number }>) => {
@@ -134,7 +135,7 @@ export function useWorldbookEntries({
       });
       return { ...prev, entries: updated };
     });
-    toast({ title: '归类完成', description: `已更新 ${Object.keys(updates).length} 个条目的标签、前缀和 Order` });
+    toast({ title: tr("归类完成"), description: tr("已更新 {{v0}} 个条目的标签、前缀和 Order", { v0: Object.keys(updates).length }) });
   }, [setWorldbook, toast]);
 
   return { updateEntry, toggleEnabled, addEntry, deleteEntry, appendWorldbook, quickAddEntries, applyPrefixCategorize };

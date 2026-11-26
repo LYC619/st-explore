@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import {
   BookOpenText,
@@ -104,6 +106,7 @@ export function LibraryFilterRail({
   onUncategorizedExpandedChange,
   embedded = false,
 }: LibraryFilterRailProps) {
+  useI18n();
   const railRef = useRef<HTMLElement>(null);
   const draggingRef = useRef(false);
   const scrollEndRef = useRef<number | undefined>(undefined);
@@ -174,11 +177,9 @@ export function LibraryFilterRail({
           <span className="h-px flex-1 bg-[var(--hairline-inner)]" />
           <div className="flex items-center gap-1.5 text-xs font-semibold tracking-wide">
             <Sparkles className="h-3.5 w-3.5 text-[color:var(--brand-hi)]" />
-            <span>类型</span>
+            <span>{tr("类型")}</span>
           </div>
-          <HelpHint label="类型说明" className="text-[color:var(--sidebar-text-muted)]">
-            每张卡只归一类；不选任何类型时显示全部角色。
-          </HelpHint>
+          <HelpHint label={tr("类型说明")} className="text-[color:var(--sidebar-text-muted)]">{tr("每张卡只归一类；不选任何类型时显示全部角色。")}</HelpHint>
           <span className="h-px flex-1 bg-[var(--hairline-inner)]" />
         </div>
         <div data-library-type-grid className="grid grid-cols-2 gap-1">
@@ -217,7 +218,7 @@ export function LibraryFilterRail({
         {sections.categories.map((section, index) => {
           const collapsed = collapsedCategories.has(section.category);
           const help = CATEGORY_HELP[section.category as BuiltinTagCategory]
-            ?? '自定义标签组，可在标签管理中调整顺序与显隐。';
+            ?? tr("自定义标签组，可在标签管理中调整顺序与显隐。");
           return (
             <section
               key={section.category}
@@ -234,7 +235,7 @@ export function LibraryFilterRail({
                     else next.add(section.category);
                     return next;
                   })}
-                  aria-label={`${collapsed ? '展开' : '折叠'}标签组 ${section.category}`}
+                  aria-label={collapsed ? tr("展开标签组 {{v0}}", { v0: tr(section.category) }) : tr("折叠标签组 {{v0}}", { v0: tr(section.category) })}
                 >
                   {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                   <span
@@ -244,9 +245,9 @@ export function LibraryFilterRail({
                         ?? 'var(--sidebar-text-muted)',
                     }}
                   />
-                  <span className="truncate">{section.category}</span>
+                  <span className="truncate">{tr(section.category)}</span>
                 </button>
-                <HelpHint label={`标签组 ${section.category} 说明`} className="h-3 w-3">{help}</HelpHint>
+                <HelpHint label={tr("标签组 {{v0}} 说明", { v0: tr(section.category) })} className="h-3 w-3">{help}</HelpHint>
               </div>
               {!collapsed && (
                 section.options.length > 0 ? (
@@ -254,7 +255,7 @@ export function LibraryFilterRail({
                     {section.options.map((option) => (
                       <FilterItem
                         key={option.raw}
-                        label={option.label}
+                        label={option.builtIn ? tr(option.label) : option.label}
                         count={option.count}
                         active={activeTags[section.category]?.some(raw => normalizeRatingTag(raw) === option.raw) ?? false}
                         onClick={() => onTagToggle(section.category, option.raw)}
@@ -262,7 +263,7 @@ export function LibraryFilterRail({
                     ))}
                   </div>
                 ) : (
-                  <p className="pl-6 text-xs text-[color:var(--sidebar-text-muted)]">暂无子标签</p>
+                  <p className="pl-6 text-xs text-[color:var(--sidebar-text-muted)]">{tr("暂无子标签")}</p>
                 )
               )}
             </section>
@@ -289,16 +290,16 @@ export function LibraryFilterRail({
                 : 'text-[color:var(--sidebar-text)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--text-primary)]',
             )}
             onClick={() => onTypeChange(activeType === 'none' ? 'all' : 'none')}
-            title="筛选没有设置类型的角色卡"
+            title={tr("筛选没有设置类型的角色卡")}
           >
-            <span>未分类</span>
+            <span>{tr("未分类")}</span>
             <span className="text-[11px] opacity-75">{unclassifiedCount}</span>
           </button>
           <div className="flex flex-wrap gap-1.5">
             {sections.uncategorized.options.map((option) => (
               <FilterItem
                 key={option.raw}
-                label={option.label}
+                label={option.builtIn ? tr(option.label) : option.label}
                 count={option.count}
                 active={activeTags['未分类']?.includes(option.raw) ?? false}
                 uncategorized
@@ -313,7 +314,7 @@ export function LibraryFilterRail({
               className="mt-1.5 w-full rounded-md py-1 text-center text-xs text-[color:var(--sidebar-text-faint)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--sidebar-text)]"
               onClick={() => onUncategorizedExpandedChange(!uncategorizedExpanded)}
             >
-              {uncategorizedExpanded ? '收起' : '展开其余…'}
+              {uncategorizedExpanded ? tr("收起") : tr("展开其余…")}
             </button>
           )}
         </div>
@@ -322,12 +323,12 @@ export function LibraryFilterRail({
       {!embedded && (
         <div
           role="separator"
-          aria-label="调整标签栏宽度"
+          aria-label={tr("调整标签栏宽度")}
           aria-orientation="vertical"
           aria-valuemin={200}
           aria-valuemax={420}
           aria-valuenow={railWidth}
-          title="拖动调整标签栏宽度；窄栏为单列，常规宽度为双列"
+          title={tr("拖动调整标签栏宽度；窄栏为单列，常规宽度为双列")}
           className="absolute inset-y-0 right-0 z-10 flex w-1 cursor-col-resize items-center justify-center hover:bg-[var(--brand)]/30"
           onMouseDown={(event) => {
             event.preventDefault();

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { Bookmark, ChevronDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -37,6 +39,7 @@ interface FloorRangePickerProps {
  * 失焦时再规范化（空串回填原值、起>止则对调），避免打字过程中另一端数字乱跳。
  */
 export function FloorRangePicker({ total, start, end, onChange, suggestedStart, anchors }: FloorRangePickerProps) {
+  useI18n();
   const maxIdx = Math.max(0, total - 1);
   const clamp = (n: number) => Math.max(0, Math.min(maxIdx, n));
   // count 用对称 min/max，与引擎 buildFloorMessages 一致——即便中途 start>end 也显示真实楼层数
@@ -76,17 +79,15 @@ export function FloorRangePicker({ total, start, end, onChange, suggestedStart, 
     <Collapsible defaultOpen>
       <Card>
         <CollapsibleTrigger className="group flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-accent/30">
-          <span className="text-base font-semibold">选择楼层范围</span>
-          <span className="text-sm text-muted-foreground">
-            共 {count} 楼 · 全书 {total} 楼（第 0 ~ {maxIdx} 楼）
-          </span>
+          <span className="text-base font-semibold">{tr("选择楼层范围")}</span>
+          <span className="text-sm text-muted-foreground">{tr("共 {{v0}} 楼 · 全书 {{v1}} 楼（第 0 ~ {{v2}} 楼）", { v0: count, v1: total, v2: maxIdx })}</span>
           <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
         </CollapsibleTrigger>
         <CollapsibleContent>
       <CardContent className="space-y-3 border-t pt-3">
         <div className="flex items-end gap-3 flex-wrap">
           <div className="space-y-1">
-            <Label htmlFor="floor-start" className="text-xs text-muted-foreground">起始楼层</Label>
+            <Label htmlFor="floor-start" className="text-xs text-muted-foreground">{tr("起始楼层")}</Label>
             <Input
               id="floor-start"
               type="number"
@@ -100,7 +101,7 @@ export function FloorRangePicker({ total, start, end, onChange, suggestedStart, 
           </div>
           <span className="pb-2 text-muted-foreground">→</span>
           <div className="space-y-1">
-            <Label htmlFor="floor-end" className="text-xs text-muted-foreground">结束楼层</Label>
+            <Label htmlFor="floor-end" className="text-xs text-muted-foreground">{tr("结束楼层")}</Label>
             <Input
               id="floor-end"
               type="number"
@@ -115,33 +116,24 @@ export function FloorRangePicker({ total, start, end, onChange, suggestedStart, 
         </div>
 
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={() => onChange(0, maxIdx)}>
-            全书
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => onChange(0, maxIdx)}>{tr("全书")}</Button>
           <Button
             variant="outline"
             size="sm"
             onClick={() => onChange(clamp(total - 20), maxIdx)}
             disabled={total <= 20}
-          >
-            最近 20 楼
-          </Button>
+          >{tr("最近 20 楼")}</Button>
           {suggestedStart != null && suggestedStart <= maxIdx && (
-            <Button variant="outline" size="sm" onClick={() => onChange(clamp(suggestedStart), maxIdx)}>
-              续上一卷（第 {suggestedStart} 楼起）
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => onChange(clamp(suggestedStart), maxIdx)}>{tr("续上一卷（第 {{v0}} 楼起）", { v0: suggestedStart })}</Button>
           )}
           {anchors && anchors.length > 0 && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1">
-                  <Bookmark className="w-3.5 h-3.5" />书签楼层
-                </Button>
+                  <Bookmark className="w-3.5 h-3.5" />{tr("书签楼层")}</Button>
               </PopoverTrigger>
               <PopoverContent className="w-80 p-2" align="start">
-                <p className="text-xs text-muted-foreground mb-1.5 px-1">
-                  聊天页的章节标记与收藏楼层，点「起 / 止」填入对应端
-                </p>
+                <p className="text-xs text-muted-foreground mb-1.5 px-1">{tr("聊天页的章节标记与收藏楼层，点「起 / 止」填入对应端")}</p>
                 <div className="max-h-56 overflow-y-auto space-y-0.5">
                   {anchors.map((a, i) => (
                     <div key={`${a.floor}-${i}`} className="flex items-center gap-1.5 rounded px-1 py-0.5 text-xs hover:bg-accent">
@@ -150,15 +142,11 @@ export function FloorRangePicker({ total, start, end, onChange, suggestedStart, 
                       <Button
                         variant="ghost" size="sm" className="px-1.5 text-xs shrink-0"
                         onClick={() => onChange(clamp(a.floor), Math.max(clamp(a.floor), end))}
-                      >
-                        起
-                      </Button>
+                      >{tr("起")}</Button>
                       <Button
                         variant="ghost" size="sm" className="px-1.5 text-xs shrink-0"
                         onClick={() => onChange(Math.min(start, clamp(a.floor)), clamp(a.floor))}
-                      >
-                        止
-                      </Button>
+                      >{tr("止")}</Button>
                     </div>
                   ))}
                 </div>
@@ -166,7 +154,7 @@ export function FloorRangePicker({ total, start, end, onChange, suggestedStart, 
             </Popover>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">楼层号与聊天处理页一致（从 0 开始）。</p>
+        <p className="text-xs text-muted-foreground">{tr("楼层号与聊天处理页一致（从 0 开始）。")}</p>
       </CardContent>
         </CollapsibleContent>
       </Card>

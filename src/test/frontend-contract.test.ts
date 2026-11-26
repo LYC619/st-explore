@@ -111,7 +111,7 @@ describe('前端状态刷新契约', () => {
     const home = read('src/pages/Home.tsx');
     const workspace = read('src/pages/StoryWorkspace.tsx');
 
-    expect(home).toMatch(/label="进入编辑区"[^\n]*navigate\('\/chat'\)/);
+    expect(home).toMatch(/label=\{tr\("进入编辑区"\)\}[^\n]*navigate\('\/chat'\)/);
     expect(workspace).toContain('setEditorStoryId');
   });
 });
@@ -278,8 +278,9 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     const runtime = read('src/components/settings/RuntimeSettingsPanel.tsx');
     const global = read('src/components/GlobalSettings.tsx');
 
-    for (const label of ['显示', 'AI 配置', '目录与连接', '数据与备份', '关于与引导']) {
-      expect(page).toContain(`label: '${label}'`);
+    expect(page).toContain("getLocale() === 'en' ? 'Display' : tr(\"显示\")");
+    for (const label of ['AI 配置', '目录与连接', '数据与备份', '关于与引导']) {
+      expect(page).toContain(`get label() { return tr("${label}"); }`);
     }
     expect(page).toContain('loadSettingsSection');
     expect(page).toContain('saveSettingsSection');
@@ -311,7 +312,7 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
 
   it('ST 扫描只有安全警告时会把被跳过路径告诉用户', () => {
     const importer = read('src/components/tools/STImportCard.tsx');
-    expect(importer).toContain("scan.warnings.length ? '未发现可安全导入的内容'");
+    expect(importer).toContain('scan.warnings.length ? tr("未发现可安全导入的内容")');
     expect(importer).toContain('scan.warnings.slice(0, 3)');
   });
 
@@ -330,7 +331,7 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     expect(result).toContain('max-h-[calc(100vh-2rem)]');
     expect(result).toContain('min-h-0 overflow-y-auto');
     for (const label of ['角色', '故事', '世界书', '预设', '正则', '其他资产']) {
-      expect(result).toContain(`label="${label}"`);
+      expect(result).toContain(`label={tr("${label}")}`);
     }
     expect(result).not.toContain('label="原样归档"');
     expect(result).toContain('可在“附属库 → 其他资产”查看');
@@ -418,9 +419,9 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     // 再 grep Home.tsx 里的类名与 JSX 片段只会误红。
 
     const editTools = home.match(/const EDIT_TOOLS = \[[\s\S]*?\n\];/)?.[0] ?? '';
-    expect(editTools).toContain("label: '总结'");
+    expect(editTools).toContain('get label() { return tr("总结"); }');
     expect(editTools).toContain('EDITOR_TOOL_COPY.summaryAndTree');
-    expect(editTools).not.toContain("label: '故事树'");
+    expect(editTools).not.toContain('get label() { return tr("故事树"); }');
     // 右次列桌面档仍是 3:2 两段，编辑入口单列五行、故事列表双列三行内部滚动。
     expect(desktopClasses(home, 'data-home-edit-tools')).toEqual(expect.arrayContaining([
       'grid-cols-1',
@@ -445,9 +446,9 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     expect(storyHeading).not.toContain('<p');
 
     expect(home).toContain('cell.description');
-    expect(home).toContain("description: '整理世界设定条目与角色关联'");
-    expect(home).toContain("description: '复用提示词、顺序和生成参数'");
-    expect(home).toContain("description: '管理聊天清理与替换规则'");
+    expect(home).toContain('description: tr("整理世界设定条目与角色关联")');
+    expect(home).toContain('description: tr("复用提示词、顺序和生成参数")');
+    expect(home).toContain('description: tr("管理聊天清理与替换规则")');
     expect(home).toContain('连接 SillyTavern 目录与接口');
   });
 
@@ -488,12 +489,12 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
 
   it('ST 导入按用户可理解的其他资产类别展示来源与去向', () => {
     const selection = read('src/components/tools/st-import/STImportSelectionDialog.tsx');
-    expect(selection).toContain("label: '其他资产'");
+    expect(selection).toContain('label: tr("其他资产")');
     expect(selection).toContain('group.label');
     expect(selection).toContain('group.description');
     expect(selection).toContain('group.itemCount');
     expect(selection).not.toContain('title={`${group.kind}/`}');
-    expect(selection).not.toContain("label: '扩展与媒体'");
+    expect(selection).not.toContain('label: tr("扩展与媒体")');
   });
 
   it('多库配置读取失败时不把现有配置静默当成空注册表覆盖', () => {
@@ -513,7 +514,7 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
   it('已注册库切换失败时显示可见错误，而不是留下未处理 Promise', () => {
     const runtime = read('src/components/settings/RuntimeSettingsPanel.tsx');
     expect(runtime).toContain('handleActivateRegisteredVault');
-    expect(runtime).toContain("title: '切换已注册库失败'");
+    expect(runtime).toContain('title: tr("切换已注册库失败")');
   });
 
   it('侧栏库切换和首次选库失败时都给出可恢复的可见反馈', () => {
@@ -568,9 +569,9 @@ describe('阶段 D 外壳与 NSFW 契约', () => {
     const titleBar = read('src/components/ClientTitleBar.tsx');
     expect(titleBar).toContain('data-tauri-drag-region');
     expect(titleBar).toContain('<GlobalSearch />');
-    expect(titleBar).toContain("aria-label=\"最小化窗口\"");
-    expect(titleBar).toContain("aria-label={maximized ? '还原窗口' : '最大化窗口'}");
-    expect(titleBar).toContain("aria-label=\"关闭窗口\"");
+    expect(titleBar).toContain('aria-label={tr("最小化窗口")}');
+    expect(titleBar).toContain('aria-label={maximized ? tr("还原窗口") : tr("最大化窗口")}');
+    expect(titleBar).toContain('aria-label={tr("关闭窗口")}');
     expect(titleBar).toContain('.minimize()');
     expect(titleBar).toContain('.toggleMaximize()');
     expect(titleBar).toContain('.close()');

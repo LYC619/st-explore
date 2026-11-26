@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useEffect, useState  } from 'react';
 import { AlertTriangle, ImagePlus, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -44,6 +46,7 @@ export function LibraryImportDialog({
   busy,
   onConfirm,
 }: LibraryImportDialogProps) {
+  useI18n();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [customTag, setCustomTag] = useState('');
   const [applyToBatch, setApplyToBatch] = useState(true);
@@ -93,23 +96,18 @@ export function LibraryImportDialog({
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
       <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
         <DialogHeader>
-          <DialogTitle>确认导入角色卡</DialogTitle>
-          <DialogDescription>
-            先确认文件处理结果，再选择是否添加 STE 本地标签。原角色卡内容不会因标签选择而改变。
-          </DialogDescription>
+          <DialogTitle>{tr("确认导入角色卡")}</DialogTitle>
+          <DialogDescription>{tr("先确认文件处理结果，再选择是否添加 STE 本地标签。原角色卡内容不会因标签选择而改变。")}</DialogDescription>
         </DialogHeader>
 
         <div className="grid min-h-0 gap-4 overflow-y-auto pr-1 scrollbar-thin md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
           <section className="min-w-0 space-y-3">
             <div className="rounded-lg border border-[color:var(--border-normal)] bg-[var(--bg-elevated)] p-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-[color:var(--text-body)]">
-                <ImagePlus className="h-4 w-4 text-[color:var(--brand-hi)]" />
-                待导入 {items.length} 张
-              </div>
+                <ImagePlus className="h-4 w-4 text-[color:var(--brand-hi)]" />{tr("待导入 {{v0}} 张", { v0: items.length })}</div>
               {blankCount > 0 && (
                 <p className="mt-1.5 text-xs leading-relaxed text-[color:var(--text-muted)]">
-                  {blankCount} 张普通图片将创建为空白角色卡；封面会原样保留，并保存为可直接拖回 SillyTavern 使用的标准角色卡（V2）。
-                </p>
+                  {tr("{{v0}} 张普通图片将创建为空白角色卡；封面会原样保留，并保存为可直接拖回 SillyTavern 使用的标准角色卡（V2）。", { v0: blankCount })}</p>
               )}
             </div>
 
@@ -135,7 +133,7 @@ export function LibraryImportDialog({
                       ? 'bg-[var(--brand-active-bg)] text-brand'
                       : 'bg-[var(--hover-overlay)] text-[color:var(--text-muted)]',
                   )}>
-                    {item.kind === 'blank-image' ? '空白卡' : '角色卡'}
+                    {item.kind === 'blank-image' ? tr("空白卡") : tr("角色卡")}
                   </span>
                 </div>
               ))}
@@ -145,8 +143,7 @@ export function LibraryImportDialog({
               <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-xs text-destructive">
                 <div className="flex items-center gap-1.5 font-semibold">
                   <AlertTriangle className="h-3.5 w-3.5" />
-                  {failures.length} 个文件无法导入
-                </div>
+                  {tr("{{v0}} 个文件无法导入", { v0: failures.length })}</div>
                 <ul className="mt-1.5 max-h-24 space-y-1 overflow-y-auto pl-5">
                   {failures.map((failure) => <li key={failure} className="list-disc break-all">{failure}</li>)}
                 </ul>
@@ -159,39 +156,37 @@ export function LibraryImportDialog({
               <div className="flex min-w-0 items-start gap-2">
                 <Tags className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--brand-hi)]" />
                 <div>
-                  <h3 className="text-sm font-semibold text-[color:var(--text-body)]">导入时添加标签</h3>
-                  <p className="mt-1 text-xs text-[color:var(--text-muted)]">只写入 STE 的本地整理标签，可多选。</p>
+                  <h3 className="text-sm font-semibold text-[color:var(--text-body)]">{tr("导入时添加标签")}</h3>
+                  <p className="mt-1 text-xs text-[color:var(--text-muted)]">{tr("只写入 STE 的本地整理标签，可多选。")}</p>
                 </div>
               </div>
               {batch && (
                 <Switch
                   checked={applyToBatch}
                   onCheckedChange={setApplyToBatch}
-                  aria-label="统一为全部导入角色添加标签"
+                  aria-label={tr("统一为全部导入角色添加标签")}
                 />
               )}
             </div>
 
             {batch && (
               <p className="mt-2 rounded-md bg-[var(--hover-overlay)] px-2.5 py-2 text-xs text-[color:var(--text-muted)]">
-                {applyToBatch ? `所选标签会统一添加给这 ${items.length} 张卡。` : '本次批量导入不添加标签。'}
+                {applyToBatch ? tr("所选标签会统一添加给这 {{v0}} 张卡。", { v0: items.length }) : tr("本次批量导入不添加标签。")}
               </p>
             )}
 
             <div data-library-import-type className="mt-3 rounded-md border border-[color:var(--hairline-inner)] bg-[var(--bg-canvas)] p-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-[color:var(--text-body)]">类型</p>
+                  <p className="text-xs font-semibold text-[color:var(--text-body)]">{tr("类型")}</p>
                   {type && (
                     <button
                       type="button"
                       className="text-[11px] text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]"
                       onClick={() => setType(undefined)}
-                    >
-                      清除
-                    </button>
+                    >{tr("清除")}</button>
                   )}
                 </div>
-                <p className="mt-0.5 text-[11px] text-[color:var(--text-muted)]">类型会统一应用到本批全部卡片，不受下方标签开关影响；不选择则保持未分类。</p>
+                <p className="mt-0.5 text-[11px] text-[color:var(--text-muted)]">{tr("类型会统一应用到本批全部卡片，不受下方标签开关影响；不选择则保持未分类。")}</p>
                 <div className="mt-2 grid grid-cols-5 gap-1.5">
                   {CHARACTER_TYPES.map((option) => (
                     <button
@@ -206,7 +201,7 @@ export function LibraryImportDialog({
                           : 'border-[color:var(--border-normal)] text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]',
                       )}
                     >
-                      {option}
+                      {tr(option)}
                     </button>
                   ))}
                 </div>
@@ -216,7 +211,7 @@ export function LibraryImportDialog({
               <div className="max-h-52 space-y-3 overflow-y-auto pr-1 scrollbar-thin">
                 {groups.map(([category, options]) => (
                   <div key={category}>
-                    <p className="mb-1.5 text-[11px] font-semibold text-[color:var(--text-muted)]">{category}</p>
+                    <p className="mb-1.5 text-[11px] font-semibold text-[color:var(--text-muted)]">{tr(category)}</p>
                     <div className="flex flex-wrap gap-1.5">
                       {options.map((option) => (
                         <button
@@ -231,7 +226,7 @@ export function LibraryImportDialog({
                               : 'border-[color:var(--border-normal)] text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]',
                           )}
                         >
-                          {option.label}
+                          {option.builtIn ? tr(option.label) : option.label}
                         </button>
                       ))}
                     </div>
@@ -240,26 +235,24 @@ export function LibraryImportDialog({
               </div>
 
               <div className="border-t border-[color:var(--hairline-inner)] pt-3">
-                <label htmlFor="library-import-custom-tag" className="text-[11px] font-semibold text-[color:var(--text-muted)]">
-                  自定义标签（可选）
-                </label>
+                <label htmlFor="library-import-custom-tag" className="text-[11px] font-semibold text-[color:var(--text-muted)]">{tr("自定义标签（可选）")}</label>
                 <Input
                   id="library-import-custom-tag"
                   value={customTag}
                   onChange={(event) => setCustomTag(event.target.value)}
-                  placeholder="如：历史/三国，或 收藏"
+                  placeholder={tr("如：历史/三国，或 收藏")}
                   className="mt-1.5 text-sm"
                 />
-                <p className="mt-1 text-[11px] text-[color:var(--text-faint)]">未知的一级标签会自动加入标签管理系统。</p>
+                <p className="mt-1 text-[11px] text-[color:var(--text-faint)]">{tr("未知的一级标签会自动加入标签管理系统。")}</p>
               </div>
             </div>
           </section>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
           <Button disabled={busy || items.length === 0} onClick={() => void confirm()}>
-            {busy ? '正在导入…' : `导入 ${items.length} 张角色卡`}
+            {busy ? tr("正在导入…") : tr("导入 {{v0}} 张角色卡", { v0: items.length })}
           </Button>
         </DialogFooter>
       </DialogContent>

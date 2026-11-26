@@ -1,3 +1,5 @@
+import { tr, formatList } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -40,19 +42,21 @@ import {
 import { OtherAssetPreview } from './OtherAssetPreview';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 
-function LoadState({ label = LOADING_LABEL }: { label?: string }) {
+function LoadState({ label }: { label?: string }) {
+  useI18n();
   return (
     <div className="flex h-full min-h-56 items-center justify-center gap-2 text-sm text-[color:var(--text-muted)]">
-      <Loader2 className="h-4 w-4 animate-spin" />{label}
+      <Loader2 className="h-4 w-4 animate-spin" />{label ?? tr(LOADING_LABEL)}
     </div>
   );
 }
 
 function ErrorState({ message }: { message: string }) {
+  useI18n();
   return (
     <div role="alert" className="mx-auto mt-16 flex max-w-lg items-start gap-3 rounded-xl border border-[color:var(--border-subtle)] bg-[var(--status-danger-bg)] p-4 text-sm text-[color:var(--status-danger)]">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <div><p className="font-medium">归档读取失败</p><p className="mt-1 opacity-90">{message}</p></div>
+      <div><p className="font-medium">{tr("归档读取失败")}</p><p className="mt-1 opacity-90">{message}</p></div>
     </div>
   );
 }
@@ -67,9 +71,10 @@ export function EmptyState({ children }: { children: React.ReactNode }) {
 }
 
 function Overview({ items, onOpen }: { items: OtherAssetCategorySummary[]; onOpen: (id: OtherAssetCategoryId) => void }) {
+  useI18n();
   const total = items.reduce((sum, item) => sum + item.count, 0);
   if (total === 0) {
-    return <EmptyState>还没有导入其他资产。请在设置页重新扫描 SillyTavern，并在导入窗口中勾选“其他资产”。</EmptyState>;
+    return <EmptyState>{tr("还没有导入其他资产。请在设置页重新扫描 SillyTavern，并在导入窗口中勾选“其他资产”。")}</EmptyState>;
   }
   return (
     <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3" data-other-assets-overview>
@@ -89,7 +94,7 @@ function Overview({ items, onOpen }: { items: OtherAssetCategorySummary[]; onOpe
                 <span className="font-serif text-lg font-semibold text-brand">{item.count}</span>
               </span>
               <span className="mt-2 block text-xs leading-relaxed text-[color:var(--text-muted)]">{item.description}</span>
-              <span className="mt-3 flex items-center gap-1 text-[11px] text-brand opacity-80 group-hover:opacity-100">查看内容 <ChevronRight className="h-3 w-3" /></span>
+              <span className="mt-3 flex items-center gap-1 text-[11px] text-brand opacity-80 group-hover:opacity-100">{tr("查看内容 ")}<ChevronRight className="h-3 w-3" /></span>
             </span>
           </button>
         );
@@ -99,6 +104,7 @@ function Overview({ items, onOpen }: { items: OtherAssetCategorySummary[]; onOpe
 }
 
 function ExtensionList({ fs }: { fs: VaultFs }) {
+  useI18n();
   const [items, setItems] = useState<ArchivedExtension[] | null>(null);
   const [browse, setBrowse] = useState<ArchivedExtension | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,16 +119,16 @@ function ExtensionList({ fs }: { fs: VaultFs }) {
   }, [fs]);
 
   if (error) return <ErrorState message={error} />;
-  if (!items) return <LoadState label="正在读取扩展清单…" />;
+  if (!items) return <LoadState label={tr("正在读取扩展清单…")} />;
   if (browse) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3">
-        <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => setBrowse(null)}><ArrowLeft className="mr-1.5 h-4 w-4" />返回扩展列表</Button>
+        <Button type="button" variant="ghost" size="sm" className="w-fit" onClick={() => setBrowse(null)}><ArrowLeft className="mr-1.5 h-4 w-4" />{tr("返回扩展列表")}</Button>
         <ArchiveDirectoryView fs={fs} root={`extensions/${browse.directory}`} title={browse.name} />
       </div>
     );
   }
-  if (items.length === 0) return <EmptyState>没有发现已归档扩展。重新导入时请确认“其他资产 → 扩展”已被选中。</EmptyState>;
+  if (items.length === 0) return <EmptyState>{tr("没有发现已归档扩展。重新导入时请确认“其他资产 → 扩展”已被选中。")}</EmptyState>;
 
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -135,14 +141,14 @@ function ExtensionList({ fs }: { fs: VaultFs }) {
                 <h3 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">{item.name}</h3>
                 {item.version && <span className="text-[11px] text-[color:var(--text-muted)]">v{item.version}</span>}
               </div>
-              <p className="mt-1 text-xs text-[color:var(--text-muted)]">{item.author ? `作者：${item.author}` : '未提供作者信息'}</p>
+              <p className="mt-1 text-xs text-[color:var(--text-muted)]">{item.author ? tr("作者：{{v0}}", { v0: item.author }) : tr("未提供作者信息")}</p>
             </div>
           </div>
-          <p className="mt-3 flex-1 text-xs leading-relaxed text-[color:var(--text-body)]">{item.description ?? '这个扩展的清单没有提供简介。'}</p>
+          <p className="mt-3 flex-1 text-xs leading-relaxed text-[color:var(--text-body)]">{item.description ?? tr("这个扩展的清单没有提供简介。")}</p>
           {item.manifestError && <p className="mt-2 text-[11px] text-[color:var(--status-warn)]">{item.manifestError}</p>}
           <div className="mt-3 flex items-center justify-between gap-3 border-t border-[color:var(--hairline-inner)] pt-3">
             <span className="min-w-0 truncate text-[11px] text-[color:var(--text-muted)]" title={item.directory}>{item.directory}</span>
-            <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs" onClick={() => setBrowse(item)}>查看归档文件</Button>
+            <Button type="button" variant="outline" size="sm" className="shrink-0 text-xs" onClick={() => setBrowse(item)}>{tr("查看归档文件")}</Button>
           </div>
         </article>
       ))}
@@ -151,6 +157,7 @@ function ExtensionList({ fs }: { fs: VaultFs }) {
 }
 
 function QuickReplyList({ fs }: { fs: VaultFs }) {
+  useI18n();
   const [sets, setSets] = useState<QuickReplySet[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -160,8 +167,8 @@ function QuickReplyList({ fs }: { fs: VaultFs }) {
     return () => { cancelled = true; };
   }, [fs]);
   if (error) return <ErrorState message={error} />;
-  if (!sets) return <LoadState label="正在解析快速回复…" />;
-  if (sets.length === 0) return <EmptyState>没有发现已归档的快速回复集合。</EmptyState>;
+  if (!sets) return <LoadState label={tr("正在解析快速回复…")} />;
+  if (sets.length === 0) return <EmptyState>{tr("没有发现已归档的快速回复集合。")}</EmptyState>;
   return (
     <div className="space-y-4">
       {sets.map((set) => (
@@ -169,25 +176,25 @@ function QuickReplyList({ fs }: { fs: VaultFs }) {
           <header className="flex flex-wrap items-center gap-2 border-b border-[color:var(--hairline-inner)] px-4 py-3">
             <MessageSquareReply className="h-4 w-4 text-brand" />
             <h3 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">{set.name}</h3>
-            <span className="rounded-full bg-[var(--hover-overlay)] px-2 py-0.5 text-[11px] text-[color:var(--text-muted)]">{set.items.length} 项</span>
-            {set.injectInput && <span className="rounded-full bg-[var(--brand-active-bg)] px-2 py-0.5 text-[11px] text-brand">注入输入框</span>}
-            {set.placeBeforeInput && <span className="rounded-full bg-[var(--hover-overlay)] px-2 py-0.5 text-[11px] text-[color:var(--text-body)]">放在输入框前</span>}
-            {set.disableSend && <span className="rounded-full bg-[var(--status-warn-bg)] px-2 py-0.5 text-[11px] text-[color:var(--status-warn)]">禁用发送</span>}
+            <span className="rounded-full bg-[var(--hover-overlay)] px-2 py-0.5 text-[11px] text-[color:var(--text-muted)]">{set.items.length}{tr(" 项")}</span>
+            {set.injectInput && <span className="rounded-full bg-[var(--brand-active-bg)] px-2 py-0.5 text-[11px] text-brand">{tr("注入输入框")}</span>}
+            {set.placeBeforeInput && <span className="rounded-full bg-[var(--hover-overlay)] px-2 py-0.5 text-[11px] text-[color:var(--text-body)]">{tr("放在输入框前")}</span>}
+            {set.disableSend && <span className="rounded-full bg-[var(--status-warn-bg)] px-2 py-0.5 text-[11px] text-[color:var(--status-warn)]">{tr("禁用发送")}</span>}
             {set.parseError && <span className="ml-auto text-[11px] text-[color:var(--status-warn)]">{set.parseError}</span>}
           </header>
           <div className="grid grid-cols-1 gap-2 p-3 xl:grid-cols-2">
             {set.items.length === 0 ? (
-              <p className="px-2 py-4 text-center text-xs text-[color:var(--text-muted)]">这个集合没有回复项。</p>
+              <p className="px-2 py-4 text-center text-xs text-[color:var(--text-muted)]">{tr("这个集合没有回复项。")}</p>
             ) : set.items.map((item) => (
               <article key={`${set.path}:${item.id}`} className="rounded-lg border border-[color:var(--hairline-inner)] bg-[var(--bg-canvas)] p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <h4 className="font-medium text-[color:var(--text-primary)]">{item.label}</h4>
                   {item.title && item.title !== item.label && <span className="text-[11px] text-[color:var(--text-muted)]">{item.title}</span>}
-                {item.hidden && <span className="text-[11px] text-[color:var(--status-warn)]">已隐藏</span>}
-                  {item.preventAutoExecute && <span className="ml-auto text-[11px] text-[color:var(--text-muted)]">手动执行</span>}
+                {item.hidden && <span className="text-[11px] text-[color:var(--status-warn)]">{tr("已隐藏")}</span>}
+                  {item.preventAutoExecute && <span className="ml-auto text-[11px] text-[color:var(--text-muted)]">{tr("手动执行")}</span>}
                 </div>
-                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--hover-overlay)] p-2 font-mono text-[11px] leading-relaxed text-[color:var(--text-body)] scrollbar-thin" data-quick-reply-message>{item.message || '（空回复）'}</pre>
-                {item.triggers.length > 0 && <p className="mt-2 text-[11px] text-[color:var(--text-muted)]">触发：{item.triggers.join('、')}</p>}
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md bg-[var(--hover-overlay)] p-2 font-mono text-[11px] leading-relaxed text-[color:var(--text-body)] scrollbar-thin" data-quick-reply-message>{item.message || tr("（空回复）")}</pre>
+                {item.triggers.length > 0 && <p className="mt-2 text-[11px] text-[color:var(--text-muted)]">{tr("触发：")}{formatList(item.triggers)}</p>}
               </article>
             ))}
           </div>
@@ -212,6 +219,7 @@ function VaultImage({ fs, path, name, className }: { fs: VaultFs; path: string; 
 }
 
 function PersonaList({ fs }: { fs: VaultFs }) {
+  useI18n();
   const [items, setItems] = useState<ArchivedPersona[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -221,8 +229,8 @@ function PersonaList({ fs }: { fs: VaultFs }) {
     return () => { cancelled = true; };
   }, [fs]);
   if (error) return <ErrorState message={error} />;
-  if (!items) return <LoadState label="正在读取用户人设…" />;
-  if (items.length === 0) return <EmptyState>没有发现已归档的用户人设清单。</EmptyState>;
+  if (!items) return <LoadState label={tr("正在读取用户人设…")} />;
+  if (items.length === 0) return <EmptyState>{tr("没有发现已归档的用户人设清单。")}</EmptyState>;
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
       {items.map((item) => (
@@ -235,11 +243,11 @@ function PersonaList({ fs }: { fs: VaultFs }) {
               <h3 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">{item.name}</h3>
               {item.title && <span className="text-[11px] text-[color:var(--text-muted)]">{item.title}</span>}
             </div>
-            <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[color:var(--text-body)]">{item.description || '这个人设没有填写描述。'}</p>
+            <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-[color:var(--text-body)]">{item.description || tr("这个人设没有填写描述。")}</p>
             <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-              {item.lorebook && <span>关联世界书：{item.lorebook}</span>}
-              {item.position !== undefined && <span>插入位置：{item.position}</span>}
-              {item.depth !== undefined && <span>深度：{item.depth}</span>}
+              {item.lorebook && <span>{tr("关联世界书：")}{item.lorebook}</span>}
+              {item.position !== undefined && <span>{tr("插入位置：")}{item.position}</span>}
+              {item.depth !== undefined && <span>{tr("深度：")}{item.depth}</span>}
             </div>
             <p className="mt-2 truncate text-[11px] text-[color:var(--text-muted)]" title={item.fileName}>{item.fileName}</p>
           </div>
@@ -272,6 +280,7 @@ function ArchiveImageThumbnail({ fs, file }: { fs: VaultFs; file: ArchiveFileIte
 }
 
 function ArchiveDirectoryView({ fs, root, title }: { fs: VaultFs; root: string; title: string }) {
+  useI18n();
   const [currentPath, setCurrentPath] = useState(root);
   const [files, setFiles] = useState<ArchiveFileItem[] | null>(null);
   const [preview, setPreview] = useState<ArchiveFileItem | null>(null);
@@ -297,14 +306,14 @@ function ArchiveDirectoryView({ fs, root, title }: { fs: VaultFs; root: string; 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex shrink-0 items-center gap-2 rounded-lg border border-[color:var(--hairline-inner)] bg-[var(--bg-elevated)] px-3 py-2">
-        <Button type="button" variant="ghost" size="sm" className="px-2" onClick={goUp} disabled={!canGoUp} aria-label="返回上一级"><ArrowLeft className="h-4 w-4" /></Button>
+        <Button type="button" variant="ghost" size="sm" className="px-2" onClick={goUp} disabled={!canGoUp} aria-label={tr("返回上一级")}><ArrowLeft className="h-4 w-4" /></Button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-xs font-medium text-[color:var(--text-primary)]" title={title}>{title}</p>
           <p className="truncate text-[11px] text-[color:var(--text-muted)]" title={currentPath}>{currentPath}</p>
         </div>
-        <span className="text-[11px] text-[color:var(--text-muted)]">{files?.length ?? 0} 项</span>
+        <span className="text-[11px] text-[color:var(--text-muted)]">{files?.length ?? 0}{tr(" 项")}</span>
       </div>
-      {files === null ? <LoadState label="正在读取目录…" /> : files.length === 0 ? <EmptyState>这个归档目录是空的。</EmptyState> : (
+      {files === null ? <LoadState label={tr("正在读取目录…")} /> : files.length === 0 ? <EmptyState>{tr("这个归档目录是空的。")}</EmptyState> : (
         <div className={cn('grid min-h-0 flex-1 gap-3', preview ? 'grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]' : 'grid-cols-1')}>
           <div className="min-h-0 overflow-auto pr-1 scrollbar-thin">
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
@@ -368,10 +377,10 @@ export function SectionContent({ fs, section }: { fs: VaultFs; section: BrowserS
 
 /** 「安全只读」徽标：页头用，提醒扩展代码不会被执行 */
 export function ReadOnlyBadge() {
+  useI18n();
   return (
     <span className="flex items-center gap-1.5 self-center rounded-full bg-[var(--status-ok-bg)] px-3 py-1.5 text-[11px] text-[color:var(--status-ok)]">
-      <ShieldCheck className="h-3.5 w-3.5" />安全只读
-    </span>
+      <ShieldCheck className="h-3.5 w-3.5" />{tr("安全只读")}</span>
   );
 }
 
@@ -382,12 +391,13 @@ export function ReadOnlyBadge() {
  * 用户要先弄明白「这两栏什么关系」才能开始找东西。这里只负责内容。
  */
 export function OtherAssetsBrowser() {
+  useI18n();
   const [searchParams] = useSearchParams();
   const section = readBrowserSection(searchParams.get('section'));
   const vault = getActiveVault();
 
   if (!vault) {
-    return <EmptyState>其他资产只在客户端文件库中显示。请先选择或创建一个 STE 文件库。</EmptyState>;
+    return <EmptyState>{tr("其他资产只在客户端文件库中显示。请先选择或创建一个 STE 文件库。")}</EmptyState>;
   }
   // flex-1 而不是 h-full：外层有内边距，height:100% 会超出去，目录视图那种自带内滚的
   // 分类就会一直挂一条多余滚动条。

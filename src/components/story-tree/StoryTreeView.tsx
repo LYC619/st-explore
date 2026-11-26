@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { ChevronRight, ChevronDown, Plus, Pin, Archive, GripVertical } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,6 +35,7 @@ export function StoryTreeView({
   forest, selectedId, collapsed, showArchived, hitIds,
   onSelect, onToggleCollapse, onAddChild, onMove, readOnly = false,
 }: StoryTreeViewProps) {
+  useI18n();
   const [dragOver, setDragOver] = useState<{ id: string; zone: DropZone } | null>(null);
   const [overRoot, setOverRoot] = useState(false);
 
@@ -98,14 +101,14 @@ export function StoryTreeView({
               title={NODE_TYPE_LABELS[node.type]}
             />
           )}
-          <span className="truncate flex-1" title={node.title || '(未命名)'}>{node.title || '(未命名)'}</span>
+          <span className="truncate flex-1" title={node.title || tr("(未命名)")}>{node.title || tr("(未命名)")}</span>
           {node.pinned && <Pin className="w-3 h-3 text-primary shrink-0" />}
           {node.archived && <Archive className="w-3 h-3 text-muted-foreground shrink-0" />}
           {node.hint && <span className="text-xs text-muted-foreground truncate max-w-[30%] hidden sm:inline" title={node.hint}>{node.hint}</span>}
           {!readOnly && <button
             onClick={(e) => { e.stopPropagation(); onAddChild(node.id); }}
             className="hover-reveal tap-target shrink-0 text-muted-foreground hover:text-foreground"
-            title="添加子节点"
+            title={tr("添加子节点")}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>}
@@ -135,9 +138,7 @@ export function StoryTreeView({
           'mt-1 rounded border border-dashed px-2 py-1.5 text-center text-xs text-muted-foreground/70 transition-colors',
           overRoot ? 'border-primary text-primary bg-primary/5' : 'border-border/60'
         )}
-      >
-        拖到此处移到顶层
-      </div>}
+      >{tr("拖到此处移到顶层")}</div>}
     </div>
   );
 }

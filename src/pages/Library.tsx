@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 /**
  * 角色库（10.2 重构，0801 实测反馈）：
@@ -12,7 +14,7 @@ import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
  * 阶段 C2 拆分：卡面/列表行/操作菜单/工具条/分页条已抽到 components/library/，
  * 外观偏好与批量选择抽到 hooks/，本文件只留数据装载、导入导出删除与组装。
  */
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, lazy, Suspense, useSyncExternalStore } from 'react';
+import { useMemo, useState, useEffect, useLayoutEffect, useCallback, useRef, lazy, Suspense, useSyncExternalStore  } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { StoryPackageTools } from '@/components/workspace/StoryPackageTools';
 import { Plus, BookOpen, ListFilter } from 'lucide-react';
@@ -104,6 +106,7 @@ const LibraryReviewView = lazy(() => import('@/components/library/review/Library
   .then((module) => ({ default: module.LibraryReviewView })));
 
 const Library = () => {
+  useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   /** 窄屏（<1024px）把筛选栏搬进左抽屉；桌面档保持原来的可拖宽侧栏 */
@@ -216,7 +219,7 @@ const Library = () => {
     } catch {
       if (!isCurrent()) return;
       setLoadFailed(true);
-      toast({ title: '加载失败', description: '无法读取角色库数据', variant: 'destructive' });
+      toast({ title: tr("加载失败"), description: tr("无法读取角色库数据"), variant: 'destructive' });
     } finally {
       if (isCurrent()) {
         setLoading(false);
@@ -243,16 +246,16 @@ const Library = () => {
     const results = await Promise.allSettled(selectedFiles.map(prepareLibraryCharacterFile));
     const items: PreparedLibraryCharacterImport[] = [];
     const failures: string[] = [];
-    results.forEach((result, index) => {
+      results.forEach((result, index) => {
       if (result.status === 'fulfilled') items.push(result.value);
       else {
         const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
-        failures.push(`${selectedFiles[index].name}：${reason}`);
+        failures.push(tr("{{v0}}：{{v1}}", { v0: selectedFiles[index].name, v1: reason }));
       }
     });
     if (items.length === 0) {
       toast({
-        title: '没有可导入的角色卡',
+        title: tr("没有可导入的角色卡"),
         description: failures.slice(0, 3).join('\n'),
         variant: 'destructive',
       });
@@ -296,21 +299,23 @@ const Library = () => {
 
       const failed = pendingImport.failures.length + failedDuringSave;
       const blankCount = pendingImport.items.filter((item) => item.kind === 'blank-image').length;
-      const warningMessages = pendingImport.items.flatMap((item) => item.warning ? [`${item.fileName}：${item.warning}`] : []);
+      const warningMessages = pendingImport.items.flatMap((item) => item.warning ? [tr("{{v0}}：{{v1}}", { v0: item.fileName, v1: item.warning })] : []);
       await load();
       setPendingImport(null);
       toast({
-        title: `导入完成：成功 ${ok} 张${failed ? `，失败 ${failed} 张` : ''}`,
+        title: failed
+          ? tr("导入完成：成功 {{v0}} 张，失败 {{v1}} 张", { v0: ok, v1: failed })
+          : tr("导入完成：成功 {{v0}} 张", { v0: ok }),
         description: [
-          blankCount > 0 ? `其中 ${blankCount} 张普通图片已转为空白角色卡。` : undefined,
+          blankCount > 0 ? tr("其中 {{v0}} 张普通图片已转为空白角色卡。", { v0: blankCount }) : undefined,
           warningMessages.length > 0 ? warningMessages[0] : undefined,
-          firstSaveError ? `失败原因：${firstSaveError}` : undefined,
+          firstSaveError ? tr("失败原因：{{v0}}", { v0: firstSaveError }) : undefined,
         ].filter(Boolean).join(' ') || undefined,
         variant: failed > 0 && ok === 0 ? 'destructive' : undefined,
       });
     } catch (error) {
       toast({
-        title: '无法开始导入',
+        title: tr("无法开始导入"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -325,10 +330,10 @@ const Library = () => {
       for (const c of pendingDelete) await deleteCharacter(c.id, options);
       await load();
       selection.setSelected(new Set());
-      toast({ title: `已删除 ${pendingDelete.length} 个角色（名下故事与记录已一并移除）` });
+      toast({ title: tr("已删除 {{v0}} 个角色（名下故事与记录已一并移除）", { v0: pendingDelete.length }) });
     } catch (e) {
       toast({
-        title: '删除失败',
+        title: tr("删除失败"),
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
@@ -343,7 +348,7 @@ const Library = () => {
       await runWebBatchCharacterDownload(targets, toast);
     } catch (error) {
       toast({
-        title: '下载未成功',
+        title: tr("下载未成功"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -369,7 +374,7 @@ const Library = () => {
       await exportBatchCharactersToDesktop(targets, toast);
     } catch (error) {
       toast({
-        title: '导出未成功',
+        title: tr("导出未成功"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -471,7 +476,7 @@ const Library = () => {
     } catch (err) {
       reservation?.cancelIfUnused();
       toast({
-        title: '暂时未能进入聊天',
+        title: tr("暂时未能进入聊天"),
         description: err instanceof Error ? err.message : String(err),
         variant: 'destructive',
       });
@@ -522,7 +527,7 @@ const Library = () => {
       selection.exitBatchMode();
       prefs.setViewMode(mode);
     } catch (error) {
-      toast({ title: '暂时无法离开回顾', description: error instanceof Error ? error.message : '请先保存当前故事后重试', variant: 'destructive' });
+      toast({ title: tr("暂时无法离开回顾"), description: error instanceof Error ? error.message : tr("请先保存当前故事后重试"), variant: 'destructive' });
     } finally { viewTransition.current = false; }
   };
 
@@ -560,7 +565,7 @@ const Library = () => {
   const gridTemplateColumns = isMobile
     ? 'repeat(2, minmax(0, 1fr))'
     : `repeat(auto-fill, minmax(${prefs.cardWidth}px, 1fr))`;
-  const displayGroups = useMemo(() => {
+  const displayGroups = useLocalizedMemo(() => {
     const groups = buildLibraryGroups(grouping ? filtered : pageItems, prefs.groupBy, {
       tagCategory: prefs.groupTagCategory,
     });
@@ -611,7 +616,7 @@ const Library = () => {
       embedded={embedded}
       typeOptions={CHARACTER_TYPES.filter(type => !tagPreferences.deletedCategories?.includes('类型') && !tagPreferences.deleted?.includes(`类型/${type}`)).map((type) => ({
         value: type,
-        label: type,
+        label: tr(type),
         count: typeCounts[type] ?? 0,
       }))}
       unclassifiedCount={typeCounts.none ?? 0}
@@ -661,8 +666,7 @@ const Library = () => {
           storyPackageTools={<StoryPackageTools />}
           reviewFilters={!isCompact && (
             <Button variant="outline" size="sm" aria-expanded={reviewFiltersOpen} onClick={() => setReviewFiltersOpen((open) => !open)}>
-              <ListFilter className="w-4 h-4 mr-1.5" />筛选
-            </Button>
+              <ListFilter className="w-4 h-4 mr-1.5" />{tr("筛选")}</Button>
           )}
         />
 
@@ -674,12 +678,10 @@ const Library = () => {
             <div className="flex-1 min-w-0 min-h-0 flex flex-col">
               <RefreshIndicator active={refreshing} />
               {loadFailed && (
-                <div role="alert" className="px-4 py-2 text-sm">
-                  刷新失败，当前显示上次读取的内容。
-                  <Button variant="ghost" size="sm" onClick={() => void load()}>重试</Button>
+                <div role="alert" className="px-4 py-2 text-sm">{tr("刷新失败，当前显示上次读取的内容。")}<Button variant="ghost" size="sm" onClick={() => void load()}>{tr("重试")}</Button>
                 </div>
               )}
-              <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">正在打开回顾视图…</p>}>
+              <Suspense fallback={<p role="status" className="p-6 text-sm text-muted-foreground">{tr("正在打开回顾视图…")}</p>}>
                 <LibraryReviewView
                   ref={reviewRef}
                   characters={filtered}
@@ -704,29 +706,23 @@ const Library = () => {
             ) : loadFailed && characters.length === 0 ? (
               /* 读档失败跟空库是两件事：空库该引导导入，失败该给重试 */
               <div className="flex h-64 flex-col items-center justify-center gap-3 text-center" data-library-load-error>
-                <p className="text-sm text-[color:var(--text-body)]">读取角色库失败</p>
-                <p className="text-xs text-[color:var(--text-muted)]">
-                  这不是空档案，是这次没读出来。数据仍在库里。
-                </p>
-                <Button variant="outline" size="sm" onClick={() => void load()}>
-                  重试
-                </Button>
+                <p className="text-sm text-[color:var(--text-body)]">{tr("读取角色库失败")}</p>
+                <p className="text-xs text-[color:var(--text-muted)]">{tr("这不是空档案，是这次没读出来。数据仍在库里。")}</p>
+                <Button variant="outline" size="sm" onClick={() => void load()}>{tr("重试")}</Button>
               </div>
             ) : characters.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-center">
                 <BookOpen className="w-16 h-16 text-muted-foreground/50 mb-4" />
-                <h2 className="font-display text-xl mb-2">角色库还是空的</h2>
-                <p className="text-muted-foreground mb-4">导入 ST 角色卡（PNG 或 JSON）开始建立你的收藏馆</p>
+                <h2 className="font-display text-xl mb-2">{tr("角色库还是空的")}</h2>
+                <p className="text-muted-foreground mb-4">{tr("导入 ST 角色卡（PNG 或 JSON）开始建立你的收藏馆")}</p>
                 <Button onClick={() => fileInputRef.current?.click()}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  导入角色卡
-                </Button>
+                  <Plus className="w-4 h-4 mr-2" />{tr("导入角色卡")}</Button>
               </div>
             ) : (
               <>
                 {filtered.length === 0 && (
                   <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
-                    <p className="text-sm text-muted-foreground">没有找到符合当前筛选的角色卡</p>
+                    <p className="text-sm text-muted-foreground">{tr("没有找到符合当前筛选的角色卡")}</p>
                     <Button
                       variant="outline"
                       size="sm"
@@ -735,16 +731,14 @@ const Library = () => {
                         setTypeFilter('all');
                         setTagFilters({});
                       }}
-                    >
-                      清除全部筛选
-                    </Button>
+                    >{tr("清除全部筛选")}</Button>
                   </div>
                 )}
                 {prefs.viewMode === 'grid' ? (
                   /* 卡墙：auto-fill 按卡宽自动分列；卡图 2:3（红线：比例不可改、不加编号） */
                   <div className="space-y-7" ref={gridRef}>
                     {displayGroups.map((group) => (
-                      <section key={group.key} aria-label={`${group.label}分组`}>
+                      <section key={group.key} aria-label={tr("{{v0}}分组", { v0: group.label })}>
                         {prefs.groupBy !== 'none' && (
                           <div className="mb-3 flex items-center gap-2.5">
                             <span className="h-4 w-1 rounded-full bg-brand" aria-hidden="true" />
@@ -752,8 +746,7 @@ const Library = () => {
                               {group.label}
                             </h2>
                             <span className="rounded-full bg-[var(--brand-active-bg)] px-2 py-0.5 text-[11px] text-brand">
-                              {group.items.length} 张
-                            </span>
+                              {tr("{{v0}} 张", { v0: group.items.length })}</span>
                             <span className="h-px flex-1 bg-[color:var(--hairline-inner)]" aria-hidden="true" />
                           </div>
                         )}
@@ -791,9 +784,7 @@ const Library = () => {
                             type="button"
                             onClick={() => setExpandedGroups((prev) => new Set(prev).add(group.key))}
                             className="mt-2.5 w-full rounded-lg border border-dashed border-[color:var(--border-subtle)] py-2 text-xs text-muted-foreground transition-colors hover:border-brand hover:text-brand"
-                          >
-                            展开「{group.label}」剩余 {group.hiddenCount} 张
-                          </button>
+                          >{tr("展开「{{v0}}」剩余 {{v1}} 张", { v0: group.label, v1: group.hiddenCount })}</button>
                         )}
                       </section>
                     ))}
@@ -885,10 +876,10 @@ const Library = () => {
       />
 
       <DeleteConfirmDialog open={!!pendingDelete} onOpenChange={open => !open && setPendingDelete(null)}
-        title={pendingDelete?.length === 1 ? `删除「${displayCharacterName(pendingDelete[0])}」？` : `删除所选 ${pendingDelete?.length ?? 0} 个角色？`}
-        description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"
+        title={pendingDelete?.length === 1 ? tr("删除「{{v0}}」？", { v0: displayCharacterName(pendingDelete[0]) }) : tr("删除所选 {{v0}} 个角色？", { v0: pendingDelete?.length ?? 0 })}
+        description={tr("名下故事、总结、日记与角色附件会一并删除；共享资产保留。")}
         fileTargets={pendingDelete?.map(c => ({ store: 'characters', id: c.id }))}
-        onConfirm={handleConfirmDelete} confirmLabel="删除" />
+        onConfirm={handleConfirmDelete} confirmLabel={tr("删除")} />
 
       <LibraryWebExportConfirmDialog
         targets={pendingWebExport}

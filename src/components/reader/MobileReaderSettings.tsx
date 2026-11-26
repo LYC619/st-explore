@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 移动端阅读设置（底部弹层）。
  *
@@ -24,9 +26,9 @@ export const MIN_READER_FONT = 14;
 export const MAX_READER_FONT = 24;
 
 const USER_MODES: Array<{ key: UserFloorMode; label: string; hint: string }> = [
-  { key: 'weaken', label: '弱化', hint: '缩进变浅、字号略小' },
-  { key: 'hide', label: '隐藏', hint: 'AI 楼通常会复述，几乎不丢信息' },
-  { key: 'keep', label: '保留', hint: '原样显示' },
+  { key: 'weaken', get label() { return tr("弱化"); }, get hint() { return tr("缩进变浅、字号略小"); } },
+  { key: 'hide', get label() { return tr("隐藏"); }, get hint() { return tr("AI 楼通常会复述，几乎不丢信息"); } },
+  { key: 'keep', get label() { return tr("保留"); }, get hint() { return tr("原样显示"); } },
 ];
 
 const SCENE_GAPS = [0, 15, 30, 60];
@@ -96,6 +98,7 @@ export function MobileReaderSettings({
   showHidden,
   onShowHiddenChange,
 }: MobileReaderSettingsProps) {
+  useI18n();
   const { theme, setTheme } = useTheme();
 
   return (
@@ -106,24 +109,24 @@ export function MobileReaderSettings({
         className="max-h-[85vh] gap-0 overflow-y-auto rounded-t-xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]"
       >
         <SheetHeader className="mb-3 text-left">
-          <SheetTitle className="text-base">阅读设置</SheetTitle>
-          <SheetDescription className="text-xs">改动即时生效，下次打开沿用。</SheetDescription>
+          <SheetTitle className="text-base">{tr("阅读设置")}</SheetTitle>
+          <SheetDescription className="text-xs">{tr("改动即时生效，下次打开沿用。")}</SheetDescription>
         </SheetHeader>
 
         <div className="space-y-4">
           <Segmented
-            label="阅读方式"
+            label={tr("阅读方式")}
             value={readingMode}
             onChange={onReadingModeChange}
             options={[
-              { key: 'scroll' as ReadingMode, label: '滚动', hint: '一路往下读，章节之间有分隔' },
-              { key: 'page' as ReadingMode, label: '翻页', hint: '左右滑或点两侧翻页' },
+              { key: 'scroll' as ReadingMode, label: tr("滚动"), hint: tr("一路往下读，章节之间有分隔") },
+              { key: 'page' as ReadingMode, label: tr("翻页"), hint: tr("左右滑或点两侧翻页") },
             ]}
           />
 
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <span className="text-sm font-medium">字号</span>
+              <span className="text-sm font-medium">{tr("字号")}</span>
               <span className="text-xs tabular-nums text-muted-foreground">{fontSize}px</span>
             </div>
             <Slider
@@ -132,12 +135,12 @@ export function MobileReaderSettings({
               min={MIN_READER_FONT}
               max={MAX_READER_FONT}
               step={1}
-              aria-label="正文字号"
+              aria-label={tr("正文字号")}
             />
           </div>
 
           <div>
-            <div className="mb-1.5 text-sm font-medium">主题</div>
+            <div className="mb-1.5 text-sm font-medium">{tr("主题")}</div>
             <div className="flex gap-2">
               {THEMES.map((item) => (
                 <button
@@ -167,27 +170,27 @@ export function MobileReaderSettings({
           </div>
 
           <Segmented
-            label="用户楼层"
+            label={tr("用户楼层")}
             value={userMode}
             onChange={onUserModeChange}
             options={USER_MODES}
           />
 
           <Segmented
-            label="场景分隔符"
+            label={tr("场景分隔符")}
             value={sceneGap}
             onChange={onSceneGapChange}
             options={SCENE_GAPS.map((minutes) => ({
               key: minutes,
-              label: minutes === 0 ? '关闭' : `${minutes} 分`,
+              label: minutes === 0 ? tr("不启用") : tr("{{v0}} 分", { v0: minutes }),
               hint: minutes === 0
-                ? '不插入 ✦ ✦ ✦'
-                : `楼层间隔超过 ${minutes} 分钟时插入 ✦ ✦ ✦`,
+                ? tr("不插入 ✦ ✦ ✦")
+                : tr("楼层间隔超过 {{v0}} 分钟时插入 ✦ ✦ ✦", { v0: minutes }),
             }))}
           />
 
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
-            <Label htmlFor="mobile-reader-show-hidden" className="text-sm">显示隐藏楼层</Label>
+            <Label htmlFor="mobile-reader-show-hidden" className="text-sm">{tr("显示隐藏楼层")}</Label>
             <Checkbox
               id="mobile-reader-show-hidden"
               checked={showHidden}
@@ -202,12 +205,13 @@ export function MobileReaderSettings({
 
 /** 首次进入的分区提示：翻页模式讲三分区，滚动模式只讲中间那一下。 */
 export function ReaderZoneHint({ mode, onDismiss }: { mode: ReadingMode; onDismiss: () => void }) {
+  useI18n();
   return (
     <div
       data-reader-zone-hint
       role="button"
       tabIndex={0}
-      aria-label="知道了，关闭操作提示"
+      aria-label={tr("知道了，关闭操作提示")}
       onClick={onDismiss}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onDismiss(); }}
       className="absolute inset-0 z-30 flex flex-col bg-black/70 text-white backdrop-blur-[1px]"
@@ -216,27 +220,27 @@ export function ReaderZoneHint({ mode, onDismiss }: { mode: ReadingMode; onDismi
         <div className="flex flex-1 divide-x divide-white/25">
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">
             <BookOpen className="h-6 w-6 opacity-80" />
-            <span className="text-sm">点这里</span>
-            <span className="text-xs opacity-75">上一页</span>
+            <span className="text-sm">{tr("点这里")}</span>
+            <span className="text-xs opacity-75">{tr("上一页")}</span>
           </div>
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">
-            <span className="text-sm">点中间</span>
-            <span className="text-xs opacity-75">显示 / 收起工具栏</span>
+            <span className="text-sm">{tr("点中间")}</span>
+            <span className="text-xs opacity-75">{tr("显示 / 收起工具栏")}</span>
           </div>
           <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">
             <BookOpen className="h-6 w-6 opacity-80" />
-            <span className="text-sm">点这里</span>
-            <span className="text-xs opacity-75">下一页</span>
+            <span className="text-sm">{tr("点这里")}</span>
+            <span className="text-xs opacity-75">{tr("下一页")}</span>
           </div>
         </div>
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center">
           <ScrollText className="h-7 w-7 opacity-80" />
-          <span className="text-sm">上下滑动读正文</span>
-          <span className="text-xs opacity-75">点一下屏幕中间，显示或收起工具栏</span>
+          <span className="text-sm">{tr("上下滑动读正文")}</span>
+          <span className="text-xs opacity-75">{tr("点一下屏幕中间，显示或收起工具栏")}</span>
         </div>
       )}
-      <p className="pb-8 text-center text-xs opacity-70">点任意位置关闭本提示</p>
+      <p className="pb-8 text-center text-xs opacity-70">{tr("点任意位置关闭本提示")}</p>
     </div>
   );
 }

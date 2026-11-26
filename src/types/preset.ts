@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type { RegexRule } from '@/types/chat';
 
 /**
@@ -119,9 +120,9 @@ export interface PresetPackageFile {
 
 /** prompt 块的 role 中文标签 */
 export const PROMPT_ROLE_LABELS: Record<string, string> = {
-  system: '系统',
-  user: '用户',
-  assistant: '助手',
+  get system() { return tr("系统"); },
+  get user() { return tr("用户"); },
+  get assistant() { return tr("助手"); },
 };
 
 /**
@@ -130,21 +131,25 @@ export const PROMPT_ROLE_LABELS: Record<string, string> = {
  * 8 个内置 marker 依据 ST 源码 PromptManager.js chatCompletionDefaultPrompts。
  */
 export const MARKER_LABELS: Record<string, string> = {
-  worldInfoBefore: '世界书（前置）',
-  worldInfoAfter: '世界书（后置）',
-  charDescription: '角色描述',
-  charPersonality: '角色性格',
-  scenario: '场景',
-  dialogueExamples: '对话示例',
-  chatHistory: '聊天历史',
-  personaDescription: '用户角色描述',
+  get worldInfoBefore() { return tr("世界书（前置）"); },
+  get worldInfoAfter() { return tr("世界书（后置）"); },
+  get charDescription() { return tr("角色描述"); },
+  get charPersonality() { return tr("角色性格"); },
+  get scenario() { return tr("场景"); },
+  get dialogueExamples() { return tr("对话示例"); },
+  get chatHistory() { return tr("聊天历史"); },
+  get personaDescription() { return tr("用户角色描述"); },
 };
 
 /** 块的友好显示名：内置 marker 显示"中文 · 英文原名"，其余直接用 name/identifier */
 export function blockDisplayName(block: { identifier: string; name?: string; marker?: boolean }): string {
+  const rawName = block.name || block.identifier;
   const zh = MARKER_LABELS[block.identifier];
-  if (zh) return `${zh} · ${block.name || block.identifier}`;
-  return block.name || block.identifier;
+  if (zh) {
+    if (zh.trim().toLowerCase() === rawName.trim().toLowerCase()) return rawName;
+    return `${zh} · ${rawName}`;
+  }
+  return rawName;
 }
 
 export function generatePresetId(): string {

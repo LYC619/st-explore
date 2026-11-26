@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 底部标签栏（移动端适配 P0）：常驻一级入口，来源就是 NAV_AREAS，
  * 不额外维护第二份信息架构。设置不在这里——它不是一级区域，入口在左侧抽屉底部，
@@ -20,6 +22,7 @@ interface MobileTabBarProps {
 }
 
 export function MobileTabBar({ onActivateArea }: MobileTabBarProps) {
+  useI18n();
   const { pathname, search } = useLocation();
   const activeIndex = activeAreaIndex(pathname, search);
   /** 设置页不属于任何一级区域，所有 tab 都不该亮 */
@@ -28,7 +31,7 @@ export function MobileTabBar({ onActivateArea }: MobileTabBarProps) {
   return (
     <nav
       data-mobile-tab-bar
-      aria-label="主导航"
+      aria-label={tr("主导航")}
       className="shrink-0 border-t border-[color:var(--border-subtle)] bg-chrome pb-[env(safe-area-inset-bottom)]"
     >
       {/* 高度读同一个变量：浮层抬多少和这条实际多高不会各说各话 */}

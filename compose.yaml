@@ -1,0 +1,11 @@
+services:
+  explorer:
+    build:
+      context: .
+      args:
+        STE_SITE_URL: ${STE_SITE_URL:-}
+    ports:
+      - "127.0.0.1:${STE_PORT:-8080}:80"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true

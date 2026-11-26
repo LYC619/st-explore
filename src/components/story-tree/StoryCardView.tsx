@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo,   } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { StoryNode, StoryNodeType } from '@/types/story-tree';
@@ -33,6 +35,7 @@ function nodePreview(node: StoryNode): { label: string | null; text: string } {
 
 /** 卡片视图：按类型分组平铺，适合快速浏览角色/地点/物品设定（事件请看时间轴） */
 export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCardViewProps) {
+  useI18n();
   const { groups, eventCount } = useMemo(() => {
     const map = new Map<StoryNodeType | 'none', StoryNode[]>();
     // 无类型但有子节点的 = 结构容器（老数据里 AI 自动建的「角色/事件」等父类目没标 category），
@@ -60,8 +63,7 @@ export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCard
 
   if (groups.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-8 text-center">
-        没有可显示的节点{eventCount > 0 ? `（${eventCount} 个事件节点请切到「时间轴」查看）` : ''}
+      <p className="text-sm text-muted-foreground py-8 text-center">{eventCount > 0 ? tr("没有可显示的节点（{{v0}} 个事件节点请切到「时间轴」查看）", { v0: eventCount }) : tr("没有可显示的节点")}
       </p>
     );
   }
@@ -71,7 +73,7 @@ export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCard
       {groups.map((group) => (
         <section key={group.type}>
           <h3 className="mb-1.5 text-xs font-medium text-muted-foreground">
-            {group.type === 'none' ? '未分类' : NODE_TYPE_LABELS[group.type]}（{group.items.length}）
+            {tr("{{v0}}（{{v1}}）", { v0: group.type === 'none' ? tr("未分类") : NODE_TYPE_LABELS[group.type], v1: group.items.length })}
           </h3>
           {/* 分栏铁律：不用视口断点，flex-wrap + 行内 basis 自适应 */}
           <div className="flex flex-wrap gap-2">
@@ -89,10 +91,10 @@ export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCard
                     selectedId === node.id && 'ring-1 ring-primary'
                   )}
                 >
-                  <span className="text-sm font-medium truncate" title={node.title || '(未命名)'}>{node.title || '(未命名)'}</span>
+                  <span className="text-sm font-medium truncate" title={node.title || tr("(未命名)")}>{node.title || tr("(未命名)")}</span>
                   {node.hint && <span className="text-xs text-muted-foreground truncate" title={node.hint}>{node.hint}</span>}
                   {preview.label && (
-                    <span className="text-[11px] text-primary/80 truncate" title={`最新 · ${preview.label}`}>最新 · {preview.label}</span>
+                    <span className="text-[11px] text-primary/80 truncate" title={tr("最新 · {{v0}}", { v0: preview.label })}>{tr("最新 · ")}{preview.label}</span>
                   )}
                   {preview.text && (
                     <span className="line-clamp-3 whitespace-pre-line text-xs leading-relaxed text-muted-foreground">
@@ -113,9 +115,7 @@ export function StoryCardView({ nodes, selectedId, hitIds, onSelect }: StoryCard
         </section>
       ))}
       {eventCount > 0 && (
-        <p className="text-[11px] text-muted-foreground">
-          另有 {eventCount} 个事件节点，请切到「时间轴」按剧情顺序查看。
-        </p>
+        <p className="text-[11px] text-muted-foreground">{tr("另有 ")}{eventCount}{tr(" 个事件节点，请切到「时间轴」按剧情顺序查看。")}</p>
       )}
     </div>
   );

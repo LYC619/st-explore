@@ -101,7 +101,7 @@ test('original Tavern selects organizing tags and refreshes a changed library la
   await tavern.locator('#rm_characters_block .manageTags').click();
   await expect(tavern.locator('#tag_view_list .tag_view_name').filter({ hasText: /^缺总结$/ })).toBeVisible();
   await expect(tavern.locator('#tag_view_list .tag_view_name').filter({ hasText: /^待重读$/ })).toBeVisible();
-  await tavern.locator('.popup:visible').getByRole('button', { name: 'OK', exact: true }).click();
+  await tavern.locator('.popup:visible .popup-button-ok').click();
   await tagFilter.getByRole('button', { name: '精品', exact: true }).click();
   await expect(cards).toHaveCount(1);
   await page.getByRole('button', { name: '返回聊天列表', exact: true }).click();

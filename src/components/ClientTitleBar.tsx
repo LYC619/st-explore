@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useEffect, useState } from 'react';
 import { Copy, Minus, Square, X } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -9,6 +11,7 @@ interface ClientTitleBarProps {
 }
 
 export function ClientTitleBar({ titleBarContent }: ClientTitleBarProps) {
+  useI18n();
   const [maximized, setMaximized] = useState(false);
 
   const syncMaximized = useCallback(async () => {
@@ -71,12 +74,12 @@ export function ClientTitleBar({ titleBarContent }: ClientTitleBarProps) {
         <GlobalSearch />
       </div>
 
-      <div className="absolute inset-y-0 right-0 flex" aria-label="窗口控制">
+      <div className="absolute inset-y-0 right-0 flex" aria-label={tr("窗口控制")}>
         <button
           type="button"
           onClick={minimize}
-          aria-label="最小化窗口"
-          title="最小化"
+          aria-label={tr("最小化窗口")}
+          title={tr("最小化")}
           className="flex h-full w-11 items-center justify-center text-[color:var(--text-muted)] transition-colors hover:bg-[var(--hover-overlay-strong)] hover:text-[color:var(--text-body)]"
         >
           <Minus className="h-4 w-4" strokeWidth={1.75} />
@@ -84,8 +87,8 @@ export function ClientTitleBar({ titleBarContent }: ClientTitleBarProps) {
         <button
           type="button"
           onClick={() => void toggleMaximize()}
-          aria-label={maximized ? '还原窗口' : '最大化窗口'}
-          title={maximized ? '还原' : '最大化'}
+          aria-label={maximized ? tr("还原窗口") : tr("最大化窗口")}
+          title={maximized ? tr("还原") : tr("最大化")}
           className="flex h-full w-11 items-center justify-center text-[color:var(--text-muted)] transition-colors hover:bg-[var(--hover-overlay-strong)] hover:text-[color:var(--text-body)]"
         >
           {maximized
@@ -95,8 +98,8 @@ export function ClientTitleBar({ titleBarContent }: ClientTitleBarProps) {
         <button
           type="button"
           onClick={close}
-          aria-label="关闭窗口"
-          title="关闭"
+          aria-label={tr("关闭窗口")}
+          title={tr("关闭")}
           className="flex h-full w-11 items-center justify-center text-[color:var(--text-muted)] transition-colors hover:bg-[var(--titlebar-close-bg)] hover:text-[color:var(--titlebar-close-text)]"
         >
           <X className="h-[18px] w-[18px]" strokeWidth={1.6} />

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import {
   Activity,
   ArrowLeft,
@@ -65,6 +67,7 @@ export function RoleplayHeaderBar({
   onOpenGuide,
   onCloseChat,
 }: RoleplayHeaderBarProps) {
+  useI18n();
   const actionClass = 'min-h-11 md:min-h-0 md:h-8 px-2 text-xs';
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-1.5 border-b border-[color:var(--border-subtle)] bg-chrome/80 px-2.5 py-1">
@@ -74,16 +77,14 @@ export function RoleplayHeaderBar({
           size="sm"
           className={actionClass}
           disabled={leaving || isGenerating}
-          title={isGenerating ? '请等待本轮回复生成结束后再收回页内' : '关闭独立窗口，把对话收回到主窗口页内继续'}
+          title={isGenerating ? tr("请等待本轮回复生成结束后再收回页内") : tr("关闭独立窗口，把对话收回到主窗口页内继续")}
           onClick={onDockBackInline}
         >
-          {leaving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PanelRightClose className="mr-1 h-3.5 w-3.5" />}
-          收回页内
-        </Button>
+          {leaving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <PanelRightClose className="mr-1 h-3.5 w-3.5" />}{tr("收回页内")}</Button>
       ) : (
         <Button variant="ghost" size="sm" className={actionClass} disabled={leaving} onClick={onLeave}>
           {leaving ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <ArrowLeft className="mr-1 h-3.5 w-3.5" />}
-          {fromChats ? '返回聊天列表' : '返回聊天处理'}
+          {fromChats ? tr("返回聊天列表") : tr("返回聊天处理")}
         </Button>
       )}
 
@@ -107,32 +108,30 @@ export function RoleplayHeaderBar({
             className={actionClass}
             disabled={leaving || isGenerating}
             onClick={onPopOutToDetached}
-            title={isGenerating ? '请等待本轮回复生成结束后再弹出独立窗口' : '弹出为独立窗口，可与左侧阅读/角色库左右分屏（Win + ← / →）'}
+            title={isGenerating ? tr("请等待本轮回复生成结束后再弹出独立窗口") : tr("弹出为独立窗口，可与左侧阅读/角色库左右分屏（Win + ← / →）")}
           >
-            <ExternalLink className="mr-1 h-3.5 w-3.5" />
-            独立窗口
-          </Button>
+            <ExternalLink className="mr-1 h-3.5 w-3.5" />{tr("独立窗口")}</Button>
         )}
-        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready} aria-label="过程" title="查看请求与生成过程" onClick={onOpenProcess}>
-          <Activity className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">过程</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready} aria-label={tr("过程")} title={tr("查看请求与生成过程")} onClick={onOpenProcess}>
+          <Activity className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("过程")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label="分支" title="切换或管理故事分支" onClick={() => onOpenSettings('branches')}>
-          <GitBranch className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">分支</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label={tr("分支")} title={tr("切换或管理故事分支")} onClick={() => onOpenSettings('branches')}>
+          <GitBranch className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("分支")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label="脚本" title="脚本与扩展控制" onClick={() => onOpenSettings('scripts')}>
-          <Code className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">脚本</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label={tr("脚本")} title={tr("脚本与扩展控制")} onClick={() => onOpenSettings('scripts')}>
+          <Code className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("脚本")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label="聊天工具" title="打开聊天工具菜单" onClick={() => onOpenSettings('chat')}>
-          <Menu className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">聊天工具</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready || leaving} aria-label={tr("聊天工具")} title={tr("打开聊天工具菜单")} onClick={() => onOpenSettings('chat')}>
+          <Menu className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("聊天工具")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready} aria-label="玩法设置" title="打开玩法与记忆设置" onClick={() => onOpenSettings('runtime')}>
-          <SlidersHorizontal className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">玩法设置</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={!ready} aria-label={tr("玩法设置")} title={tr("打开玩法与记忆设置")} onClick={() => onOpenSettings('runtime')}>
+          <SlidersHorizontal className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("玩法设置")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} aria-label="使用帮助" title="查看续聊使用帮助" onClick={onOpenGuide}>
-          <CircleHelp className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">使用帮助</span>
+        <Button variant="ghost" size="sm" className={actionClass} aria-label={tr("使用帮助")} title={tr("查看续聊使用帮助")} onClick={onOpenGuide}>
+          <CircleHelp className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("使用帮助")}</span>
         </Button>
-        <Button variant="ghost" size="sm" className={actionClass} disabled={leaving} aria-label="关闭聊天" title="保存并关闭当前聊天" onClick={onCloseChat}>
-          <X className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">关闭聊天</span>
+        <Button variant="ghost" size="sm" className={actionClass} disabled={leaving} aria-label={tr("关闭聊天")} title={tr("保存并关闭当前聊天")} onClick={onCloseChat}>
+          <X className="h-3.5 w-3.5 xl:mr-1" /><span className="hidden xl:inline">{tr("关闭聊天")}</span>
         </Button>
       </div>
     </header>
@@ -174,29 +173,26 @@ export function RoleplayRecoveryBanners({
   onConfirmExitChange,
   onForceLeave,
 }: RoleplayRecoveryBannersProps) {
+  useI18n();
   return (
     <>
       {(error || saveFailed) && (
         <div role="alert" className="shrink-0 border-b bg-destructive/10 px-4 py-3 text-sm">
-          <p className="break-words text-destructive">{error ?? '正在重试保存…'}</p>
+          <p className="break-words text-destructive">{error ?? tr("正在重试保存…")}</p>
           {!ready && !saveFailed && (
             <Button variant="outline" size="sm" className="mt-2 min-h-11" disabled={leaving} onClick={onRetryStartup}>
-              <RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆
-            </Button>
+              <RotateCcw className="mr-1 h-4 w-4" />{tr("重新加载酒馆")}</Button>
           )}
           {saveFailed && (
             <>
-              <p className="mt-1 text-muted-foreground">可以修复原因后重试，或先导出恢复文件再离开。导出会保留当前编辑和未发送输入。</p>
+              <p className="mt-1 text-muted-foreground">{tr("可以修复原因后重试，或先导出恢复文件再离开。导出会保留当前编辑和未发送输入。")}</p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <Button variant="outline" size="sm" disabled={leaving} onClick={onRetrySave}>
-                  {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}重试保存
-                </Button>
+                  {leaving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}{tr("重试保存")}</Button>
                 <Button variant="outline" size="sm" disabled={exporting} onClick={onExportRecovery}>
-                  <FileUp className="mr-1 h-4 w-4" />{exporting ? '正在导出…' : '导出当前内容'}
+                  <FileUp className="mr-1 h-4 w-4" />{exporting ? tr("正在导出…") : tr("导出当前内容")}
                 </Button>
-                <Button variant="ghost" size="sm" disabled={leaving || exporting} onClick={() => onConfirmExitChange(true)}>
-                  退出聊天
-                </Button>
+                <Button variant="ghost" size="sm" disabled={leaving || exporting} onClick={() => onConfirmExitChange(true)}>{tr("退出聊天")}</Button>
               </div>
               {exportNotice && <p className="mt-2 text-muted-foreground" role="status">{exportNotice}</p>}
             </>
@@ -206,29 +202,25 @@ export function RoleplayRecoveryBanners({
 
       {!ready && !error && startupSlow && (
         <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 border-b bg-muted px-4 py-2 text-sm">
-          <span>加载时间较长，可等待当前步骤完成，或重新加载。</span>
+          <span>{tr("加载时间较长，可等待当前步骤完成，或重新加载。")}</span>
           <Button variant="outline" size="sm" className="min-h-11" disabled={leaving} onClick={onRetryStartup}>
-            <RotateCcw className="mr-1 h-4 w-4" />重新加载酒馆
-          </Button>
+            <RotateCcw className="mr-1 h-4 w-4" />{tr("重新加载酒馆")}</Button>
         </div>
       )}
 
       <AlertDialog open={confirmExit} onOpenChange={onConfirmExitChange}>
         <AlertDialogContent container={detachedContainer}>
           <AlertDialogHeader>
-            <AlertDialogTitle>离开未保存的聊天？</AlertDialogTitle>
-            <AlertDialogDescription>
-              本次保存没有完成。离开后，尚未保存的回复、编辑和输入可能丢失。建议先取消并“导出当前内容”；确认离开会直接{closingWindow ? '关闭窗口' : '离开聊天'}。
+            <AlertDialogTitle>{tr("离开未保存的聊天？")}</AlertDialogTitle>
+            <AlertDialogDescription>{closingWindow ? tr("本次保存没有完成。离开后，尚未保存的回复、编辑和输入可能丢失。建议先取消并“导出当前内容”；确认离开会直接关闭窗口。") : tr("本次保存没有完成。离开后，尚未保存的回复、编辑和输入可能丢失。建议先取消并“导出当前内容”；确认离开会直接离开聊天。")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>留在聊天</AlertDialogCancel>
+            <AlertDialogCancel>{tr("留在聊天")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={onForceLeave}
-            >
-              确认离开
-            </AlertDialogAction>
+            >{tr("确认离开")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

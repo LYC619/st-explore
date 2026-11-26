@@ -24,11 +24,11 @@ describe('就地阅读顶栏', () => {
   });
 
   it('返回和「在编辑器中打开」窄屏收成纯图标，但留 aria-label', () => {
-    expect(src).toContain("aria-label=\"返回故事列表\"");
-    expect(src).toContain("aria-label=\"在编辑器中打开\"");
+    expect(src).toContain('aria-label={tr("返回故事列表")}');
+    expect(src).toContain('aria-label={tr("在编辑器中打开")}');
     // 文案本身由 isCompact 决定是否渲染
-    expect(src).toMatch(/\{!isCompact && '故事列表'\}/);
-    expect(src).toMatch(/\{!isCompact && '在编辑器中打开'\}/);
+    expect(src).toMatch(/\{!isCompact && tr\("故事列表"\)\}/);
+    expect(src).toMatch(/\{!isCompact && tr\("在编辑器中打开"\)\}/);
   });
 
   it('标题在窄屏吃掉剩余宽度（min-w-0 才能真截断）', () => {

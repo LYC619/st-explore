@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorldBook, WorldBookEntry } from '@/types/worldbook';
 import type { ToastActionElement } from '@/components/ui/toast';
@@ -110,7 +111,7 @@ export function useBatchSelection({
     if (batchUndoRef.current) {
       setWorldbook(batchUndoRef.current);
       batchUndoRef.current = null;
-      toast({ title: '已撤销' });
+      toast({ title: tr("已撤销") });
     }
   }, [setWorldbook, toast]);
 

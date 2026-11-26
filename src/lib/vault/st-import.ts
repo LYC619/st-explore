@@ -17,6 +17,7 @@
  * - 角色卡解析失败（PNG 无 chara/ccv3 块等）时，名下勾选的聊天降级为未绑定故事导入
  *   （进 临时/），聊天数据不因卡坏而丢。
  */
+import { tr } from '@/lib/i18n';
 import type { VaultFs } from './fs';
 import { joinPath } from './fs';
 import {
@@ -456,7 +457,16 @@ export async function scanSTUserDir(
   const addArchive = (group: Omit<STScanArchiveGroup, 'bytes'>) => {
     const bytes = fileBytes(group.files) + (group.generatedFiles?.reduce((sum, file) => sum + file.size, 0) ?? 0);
     if (group.files.length + (group.generatedFiles?.length ?? 0) === 0) return;
-    archives.push({ ...group, bytes });
+    archives.push({
+      kind: group.kind,
+      get label() { return group.label; },
+      get description() { return group.description; },
+      itemCount: group.itemCount,
+      rootPath: group.rootPath,
+      files: group.files,
+      ...(group.generatedFiles ? { generatedFiles: group.generatedFiles } : {}),
+      bytes,
+    });
   };
 
   const extensionScan = await scanArchiveDir('extensions');
@@ -464,8 +474,8 @@ export async function scanSTUserDir(
     const itemCount = extensionScan.directDirectories || extensionScan.files.length;
     addArchive({
       kind: 'extensions',
-      label: '第三方扩展',
-      description: `${itemCount} 个扩展 · ${extensionScan.files.length} 个文件 · 按原目录只读保存，不会执行代码`,
+      get label() { return tr("第三方扩展"); },
+      get description() { return tr("{{v0}} 个扩展 · {{v1}} 个文件 · 按原目录只读保存，不会执行代码", { v0: itemCount, v1: extensionScan.files.length }); },
       itemCount,
       rootPath: extensionScan.rootPath,
       files: extensionScan.files,
@@ -477,8 +487,8 @@ export async function scanSTUserDir(
     const itemCount = assetScan.directDirectories || assetScan.files.length;
     addArchive({
       kind: 'assets',
-      label: '扩展资产',
-      description: `${itemCount} 组扩展资源 · ${assetScan.files.length} 个文件`,
+      get label() { return tr("扩展资产"); },
+      get description() { return tr("{{v0}} 组扩展资源 · {{v1}} 个文件", { v0: itemCount, v1: assetScan.files.length }); },
       itemCount,
       rootPath: assetScan.rootPath,
       files: assetScan.files,
@@ -500,8 +510,14 @@ export async function scanSTUserDir(
     }
     addArchive({
       kind: 'quick-replies',
-      label: '快速回复',
-      description: `${quickReplyScan.files.length} 套快速回复${replyCount ? ` · ${replyCount} 条内容` : ''}${corruptedReplyFiles ? ` · ${corruptedReplyFiles} 个文件格式异常（仍原样归档）` : ''}`,
+      get label() { return tr("快速回复"); },
+      get description() {
+        return [
+          tr("{{v0}} 套快速回复", { v0: quickReplyScan.files.length }),
+          replyCount ? tr("{{v0}} 条内容", { v0: replyCount }) : '',
+          corruptedReplyFiles ? tr("{{v0}} 个文件格式异常（仍原样归档）", { v0: corruptedReplyFiles }) : '',
+        ].filter(Boolean).join(' · ');
+      },
       itemCount: quickReplyScan.files.length,
       rootPath: quickReplyScan.rootPath,
       files: quickReplyScan.files,
@@ -537,8 +553,8 @@ export async function scanSTUserDir(
     const itemCount = Object.keys(personas).length || files.length;
     addArchive({
       kind: 'personas',
-      label: '用户人设',
-      description: `${itemCount} 个人设 · ${files.length} 张头像 · 仅提取人设相关设置`,
+      get label() { return tr("用户人设"); },
+      get description() { return tr("{{v0}} 个人设 · {{v1}} 张头像 · 仅提取人设相关设置", { v0: itemCount, v1: files.length }); },
       itemCount,
       rootPath: avatarScan?.rootPath ?? settingsPath,
       files,
@@ -550,8 +566,8 @@ export async function scanSTUserDir(
   if (backgroundScan) {
     addArchive({
       kind: 'backgrounds',
-      label: '聊天背景',
-      description: `${backgroundScan.files.length} 个背景文件`,
+      get label() { return tr("聊天背景"); },
+      get description() { return tr("{{v0}} 个背景文件", { v0: backgroundScan.files.length }); },
       itemCount: backgroundScan.files.length,
       rootPath: backgroundScan.rootPath,
       files: backgroundScan.files,
@@ -564,8 +580,8 @@ export async function scanSTUserDir(
   if (appearanceFiles.length > 0) {
     addArchive({
       kind: 'appearance',
-      label: '主题与界面布局',
-      description: `${themeScan?.files.length ?? 0} 套主题 · ${movingUiScan?.files.length ?? 0} 套界面布局`,
+      get label() { return tr("主题与界面布局"); },
+      get description() { return tr("{{v0}} 套主题 · {{v1}} 套界面布局", { v0: themeScan?.files.length ?? 0, v1: movingUiScan?.files.length ?? 0 }); },
       itemCount: appearanceFiles.length,
       rootPath: userDir,
       files: appearanceFiles,
@@ -583,8 +599,8 @@ export async function scanSTUserDir(
   if (userMediaFiles.length > 0) {
     addArchive({
       kind: 'user-media',
-      label: '用户媒体与工作流',
-      description: `${userImageScan?.files.length ?? 0} 张图片 · ${userFileScan?.files.length ?? 0} 个附件 · ${workflowScan?.files.length ?? 0} 个工作流`,
+      get label() { return tr("用户媒体与工作流"); },
+      get description() { return tr("{{v0}} 张图片 · {{v1}} 个附件 · {{v2}} 个工作流", { v0: userImageScan?.files.length ?? 0, v1: userFileScan?.files.length ?? 0, v2: workflowScan?.files.length ?? 0 }); },
       itemCount: userMediaFiles.length,
       rootPath: joinPath(userDir, 'user'),
       files: userMediaFiles,

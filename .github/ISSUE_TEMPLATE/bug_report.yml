@@ -1,0 +1,34 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem with a synthetic example.
+body:
+  - type: markdown
+    attributes:
+      value: "Use invented content only. Do not upload chats, private cards, keys, or backups. 请仅使用合成资料。"
+  - type: input
+    id: build
+    attributes:
+      label: Version and build / 版本与构建号
+      description: Copy the build identity from Settings → About & guides, without personal paths.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Platform and language / 平台与语言
+      placeholder: Windows desktop, self-hosted web, or Android; OS/browser versions; English or Chinese
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps / 复现步骤
+      description: Include expected and actual behavior. Use a small synthetic example.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Content check / 内容检查
+      options:
+        - label: This report and its attachments contain no private content or credentials.
+          required: true

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -18,6 +20,7 @@ export function LibraryDropOverlay({
   onDropFiles,
   children,
 }: LibraryDropOverlayProps) {
+  useI18n();
   const { toast } = useToast();
   const [dragging, setDragging] = useState(false);
   const depthRef = useRef(0);
@@ -75,8 +78,8 @@ export function LibraryDropOverlay({
     setDragging(false);
     if (disabled) {
       toast({
-        title: '请先确认当前导入窗口',
-        description: '完成或关闭当前角色卡导入窗口后，即可继续拖入新卡片。',
+        title: tr("请先确认当前导入窗口"),
+        description: tr("完成或关闭当前角色卡导入窗口后，即可继续拖入新卡片。"),
       });
       return;
     }
@@ -102,12 +105,8 @@ export function LibraryDropOverlay({
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--brand-active-bg)] text-brand">
             <Upload className="h-6 w-6" />
           </div>
-          <p className="font-serif text-lg font-semibold text-[color:var(--text-primary)]">
-            松手即可收入角色库
-          </p>
-          <p className="text-xs text-[color:var(--text-muted)]">
-            支持多选 SillyTavern 角色卡（.png / .json）或普通立绘图（自动建空白卡）
-          </p>
+          <p className="font-serif text-lg font-semibold text-[color:var(--text-primary)]">{tr("松手即可收入角色库")}</p>
+          <p className="text-xs text-[color:var(--text-muted)]">{tr("支持多选 SillyTavern 角色卡（.png / .json）或普通立绘图（自动建空白卡）")}</p>
         </div>
       )}
     </div>

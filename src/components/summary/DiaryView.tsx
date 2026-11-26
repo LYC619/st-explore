@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { BookHeart, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -16,6 +18,7 @@ interface DiaryViewProps {
  * 解析失败（无结构）时回退为整段文本。
  */
 export function DiaryView({ content, charName }: DiaryViewProps) {
+  useI18n();
   const { entries, signature, raw } = parseDiary(content);
   const [page, setPage] = useState(0);
 
@@ -27,7 +30,7 @@ export function DiaryView({ content, charName }: DiaryViewProps) {
   if (entries.length === 0) {
     return (
       <div className="rounded-lg border bg-[var(--bg-elevated)] p-5 font-serif whitespace-pre-wrap text-sm leading-relaxed">
-        {raw || '（暂无内容）'}
+        {raw || tr("（暂无内容）")}
       </div>
     );
   }
@@ -73,17 +76,16 @@ export function DiaryView({ content, charName }: DiaryViewProps) {
         {/* 页脚翻页条 */}
         <div className="flex items-center justify-between border-t border-border/60 bg-background/40 px-3 py-2">
           <Button variant="ghost" size="sm" className="gap-1" onClick={prev} disabled={safePage === 0}>
-            <ChevronLeft className="w-3.5 h-3.5" />上一篇
-          </Button>
+            <ChevronLeft className="w-3.5 h-3.5" />{tr("上一篇")}</Button>
           <div className="flex items-center gap-2 text-xs text-muted-foreground font-serif">
-            <span>第 {safePage + 1} / {entries.length} 篇</span>
+            <span>{tr("第 {{v0}} / {{v1}} 篇", { v0: safePage + 1, v1: entries.length })}</span>
             {entries.length > 1 && entries.length <= 12 && (
               <span className="hidden sm:flex items-center gap-0">
                 {entries.map((_, i) => (
                   <button
                     key={i}
                     onClick={() => setPage(i)}
-                    aria-label={`第 ${i + 1} 篇`}
+                    aria-label={tr("第 {{v0}} 篇", { v0: i + 1 })}
                     className="group flex h-8 w-5 items-center justify-center"
                   >
                     <span
@@ -94,8 +96,7 @@ export function DiaryView({ content, charName }: DiaryViewProps) {
               </span>
             )}
           </div>
-          <Button variant="ghost" size="sm" className="gap-1" onClick={next} disabled={safePage === entries.length - 1}>
-            下一篇<ChevronRight className="w-3.5 h-3.5" />
+          <Button variant="ghost" size="sm" className="gap-1" onClick={next} disabled={safePage === entries.length - 1}>{tr("下一篇")}<ChevronRight className="w-3.5 h-3.5" />
           </Button>
         </div>
       </div>

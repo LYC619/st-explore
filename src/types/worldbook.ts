@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 export interface WorldBookEntry {
   uid: number;
   key: string[];
@@ -61,13 +62,13 @@ export interface WorldBookItem {
 }
 
 export const POSITION_LABELS: Record<number, string> = {
-  0: '角色设定之前',
-  1: '角色设定之后',
-  2: '示例消息之前',
-  3: '示例消息之后',
-  4: '作者注释顶部',
-  5: '作者注释底部',
-  6: '@ 指定深度',
+  get 0() { return tr("角色设定之前"); },
+  get 1() { return tr("角色设定之后"); },
+  get 2() { return tr("示例消息之前"); },
+  get 3() { return tr("示例消息之后"); },
+  get 4() { return tr("作者注释顶部"); },
+  get 5() { return tr("作者注释底部"); },
+  get 6() { return tr("@ 指定深度"); },
 };
 
 /** 老格式字符串 position → 数字（before_char 等）。来源：ST ≤1.9 / NovelAI Lorebook 风格 */
@@ -89,9 +90,9 @@ export const SELECTIVE_LOGIC_LABELS: Record<number, string> = {
 };
 
 export const ROLE_LABELS: Record<number, string> = {
-  0: '系统 (System)',
-  1: '用户 (User)',
-  2: '助手 (Assistant)',
+  get 0() { return tr("系统 (System)"); },
+  get 1() { return tr("用户 (User)"); },
+  get 2() { return tr("助手 (Assistant)"); },
 };
 
 // 注意：不标注 Omit<WorldBookEntry, 'uid'>——WorldBookEntry 带索引签名 [key:string]:unknown，

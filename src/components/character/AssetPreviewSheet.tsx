@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { ExternalLink, FolderOpen, Wrench } from 'lucide-react';
 import { AttachmentPreview } from '@/components/character/AttachmentPreview';
@@ -74,6 +76,7 @@ export function AssetPreviewSheet({
   onCloseFileDelete,
   onConfirmFileDelete,
 }: AssetPreviewSheetProps) {
+  useI18n();
   const [deleteAttachmentFile, setDeleteAttachmentFile] = useState(false);
   useEffect(() => {
     setDeleteAttachmentFile(false);
@@ -90,7 +93,7 @@ export function AssetPreviewSheet({
               <SheetHeader>
                 <SheetDescription>
                   {kindLabels[preview.kind].label}
-                  {preview.derived && ' · 派生副本'}
+                  {preview.derived && tr(" · 派生副本")}
                   {' · '}
                   {formatFullTime(preview.updatedAt)}
                 </SheetDescription>
@@ -98,7 +101,7 @@ export function AssetPreviewSheet({
                 <SheetDescription>
                   {preview.file
                     ? `${preview.file.path} · ${formatArchiveBytes(preview.file.actualSize)}`
-                    : `共 ${preview.count} 个${kindLabels[preview.kind].unit}`}
+                    : tr("共 {{v0}} 个{{v1}}", { v0: preview.count, v1: kindLabels[preview.kind].unit })}
                 </SheetDescription>
               </SheetHeader>
               <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-2.5 mt-2">
@@ -114,31 +117,23 @@ export function AssetPreviewSheet({
                       </div>
                     ))}
                     {preview.count > preview.entries.length && (
-                      <p className="text-xs text-muted-foreground/70 text-center pb-2">
-                        …还有 {preview.count - preview.entries.length} 个{kindLabels[preview.kind].unit}，在编辑器中查看全部
-                      </p>
+                      <p className="text-xs text-muted-foreground/70 text-center pb-2">{tr("…还有 {{v0}} 个{{v1}}，在编辑器中查看全部", { v0: preview.count - preview.entries.length, v1: kindLabels[preview.kind].unit.toLowerCase() })}</p>
                     )}
                   </>
                 )}
               </div>
               <div className="flex justify-end gap-2 pt-3 border-t border-border">
-                <Button variant="outline" onClick={onClosePreview}>关闭</Button>
+                <Button variant="outline" onClick={onClosePreview}>{tr("关闭")}</Button>
                 {isLibraryAsset && (
                   <Button onClick={() => onOpenEditor(preview)}>
-                    <Wrench className="w-4 h-4 mr-1.5" />
-                    在编辑器中打开
-                  </Button>
+                    <Wrench className="w-4 h-4 mr-1.5" />{tr("在编辑器中打开")}</Button>
                 )}
                 {preview.file && !preview.file.missing && canOpenExternally && (
                   <>
                     <Button variant="outline" onClick={() => onOpenExternally(preview.file!, true)}>
-                      <FolderOpen className="w-4 h-4 mr-1.5" />
-                      在文件管理器中显示
-                    </Button>
+                      <FolderOpen className="w-4 h-4 mr-1.5" />{tr("在文件管理器中显示")}</Button>
                     <Button onClick={() => onOpenExternally(preview.file!, false)}>
-                      <ExternalLink className="w-4 h-4 mr-1.5" />
-                      用外部程序打开
-                    </Button>
+                      <ExternalLink className="w-4 h-4 mr-1.5" />{tr("用外部程序打开")}</Button>
                   </>
                 )}
               </div>
@@ -150,18 +145,16 @@ export function AssetPreviewSheet({
       <AlertDialog open={!!quoteToDelete} onOpenChange={(v) => !v && onCloseQuoteDelete()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除引用「{quoteToDelete?.title}」？</AlertDialogTitle>
-            <AlertDialogDescription>引用是这张卡自己的摘录数据，删除后无法恢复。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("删除引用「{{v0}}」？", { v0: quoteToDelete?.title })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("引用是这张卡自己的摘录数据，删除后无法恢复。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (quoteToDelete) onConfirmQuoteDelete(quoteToDelete);
               }}
-            >
-              删除
-            </AlertDialogAction>
+            >{tr("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -169,11 +162,11 @@ export function AssetPreviewSheet({
       <AlertDialog open={!!fileToDelete} onOpenChange={(v) => !v && !deletingFile && onCloseFileDelete()}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>移除关联文件「{fileToDelete?.title}」？</AlertDialogTitle>
+            <AlertDialogTitle>{tr("移除关联文件「{{v0}}」？", { v0: fileToDelete?.title })}</AlertDialogTitle>
             <AlertDialogDescription>
               {fileToDelete?.missing
-                ? '文件已缺失，仅移除这张卡上的附件记录。'
-                : '记录会从这张卡上移除。不勾选时，附件文件保留在原位置，可在设置的文件检查中查看。'}
+                ? tr("文件已缺失，仅移除这张卡上的附件记录。")
+                : tr("记录会从这张卡上移除。不勾选时，附件文件保留在原位置，可在设置的文件检查中查看。")}
               <br />
               <span className="font-mono text-[11px] break-all">{fileToDelete?.resolvedPath ?? fileToDelete?.path}</span>
             </AlertDialogDescription>
@@ -185,17 +178,15 @@ export function AssetPreviewSheet({
                 checked={deleteAttachmentFile}
                 disabled={deletingFile}
                 onChange={(event) => setDeleteAttachmentFile(event.target.checked)}
-              />
-              同时删除 STE 库内文件
-            </label>
+              />{tr("同时删除 STE 库内文件")}</label>
           )}
           {deleteAttachmentFile && (
             <p className="text-xs text-muted-foreground">
-              {getActiveVault()?.fs.trashFile ? '文件将移入系统回收站。' : '当前平台不支持系统回收站，文件将永久删除。'}
+              {getActiveVault()?.fs.trashFile ? tr("文件将移入系统回收站。") : tr("当前平台不支持系统回收站，文件将永久删除。")}
             </p>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletingFile}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={deletingFile}>{tr("取消")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={deletingFile}
               onClick={(event) => {
@@ -203,7 +194,7 @@ export function AssetPreviewSheet({
                 if (fileToDelete) onConfirmFileDelete(fileToDelete, !fileToDelete.missing && deleteAttachmentFile);
               }}
             >
-              {fileToDelete?.missing ? '仅移除失效记录' : '移除'}
+              {fileToDelete?.missing ? tr("仅移除失效记录") : tr("移除")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

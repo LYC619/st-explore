@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useState  } from 'react';
 import { Tags, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +28,7 @@ interface Props {
 const NEW_TAG_VALUE = '__new__';
 
 export function PrefixCategorize({ entries, onApply, startOrder = 100, stepOrder = 10 }: Props) {
+  useI18n();
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState(startOrder);
   const [step, setStep] = useState(stepOrder);
@@ -137,46 +140,43 @@ export function PrefixCategorize({ entries, onApply, startOrder = 100, stepOrder
   return (
     <>
       <Button variant="outline" size="sm" className="text-xs" onClick={handleOpen}>
-        <Tags className="w-3.5 h-3.5 mr-1" /> 前缀归类
-      </Button>
+        <Tags className="w-3.5 h-3.5 mr-1" />{tr(" 前缀归类")}</Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>前缀归类</DialogTitle>
-            <DialogDescription>
-              为未分类条目分配标签，并自动添加「标签--标题」前缀、按标签排序、重新编号 Order。
-            </DialogDescription>
+            <DialogTitle>{tr("前缀归类")}</DialogTitle>
+            <DialogDescription>{tr("为未分类条目分配标签，并自动添加「标签--标题」前缀、按标签排序、重新编号 Order。")}</DialogDescription>
           </DialogHeader>
 
           {untaggedEntries.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4">所有条目均已有标签，无需操作。</p>
+            <p className="text-sm text-muted-foreground py-4">{tr("所有条目均已有标签，无需操作。")}</p>
           ) : (
             <>
               {/* Bulk assign + add new tag */}
               <div className="flex gap-2 items-end flex-wrap">
                 <div className="space-y-1">
-                  <Label className="text-xs">将所有未分类条目设为</Label>
+                  <Label className="text-xs">{tr("将所有未分类条目设为")}</Label>
                   <Select onValueChange={handleBulkAssign}>
                     <SelectTrigger className="h-8 w-40 text-xs">
-                      <SelectValue placeholder="选择标签" />
+                      <SelectValue placeholder={tr("选择标签")} />
                     </SelectTrigger>
                     <SelectContent>
                       {allTags.map(t => (
                         <SelectItem key={t} value={t}>{t}</SelectItem>
                       ))}
-                      <SelectItem value="未分类">未分类</SelectItem>
+                      <SelectItem value="未分类">{tr("未分类")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">添加新标签</Label>
+                  <Label className="text-xs">{tr("添加新标签")}</Label>
                   <div className="flex gap-1">
                     <Input
                       value={newTagInput}
                       onChange={(e) => setNewTagInput(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewTag(); } }}
-                      placeholder="新标签名"
+                      placeholder={tr("新标签名")}
                       className="w-32 text-xs"
                     />
                     <Button variant="outline" size="icon" className="shrink-0" onClick={handleAddNewTag} disabled={!newTagInput.trim()}>
@@ -197,7 +197,7 @@ export function PrefixCategorize({ entries, onApply, startOrder = 100, stepOrder
                   {untaggedEntries.map(([key, entry]) => (
                     <div key={key} className="flex items-center gap-2 text-sm">
                       <span className="truncate flex-1 text-foreground" title={entry.comment}>
-                        {entry.comment || '(无标题)'}
+                        {entry.comment || tr("(无标题)")}
                       </span>
                       <Select value={assignments[key] || '未分类'} onValueChange={(v) => handleAssign(key, v)}>
                         <SelectTrigger className="h-7 w-32 text-xs shrink-0">
@@ -207,7 +207,7 @@ export function PrefixCategorize({ entries, onApply, startOrder = 100, stepOrder
                           {allTags.map(t => (
                             <SelectItem key={t} value={t}>{t}</SelectItem>
                           ))}
-                          <SelectItem value="未分类">未分类</SelectItem>
+                          <SelectItem value="未分类">{tr("未分类")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -218,23 +218,22 @@ export function PrefixCategorize({ entries, onApply, startOrder = 100, stepOrder
               {/* Order settings */}
               <div className="flex gap-3 items-end">
                 <div className="space-y-1">
-                  <Label className="text-xs">起始 Order</Label>
+                  <Label className="text-xs">{tr("起始 Order")}</Label>
                   <Input type="number" value={start} onChange={(e) => setStart(Number(e.target.value))} className="w-24" />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">步长</Label>
+                  <Label className="text-xs">{tr("步长")}</Label>
                   <Input type="number" value={step} onChange={(e) => setStep(Number(e.target.value))} className="w-24" />
                 </div>
                 <p className="text-xs text-muted-foreground pb-1">
-                  {untaggedEntries.length} 个未分类条目，共 {Object.keys(entries).length} 个条目将重新编号
-                </p>
+                  {tr("{{v0}} 个未分类条目，共 {{v1}} 个条目将重新编号", { v0: untaggedEntries.length, v1: Object.keys(entries).length })}</p>
               </div>
             </>
           )}
 
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>取消</Button>
-            <Button onClick={handleApply} disabled={untaggedEntries.length === 0}>应用</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{tr("取消")}</Button>
+            <Button onClick={handleApply} disabled={untaggedEntries.length === 0}>{tr("应用")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

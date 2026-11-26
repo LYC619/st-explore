@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -73,6 +75,7 @@ function QuickEntryCard({ entry, index, onChange, onRemove }: {
   onChange: (updated: QuickEntry) => void;
   onRemove: () => void;
 }) {
+  useI18n();
   const [keyInput, setKeyInput] = useState('');
   const [expanded, setExpanded] = useState(false);
 
@@ -89,7 +92,7 @@ function QuickEntryCard({ entry, index, onChange, onRemove }: {
           value={entry.title}
           onChange={(e) => onChange({ ...entry, title: e.target.value })}
           className="text-sm font-medium"
-          placeholder="标题"
+          placeholder={tr("标题")}
         />
         <Button variant="ghost" size="icon" className="shrink-0" onClick={onRemove}>
           <X className="w-3.5 h-3.5" />
@@ -109,7 +112,7 @@ function QuickEntryCard({ entry, index, onChange, onRemove }: {
           onChange={(e) => setKeyInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addKeywords(keyInput); setKeyInput(''); } }}
           onBlur={() => { if (keyInput.trim()) { addKeywords(keyInput); setKeyInput(''); } }}
-          placeholder="添加关键词"
+          placeholder={tr("添加关键词")}
           className="text-xs w-24 inline-flex"
         />
       </div>
@@ -125,11 +128,11 @@ function QuickEntryCard({ entry, index, onChange, onRemove }: {
       ) : (
         <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap cursor-pointer" title={entry.content}
           onClick={() => setExpanded(true)}>
-          {entry.content || '(无内容)'}
+          {entry.content || tr("(无内容)")}
         </p>
       )}
       {expanded && (
-        <Button variant="ghost" size="sm" className="text-xs" onClick={() => setExpanded(false)}>收起</Button>
+        <Button variant="ghost" size="sm" className="text-xs" onClick={() => setExpanded(false)}>{tr("收起")}</Button>
       )}
 
       {/* Position & Order */}
@@ -157,6 +160,7 @@ function QuickEntryCard({ entry, index, onChange, onRemove }: {
 }
 
 export function QuickCreate({ existingWorldbook, onAddToWorldbook }: Props) {
+  useI18n();
   const [text, setText] = useState('');
   const [defaultPosition, setDefaultPosition] = useState(1);
   const [defaultOrder, setDefaultOrder] = useState(100);
@@ -226,12 +230,11 @@ export function QuickCreate({ existingWorldbook, onAddToWorldbook }: Props) {
       <div className="p-4 space-y-4">
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={() => setPreviewEntries(null)}>
-            <ArrowLeft className="w-4 h-4 mr-1" /> 返回编辑
-          </Button>
-          <span className="text-sm text-muted-foreground">预览 {previewEntries.length} 个条目</span>
+            <ArrowLeft className="w-4 h-4 mr-1" />{tr(" 返回编辑")}</Button>
+          <span className="text-sm text-muted-foreground">{tr("预览 {{v0}} 个条目", { v0: previewEntries.length })}</span>
           <div className="flex-1" />
           <Button variant="default" size="sm" onClick={handleAddToWorldbook}>
-            <Plus className="w-4 h-4 mr-1" /> {existingWorldbook ? '添加到当前世界书' : '创建并添加'}
+            <Plus className="w-4 h-4 mr-1" /> {existingWorldbook ? tr("添加到当前世界书") : tr("创建并添加")}
           </Button>
         </div>
         <div className="grid gap-3 grid-cols-1 lg:grid-cols-2">
@@ -254,29 +257,27 @@ export function QuickCreate({ existingWorldbook, onAddToWorldbook }: Props) {
     <div className="p-4 flex flex-col sm:flex-row gap-4 h-full">
       {/* Left: text input */}
       <div className="flex-1 flex flex-col gap-2">
-        <Label className="text-sm font-medium">粘贴或输入世界观设定文本</Label>
+        <Label className="text-sm font-medium">{tr("粘贴或输入世界观设定文本")}</Label>
         <Textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="粘贴或输入世界观设定文本，用空行分隔不同条目"
+          placeholder={tr("粘贴或输入世界观设定文本，用空行分隔不同条目")}
           className="flex-1 min-h-[50vh] sm:min-h-0 text-sm"
         />
-        <p className="text-xs text-muted-foreground">每段空行分隔的文本会被拆分为一个独立的世界书条目</p>
+        <p className="text-xs text-muted-foreground">{tr("每段空行分隔的文本会被拆分为一个独立的世界书条目")}</p>
         <Button onClick={handleSplit} disabled={!text.trim()} className="w-full sm:w-auto">
-          <Wand2 className="w-4 h-4 mr-1" /> 拆分预览
-        </Button>
+          <Wand2 className="w-4 h-4 mr-1" />{tr(" 拆分预览")}</Button>
       </div>
 
       {/* Right: global defaults */}
       <Collapsible defaultOpen className="sm:w-72 shrink-0">
         <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-foreground sm:hidden mb-2">
-          <ChevronDown className="w-4 h-4" /> 全局默认设置
-        </CollapsibleTrigger>
+          <ChevronDown className="w-4 h-4" />{tr(" 全局默认设置")}</CollapsibleTrigger>
         <CollapsibleContent className="space-y-3" forceMount>
-          <h4 className="text-sm font-medium text-foreground hidden sm:block">全局默认设置</h4>
+          <h4 className="text-sm font-medium text-foreground hidden sm:block">{tr("全局默认设置")}</h4>
 
           <div className="space-y-1">
-            <Label className="text-xs">默认插入位置</Label>
+            <Label className="text-xs">{tr("默认插入位置")}</Label>
             <Select value={String(defaultPosition)} onValueChange={(v) => setDefaultPosition(Number(v))}>
               <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -289,34 +290,34 @@ export function QuickCreate({ existingWorldbook, onAddToWorldbook }: Props) {
 
           {defaultPosition === 6 && (
             <div className="space-y-1">
-              <Label className="text-xs">默认深度</Label>
+              <Label className="text-xs">{tr("默认深度")}</Label>
               <Input type="number" value={defaultDepth} onChange={(e) => setDefaultDepth(Number(e.target.value))} />
             </div>
           )}
 
           <div className="space-y-1">
-            <Label className="text-xs">起始 Order</Label>
+            <Label className="text-xs">{tr("起始 Order")}</Label>
             <Input type="number" value={defaultOrder} onChange={(e) => setDefaultOrder(Number(e.target.value))} />
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">Order 递增步长</Label>
+            <Label className="text-xs">{tr("Order 递增步长")}</Label>
             <Input type="number" value={orderStep} onChange={(e) => setOrderStep(Number(e.target.value))} />
           </div>
 
           <div className="space-y-1">
-            <Label className="text-xs">默认策略</Label>
+            <Label className="text-xs">{tr("默认策略")}</Label>
             <Select value={defaultStrategy} onValueChange={(v) => setDefaultStrategy(v as 'keyword' | 'constant')}>
               <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="keyword">🟢 关键词触发</SelectItem>
-                <SelectItem value="constant">🔵 常驻</SelectItem>
+                <SelectItem value="keyword">{tr("🟢 关键词触发")}</SelectItem>
+                <SelectItem value="constant">{tr("🔵 常驻")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex items-center justify-between">
-            <Label className="text-xs">自动提取关键词</Label>
+            <Label className="text-xs">{tr("自动提取关键词")}</Label>
             <Switch checked={autoExtract} onCheckedChange={setAutoExtract} />
           </div>
         </CollapsibleContent>

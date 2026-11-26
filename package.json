@@ -38,7 +38,11 @@
     "//android": "webDir 是 dist，所以顺序永远是先 build 再 sync；sync 只做拷贝+插件登记",
     "android:sync": "npm run build && cap sync android",
     "android:open": "cap open android",
-    "tavern:helper-fixture": "node scripts/tavern/prepare-helper-fixture.mjs"
+    "tavern:helper-fixture": "node scripts/tavern/prepare-helper-fixture.mjs",
+    "i18n:check": "node scripts/i18n/check.mjs",
+    "site:build": "node scripts/site/build.mjs",
+    "deploy:prepare": "node scripts/deploy/prepare.mjs",
+    "test:delivery": "node --test --test-concurrency=1 scripts/i18n/check.test.mjs scripts/site/build.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "7.4.3",

@@ -2,7 +2,7 @@
  * 角色库 + 归档故事的数据层（2.0 阶段1）。
  * 实体定义见 @/types/archive；存储走统一仓库层（未来客户端换文件库后端无感）。
  */
-import type { ArchiveCharacter, ArchiveStory, CharacterStatus, CharacterType, StoryStatus, StoryBranch } from '@/types/archive';
+import type { ArchiveCharacter, ArchiveStory, CharacterStatus, CharacterType, StoryBranch } from '@/types/archive';
 import { isPreparedCharacterMutation, type CharacterMutationContext, type CharacterUpdater } from '@/lib/character-mutation';
 import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { openDB } from '@/lib/idb';
@@ -15,7 +15,7 @@ import { createRepo, getCurrentRepo, type Repo, type RemoveOptions } from '@/lib
 import type { SummaryItem } from '@/types/summary';
 import type { StoryTree } from '@/types/story-tree';
 import { acquireStoryMaintenance } from '@/lib/story-activity';
-import { extractModels, estimatePlayTime, computeStoryProps } from '@/lib/story-meta';
+import { STORY_STATUSES, extractModels, estimatePlayTime, computeStoryProps } from '@/lib/story-meta';
 import { KeyedSerialQueue } from '@/lib/keyed-serial-queue';
 import { notifyRecordChanged } from '@/lib/repo/changes';
 import { bytesToBase64 } from '@/lib/utils';
@@ -556,7 +556,7 @@ export const CHARACTER_STATUSES: CharacterStatus[] = ['未开始', '进行中', 
 export const CHARACTER_TYPES: CharacterType[] = ['人物', '剧情', '玩法', '综合', '同人'];
 
 /** 故事状态全部取值（10.0，四档；顺序即 UI 显示顺序） */
-export const STORY_STATUSES: StoryStatus[] = ['未开始', '进行中', '已完结', '已搁置'];
+export { STORY_STATUSES };
 
 /** ArrayBuffer → 纯 base64（无 data: 前缀），导入 PNG 卡时存原图用 */
 export function abToBase64(buf: ArrayBuffer): string {

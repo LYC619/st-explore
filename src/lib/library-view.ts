@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 角色库的外观取值与文案。
  *
@@ -9,11 +10,11 @@ import type { LibrarySortKey } from '@/lib/library-query';
 export type ViewMode = 'grid' | 'list' | 'review';
 
 export const SORT_LABELS: Record<LibrarySortKey, string> = {
-  recent: '按最近修改',
-  added: '按最近加入',
-  name: '按名称',
-  rating: '按评分',
-  lastPlayed: '按最后游玩',
+  get recent() { return tr("按最近修改"); },
+  get added() { return tr("按最近加入"); },
+  get name() { return tr("按名称"); },
+  get rating() { return tr("按评分"); },
+  get lastPlayed() { return tr("按最后游玩"); },
 };
 
 /** 卡片最小宽度（px）可调范围；网格用 auto-fill 按此值自动排列数 */
@@ -44,9 +45,9 @@ export function cardFontSizes(scale: number): { name: number; intro: number; row
 export const PAGE_SIZES = ['12', '24', '48', '96', 'all'] as const;
 export type PageSize = (typeof PAGE_SIZES)[number];
 export const PAGE_SIZE_LABELS: Record<PageSize, string> = {
-  '12': '每页 12 张',
-  '24': '每页 24 张',
-  '48': '每页 48 张',
-  '96': '每页 96 张',
-  all: '不分页',
+  get '12'() { return tr("每页 12 张"); },
+  get '24'() { return tr("每页 24 张"); },
+  get '48'() { return tr("每页 48 张"); },
+  get '96'() { return tr("每页 96 张"); },
+  get all() { return tr("不分页"); },
 };

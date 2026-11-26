@@ -1,3 +1,5 @@
+import { tr, getLocale } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { FolderOpen, Loader2, Search, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -8,11 +10,12 @@ import { cleanupVaultFiles, scanVaultFiles, type FileCleanupResult, type FileMai
 import { formatBytes } from '@/lib/storage-utils';
 
 const labels: Record<MaintenanceCategory, string> = {
-  retained: '库内回收站与长期保留文件', unreferenced: '确认失去引用的受管理文件', unknown: '无法确认归属的文件（仅查看）', 'empty-directory': '空目录',
+  get retained() { return tr("库内回收站与长期保留文件"); }, get unreferenced() { return tr("确认失去引用的受管理文件"); }, get unknown() { return tr("无法确认归属的文件（仅查看）"); }, get 'empty-directory'() { return tr("空目录"); },
 };
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 export function FileMaintenancePanel() {
+  useI18n();
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
   const vault = getActiveVault();
   const [scan, setScan] = useState<FileMaintenanceScan>();
@@ -46,25 +49,25 @@ export function FileMaintenancePanel() {
     } catch (error) { setError(message(error)); }
     finally { setBusy(false); }
   }
-  return <section className="space-y-3 rounded-xl border p-4" aria-label="文件检查与清理">
+  return <section className="space-y-3 rounded-xl border p-4" aria-label={tr("文件检查与清理")}>
     <div className="flex items-start justify-between gap-3">
-      <div><h3 className="text-sm font-medium">文件检查与清理</h3><p className="mt-1 text-xs text-muted-foreground">检查当前 STE 文件库中的保留文件、未引用的受管理文件和未知内容。</p></div>
-      <Button size="sm" variant="outline" disabled={busy} onClick={() => void inspect()}>{busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Search className="mr-1.5 h-4 w-4" />}检查文件</Button>
+      <div><h3 className="text-sm font-medium">{tr("文件检查与清理")}</h3><p className="mt-1 text-xs text-muted-foreground">{tr("检查当前 STE 文件库中的保留文件、未引用的受管理文件和未知内容。")}</p></div>
+      <Button size="sm" variant="outline" disabled={busy} onClick={() => void inspect()}>{busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Search className="mr-1.5 h-4 w-4" />}{tr("检查文件")}</Button>
     </div>
-    <p className="text-xs text-muted-foreground">勾选删除的文件在库内回收站逐个保留满 30 天，打开库后及运行期间每小时检查到期项，再移入系统回收站；应用关闭时顺延到下次打开。无法回收时继续保留。未勾选删除的文件长期保留。</p>
+    <p className="text-xs text-muted-foreground">{tr("勾选删除的文件在库内回收站逐个保留满 30 天，打开库后及运行期间每小时检查到期项，再移入系统回收站；应用关闭时顺延到下次打开。无法回收时继续保留。未勾选删除的文件长期保留。")}</p>
     <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-      <span>库内回收／保留区：.ste/retained</span>
+      <span>{tr("库内回收／保留区：.ste/retained")}</span>
       {vault.fs.openPath && <Button size="sm" variant="outline" onClick={() => void (async () => {
         if ((await vault.fs.stat('.ste/retained')).exists) await vault.fs.openPath!('.ste/retained');
-        else setError('当前库尚无回收或保留文件。');
-      })().catch(error => setError(message(error)))}><FolderOpen className="mr-1 h-3.5 w-3.5" />打开文件夹</Button>}
+        else setError(tr("当前库尚无回收或保留文件。"));
+      })().catch(error => setError(message(error)))}><FolderOpen className="mr-1 h-3.5 w-3.5" />{tr("打开文件夹")}</Button>}
     </div>
     {error && <p role="alert" className="max-h-40 overflow-y-auto break-words text-sm text-destructive">{error}</p>}
     {current && <>
-      <p className="text-xs text-muted-foreground">检查结果共 {scan.entries.length} 项，占用 {formatBytes(scan.bytes)}。有效的未绑定记录、独立资产和备份不会自动清理。</p>
+      <p className="text-xs text-muted-foreground">{tr("检查结果共 ")}{scan.entries.length}{tr(" 项，占用 ")}{formatBytes(scan.bytes)}{tr("。有效的未绑定记录、独立资产和备份不会自动清理。")}</p>
       {!scan.complete && <div role="alert" className="space-y-2 rounded-md border border-destructive/30 p-3 text-xs text-destructive">
-        <p>检查未完成，已禁用清理。请查看问题详情，处理后重新检查。</p>
-        <details><summary className="cursor-pointer py-1">查看 {scan.errors.length} 项问题</summary>
+        <p>{tr("检查未完成，已禁用清理。请查看问题详情，处理后重新检查。")}</p>
+        <details><summary className="cursor-pointer py-1">{tr("查看 ")}{scan.errors.length}{tr(" 项问题")}</summary>
           <div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain">{scan.errors.map((text, index) => <p key={index} className="break-all">{text}</p>)}</div>
         </details>
       </div>}
@@ -72,20 +75,20 @@ export function FileMaintenancePanel() {
         const entries = scan.entries.filter(entry => entry.category === category);
         if (!entries.length) return null;
         return <details key={category} open={category !== 'unknown'} className="rounded-md border p-2">
-          <summary className="cursor-pointer text-xs font-medium">{labels[category]} · {entries.length} 项 · {formatBytes(entries.reduce((sum, entry) => sum + entry.size, 0))}</summary>
+          <summary className="cursor-pointer text-xs font-medium">{labels[category]} · {entries.length}{tr(" 项 · ")}{formatBytes(entries.reduce((sum, entry) => sum + entry.size, 0))}</summary>
           <div className="mt-2 max-h-64 space-y-2 overflow-y-auto">{entries.map(entry => <div key={entry.path} className="flex items-start gap-2 rounded p-1">
-            <Checkbox aria-label={`选择 ${entry.path}`} disabled={busy || !entry.selectable} checked={selected.has(entry.path)} onCheckedChange={checked => setSelected(previous => { const next = new Set(previous); if (checked) next.add(entry.path); else next.delete(entry.path); return next; })} />
+            <Checkbox aria-label={tr("选择 {{v0}}", { v0: entry.path })} disabled={busy || !entry.selectable} checked={selected.has(entry.path)} onCheckedChange={checked => setSelected(previous => { const next = new Set(previous); if (checked) next.add(entry.path); else next.delete(entry.path); return next; })} />
             <div className="min-w-0 flex-1 text-xs"><p className="break-all">{entry.path}</p><p className="mt-0.5 break-all text-muted-foreground">{formatBytes(entry.size)} · {entry.reason}</p></div>
-            {vault.fs.openPath && <Button size="icon" variant="ghost" className="shrink-0" aria-label={`定位 ${entry.path}`} onClick={() => void vault.fs.openPath!(entry.path, true).catch(error => setError(message(error)))}><FolderOpen className="h-3.5 w-3.5" /></Button>}
+            {vault.fs.openPath && <Button size="icon" variant="ghost" className="shrink-0" aria-label={tr("定位 {{v0}}", { v0: entry.path })} onClick={() => void vault.fs.openPath!(entry.path, true).catch(error => setError(message(error)))}><FolderOpen className="h-3.5 w-3.5" /></Button>}
           </div>)}</div>
         </details>;
       })}
       <div className="flex flex-wrap items-center gap-3">
-        <Button size="sm" variant="outline" disabled={busy || !scan.complete} onClick={() => setSelected(new Set(scan.entries.filter(entry => entry.selectable).map(entry => entry.path)))}>选择可清理项</Button>
-        <Button size="sm" variant="destructive" disabled={busy || !scan.complete || !selectedEntries.length} onClick={() => setConfirm(true)}><Trash2 className="mr-1.5 h-4 w-4" />清理已选 {selectedEntries.length} 项（{formatBytes(selectedBytes)}）</Button>
+        <Button size="sm" variant="outline" disabled={busy || !scan.complete} onClick={() => setSelected(new Set(scan.entries.filter(entry => entry.selectable).map(entry => entry.path)))}>{tr("选择可清理项")}</Button>
+        <Button size="sm" variant="destructive" disabled={busy || !scan.complete || !selectedEntries.length} onClick={() => setConfirm(true)}><Trash2 className="mr-1.5 h-4 w-4" />{tr("清理已选 {{v0}} 项（{{v1}}）", { v0: selectedEntries.length, v1: formatBytes(selectedBytes) })}</Button>
       </div>
     </>}
-    {result && <div className="space-y-1 text-xs" role="status"><p>成功 {result.removed.length} 项，跳过 {result.skipped.length} 项，失败 {result.failed.length} 项；已移出库内 {formatBytes(result.bytes)}。</p>{result.usesTrash && result.removed.length > 0 && <p className="text-muted-foreground">文件已送入系统回收站；清空回收站后才会释放磁盘空间。</p>}{(result.skipped.length > 0 || result.failed.length > 0) && <details><summary className="cursor-pointer py-1">查看跳过与失败详情</summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain">{[...result.skipped, ...result.failed].map(item => <p key={item.path} className="break-all text-muted-foreground">{item.path}：{item.reason}</p>)}</div></details>}</div>}
-    <AlertDialog open={confirm} onOpenChange={setConfirm}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>清理所选文件？</AlertDialogTitle><AlertDialogDescription>将清理 {selectedEntries.length} 项，共 {formatBytes(selectedBytes)}。{vault.fs.trashFile ? '文件会移入系统回收站。' : '当前平台不支持系统回收站，文件将永久删除，无法撤销。'}执行前会重新检查文件与引用；发生变化的项目会跳过。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void clean()}>确认清理</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    {result && <div className="space-y-1 text-xs" role="status"><p>{tr("成功 {{v0}} 项，跳过 {{v1}} 项，失败 {{v2}} 项；已移出库内 {{v3}}。", { v0: result.removed.length, v1: result.skipped.length, v2: result.failed.length, v3: formatBytes(result.bytes) })}</p>{result.usesTrash && result.removed.length > 0 && <p className="text-muted-foreground">{tr("文件已送入系统回收站；清空回收站后才会释放磁盘空间。")}</p>}{(result.skipped.length > 0 || result.failed.length > 0) && <details><summary className="cursor-pointer py-1">{tr("查看跳过与失败详情")}</summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto overscroll-contain">{[...result.skipped, ...result.failed].map(item => <p key={item.path} className="break-all text-muted-foreground">{item.path}: {item.reason}</p>)}</div></details>}</div>}
+    <AlertDialog open={confirm} onOpenChange={setConfirm}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tr("清理所选文件？")}</AlertDialogTitle><AlertDialogDescription>{tr("将清理 {{v0}} 项，共 {{v1}}。", { v0: selectedEntries.length, v1: formatBytes(selectedBytes) })}{getLocale() === 'en' ? ' ' : ''}{vault.fs.trashFile ? tr("文件会移入系统回收站。") : tr("当前平台不支持系统回收站，文件将永久删除，无法撤销。")}{getLocale() === 'en' ? ' ' : ''}{tr("执行前会重新检查文件与引用；发生变化的项目会跳过。")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{tr("取消")}</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void clean()}>{tr("确认清理")}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
   </section>;
 }

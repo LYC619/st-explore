@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type { LucideIcon } from 'lucide-react';
 import {
   BookOpen,
@@ -42,8 +43,8 @@ export interface NavArea extends NavDestination {
 export const NAV_AREAS: NavArea[] = [
   {
     key: 'home',
-    label: '首页',
-    description: '最近角色、故事与处理入口',
+    get label() { return tr("首页"); },
+    get description() { return tr("最近角色、故事与处理入口"); },
     icon: Home,
     path: '/',
     prefixes: ['/'],
@@ -51,8 +52,8 @@ export const NAV_AREAS: NavArea[] = [
   },
   {
     key: 'chats',
-    label: '聊天',
-    description: '继续对话、开始新聊天和配置记忆',
+    get label() { return tr("聊天"); },
+    get description() { return tr("继续对话、开始新聊天和配置记忆"); },
     icon: MessageCircle,
     path: '/play',
     prefixes: ['/play'],
@@ -60,8 +61,8 @@ export const NAV_AREAS: NavArea[] = [
   },
   {
     key: 'characters',
-    label: '角色库',
-    description: '浏览、筛选和维护角色卡',
+    get label() { return tr("角色库"); },
+    get description() { return tr("浏览、筛选和维护角色卡"); },
     icon: Users,
     path: '/library',
     prefixes: ['/library', '/character'],
@@ -69,8 +70,8 @@ export const NAV_AREAS: NavArea[] = [
   },
   {
     key: 'presets',
-    label: '预设库',
-    description: '收藏作者预设、管理版本和配套资源',
+    get label() { return tr("预设库"); },
+    get description() { return tr("收藏作者预设、管理版本和配套资源"); },
     icon: SlidersHorizontal,
     path: '/presets',
     activeMatches: [{ prefix: '/presets' }, { prefix: '/assets', query: { tab: 'preset' } }, { prefix: '/tools', query: { focus: 'preset' } }],
@@ -78,41 +79,41 @@ export const NAV_AREAS: NavArea[] = [
   },
   {
     key: 'editor',
-    label: '编辑区',
-    description: '处理聊天与整理故事资料',
+    get label() { return tr("编辑区"); },
+    get description() { return tr("处理聊天与整理故事资料"); },
     icon: PenLine,
     path: '/chat',
     prefixes: ['/tools', '/chat', '/worldbook', '/card-viewer', '/preset', '/regex', '/story', '/beautify'],
     children: [
-      { key: 'chat', label: '聊天处理', description: '正则清理、转换与导出', icon: MessageSquare, path: '/chat', prefixes: ['/chat'] },
-      { key: 'summary', label: '总结', description: '生成分卷、日记和自定义记录', icon: BookOpen, path: '/tools?focus=summary', prefixes: ['/tools'], query: { focus: 'summary' } },
-      { key: 'story-tree', label: '故事树', description: '整理人物与事件脉络', icon: Network, path: '/tools?focus=story-tree', prefixes: ['/tools'], query: { focus: 'story-tree' } },
+      { key: 'chat', get label() { return tr("聊天处理"); }, get description() { return tr("正则清理、转换与导出"); }, icon: MessageSquare, path: '/chat', prefixes: ['/chat'] },
+      { key: 'summary', get label() { return tr("总结"); }, get description() { return tr("生成分卷、日记和自定义记录"); }, icon: BookOpen, path: '/tools?focus=summary', prefixes: ['/tools'], query: { focus: 'summary' } },
+      { key: 'story-tree', get label() { return tr("故事树"); }, get description() { return tr("整理人物与事件脉络"); }, icon: Network, path: '/tools?focus=story-tree', prefixes: ['/tools'], query: { focus: 'story-tree' } },
       {
-        key: 'worldbook', label: '世界书', description: '编辑世界设定条目', icon: BookOpen,
+        key: 'worldbook', get label() { return tr("世界书"); }, get description() { return tr("编辑世界设定条目"); }, icon: BookOpen,
         path: '/tools?focus=worldbook', prefixes: ['/worldbook'],
         activeMatches: [{ prefix: '/tools', query: { focus: 'worldbook' } }, { prefix: '/worldbook' }],
       },
-      { key: 'card', label: '角色卡', description: '查看和处理卡片字段', icon: IdCard, path: '/card-viewer', prefixes: ['/card-viewer'] },
+      { key: 'card', get label() { return tr("角色卡"); }, get description() { return tr("查看和处理卡片字段"); }, icon: IdCard, path: '/card-viewer', prefixes: ['/card-viewer'] },
       {
-        key: 'preset', label: '预设', description: '编辑提示词与生成配置', icon: SlidersHorizontal,
+        key: 'preset', get label() { return tr("预设"); }, get description() { return tr("编辑提示词与生成配置"); }, icon: SlidersHorizontal,
         path: '/presets?mode=select', prefixes: ['/preset'],
         activeMatches: [{ prefix: '/preset' }],
       },
-      { key: 'regex', label: '正则', description: '编辑规则集并预览生效结果', icon: Regex, path: '/regex', prefixes: ['/regex'] },
-      { key: 'beautify', label: '美化', description: '状态栏、悬浮窗与 MVU 变量', icon: Palette, path: '/beautify', prefixes: ['/beautify'] },
+      { key: 'regex', get label() { return tr("正则"); }, get description() { return tr("编辑规则集并预览生效结果"); }, icon: Regex, path: '/regex', prefixes: ['/regex'] },
+      { key: 'beautify', get label() { return tr("美化"); }, get description() { return tr("状态栏、悬浮窗与 MVU 变量"); }, icon: Palette, path: '/beautify', prefixes: ['/beautify'] },
     ],
   },
   {
     key: 'assets',
-    label: '附属库',
-    description: '管理可复用的共享资产',
+    get label() { return tr("附属库"); },
+    get description() { return tr("管理可复用的共享资产"); },
     icon: Layers,
     path: '/assets?tab=worldbook',
     prefixes: ['/assets'],
     children: [
-      { key: 'worldbook', label: '世界书', description: '共享世界书资产', icon: BookOpen, path: '/assets?tab=worldbook', prefixes: ['/assets'], query: { tab: 'worldbook' } },
-      { key: 'regex', label: '正则', description: '共享规则集资产', icon: Regex, path: '/assets?tab=regex', prefixes: ['/assets'], query: { tab: 'regex' } },
-      { key: 'other', label: '其他资产', description: '资产说明与扩展归档', icon: Layers, path: '/assets', prefixes: ['/assets'], query: { tab: null } },
+      { key: 'worldbook', get label() { return tr("世界书"); }, get description() { return tr("共享世界书资产"); }, icon: BookOpen, path: '/assets?tab=worldbook', prefixes: ['/assets'], query: { tab: 'worldbook' } },
+      { key: 'regex', get label() { return tr("正则"); }, get description() { return tr("共享规则集资产"); }, icon: Regex, path: '/assets?tab=regex', prefixes: ['/assets'], query: { tab: 'regex' } },
+      { key: 'other', get label() { return tr("其他资产"); }, get description() { return tr("资产说明与扩展归档"); }, icon: Layers, path: '/assets', prefixes: ['/assets'], query: { tab: null } },
     ],
   },
 ];

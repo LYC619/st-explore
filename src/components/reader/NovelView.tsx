@@ -1,9 +1,11 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 小说视图：按章节和楼层边界分页的小说排版正文。
  * - 纯文本管道见 lib/novel-view；
  * - 顶栏、AI 章节建议与按章 AI 润色拆至同目录独立子组件。
  */
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback, type ReactNode } from 'react';
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, type ReactNode  } from 'react';
 import {
   Feather,
   ChevronLeft,
@@ -114,6 +116,7 @@ const NovelView = ({
   embedded = false,
   renderTopActions,
 }: NovelViewProps) => {
+  useI18n();
   const { isMobile } = useViewport();
   const [stored] = useState(loadStoredOptions);
   const [userMode, setUserMode] = useState<UserFloorMode>(stored.userMode);
@@ -355,7 +358,7 @@ const NovelView = ({
   }, [chapterDialogOpen, polishChapter, exitReader, turnPage, step, scrolling]);
 
   const chapterNav = chapters.map((c, i) => ({
-    title: c.title ?? '（开篇）',
+    title: c.title ?? tr("（开篇）"),
     index: pages.findIndex((page) => page.chapterIndex === i),
   })).filter((item) => item.index >= 0);
 
@@ -507,10 +510,9 @@ const NovelView = ({
       size="sm"
       className="gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
       onClick={() => setPolishChapter(polishTarget)}
-      title="按文风模板将本章润色为连贯小说正文"
+      title={tr("按文风模板将本章润色为连贯小说正文")}
     >
-      <Feather className="h-3 w-3" />AI 润色本章
-    </Button>
+      <Feather className="h-3 w-3" />{tr("AI 润色本章")}</Button>
   ) : null;
 
   const renderNovelPage = (page: NovelPage | undefined, pageIndex: number, side: 'left' | 'right' | 'single') => (
@@ -536,12 +538,12 @@ const NovelView = ({
             </div>
           )}
           <div className="mb-3 flex items-center justify-center gap-2 text-[11px] text-muted-foreground">
-            <span>#{page.startFloor}–{page.endFloor} 楼</span>
+            <span>{tr("#{{v0}}–{{v1}} 楼", { v0: page.startFloor, v1: page.endFloor })}</span>
             {side !== 'right' && polishButton}
           </div>
           {renderBlocks(page.blocks)}
           {pageIndex === pages.length - 1 && (
-            <p className="pt-3 text-center text-xs text-muted-foreground/60">—— 完 ——</p>
+            <p className="pt-3 text-center text-xs text-muted-foreground/60">{tr("—— 完 ——")}</p>
           )}
         </article>
       ) : (
@@ -580,7 +582,7 @@ const NovelView = ({
       }}
     >
       <NovelTopBar
-        title={session.title || '未命名作品'}
+        title={session.title || tr("未命名作品")}
         isMobile={isMobile}
         chromeVisible={chromeVisible}
         readingMode={activeReadingMode}
@@ -621,9 +623,7 @@ const NovelView = ({
         onClick={handleSurfaceClick}
       >
         {pages.length === 0 ? (
-          <p className="flex h-full items-center justify-center text-center text-muted-foreground text-sm">
-            暂时没有可展示的正文（可能所有楼层都被设为隐藏，或被当前正则过滤了）。
-          </p>
+          <p className="flex h-full items-center justify-center text-center text-muted-foreground text-sm">{tr("暂时没有可展示的正文（可能所有楼层都被设为隐藏，或被当前正则过滤了）。")}</p>
         ) : scrolling ? (
           <div
             ref={attachScrollHost}
@@ -669,7 +669,7 @@ const NovelView = ({
                       >
                         {renderBlocks(page.blocks)}
                         {item.index === pages.length - 1 && (
-                          <p className="pt-3 text-center text-xs text-muted-foreground/60">—— 完 ——</p>
+                          <p className="pt-3 text-center text-xs text-muted-foreground/60">{tr("—— 完 ——")}</p>
                         )}
                       </article>
                     </section>
@@ -708,8 +708,8 @@ const NovelView = ({
               className="absolute left-2 top-1/2 -translate-y-1/2"
               onClick={(event) => { event.stopPropagation(); jumpToPage(currentPage - 2); }}
               disabled={currentPage <= 0 || pages.length === 0}
-              aria-label="上一页"
-              title="上一页"
+              aria-label={tr("上一页")}
+              title={tr("上一页")}
             >
               <ChevronLeft className="h-5 w-5" />
             </Button>
@@ -719,8 +719,8 @@ const NovelView = ({
               className="absolute right-2 top-1/2 -translate-y-1/2"
               onClick={(event) => { event.stopPropagation(); jumpToPage(currentPage + 2); }}
               disabled={currentPage >= lastSpreadStart || pages.length === 0}
-              aria-label="下一页"
-              title="下一页"
+              aria-label={tr("下一页")}
+              title={tr("下一页")}
             >
               <ChevronRight className="h-5 w-5" />
             </Button>
@@ -746,8 +746,8 @@ const NovelView = ({
             size="icon"
             onClick={toggleCurrentBookmark}
             disabled={!currentMessageId || !onFavoritesChange}
-            aria-label={currentIsBookmarked ? '移除当前页书签' : '收藏当前页楼层'}
-            title={currentIsBookmarked ? '移除当前页书签' : '收藏当前页楼层'}
+            aria-label={currentIsBookmarked ? tr("移除当前页书签") : tr("收藏当前页楼层")}
+            title={currentIsBookmarked ? tr("移除当前页书签") : tr("收藏当前页楼层")}
           >
             {currentIsBookmarked ? <BookmarkCheck className="h-4 w-4 text-primary" /> : <Bookmark className="h-4 w-4" />}
           </Button>
@@ -758,7 +758,7 @@ const NovelView = ({
             max={lastSpreadStart}
             step={step}
             disabled={pages.length <= step}
-            aria-label="小说阅读进度"
+            aria-label={tr("小说阅读进度")}
             className="flex-1"
           />
           <span data-novel-progress className={cn('text-right text-xs text-muted-foreground', isMobile ? 'min-w-14' : 'min-w-20')}>

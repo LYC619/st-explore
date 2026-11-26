@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 左侧滑出抽屉（移动端适配 P0）：承载当前页面的二级导航。
  *
@@ -64,6 +66,7 @@ function DrawerNavItem({
 }
 
 export function MobileDrawer({ open, onOpenChange, area, children }: MobileDrawerProps) {
+  useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -95,9 +98,9 @@ export function MobileDrawer({ open, onOpenChange, area, children }: MobileDrawe
         }}
       >
         <SheetHeader className="shrink-0 border-b border-[color:var(--border-subtle)] px-4 py-3 text-left">
-          <SheetTitle className="text-base">{area?.label ?? '导航'}</SheetTitle>
+          <SheetTitle className="text-base">{area?.label ?? tr("导航")}</SheetTitle>
           <SheetDescription className="text-xs">
-            {area?.description ?? '当前页面不属于一级区域'}
+            {area?.description ?? tr("当前页面不属于一级区域")}
           </SheetDescription>
         </SheetHeader>
 
@@ -124,9 +127,7 @@ export function MobileDrawer({ open, onOpenChange, area, children }: MobileDrawe
             </div>
           )}
           {!children && (!area || area.children.length === 0) && (
-            <p className="px-2 py-6 text-center text-xs text-[color:var(--text-muted)]">
-              这个页面没有二级导航，用底部标签栏切换区域。
-            </p>
+            <p className="px-2 py-6 text-center text-xs text-[color:var(--text-muted)]">{tr("这个页面没有二级导航，用底部标签栏切换区域。")}</p>
           )}
         </div>
 
@@ -140,7 +141,7 @@ export function MobileDrawer({ open, onOpenChange, area, children }: MobileDrawe
                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-[color:var(--sidebar-text)] transition-colors active:bg-[var(--hover-overlay)]"
               >
                 <Palette className="h-4 w-4 shrink-0 opacity-80" />
-                <span className="flex-1">主题</span>
+                <span className="flex-1">{tr("主题")}</span>
               </button>
             }
           />
@@ -156,7 +157,7 @@ export function MobileDrawer({ open, onOpenChange, area, children }: MobileDrawe
             )}
           >
             <Wrench className="h-4 w-4 shrink-0 opacity-80" />
-            <span className="flex-1">设置</span>
+            <span className="flex-1">{tr("设置")}</span>
           </button>
         </div>
       </SheetContent>

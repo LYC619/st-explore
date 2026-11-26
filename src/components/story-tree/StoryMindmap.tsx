@@ -1,4 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useRef, useState  } from 'react';
 import { Upload, Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -187,6 +189,7 @@ interface StoryMindmapProps {
  * 点子块弹出该卷全文；支持一键导出 PNG / SVG。点击节点选中（编辑器在下方）。
  */
 export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindmapProps) {
+  useI18n();
   const { toast } = useToast();
   const svgRef = useRef<SVGSVGElement>(null);
   const [exporting, setExporting] = useState(false);
@@ -196,19 +199,19 @@ export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindm
   const { boxes, edges, width, height } = useMemo(() => layoutMindmap(layoutForest), [layoutForest]);
 
   if (!boxes.length) {
-    return <p className="text-sm text-muted-foreground py-8 text-center">没有可显示的节点。</p>;
+    return <p className="text-sm text-muted-foreground py-8 text-center">{tr("没有可显示的节点。")}</p>;
   }
 
-  const safeName = (title || '故事树').replace(/[\\/:*?"<>|]/g, '_');
+  const safeName = (title || tr("故事树")).replace(/[\\/:*?"<>|]/g, '_');
 
   const handleExportPng = async () => {
     if (!svgRef.current) return;
     setExporting(true);
     try {
-      await downloadSvgAsPng(svgRef.current, `${safeName}-导图.png`);
-      toast({ title: '已导出 PNG' });
+      await downloadSvgAsPng(svgRef.current, tr("{{v0}}-导图.png", { v0: safeName }));
+      toast({ title: tr("已导出 PNG") });
     } catch (e) {
-      toast({ title: '导出失败', description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
+      toast({ title: tr("导出失败"), description: e instanceof Error ? e.message : undefined, variant: 'destructive' });
     } finally {
       setExporting(false);
     }
@@ -216,22 +219,18 @@ export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindm
 
   const handleExportSvg = () => {
     if (!svgRef.current) return;
-    downloadSvg(svgRef.current, `${safeName}-导图.svg`);
-    toast({ title: '已导出 SVG' });
+    downloadSvg(svgRef.current, tr("{{v0}}-导图.svg", { v0: safeName }));
+    toast({ title: tr("已导出 SVG") });
   };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <p className="text-xs text-muted-foreground flex-1 min-w-0">
-          角色右侧的浅色子块 = 各卷变化摘要，点子块看该卷全文；点击节点在下方编辑。
-        </p>
+        <p className="text-xs text-muted-foreground flex-1 min-w-0">{tr("角色右侧的浅色子块 = 各卷变化摘要，点子块看该卷全文；点击节点在下方编辑。")}</p>
         <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={handleExportPng} disabled={exporting}>
-          {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}导出 PNG
-        </Button>
+          {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}{tr("导出 PNG")}</Button>
         <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={handleExportSvg}>
-          <Upload className="w-3 h-3" />导出 SVG
-        </Button>
+          <Upload className="w-3 h-3" />{tr("导出 SVG")}</Button>
       </div>
 
       {/* 点开的分卷全文面板 */}
@@ -244,7 +243,7 @@ export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindm
             <button
               onClick={() => setActiveSection(null)}
               className="text-muted-foreground hover:text-foreground shrink-0"
-              aria-label="关闭全文"
+              aria-label={tr("关闭全文")}
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -256,7 +255,7 @@ export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindm
       )}
 
       <div className="overflow-auto rounded-md border max-h-[72vh]" style={{ background: PAPER }}>
-        <svg ref={svgRef} width={width} height={height} role="img" aria-label="故事树导图">
+        <svg ref={svgRef} width={width} height={height} role="img" aria-label={tr("故事树导图")}>
           <rect x={0} y={0} width={width} height={height} fill={PAPER} />
           {edges.map((e, i) => (
             <path
@@ -273,7 +272,7 @@ export function StoryMindmap({ forest, selectedId, onSelect, title }: StoryMindm
             // 小节子块：正文摘要占两行（点击弹全文）；普通节点：标题 + 提示
             // 第二行的截断预算按 11px 字号算：原来是 9~10px 配 15~16 单位，字号
             // 抬到 11px（全项目字号下限）后同样的单位数会超出 NODE_W。
-            const line1 = b.isSection ? cutByUnits(b.title, 12.5).head : fitText(b.title || '(未命名)', 12.5);
+            const line1 = b.isSection ? cutByUnits(b.title, 12.5).head : fitText(b.title || tr("(未命名)"), 12.5);
             const line2 = b.isSection ? fitText(cutByUnits(b.title, 12.5).rest, 13.5) : (b.sub ? fitText(b.sub, 13.5) : '');
             return (
               <g

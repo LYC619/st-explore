@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { ReactNode } from 'react';
 import {
   ArrowLeft,
@@ -80,6 +82,7 @@ export function NovelTopBar({
   onExit,
   extraActions,
 }: NovelTopBarProps) {
+  useI18n();
   return (
     <div
       data-reader-top-bar
@@ -90,7 +93,7 @@ export function NovelTopBar({
       )}
     >
       <div className={cn('flex items-center gap-2 flex-wrap', isMobile ? 'gap-1 px-1.5 py-1' : 'px-4 py-2')}>
-        <Button variant="ghost" size="icon" onClick={onExit} aria-label="退出小说视图">
+        <Button variant="ghost" size="icon" onClick={onExit} aria-label={tr("退出小说视图")}>
           {isMobile ? <ArrowLeft className="w-4 h-4" /> : <X className="w-4 h-4" />}
         </Button>
         <span
@@ -105,18 +108,16 @@ export function NovelTopBar({
 
         {!isMobile && (
           <Badge variant="outline" className="h-5 px-1.5 text-[11px] text-muted-foreground font-normal gap-1">
-            <BookOpenCheck className="w-3 h-3" />小说视图
-          </Badge>
+            <BookOpenCheck className="w-3 h-3" />{tr("小说视图")}</Badge>
         )}
         {!isMobile && userMode === 'hide' && hiddenUserFloors > 0 && (
           <Badge variant="outline" className="h-5 px-1.5 text-[11px] text-muted-foreground font-normal gap-1">
-            <EyeOff className="w-3 h-3" />已隐藏 {hiddenUserFloors} 个用户楼层
-          </Badge>
+            <EyeOff className="w-3 h-3" />{tr("已隐藏 ")}{hiddenUserFloors}{tr(" 个用户楼层")}</Badge>
         )}
         {!isMobile && hiddenFloors > 0 && (
           <Badge variant="outline" className="h-5 px-1.5 text-[11px] text-muted-foreground font-normal gap-1">
             {showHidden ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            {showHidden ? `含 ${hiddenFloors} 个隐藏楼层` : `已隐藏 ${hiddenFloors} 个隐藏楼层`}
+            {showHidden ? tr("含 {{v0}} 个隐藏楼层", { v0: hiddenFloors }) : tr("已隐藏 {{v0}} 个隐藏楼层", { v0: hiddenFloors })}
           </Badge>
         )}
 
@@ -125,13 +126,13 @@ export function NovelTopBar({
 
           {!isMobile && (
             <Select value={userMode} onValueChange={(v) => onUserModeChange(v as UserFloorMode)}>
-              <SelectTrigger aria-label="用户楼层显示方式" className="h-8 w-32 text-xs" title="你的发言怎么排：角色回复里通常会承接你的动作，弱化或隐藏读起来更像连贯小说">
+              <SelectTrigger aria-label={tr("用户楼层显示方式")} className="h-8 w-32 text-xs" title={tr("你的发言怎么排：角色回复里通常会承接你的动作，弱化或隐藏读起来更像连贯小说")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="weaken">玩家发言：弱化</SelectItem>
-                <SelectItem value="hide">玩家发言：隐藏</SelectItem>
-                <SelectItem value="keep">玩家发言：保留</SelectItem>
+                <SelectItem value="weaken">{tr("玩家发言：弱化")}</SelectItem>
+                <SelectItem value="hide">{tr("玩家发言：隐藏")}</SelectItem>
+                <SelectItem value="keep">{tr("玩家发言：保留")}</SelectItem>
               </SelectContent>
             </Select>
           )}
@@ -140,17 +141,16 @@ export function NovelTopBar({
             <Popover>
               <PopoverTrigger asChild>
                 {isMobile ? (
-                  <Button variant="ghost" size="icon" aria-label="章节目录" title="章节目录">
+                  <Button variant="ghost" size="icon" aria-label={tr("章节目录")} title={tr("章节目录")}>
                     <List className="w-4 h-4" />
                   </Button>
                 ) : (
                   <Button variant="outline" size="sm" className="gap-1">
-                    <List className="w-3.5 h-3.5" />目录
-                  </Button>
+                    <List className="w-3.5 h-3.5" />{tr("目录")}</Button>
                 )}
               </PopoverTrigger>
               <PopoverContent className="w-64 p-0" align="end">
-                <div className="p-3 border-b font-medium text-sm">章节目录</div>
+                <div className="p-3 border-b font-medium text-sm">{tr("章节目录")}</div>
                 <ScrollArea className="max-h-72">
                   <div className="p-2 space-y-0.5">
                     {chapterNav.map((c) => (
@@ -171,14 +171,14 @@ export function NovelTopBar({
 
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant={isMobile ? 'ghost' : 'outline'} size="icon" aria-label="书签列表" title="书签列表">
+              <Button variant={isMobile ? 'ghost' : 'outline'} size="icon" aria-label={tr("书签列表")} title={tr("书签列表")}>
                 <Bookmark className={isMobile ? 'w-4 h-4' : 'w-3.5 h-3.5'} />
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-72 p-0" align="end">
-              <div className="p-3 border-b font-medium text-sm">书签</div>
+              <div className="p-3 border-b font-medium text-sm">{tr("书签")}</div>
               {novelBookmarks.length === 0 ? (
-                <p className="px-3 py-5 text-center text-xs text-muted-foreground">还没有收藏书签，点左下角书签图标可随时标记精彩段落</p>
+                <p className="px-3 py-5 text-center text-xs text-muted-foreground">{tr("还没有收藏书签，点左下角书签图标可随时标记精彩段落")}</p>
               ) : (
                 <div className="max-h-72 overflow-y-auto">
                   <div className="py-1">
@@ -199,8 +199,8 @@ export function NovelTopBar({
                             variant="ghost"
                             size="icon"
                             className="mr-1 shrink-0"
-                            aria-label={`删除第 ${bookmark.floor} 楼书签`}
-                            title="删除书签"
+                            aria-label={tr("删除第 {{v0}} 楼书签", { v0: bookmark.floor })}
+                            title={tr("删除书签")}
                             onClick={() => onRemoveBookmark(bookmark.messageId)}
                           >
                             <Trash2 className="h-4 w-4" />
@@ -216,16 +216,15 @@ export function NovelTopBar({
 
           {canSuggestChapters && !isMobile && (
             <Button variant="outline" size="sm" className="gap-1" onClick={onOpenChapterSuggest}>
-              <Sparkles className="w-3.5 h-3.5" />AI 章节
-            </Button>
+              <Sparkles className="w-3.5 h-3.5" />{tr("AI 章节")}</Button>
           )}
 
           {isMobile ? (
             <Button
               variant="ghost"
               size="icon"
-              aria-label="阅读设置"
-              title="阅读设置"
+              aria-label={tr("阅读设置")}
+              title={tr("阅读设置")}
               onClick={onOpenMobileSettings}
             >
               <Settings className="w-4 h-4" />
@@ -233,14 +232,14 @@ export function NovelTopBar({
           ) : (
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" aria-label="外观设置">
+                <Button variant="outline" size="sm" aria-label={tr("外观设置")}>
                   <Settings className="w-3.5 h-3.5" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-64 space-y-4" align="end">
                 {onReadingModeChange && (
                   <div>
-                    <div className="text-sm font-medium mb-2">阅读翻阅方式</div>
+                    <div className="text-sm font-medium mb-2">{tr("阅读翻阅方式")}</div>
                     <div className="grid grid-cols-2 gap-1.5">
                       <button
                         type="button"
@@ -251,9 +250,7 @@ export function NovelTopBar({
                             ? 'border-primary bg-primary/10 text-primary font-medium'
                             : 'border-border text-muted-foreground hover:text-foreground',
                         )}
-                      >
-                        双页翻书
-                      </button>
+                      >{tr("双页翻书")}</button>
                       <button
                         type="button"
                         onClick={() => onReadingModeChange('scroll')}
@@ -263,20 +260,18 @@ export function NovelTopBar({
                             ? 'border-primary bg-primary/10 text-primary font-medium'
                             : 'border-border text-muted-foreground hover:text-foreground',
                         )}
-                      >
-                        单栏滚动
-                      </button>
+                      >{tr("单栏滚动")}</button>
                     </div>
                   </div>
                 )}
                 {readingMode === 'scroll' && onScrollMaxWidthChange && (
                   <div>
                     <div className="flex items-center justify-between text-sm font-medium mb-2">
-                      <span>单栏阅读宽度</span>
+                      <span>{tr("单栏阅读宽度")}</span>
                       <span className="text-xs text-muted-foreground font-normal tabular-nums">{scrollMaxWidth}px</span>
                     </div>
                     <Slider
-                      aria-label="小说单栏宽度"
+                      aria-label={tr("小说单栏宽度")}
                       value={[scrollMaxWidth]}
                       onValueChange={([v]) => onScrollMaxWidthChange(v)}
                       min={560}
@@ -286,26 +281,26 @@ export function NovelTopBar({
                   </div>
                 )}
                 <div>
-                  <div className="text-sm font-medium mb-2">字号</div>
-                  <Slider aria-label="小说正文字号" value={[fontSize]} onValueChange={([v]) => onFontSizeChange(v)} min={14} max={26} step={1} />
+                  <div className="text-sm font-medium mb-2">{tr("字号")}</div>
+                  <Slider aria-label={tr("小说正文字号")} value={[fontSize]} onValueChange={([v]) => onFontSizeChange(v)} min={14} max={26} step={1} />
                 </div>
                 <div>
-                  <div className="text-sm font-medium mb-1">场景分隔符</div>
-                  <p className="text-[11px] text-muted-foreground mb-2">两楼时间间隔超过设定时长时自动插入 ✦ ✦ ✦</p>
+                  <div className="text-sm font-medium mb-1">{tr("场景分隔符")}</div>
+                  <p className="text-[11px] text-muted-foreground mb-2">{tr("两楼时间间隔超过设定时长时自动插入 ✦ ✦ ✦")}</p>
                   <Select value={String(sceneGap)} onValueChange={(v) => onSceneGapChange(parseInt(v, 10))}>
-                    <SelectTrigger aria-label="场景分隔时间间隔" className="h-8 text-xs">
+                    <SelectTrigger aria-label={tr("场景分隔时间间隔")} className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0">关闭</SelectItem>
-                      <SelectItem value="15">间隔 15 分钟</SelectItem>
-                      <SelectItem value="30">间隔 30 分钟</SelectItem>
-                      <SelectItem value="60">间隔 60 分钟</SelectItem>
+                      <SelectItem value="0">{tr("不启用")}</SelectItem>
+                      <SelectItem value="15">{tr("间隔 15 分钟")}</SelectItem>
+                      <SelectItem value="30">{tr("间隔 30 分钟")}</SelectItem>
+                      <SelectItem value="60">{tr("间隔 60 分钟")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <Label htmlFor="novel-show-hidden" className="text-sm">显示隐藏楼层</Label>
+                  <Label htmlFor="novel-show-hidden" className="text-sm">{tr("显示隐藏楼层")}</Label>
                   <Checkbox
                     id="novel-show-hidden"
                     checked={showHidden}

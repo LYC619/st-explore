@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页 · 立绘 tab（10.3c 分行式，反馈 2.4#4）。
  * 按行组织（一行=一个角色/一个剧情阶段）：行标题可改名、行内横滚、可展开网格、每行导入；
@@ -6,7 +8,7 @@
  * 图片按需读：视图只带路径，缩略图滚进可视区才取字节（PortraitThumb）。
  * 删除默认保留源文件到 STE 保留区，也可明确选择删除库内图片。
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useState, useSyncExternalStore  } from 'react';
 import {
   Images, Plus, ChevronDown, ChevronUp, Download, ChevronLeft, ChevronRight,
   Pencil, Trash2, Replace, CheckSquare, FolderInput, Check, ImageDown, X,
@@ -61,6 +63,7 @@ function PortraitThumb({
   selectable?: boolean;
   selected?: boolean;
 }) {
+  useI18n();
   const [url, setUrl] = useState(item.url);
   const [failed, setFailed] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -97,7 +100,7 @@ function PortraitThumb({
         selected ? 'border-primary ring-2 ring-primary/40' : 'border-border',
       )}
       onClick={() => (selectable ? onOpen('') : url && onOpen(url))}
-      aria-label={selectable ? `选择 ${item.name}` : url ? `放大 ${item.name}` : item.name}
+      aria-label={selectable ? tr("选择 {{v0}}", { v0: item.name }) : url ? tr("放大 {{v0}}", { v0: item.name }) : item.name}
       aria-pressed={selectable ? !!selected : undefined}
       data-portrait-thumb={item.name}
     >
@@ -105,7 +108,7 @@ function PortraitThumb({
         <img src={url} alt={item.name} className="w-full h-full object-cover object-top" />
       ) : (
         <span className="flex h-full w-full items-center justify-center px-1 text-[11px] text-muted-foreground/70">
-          {failed ? '读不到图片' : ''}
+          {failed ? tr("读不到图片") : ''}
         </span>
       )}
       {selectable && (
@@ -123,6 +126,7 @@ function PortraitThumb({
 }
 
 export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
+  useI18n();
   const { toast } = useToast();
   const [views, setViews] = useState<PortraitViewRow[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -175,7 +179,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
       })
       .catch((error) => {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : '读取立绘目录失败，请检查文件库是否可访问');
+          setLoadError(error instanceof Error ? error.message : tr("读取立绘目录失败，请检查文件库是否可访问"));
         }
       });
     return () => {
@@ -209,7 +213,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
     try {
       await onPatch(async (current) => createPortraitRow(
         current,
-        ensureRowTitle(current.portraitRows ?? [], '新分行'),
+        ensureRowTitle(current.portraitRows ?? [], tr("新分行")),
       ));
     } catch {
       // 父层已提示失败。
@@ -222,7 +226,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
     if (!row) return;
     if (!next) {
       setRenameDrafts((drafts) => ({ ...drafts, [rowId]: row.title }));
-      toast({ title: '分行名称不能为空', variant: 'destructive' });
+      toast({ title: tr("分行名称不能为空"), variant: 'destructive' });
       return;
     }
     if (next === row.title) {
@@ -230,7 +234,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
       return;
     }
     if (rowTitleConflict(rows, next, rowId)) {
-      toast({ title: '行名与其他行重复', description: `「${rowDirOf(next)}」已被占用`, variant: 'destructive' });
+      toast({ title: tr("行名与其他行重复"), description: tr("「{{v0}}」已被占用", { v0: rowDirOf(next) }), variant: 'destructive' });
       setRenameDrafts((drafts) => ({ ...drafts, [rowId]: row.title }));
       return;
     }
@@ -255,7 +259,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
         imported = { ok: result.ok, fail: result.fail };
         return result.ok > 0 ? result.patch : undefined;
       });
-      toast({ title: `导入 ${imported.ok} 张${imported.fail ? `，失败 ${imported.fail} 张` : ''}` });
+      toast({ title: imported.fail ? tr("导入 {{v0}} 张，失败 {{v1}} 张", { v0: imported.ok, v1: imported.fail }) : tr("导入 {{v0}} 张", { v0: imported.ok }) });
       if (fileRef.current) fileRef.current.value = '';
     } catch {
       // 父层已提示失败；保留文件输入供重试。
@@ -265,7 +269,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
   const handleSetCard = async (item: PortraitViewItem) => {
     try {
       await onPatch((current) => setPortraitAsCard(current, item));
-      toast({ title: '已设为当前卡面', description: '原卡面不在立绘库时会自动存入「卡面」行。' });
+      toast({ title: tr("已设为当前卡面"), description: tr("原卡面不在立绘库时会自动存入「卡面」行。") });
     } catch {
       // 父层已提示失败。
     }
@@ -294,7 +298,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
         ? { ...current, item: { ...current.item, name: trimmed } }
         : current);
     } catch (error) {
-      toast({ title: '重命名失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+      toast({ title: tr("重命名失败"), description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     }
   };
 
@@ -321,27 +325,27 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
     setDeleteError(null);
     const removeFiles = !!vault && deleteFiles;
     const description = !vault ? undefined : removeFiles
-      ? vault.fs.trashFile ? '移除的受管图片按选择移入系统回收站。' : '移除的受管图片按选择从文件库删除。'
-      : '图片已转入 STE 保留区，可在设置的文件检查中清理，不会重新显示为散图。';
+      ? vault.fs.trashFile ? tr("移除的受管图片按选择移入系统回收站。") : tr("移除的受管图片按选择从文件库删除。")
+      : tr("图片已转入 STE 保留区，可在设置的文件检查中清理，不会重新显示为散图。");
     try {
       if (target.kind === 'row') {
         await patchAndReload((current, context) => removePortraitRow(current, target.row.rowId, removeFiles, context.vault));
         toast({
-          title: `已删除分行「${target.row.title}」`,
+          title: tr("已删除分行「{{v0}}」", { v0: target.row.title }),
           description,
         });
       } else {
         await patchAndReload((current, context) => removePortraitItems(current, target.itemIds, removeFiles, context.vault));
         setSelected(new Set());
         toast({
-          title: `已删除 ${target.itemIds.length} 张立绘`,
+          title: tr("已删除 {{v0}} 张立绘", { v0: target.itemIds.length }),
           description,
         });
       }
       setLightbox(null);
       setPendingDelete(null);
     } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : '删除失败，请重试');
+      setDeleteError(error instanceof Error ? error.message : tr("删除失败，请重试"));
     } finally {
       deleteRunning.current = false;
       setDeleting(false);
@@ -372,9 +376,9 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
     try {
       await patchAndReload((current, context) => movePortraitItemsMutation(current, ids, target, context.vault));
       setSelected(new Set());
-      toast({ title: `已移动 ${ids.length} 张到「${managedRows.find((row) => row.rowId === target)?.title ?? '目标分行'}」` });
+      toast({ title: tr("已移动 {{v0}} 张到「{{v1}}」", { v0: ids.length, v1: managedRows.find((row) => row.rowId === target)?.title ?? tr("目标分行") }) });
     } catch (error) {
-      toast({ title: '移动失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+      toast({ title: tr("移动失败"), description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
     }
   };
 
@@ -415,9 +419,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-xs text-muted-foreground">
-          按行组织：一行可以是一个角色，也可以是剧情的一个阶段。行内横向滚动，也可展开成网格。
-        </span>
+        <span className="text-xs text-muted-foreground">{tr("按行组织：一行可以是一个角色，也可以是剧情的一个阶段。行内横向滚动，也可展开成网格。")}</span>
         <div className="ml-auto flex flex-wrap gap-1.5">
           <PortraitCloudImport key={character.id} character={character} />
           <Button
@@ -427,12 +429,10 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
             onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
           >
             <CheckSquare className="w-3.5 h-3.5 mr-1" />
-            {selectMode ? '完成' : '批量管理'}
+            {selectMode ? tr("完成") : tr("批量管理")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => void handleAddRow()}>
-            <Plus className="w-3.5 h-3.5 mr-1" />
-            新建分行
-          </Button>
+            <Plus className="w-3.5 h-3.5 mr-1" />{tr("新建分行")}</Button>
           <Button
             variant="outline"
             size="sm"
@@ -441,16 +441,13 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
               fileRef.current?.click();
             }}
           >
-            <Download className="w-3.5 h-3.5 mr-1" />
-            导入立绘
-          </Button>
+            <Download className="w-3.5 h-3.5 mr-1" />{tr("导入立绘")}</Button>
         </div>
       </div>
 
       {selectMode && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-elevated px-3 py-2">
-          <span className="text-xs text-muted-foreground">
-            已选 {selected.size} 张{selected.size === 0 ? '（点缩略图勾选；散图是文件夹里手放的图，不参与批量）' : ''}
+          <span className="text-xs text-muted-foreground">{selected.size === 0 ? tr("已选 {{v0}} 张（点缩略图勾选；散图是文件夹里手放的图，不参与批量）", { v0: selected.size }) : tr("已选 {{v0}} 张", { v0: selected.size })}
           </span>
           <div className="ml-auto flex gap-1.5">
             <Button
@@ -459,9 +456,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
               disabled={selected.size === 0 || managedRows.length < 2}
               onClick={() => { setMoveTarget(''); setMoveOpen(true); }}
             >
-              <FolderInput className="w-3.5 h-3.5 mr-1" />
-              移动到分行
-            </Button>
+              <FolderInput className="w-3.5 h-3.5 mr-1" />{tr("移动到分行")}</Button>
             <Button
               variant="outline"
               size="sm"
@@ -469,28 +464,24 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
               disabled={selected.size === 0}
               onClick={() => setPendingDelete({ kind: 'items', itemIds: [...selected] })}
             >
-              <Trash2 className="w-3.5 h-3.5 mr-1" />
-              删除
-            </Button>
+              <Trash2 className="w-3.5 h-3.5 mr-1" />{tr("删除")}</Button>
           </div>
         </div>
       )}
 
       {loadError ? (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3.5 py-3 text-xs text-[color:var(--text-body)]">
-          <span>立绘目录暂时没能读取出来：{loadError}</span>
-          <Button type="button" variant="outline" size="sm" onClick={() => setReloadSeq((n) => n + 1)}>
-            重新读取
-          </Button>
+          <span>{tr("立绘目录暂时没能读取出来：")}{loadError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setReloadSeq((n) => n + 1)}>{tr("重新读取")}</Button>
         </div>
       ) : views === null ? (
-        <p className="text-sm text-muted-foreground py-6 text-center">{LOADING_LABEL}</p>
+        <p className="text-sm text-muted-foreground py-6 text-center">{tr(LOADING_LABEL)}</p>
       ) : views.length === 0 ? (
         <Card>
           <CardContent className="py-10 flex flex-col items-center gap-2 text-center">
             <Images className="w-8 h-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">还没有立绘</p>
-            <p className="text-xs text-muted-foreground/70">点「导入立绘」添加图片；被替换的旧卡面也会自动存到这里。</p>
+            <p className="text-sm text-muted-foreground">{tr("还没有立绘")}</p>
+            <p className="text-xs text-muted-foreground/70">{tr("点「导入立绘」添加图片；被替换的旧卡面也会自动存到这里。")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -500,7 +491,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
             <div key={row.rowId} className="rounded-lg border border-border bg-card px-3 py-2.5">
               <div className="flex items-center gap-2 mb-2">
                 {row.isStray ? (
-                  <span className="text-sm font-medium text-muted-foreground" title="立绘文件夹根目录里的图片（未入库，只读展示）">
+                  <span className="text-sm font-medium text-muted-foreground" title={tr("立绘文件夹根目录里的图片（未入库，只读展示）")}>
                     {row.title}
                   </span>
                 ) : (
@@ -510,7 +501,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                       ...drafts,
                       [row.rowId]: event.target.value,
                     }))}
-                    aria-label="分行标题"
+                    aria-label={tr("分行标题")}
                     className="h-7 w-40 rounded-md border border-transparent bg-transparent px-2 text-sm font-medium hover:border-border focus:border-ring focus:outline-none transition-colors"
                     onBlur={(e) => void handleRename(row.rowId, e.target.value)}
                     onKeyDown={(e) => {
@@ -519,12 +510,12 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                     }}
                   />
                 )}
-                <span className="text-xs text-muted-foreground shrink-0">{row.items.length} 张</span>
+                <span className="text-xs text-muted-foreground shrink-0">{row.items.length}{tr(" 张")}</span>
                 <div className="ml-auto flex gap-1 shrink-0">
                   {row.items.length > 0 && (
                     <Button variant="ghost" size="sm" className="px-2 text-xs" onClick={() => toggleExpand(row.rowId)}>
                       {open ? <ChevronUp className="w-3.5 h-3.5 mr-0.5" /> : <ChevronDown className="w-3.5 h-3.5 mr-0.5" />}
-                      {open ? '收起' : '展开'}
+                      {open ? tr("收起") : tr("展开")}
                     </Button>
                   )}
                   {!row.isStray && (
@@ -536,24 +527,20 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                           fileRef.current?.click();
                         }}
                       >
-                        <Download className="w-3 h-3 mr-0.5" />
-                        导入
-                      </Button>
+                        <Download className="w-3 h-3 mr-0.5" />{tr("导入")}</Button>
                       <Button
                         variant="ghost" size="sm" className="px-2 text-xs text-destructive hover:text-destructive"
-                        title="删除这一行（可选择是否连图片一起删）"
+                        title={tr("删除这一行（可选择是否连图片一起删）")}
                         onClick={() => setPendingDelete({ kind: 'row', row })}
                       >
-                        <Trash2 className="w-3 h-3 mr-0.5" />
-                        删除行
-                      </Button>
+                        <Trash2 className="w-3 h-3 mr-0.5" />{tr("删除行")}</Button>
                     </>
                   )}
                 </div>
               </div>
 
               {row.items.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-4 text-center">这一行还没有图片，点右上角「导入」添加。</p>
+                <p className="text-xs text-muted-foreground py-4 text-center">{tr("这一行还没有图片，点右上角「导入」添加。")}</p>
               ) : (
                 <div
                   className={cn(
@@ -597,34 +584,32 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                                   setEditingItemId(null);
                                 }
                               }}
-                              aria-label="立绘名称"
+                              aria-label={tr("立绘名称")}
                               className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-xs"
                             />
                           ) : (
                             <span
                               className="min-w-0 truncate text-muted-foreground"
-                              title={`${item.name}${item.source === 'replaced' ? '（被替换的旧卡面自动存档）' : item.source === 'stray' ? '（文件夹里的图片，未入库）' : ''}`}
+                              title={`${item.name}${item.source === 'replaced' ? tr("（被替换的旧卡面自动存档）") : item.source === 'stray' ? tr("（文件夹里的图片，未入库）") : ''}`}
                             >
                               {item.name}
                             </span>
                           )}
                           {item.isCurrent ? (
-                            <span className="ml-auto shrink-0 text-primary font-medium">当前</span>
+                            <span className="ml-auto shrink-0 text-primary font-medium">{tr("当前")}</span>
                           ) : !selectMode && editingItemId !== item.itemId && (
                             <button
                               className="ml-auto shrink-0 text-primary opacity-0 group-hover/pc:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity"
                               onClick={() => void handleSetCard(item)}
-                              title="把这张图设为角色卡面（卡数据嵌入图内，原卡面自动存档）"
-                            >
-                              设为当前
-                            </button>
+                              title={tr("把这张图设为角色卡面（卡数据嵌入图内，原卡面自动存档）")}
+                            >{tr("设为当前")}</button>
                           )}
                         </div>
                         {item.itemId && !selectMode && editingItemId !== item.itemId && (
                           <div className="mt-1 flex items-center gap-2 opacity-0 group-hover/pc:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100 transition-opacity">
-                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => beginRenameItem(item, false)} title="重命名立绘" aria-label="重命名立绘"><Pencil className="w-3 h-3" /></button>
-                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => handleReplaceItem(item)} title="替换立绘" aria-label="替换立绘"><Replace className="w-3 h-3" /></button>
-                            <button type="button" className="tap-target ml-auto rounded p-1.5 text-destructive hover:bg-destructive/10" onClick={() => setPendingDelete({ kind: 'items', itemIds: [item.itemId!] })} title="删除立绘" aria-label="删除立绘"><Trash2 className="w-3 h-3" /></button>
+                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => beginRenameItem(item, false)} title={tr("重命名立绘")} aria-label={tr("重命名立绘")}><Pencil className="w-3 h-3" /></button>
+                            <button type="button" className="tap-target rounded p-1.5 text-muted-foreground hover:bg-muted/60" onClick={() => handleReplaceItem(item)} title={tr("替换立绘")} aria-label={tr("替换立绘")}><Replace className="w-3 h-3" /></button>
+                            <button type="button" className="tap-target ml-auto rounded p-1.5 text-destructive hover:bg-destructive/10" onClick={() => setPendingDelete({ kind: 'items', itemIds: [item.itemId!] })} title={tr("删除立绘")} aria-label={tr("删除立绘")}><Trash2 className="w-3 h-3" /></button>
                           </div>
                         )}
                       </div>
@@ -649,7 +634,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
           replaceItemId.current = null;
           if (replaceId && files[0]) {
             void patchAndReload((current, context) => replacePortraitItemMutation(current, replaceId, files[0], context.vault))
-              .catch((error) => toast({ title: '替换失败', description: error instanceof Error ? error.message : undefined, variant: 'destructive' }));
+              .catch((error) => toast({ title: tr("替换失败"), description: error instanceof Error ? error.message : undefined, variant: 'destructive' }));
           } else {
             void handleImportFiles(files);
           }
@@ -663,9 +648,9 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
           {lightbox && (
             <div className="space-y-2">
               <div className="relative flex items-center justify-center">
-                <button className="tap-target absolute left-1 top-1/2 -translate-y-1/2 z-10 rounded-full bg-background/80 p-2" onClick={() => void moveLightbox(-1)} title="上一张" aria-label="上一张"><ChevronLeft className="w-5 h-5" /></button>
+                <button className="tap-target absolute left-1 top-1/2 -translate-y-1/2 z-10 rounded-full bg-background/80 p-2" onClick={() => void moveLightbox(-1)} title={tr("上一张")} aria-label={tr("上一张")}><ChevronLeft className="w-5 h-5" /></button>
                 <img src={lightbox.url} alt={lightbox.item.name} className="w-full max-h-[72vh] object-contain rounded-lg" />
-                <button className="tap-target absolute right-1 top-1/2 -translate-y-1/2 z-10 rounded-full bg-background/80 p-2" onClick={() => void moveLightbox(1)} title="下一张" aria-label="下一张"><ChevronRight className="w-5 h-5" /></button>
+                <button className="tap-target absolute right-1 top-1/2 -translate-y-1/2 z-10 rounded-full bg-background/80 p-2" onClick={() => void moveLightbox(1)} title={tr("下一张")} aria-label={tr("下一张")}><ChevronRight className="w-5 h-5" /></button>
               </div>
               <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
                 {lightboxRenaming && lightbox.item.itemId ? (
@@ -684,7 +669,7 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                         setLightboxRenaming(false);
                       }
                     }}
-                    aria-label="立绘名称"
+                    aria-label={tr("立绘名称")}
                     className="min-w-0 flex-1 max-w-xs rounded border border-primary/50 bg-background px-2 py-1 text-xs"
                   />
                 ) : (
@@ -695,38 +680,28 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
                 )}
                 <div className="ml-auto flex flex-wrap gap-1.5">
                   {lightbox.item.isCurrent ? (
-                    <span className="self-center text-xs text-primary">当前卡面</span>
+                    <span className="self-center text-xs text-primary">{tr("当前卡面")}</span>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={() => void handleSetCard(lightbox.item)} title="把这张图设为角色卡面（卡数据嵌入图内，原卡面自动存档）">
-                      <ImageDown className="w-3.5 h-3.5 mr-1" />
-                      设为卡面
-                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => void handleSetCard(lightbox.item)} title={tr("把这张图设为角色卡面（卡数据嵌入图内，原卡面自动存档）")}>
+                      <ImageDown className="w-3.5 h-3.5 mr-1" />{tr("设为卡面")}</Button>
                   )}
                   {lightbox.item.itemId && (
                     <>
                       <Button variant="outline" size="sm" onClick={() => beginRenameItem(lightbox.item, true)}>
-                        <Pencil className="w-3.5 h-3.5 mr-1" />
-                        重命名
-                      </Button>
+                        <Pencil className="w-3.5 h-3.5 mr-1" />{tr("重命名")}</Button>
                       <Button variant="outline" size="sm" onClick={() => handleReplaceItem(lightbox.item)}>
-                        <Replace className="w-3.5 h-3.5 mr-1" />
-                        替换
-                      </Button>
+                        <Replace className="w-3.5 h-3.5 mr-1" />{tr("替换")}</Button>
                       <Button
                         variant="outline"
                         size="sm"
                         className="text-destructive hover:text-destructive"
                         onClick={() => setPendingDelete({ kind: 'items', itemIds: [lightbox.item.itemId!] })}
                       >
-                        <Trash2 className="w-3.5 h-3.5 mr-1" />
-                        删除
-                      </Button>
+                        <Trash2 className="w-3.5 h-3.5 mr-1" />{tr("删除")}</Button>
                     </>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => setLightbox(null)}>
-                    <X className="w-3.5 h-3.5 mr-1" />
-                    关闭
-                  </Button>
+                    <X className="w-3.5 h-3.5 mr-1" />{tr("关闭")}</Button>
                 </div>
               </div>
             </div>
@@ -739,32 +714,28 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {pendingDelete?.kind === 'row'
-                ? `删除分行「${pendingDelete.row.title}」？`
-                : `删除 ${deleteTargetIds.length} 张立绘？`}
+                ? tr("删除分行「{{v0}}」？", { v0: pendingDelete.row.title })
+                : tr("删除 {{v0}} 张立绘？", { v0: deleteTargetIds.length })}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete?.kind === 'row' && pendingDelete.row.items.length > deleteTargetIds.length
-                ? '这一行里用户手放的散图不会被删，文件夹会保留。'
+                ? tr("这一行里用户手放的散图不会被删，文件夹会保留。")
                 : ''}
-              {vault ? '默认将移除的受管图片转入 STE 保留区，可在设置的文件检查中清理；保留的图片不会重新显示为散图。仍被引用的图片和用户手放的文件会保留。' : '将从记录中移除所选立绘。'}
-              角色卡 PNG 本身不受影响。
-            </AlertDialogDescription>
+              {vault ? tr("默认将移除的受管图片转入 STE 保留区，可在设置的文件检查中清理；保留的图片不会重新显示为散图。仍被引用的图片和用户手放的文件会保留。") : tr("将从记录中移除所选立绘。")}{tr("角色卡 PNG 本身不受影响。")}</AlertDialogDescription>
           </AlertDialogHeader>
           {vault && (
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={deleteFiles} disabled={deleting} onChange={event => setDeleteFiles(event.target.checked)} />
-                同时删除 STE 库内文件
-              </label>
+                <input type="checkbox" checked={deleteFiles} disabled={deleting} onChange={event => setDeleteFiles(event.target.checked)} />{tr("同时删除 STE 库内文件")}</label>
               {deleteFiles && <p className="text-xs text-muted-foreground">{vault.fs.trashFile
-                ? '确认删除后，移除的受管图片将进入系统回收站。'
-                : '当前环境不支持系统回收站，文件将直接删除。'}</p>}
+                ? tr("确认删除后，移除的受管图片将进入系统回收站。")
+                : tr("当前环境不支持系统回收站，文件将直接删除。")}</p>}
             </div>
           )}
           {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
           <AlertDialogFooter className="gap-2">
-            <AlertDialogCancel disabled={deleting}>取消</AlertDialogCancel>
-            <Button variant="destructive" disabled={deleting} onClick={() => void runDelete()}>{deleting ? '删除中…' : '确认删除'}</Button>
+            <AlertDialogCancel disabled={deleting}>{tr("取消")}</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleting} onClick={() => void runDelete()}>{deleting ? tr("删除中…") : tr("确认删除")}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -773,21 +744,21 @@ export function PortraitSection({ character, onPatch }: PortraitSectionProps) {
       <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>把 {selected.size} 张移动到</DialogTitle>
+            <DialogTitle>{tr("把 {{v0}} 张移动到", { v0: selected.size })}</DialogTitle>
           </DialogHeader>
           <Select value={moveTarget} onValueChange={setMoveTarget}>
             <SelectTrigger>
-              <SelectValue placeholder="选择目标分行" />
+              <SelectValue placeholder={tr("选择目标分行")} />
             </SelectTrigger>
             <SelectContent>
               {managedRows.map((row) => (
-                <SelectItem key={row.rowId} value={row.rowId}>{row.title}（{row.items.length} 张）</SelectItem>
+                <SelectItem key={row.rowId} value={row.rowId}>{tr("{{v0}}（{{v1}} 张）", { v0: row.title, v1: row.items.length })}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMoveOpen(false)}>取消</Button>
-            <Button disabled={!moveTarget} onClick={() => void runMove()}>移动</Button>
+            <Button variant="outline" onClick={() => setMoveOpen(false)}>{tr("取消")}</Button>
+            <Button disabled={!moveTarget} onClick={() => void runMove()}>{tr("移动")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

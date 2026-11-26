@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Feather, Loader2, Square, Trash2 } from 'lucide-react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
@@ -41,6 +43,7 @@ export function NovelPolishDialog({
   session,
   polish,
 }: NovelPolishDialogProps) {
+  useI18n();
   const { toast } = useToast();
   const [polishTemplates, setPolishTemplates] = useState<AnySummaryTemplate[]>([]);
   const [templateLoadError, setTemplateLoadError] = useState<string | null>(null);
@@ -64,7 +67,7 @@ export function NovelPolishDialog({
         list.length > 0 && !list.some((t) => t.id === prev) ? list[0].id : prev
       ));
     } catch (error) {
-      setTemplateLoadError(error instanceof Error ? error.message : '润色模板读取失败');
+      setTemplateLoadError(error instanceof Error ? error.message : tr("润色模板读取失败"));
     }
   }, []);
 
@@ -105,7 +108,7 @@ export function NovelPolishDialog({
     bookId: polish!.story.id,
     bookTitle: polish!.story.title,
     kind: 'diy',
-    title: `小说化 · ${targetChapter.title ?? `第 ${targetChapter.startFloor}~${targetChapter.endFloor} 楼`}`,
+    title: tr("小说化 · {{v0}}", { v0: targetChapter.title ?? tr("第 {{v0}}~{{v1}} 楼", { v0: targetChapter.startFloor, v1: targetChapter.endFloor }) }),
     branchId: polish!.branchId ?? undefined,
     floorStart: targetChapter.startFloor,
     floorEnd: targetChapter.endFloor,
@@ -127,8 +130,8 @@ export function NovelPolishDialog({
     const config = loadAPIConfig();
     if (!isLLMConfigured(config)) {
       toast({
-        title: '还没配好 AI 接口',
-        description: '去「设置 → AI 配置」填好接口地址和模型再来试试',
+        title: tr("还没配好 AI 接口"),
+        description: tr("去「设置 → AI 配置」填好接口地址和模型再来试试"),
         variant: 'destructive',
       });
       return;
@@ -164,11 +167,11 @@ export function NovelPolishDialog({
       generated = !controller.signal.aborted && polishOutputRef.current.length > 0;
     } catch (err) {
       if (isLLMCancelled(err)) {
-        toast({ title: '已停止生成' });
+        toast({ title: tr("已停止生成") });
       } else {
         toast({
-          title: '润色生成没成功',
-          description: err instanceof Error ? err.message : '请检查 AI 接口连接或换个模型试试',
+          title: tr("润色生成没成功"),
+          description: err instanceof Error ? err.message : tr("请检查 AI 接口连接或换个模型试试"),
           variant: 'destructive',
         });
       }
@@ -183,11 +186,11 @@ export function NovelPolishDialog({
     try {
       await saveSummary(buildPolishItem(polishOutputRef.current, false, id, targetChapter, activeTemplate));
       setPolishSavedId(id);
-      toast({ title: '已保存润色正文', description: '去「整理与记录」可随时翻阅或继续编辑' });
+      toast({ title: tr("已保存润色正文"), description: tr("去「整理与记录」可随时翻阅或继续编辑") });
     } catch (error) {
       toast({
-        title: '正文已生成，但自动暂存没成功',
-        description: error instanceof Error ? error.message : '请点右下角「永久保存」重试，或先复制正文以防丢失',
+        title: tr("正文已生成，但自动暂存没成功"),
+        description: error instanceof Error ? error.message : tr("请点右下角「永久保存」重试，或先复制正文以防丢失"),
         variant: 'destructive',
       });
     }
@@ -206,11 +209,11 @@ export function NovelPolishDialog({
       ));
       setPolishSavedId(id);
       setPolishPermanent(true);
-      toast({ title: '已正式收进故事记录' });
+      toast({ title: tr("已正式收进故事记录") });
     } catch (error) {
       toast({
-        title: '保存失败',
-        description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+        title: tr("保存失败"),
+        description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
         variant: 'destructive',
       });
     }
@@ -222,7 +225,7 @@ export function NovelPolishDialog({
     setPolishSavedId(null);
     setPolishPermanent(false);
     polishOutputRef.current = '';
-    toast({ title: '已丢弃这份草稿', description: '对应的润色记录已从库里清理' });
+    toast({ title: tr("已丢弃这份草稿"), description: tr("对应的润色记录已从库里清理") });
   };
 
   return (
@@ -236,25 +239,22 @@ export function NovelPolishDialog({
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <CompletionWarning truncated={truncated} />
           <DialogHeader>
-            <DialogTitle>
-              AI 润色本章（{chapter?.title ?? `#${chapter?.startFloor}–${chapter?.endFloor} 楼`}）
+            <DialogTitle>{tr("AI 润色本章（{{v0}}）", { v0: chapter?.title ?? tr("#{{v0}}–{{v1}} 楼", { v0: chapter?.startFloor, v1: chapter?.endFloor }) })}
             </DialogTitle>
-            <DialogDescription>
-              按所选文风模板把这一章改写成连贯小说正文；结果会收进这篇故事的「整理与记录」，随时能改能导出。
-            </DialogDescription>
+            <DialogDescription>{tr("按所选文风模板把这一章改写成连贯小说正文；结果会收进这篇故事的「整理与记录」，随时能改能导出。")}</DialogDescription>
           </DialogHeader>
 
           {templateLoadError && (
             <div role="alert" className="flex items-center justify-between rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-              <span>读取润色模板失败：{templateLoadError}</span>
-              <Button variant="ghost" size="sm" onClick={() => void loadTemplates()}>重试</Button>
+              <span>{tr("读取润色模板失败：")}{templateLoadError}</span>
+              <Button variant="ghost" size="sm" onClick={() => void loadTemplates()}>{tr("重试")}</Button>
             </div>
           )}
 
           <div className="flex items-center gap-2 flex-wrap">
-            <Label className="text-xs text-muted-foreground shrink-0">文风模板</Label>
+            <Label className="text-xs text-muted-foreground shrink-0">{tr("文风模板")}</Label>
             <Select value={polishTemplateId} onValueChange={setPolishTemplateId} disabled={polishStreaming}>
-              <SelectTrigger aria-label="选择润色文风模板" className="h-8 text-sm flex-1 min-w-40">
+              <SelectTrigger aria-label={tr("选择润色文风模板")} className="h-8 text-sm flex-1 min-w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -265,11 +265,11 @@ export function NovelPolishDialog({
             </Select>
             {!polishStreaming ? (
               <Button size="sm" className="gap-1" onClick={() => void handlePolish()} disabled={!polishTemplate}>
-                <Feather className="w-3.5 h-3.5" />{polishResult ? '重新生成' : '生成'}
+                <Feather className="w-3.5 h-3.5" />{polishResult ? tr("重新生成") : tr("生成")}
               </Button>
             ) : (
               <Button size="sm" variant="destructive" className="gap-1" onClick={() => polishAbortRef.current?.abort()}>
-                <Square className="w-3.5 h-3.5" />停止<Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Square className="w-3.5 h-3.5" />{tr("停止")}<Loader2 className="w-3.5 h-3.5 animate-spin" />
               </Button>
             )}
           </div>
@@ -278,26 +278,21 @@ export function NovelPolishDialog({
             {polishResult ? (
               <MarkdownLite text={polishResult} />
             ) : (
-              <span className="text-xs text-muted-foreground">
-                润色好的小说正文会实时浮现在这里。点上方「生成」才会调用模型接口。
-              </span>
+              <span className="text-xs text-muted-foreground">{tr("润色好的小说正文会实时浮现在这里。点上方「生成」才会调用模型接口。")}</span>
             )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" disabled={polishStreaming} onClick={onClose}>
-              关闭
-            </Button>
+            <Button variant="outline" disabled={polishStreaming} onClick={onClose}>{tr("关闭")}</Button>
             <Button
               variant="ghost"
               className="gap-1 text-muted-foreground hover:text-destructive"
               disabled={polishStreaming || !polishResult}
               onClick={() => setPolishDiscardAsk(true)}
             >
-              <Trash2 className="w-3.5 h-3.5" />不要了
-            </Button>
+              <Trash2 className="w-3.5 h-3.5" />{tr("不要了")}</Button>
             <Button disabled={polishStreaming || !polishResult || polishPermanent} onClick={() => void handlePolishPermanent()}>
-              {polishPermanent ? '已永久保存' : '永久保存为自定义记录'}
+              {polishPermanent ? tr("已永久保存") : tr("永久保存为自定义记录")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -306,15 +301,15 @@ export function NovelPolishDialog({
       <DeleteConfirmDialog
         open={polishDiscardAsk}
         onOpenChange={setPolishDiscardAsk}
-        title="丢弃这份润色结果？"
+        title={tr("丢弃这份润色结果？")}
         description={
           polishPermanent
-            ? '这份正文已经正式保存，丢弃后将从记录列表里移除。'
-            : '这份草稿已自动暂存，丢弃后将从记录列表里移除。'
+            ? tr("这份正文已经正式保存，丢弃后将从记录列表里移除。")
+            : tr("这份草稿已自动暂存，丢弃后将从记录列表里移除。")
         }
         fileTarget={polishSavedId ? { store: 'summaries', id: polishSavedId } : undefined}
         onConfirm={handlePolishDiscard}
-        confirmLabel="丢弃"
+        confirmLabel={tr("丢弃")}
       />
     </>
   );

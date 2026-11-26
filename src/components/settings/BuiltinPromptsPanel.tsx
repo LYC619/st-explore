@@ -1,3 +1,5 @@
+import { tr, formatList } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { RotateCcw, Save } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,7 @@ function readDraft(id: string): Draft {
 }
 
 function PromptEditor({ prompt }: { prompt: BuiltinPromptDefinition }) {
+  useI18n();
   const { toast } = useToast();
   const saved = useBuiltinPrompt(prompt.id);
   const [draft, setDraft] = useState(() => readDraft(prompt.id));
@@ -73,62 +76,63 @@ function PromptEditor({ prompt }: { prompt: BuiltinPromptDefinition }) {
     try {
       saveBuiltinPrompt(prompt.id, draft.value);
       finish();
-      toast({ title: '提示词已保存', description: '后续新生成使用此设置，已有记录和编辑中的模板草稿保留原内容。' });
+      toast({ title: tr("提示词已保存"), description: tr("后续新生成使用此设置，已有记录和编辑中的模板草稿保留原内容。") });
     } catch (err) {
-      toast({ title: '提示词未保存', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+      toast({ title: tr("提示词未保存"), description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
     }
   };
 
   return <div className="min-w-0 space-y-3" role="region" aria-label={prompt.title}>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h2 className="font-semibold">{prompt.title}</h2>
-      <span className="text-xs text-muted-foreground">{dirty ? '有未保存草稿' : saved === prompt.content ? '使用默认' : '已自定义'}</span>
+      <span className="text-xs text-muted-foreground">{dirty ? tr("有未保存草稿") : saved === prompt.content ? tr("使用默认") : tr("已自定义")}</span>
     </div>
     {prompt.description && <p className="text-sm text-muted-foreground">{prompt.description}</p>}
-    {!!prompt.required?.length && <p className="break-words text-xs text-muted-foreground">需保留：{prompt.required.join('、')}</p>}
-    <Textarea aria-label={`${prompt.title}提示词`} value={draft.value} onChange={event => updateDraft(event.target.value)}
+    {!!prompt.required?.length && <p className="break-words text-xs text-muted-foreground">{tr("需保留：")}{formatList(prompt.required)}</p>}
+    <Textarea aria-label={tr("{{v0}}提示词", { v0: prompt.title })} value={draft.value} onChange={event => updateDraft(event.target.value)}
       className="min-h-[45dvh] resize-y font-mono text-sm leading-relaxed" spellCheck={false} />
     {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {conflict && <p role="status" className="text-sm text-muted-foreground">已保存版本在另一入口更新。这里保留了你的草稿；保存会以当前草稿替换它。</p>}
-    {storageError && <p role="alert" className="text-sm text-destructive">草稿暂存失败，请先保存再切换页面，以免丢失输入。</p>}
+    {conflict && <p role="status" className="text-sm text-muted-foreground">{tr("已保存版本在另一入口更新。这里保留了你的草稿；保存会以当前草稿替换它。")}</p>}
+    {storageError && <p role="alert" className="text-sm text-destructive">{tr("草稿暂存失败，请先保存再切换页面，以免丢失输入。")}</p>}
     <div className="flex flex-wrap items-center gap-2">
-      <Button onClick={save} disabled={!dirty || !!error} className="gap-1"><Save className="h-4 w-4" />保存提示词</Button>
-      <Button variant="outline" onClick={() => setResetOpen(true)} disabled={!dirty && saved === prompt.content} className="gap-1"><RotateCcw className="h-4 w-4" />恢复默认</Button>
-      {dirty && <Button variant="ghost" onClick={finish}>撤销草稿</Button>}
+      <Button onClick={save} disabled={!dirty || !!error} className="gap-1"><Save className="h-4 w-4" />{tr("保存提示词")}</Button>
+      <Button variant="outline" onClick={() => setResetOpen(true)} disabled={!dirty && saved === prompt.content} className="gap-1"><RotateCcw className="h-4 w-4" />{tr("恢复默认")}</Button>
+      {dirty && <Button variant="ghost" onClick={finish}>{tr("撤销草稿")}</Button>}
     </div>
     <details className="rounded-md border p-3">
-      <summary className="cursor-pointer text-sm">查看软件默认内容</summary>
+      <summary className="cursor-pointer text-sm">{tr("查看软件默认内容")}</summary>
       <pre className="mt-3 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-relaxed">{prompt.content}</pre>
     </details>
     <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>恢复「{prompt.title}」默认提示词？</AlertDialogTitle>
-        <AlertDialogDescription>本项自定义内容和未保存草稿将被清除，其他提示词不受影响。</AlertDialogDescription>
-      </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>取消</AlertDialogCancel>
+      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tr("恢复「{{v0}}」默认提示词？", { v0: prompt.title })}</AlertDialogTitle>
+        <AlertDialogDescription>{tr("本项自定义内容和未保存草稿将被清除，其他提示词不受影响。")}</AlertDialogDescription>
+      </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
         <AlertDialogAction onClick={() => {
-          try { resetBuiltinPrompt(prompt.id); finish(); toast({ title: '已恢复默认提示词' }); }
-          catch (err) { toast({ title: '恢复失败', description: String(err), variant: 'destructive' }); }
-        }}>恢复默认</AlertDialogAction>
+          try { resetBuiltinPrompt(prompt.id); finish(); toast({ title: tr("已恢复默认提示词") }); }
+          catch (err) { toast({ title: tr("恢复失败"), description: String(err), variant: 'destructive' }); }
+        }}>{tr("恢复默认")}</AlertDialogAction>
       </AlertDialogFooter></AlertDialogContent>
     </AlertDialog>
   </div>;
 }
 
 export function BuiltinPromptsPanel() {
+  useI18n();
   const [group, setGroup] = useState(GROUPS[0]);
   const [selectedId, setSelectedId] = useState(BUILTIN_PROMPTS[0].id);
   const [query, setQuery] = useState('');
   const choices = BUILTIN_PROMPTS.filter(prompt => prompt.group === group && `${prompt.title} ${prompt.description}`.includes(query.trim()));
   const selected = choices.find(prompt => prompt.id === selectedId) ?? choices[0];
   return <div className="space-y-4">
-    <p className="text-sm text-muted-foreground">统一管理 STE 自带的生成指令与快捷改写要求。设置保存在当前设备，跨资料库使用；导入预设和自建模板请到各自编辑区修改。</p>
-    <p className="text-xs text-muted-foreground">草稿在本次窗口中暂存，切换模块或页面可继续编辑；点击保存后才生效。此设置不随资料库备份导出。</p>
-    <div className="flex flex-wrap gap-2" aria-label="提示词模块">
+    <p className="text-sm text-muted-foreground">{tr("统一管理 STE 自带的生成指令与快捷改写要求。设置保存在当前设备，跨资料库使用；导入预设和自建模板请到各自编辑区修改。")}</p>
+    <p className="text-xs text-muted-foreground">{tr("草稿在本次窗口中暂存，切换模块或页面可继续编辑；点击保存后才生效。此设置不随资料库备份导出。")}</p>
+    <div className="flex flex-wrap gap-2" aria-label={tr("提示词模块")}>
       {GROUPS.map(item => <Button key={item} variant={group === item ? 'default' : 'outline'} size="sm" aria-pressed={group === item}
         onClick={() => { setGroup(item); setQuery(''); }}>{item}</Button>)}
     </div>
     <div className="grid items-start gap-4 lg:grid-cols-[12rem_minmax(0,1fr)]">
-      <nav className="min-w-0 space-y-2" aria-label={`${group}提示词列表`}>
-        <Input aria-label="筛选当前模块提示词" placeholder="筛选提示词…" value={query} onChange={event => setQuery(event.target.value)} />
+      <nav className="min-w-0 space-y-2" aria-label={tr("{{v0}}提示词列表", { v0: group })}>
+        <Input aria-label={tr("筛选当前模块提示词")} placeholder={tr("筛选提示词…")} value={query} onChange={event => setQuery(event.target.value)} />
         <div className="max-h-48 space-y-1 overflow-y-auto lg:max-h-[65dvh]">
           {choices.map(prompt => <button key={prompt.id} type="button" title={prompt.title} aria-current={selected?.id === prompt.id ? 'page' : undefined}
             onClick={() => setSelectedId(prompt.id)} className={cn('tap-target block min-h-9 w-full rounded-md px-3 py-2 text-left text-sm',
@@ -137,7 +141,7 @@ export function BuiltinPromptsPanel() {
           </button>)}
         </div>
       </nav>
-      {selected ? <PromptEditor key={selected.id} prompt={selected} /> : <p className="py-8 text-sm text-muted-foreground">没有匹配的提示词。</p>}
+      {selected ? <PromptEditor key={selected.id} prompt={selected} /> : <p className="py-8 text-sm text-muted-foreground">{tr("没有匹配的提示词。")}</p>}
     </div>
   </div>;
 }

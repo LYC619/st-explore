@@ -8,13 +8,14 @@ const nodeStep = (name, args) => ({ name, command: process.execPath, args });
 export function verificationSteps(webOnly = false) {
   const steps = [
     nodeStep('version', ['scripts/sync-version.mjs', '--check']),
-    nodeStep('script-tests', ['--test', 'scripts/sync-version.test.mjs', 'scripts/verify.test.mjs', 'scripts/build-info.test.mjs', 'scripts/release-pack.test.mjs']),
+    nodeStep('script-tests', ['--test', '--test-concurrency=1', 'scripts/i18n/check.test.mjs', 'scripts/site/build.test.mjs', 'scripts/sync-version.test.mjs', 'scripts/verify.test.mjs', 'scripts/build-info.test.mjs', 'scripts/release-pack.test.mjs']),
+    nodeStep('i18n', ['scripts/i18n/check.mjs']),
     nodeStep('lint', ['node_modules/eslint/bin/eslint.js', '.']),
     nodeStep('types-app', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.app.json', '--noEmit']),
     nodeStep('types-node', ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.node.json', '--noEmit']),
     nodeStep('vitest', ['node_modules/vitest/vitest.mjs', 'run', '--reporter=dot']),
-    nodeStep('tavern-source', ['--test', 'scripts/tavern/*.test.mjs']),
-    nodeStep('smoke-tests', ['--test', 'scripts/smoke/*.test.mjs']),
+    nodeStep('tavern-source', ['--test', '--test-concurrency=1', 'scripts/tavern/*.test.mjs']),
+    nodeStep('smoke-tests', ['--test', '--test-concurrency=1', 'scripts/smoke/*.test.mjs']),
     nodeStep('build', ['node_modules/vite/bin/vite.js', 'build']),
   ];
   if (!webOnly) steps.push(

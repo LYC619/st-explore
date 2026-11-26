@@ -8,6 +8,7 @@ import {
   type ParsedTag,
   type TagCategory,
 } from '@/lib/tag-taxonomy';
+import { tr } from '@/lib/i18n';
 import type { BuiltinTagCategory } from '@/lib/tag-taxonomy';
 import type { ArchiveCharacter } from '@/types/archive';
 import { filterCharacters, type LibraryFilterState } from '@/lib/library-query';
@@ -234,18 +235,18 @@ export function addCustomCategory(
   label: string,
 ): LibraryTagPreferences {
   const normalizedLabel = label.trim();
-  if (!normalizedLabel) throw new Error('标签组名称不能为空');
-  if (normalizedLabel.includes('/')) throw new Error('标签组名称不能包含“/”');
+  if (!normalizedLabel) throw new Error(tr("标签组名称不能为空"));
+  if (normalizedLabel.includes('/')) throw new Error(tr("标签组名称不能包含“/”"));
   if (preferences.deletedCategories?.includes(normalizedLabel)) return {
     ...preferences,
     deletedCategories: preferences.deletedCategories.filter(category => category !== normalizedLabel),
     customCategories: TAG_CATEGORIES.includes(normalizedLabel as BuiltinTagCategory) || normalizedLabel === '类型'
       ? preferences.customCategories : uniqueStrings([...preferences.customCategories, normalizedLabel]),
   };
-  if (normalizedLabel === '类型') throw new Error('「类型」是内置分类，请在类型面板维护');
+  if (normalizedLabel === '类型') throw new Error(tr("「类型」是内置分类，请在类型面板维护"));
   if (normalizedLabel === '未分类' || (TAG_CATEGORIES as readonly string[]).includes(normalizedLabel)
     || preferences.customCategories.includes(normalizedLabel)) {
-    throw new Error('标签组已存在');
+    throw new Error(tr("标签组已存在"));
   }
   return {
     ...preferences,
@@ -270,14 +271,14 @@ export function addCustomTagDefinition(
   label: string,
 ): LibraryTagPreferences {
   const normalizedLabel = label.trim();
-  if (!normalizedLabel) throw new Error('标签名称不能为空');
+  if (!normalizedLabel) throw new Error(tr("标签名称不能为空"));
   if (category !== '未分类' && !TAG_CATEGORIES.includes(category as BuiltinTagCategory)
     && !preferences.customCategories.includes(category) || preferences.deletedCategories?.includes(category)) {
-    throw new Error('标签组不存在');
+    throw new Error(tr("标签组不存在"));
   }
   const raw = normalizeRatingTag(makeTag(category, normalizedLabel));
   const restoring = preferences.deleted?.some(tag => normalizeRatingTag(tag) === raw);
-  if (!restoring && (BUILTIN_RAWS.has(raw) || preferences.customTags.includes(raw))) throw new Error('标签已存在');
+  if (!restoring && (BUILTIN_RAWS.has(raw) || preferences.customTags.includes(raw))) throw new Error(tr("标签已存在"));
   return {
     ...preferences,
     customTags: BUILTIN_RAWS.has(raw) ? preferences.customTags : uniqueStrings([...preferences.customTags, raw]),

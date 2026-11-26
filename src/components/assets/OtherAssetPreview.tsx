@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { AlertTriangle, File, Loader2, ShieldCheck, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +24,7 @@ interface PreviewContent {
 }
 
 export function OtherAssetPreview({ fs, file, onClose }: OtherAssetPreviewProps) {
+  useI18n();
   const [content, setContent] = useState<PreviewContent>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -61,16 +64,16 @@ export function OtherAssetPreview({ fs, file, onClose }: OtherAssetPreviewProps)
   }, [file, fs]);
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)]" aria-label={`${file.name} 只读预览`}>
+    <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)]" aria-label={tr("{{v0}} 只读预览", { v0: file.name })}>
       <header className="flex shrink-0 items-start gap-3 border-b border-[color:var(--hairline-inner)] px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-serif text-sm font-semibold text-[color:var(--text-primary)]" title={file.name}>{file.name}</h3>
-            <span className="shrink-0 rounded-full bg-[var(--status-ok-bg)] px-2 py-0.5 text-[11px] text-[color:var(--status-ok)]">只读预览</span>
+            <span className="shrink-0 rounded-full bg-[var(--status-ok-bg)] px-2 py-0.5 text-[11px] text-[color:var(--status-ok)]">{tr("只读预览")}</span>
           </div>
           <p className="mt-1 truncate text-[11px] text-[color:var(--text-muted)]" title={file.path}>{file.relativePath} · {formatArchiveBytes(file.size)}</p>
         </div>
-        <Button type="button" variant="ghost" size="sm" className="w-7 shrink-0 p-0" onClick={onClose} aria-label="关闭预览">
+        <Button type="button" variant="ghost" size="sm" className="w-7 shrink-0 p-0" onClick={onClose} aria-label={tr("关闭预览")}>
           <X className="h-4 w-4" />
         </Button>
       </header>
@@ -78,12 +81,12 @@ export function OtherAssetPreview({ fs, file, onClose }: OtherAssetPreviewProps)
       <div className="min-h-0 flex-1 overflow-auto p-4 scrollbar-thin">
         {loading ? (
           <div className="flex h-full min-h-40 items-center justify-center gap-2 text-sm text-[color:var(--text-muted)]">
-            <Loader2 className="h-4 w-4 animate-spin" />{LOADING_LABEL}
+            <Loader2 className="h-4 w-4 animate-spin" />{tr(LOADING_LABEL)}
           </div>
         ) : error ? (
           <div role="alert" className="flex items-start gap-2 rounded-lg bg-[var(--status-danger-bg)] p-3 text-sm text-[color:var(--status-danger)]">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>无法读取这个文件：{error}</span>
+            <span>{tr("无法读取这个文件：")}{error}</span>
           </div>
         ) : content.imageUrl ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg bg-[var(--bg-canvas)] p-2">
@@ -93,8 +96,7 @@ export function OtherAssetPreview({ fs, file, onClose }: OtherAssetPreviewProps)
           <div className="space-y-2">
             {content.jsonInvalid && (
               <div className="flex items-center gap-2 rounded-md bg-[var(--status-warn-bg)] px-3 py-2 text-xs text-[color:var(--status-warn)]">
-                <AlertTriangle className="h-3.5 w-3.5" />JSON 格式异常，以下按原始文本显示。
-              </div>
+                <AlertTriangle className="h-3.5 w-3.5" />{tr("JSON 格式异常，以下按原始文本显示。")}</div>
             )}
             <pre className="whitespace-pre-wrap break-words rounded-lg bg-[var(--bg-canvas)] p-3 font-mono text-[11px] leading-relaxed text-[color:var(--text-body)]">{content.text}</pre>
           </div>
@@ -102,17 +104,15 @@ export function OtherAssetPreview({ fs, file, onClose }: OtherAssetPreviewProps)
           <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-[color:var(--text-muted)]">
             <File className="h-9 w-9 opacity-50" />
             <div>
-              <p className="text-sm text-[color:var(--text-body)]">这个格式暂不支持客户端内预览</p>
-              <p className="mt-1 text-xs">文件仍已完整归档，可在上方核对名称、路径和大小。</p>
+              <p className="text-sm text-[color:var(--text-body)]">{tr("这个格式暂不支持客户端内预览")}</p>
+              <p className="mt-1 text-xs">{tr("文件仍已完整归档，可在上方核对名称、路径和大小。")}</p>
             </div>
           </div>
         )}
       </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t border-[color:var(--hairline-inner)] px-4 py-2 text-[11px] text-[color:var(--text-muted)]">
-        <ShieldCheck className="h-3.5 w-3.5 text-[color:var(--status-ok)]" />
-        仅从 STE 文件库读取；不会执行代码，也不会修改归档。
-      </footer>
+        <ShieldCheck className="h-3.5 w-3.5 text-[color:var(--status-ok)]" />{tr("仅从 STE 文件库读取；不会执行代码，也不会修改归档。")}</footer>
     </section>
   );
 }

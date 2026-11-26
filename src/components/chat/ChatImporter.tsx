@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Download, FileText, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -48,6 +50,7 @@ interface TxtDialogueOptions {
 }
 
 export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
+  useI18n();
   const { toast } = useToast();
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -98,7 +101,7 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
         }
 
         if (messages.length === 0) {
-          throw new Error('角色卡里还没有填写开场白，暂时没有可导入的对话内容');
+          throw new Error(tr("角色卡里还没有填写开场白，暂时没有可导入的对话内容"));
         }
 
         const session: ChatSession = {
@@ -182,10 +185,10 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
                 skippedCorruptLines = recovered.diagnostics.invalidLines + 1;
                 handledAsStructured = true;
               } else {
-                throw new Error('这份文件看起来是酒馆导出的聊天记录，但内部格式已损坏，无法读取消息');
+                throw new Error(tr("这份文件看起来是酒馆导出的聊天记录，但内部格式已损坏，无法读取消息"));
               }
             } else if (firstLine.startsWith('{') && /"(?:user_name|character_name|chat_metadata|mes)"/.test(content.slice(0, 800))) {
-              throw new Error('这份聊天记录的 JSON 行格式不完整（可能复制或下载时被截断），请重新导出后再试');
+              throw new Error(tr("这份聊天记录的 JSON 行格式不完整（可能复制或下载时被截断），请重新导出后再试"));
             }
           }
         }
@@ -240,12 +243,12 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
         }
       }
 
-      if (messages.length === 0) throw new Error('文件里没有找到可导入的消息（可能格式不符或内容为空）');
+      if (messages.length === 0) throw new Error(tr("文件里没有找到可导入的消息（可能格式不符或内容为空）"));
 
       if (skippedCorruptLines > 0) {
         toast({
-          title: `已恢复可用对话（跳过 ${skippedCorruptLines} 行损坏内容）`,
-          description: '原文件中部分行可能被截断，其余有效楼层均已正常读入',
+          title: tr("已恢复可用对话（跳过 {{v0}} 行损坏内容）", { v0: skippedCorruptLines }),
+          description: tr("原文件中部分行可能被截断，其余有效楼层均已正常读入"),
         });
       }
 
@@ -297,9 +300,9 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
       onImport(session, importStats);
     } catch (e) {
       console.error('Import error:', e instanceof Error ? e.name : 'UnknownError');
-      const msg = e instanceof Error ? e.message : '文件解析失败，请检查格式';
+      const msg = e instanceof Error ? e.message : tr("文件解析失败，请检查格式");
       setError(msg);
-      toast({ title: '导入失败', description: msg, variant: 'destructive' });
+      toast({ title: tr("导入失败"), description: msg, variant: 'destructive' });
     }
   }, [onImport, toast]);
 
@@ -354,9 +357,9 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
       const file = new File([bytes], name, { type: lower.endsWith('.png') ? 'image/png' : 'text/plain' });
       await processFile(file);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : '无法读取所选文件';
+      const msg = e instanceof Error ? e.message : tr("无法读取所选文件");
       setError(msg);
-      toast({ title: '导入失败', description: msg, variant: 'destructive' });
+      toast({ title: tr("导入失败"), description: msg, variant: 'destructive' });
     }
   }, [processFile, toast]);
 
@@ -375,30 +378,25 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
             <Download className={`w-8 h-8 transition-colors ${isDragging ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
           <div className="space-y-2">
-            <h3 className="font-display text-xl font-semibold">导入聊天记录</h3>
-            <p className="text-sm text-muted-foreground">
-              拖拽 JSONL/JSON/TXT/PNG 文件到此处，或点击选择文件
-            </p>
+            <h3 className="font-display text-xl font-semibold">{tr("导入聊天记录")}</h3>
+            <p className="text-sm text-muted-foreground">{tr("拖拽 JSONL/JSON/TXT/PNG 文件到此处，或点击选择文件")}</p>
           </div>
           <label className={isTauri() ? 'hidden' : undefined}>
             <input type="file" accept=".jsonl,.json,.txt,.png" onChange={handleFileSelect} className="hidden" />
             <Button variant="outline" className="cursor-pointer" asChild>
-              <span><FileText className="w-4 h-4 mr-2" />选择文件</span>
+              <span><FileText className="w-4 h-4 mr-2" />{tr("选择文件")}</span>
             </Button>
           </label>
           {isTauri() && (
             <Button variant="outline" className="cursor-pointer" onClick={() => void handleNativeFileSelect()}>
-              <FileText className="w-4 h-4 mr-2" />选择文件
-            </Button>
+              <FileText className="w-4 h-4 mr-2" />{tr("选择文件")}</Button>
           )}
           {error && (
             <div className="flex items-center gap-2 text-sm text-destructive animate-fade-in">
               <AlertCircle className="w-4 h-4" />{error}
             </div>
           )}
-          <p className="text-xs text-muted-foreground mt-2">
-            支持 SillyTavern JSONL、JSON、TXT 对话/小说格式，以及 PNG 角色卡
-          </p>
+          <p className="text-xs text-muted-foreground mt-2">{tr("支持 SillyTavern JSONL、JSON、TXT 对话/小说格式，以及 PNG 角色卡")}</p>
         </div>
       </Card>
 
@@ -406,27 +404,22 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
       <Dialog open={txtFormatDialog} onOpenChange={setTxtFormatDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>选择 TXT 格式</DialogTitle>
-            <DialogDescription>
-              请选择该文件的格式类型，以便正确解析内容
-            </DialogDescription>
+            <DialogTitle>{tr("选择 TXT 格式")}</DialogTitle>
+            <DialogDescription>{tr("请选择该文件的格式类型，以便正确解析内容")}</DialogDescription>
           </DialogHeader>
           <RadioGroup value={txtFormat} onValueChange={(v) => setTxtFormat(v as TxtFormat)} className="space-y-4">
             <div className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent/50 cursor-pointer" onClick={() => setTxtFormat('dialogue')}>
               <RadioGroupItem value="dialogue" id="fmt-dialogue" className="mt-0.5" />
               <div className="flex-1">
-                <Label htmlFor="fmt-dialogue" className="cursor-pointer font-medium">对话格式</Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  每行为「角色名: 内容」格式，冒号前为说话人名称<br />
-                  示例：Alice: 你好啊！
-                </p>
+                <Label htmlFor="fmt-dialogue" className="cursor-pointer font-medium">{tr("对话格式")}</Label>
+                <p className="text-xs text-muted-foreground mt-1">{tr("每行为「角色名: 内容」格式，冒号前为说话人名称")}<br />{tr("示例：Alice: 你好啊！")}</p>
               </div>
             </div>
             {txtFormat === 'dialogue' && (
               <div className="space-y-2 pl-4 border-l-2 border-border ml-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label htmlFor="txt-user-name" className="text-xs">User 用户名（你）</Label>
+                    <Label htmlFor="txt-user-name" className="text-xs">{tr("User 用户名（你）")}</Label>
                     <Input
                       id="txt-user-name"
                       value={dialogueUserName}
@@ -435,7 +428,7 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="txt-char-name" className="text-xs">Assistant 角色名</Label>
+                    <Label htmlFor="txt-char-name" className="text-xs">{tr("Assistant 角色名")}</Label>
                     <Input
                       id="txt-char-name"
                       value={dialogueCharName}
@@ -444,13 +437,11 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
                     />
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  已从文件开头自动识别，认反了可直接改。姓名与 User 一致的行归为用户消息，其余楼层保留原始姓名并归为角色。
-                </p>
+                <p className="text-xs text-muted-foreground">{tr("已从文件开头自动识别，认反了可直接改。姓名与 User 一致的行归为用户消息，其余楼层保留原始姓名并归为角色。")}</p>
                 {speakerStats.length > 0 && (
                   <div className="space-y-1.5 pt-1">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs">哪些名字是说话人（共 {speakerStats.length} 个）</Label>
+                      <Label className="text-xs">{tr("哪些名字是说话人（共 ")}{speakerStats.length}{tr(" 个）")}</Label>
                       <Button
                         type="button"
                         variant="ghost"
@@ -459,7 +450,7 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
                         onClick={() => setPickedSpeakers(
                           allSpeakersPicked ? new Set() : new Set(speakerStats.map(s => s.name)),
                         )}
-                      >{allSpeakersPicked ? '全不选' : '全选'}</Button>
+                      >{allSpeakersPicked ? tr("全不选") : tr("全选")}</Button>
                     </div>
                     <div className="max-h-40 overflow-y-auto rounded-md border border-border divide-y divide-border/60">
                       {speakerStats.map((stat) => (
@@ -472,14 +463,11 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
                             onCheckedChange={() => toggleSpeaker(stat.name)}
                           />
                           <span className="flex-1 truncate">{stat.name}</span>
-                          <span className="shrink-0 text-muted-foreground">{stat.count} 行</span>
+                          <span className="shrink-0 text-muted-foreground">{stat.count}{tr(" 行")}</span>
                         </label>
                       ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      没勾的名字不会单独成楼，那些行会并入上一条消息。像「注:」「时间:」这种只出现几次的前缀，
-                      不勾就不会变成一个没说过话的角色。
-                    </p>
+                    <p className="text-xs text-muted-foreground">{tr("没勾的名字不会单独成楼，那些行会并入上一条消息。像「注:」「时间:」这种只出现几次的前缀， 不勾就不会变成一个没说过话的角色。")}</p>
                   </div>
                 )}
               </div>
@@ -487,20 +475,17 @@ export function ChatImporter({ onImport, initialFile }: ChatImporterProps) {
             <div className="flex items-start gap-3 p-3 rounded-lg border border-border hover:bg-accent/50 cursor-pointer" onClick={() => setTxtFormat('novel')}>
               <RadioGroupItem value="novel" id="fmt-novel" className="mt-0.5" />
               <div>
-                <Label htmlFor="fmt-novel" className="cursor-pointer font-medium">小说格式</Label>
-                <p className="text-xs text-muted-foreground mt-1">
-                  整段文本按空行分段，每段作为一条消息<br />
-                  适用于纯叙述文本导入
-                </p>
+                <Label htmlFor="fmt-novel" className="cursor-pointer font-medium">{tr("小说格式")}</Label>
+                <p className="text-xs text-muted-foreground mt-1">{tr("整段文本按空行分段，每段作为一条消息")}<br />{tr("适用于纯叙述文本导入")}</p>
               </div>
             </div>
           </RadioGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setTxtFormatDialog(false); setPendingTxtFile(null); }}>取消</Button>
+            <Button variant="outline" onClick={() => { setTxtFormatDialog(false); setPendingTxtFile(null); }}>{tr("取消")}</Button>
             <Button
               onClick={handleTxtFormatConfirm}
               disabled={txtFormat === 'dialogue' && (!dialogueUserName.trim() || !dialogueCharName.trim())}
-            >确认导入</Button>
+            >{tr("确认导入")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

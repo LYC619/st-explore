@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 导出阅读包：勾选要带哪些故事 → 打包 → 落盘。
  *
@@ -5,7 +7,7 @@
  * Android 唤起系统分享面板（手机上「导出」的真实语义是发出去，不是选路径）、
  * 网页版浏览器下载。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useEffect, useState  } from 'react';
 import { Loader2, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,6 +33,7 @@ interface ReadingPackExportDialogProps {
 export function ReadingPackExportDialog({
   open, onOpenChange, character, stories,
 }: ReadingPackExportDialogProps) {
+  useI18n();
   const { toast } = useToast();
   // 默认全选
   const [picked, setPicked] = useState<Set<string>>(() => new Set(stories.map((s) => s.id)));
@@ -68,13 +71,13 @@ export function ReadingPackExportDialog({
       if (outcome === 'cancelled') return;
       const sizeMb = (bytes.length / 1024 / 1024).toFixed(1);
       toast({
-        title: outcome === 'shared' ? '已唤起分享' : '阅读包已导出',
-        description: `${fileName}（${sizeMb} MB，${selected.length} 篇故事）`,
+        title: outcome === 'shared' ? tr("已唤起分享") : tr("阅读包已导出"),
+        description: tr("{{v0}}（{{v1}} MB，{{v2}} 篇故事）", { v0: fileName, v1: sizeMb, v2: selected.length }),
       });
       onOpenChange(false);
     } catch (e) {
       toast({
-        title: '导出失败',
+        title: tr("导出失败"),
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
@@ -87,22 +90,19 @@ export function ReadingPackExportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>导出阅读包</DialogTitle>
-          <DialogDescription>
-            把这张卡和选中的故事打成一个 .ste-reading 文件，在手机上导入即可阅读。
-            带上正文、章节标记、书签、总结和评分；不带预设、世界书、正则规则。
-          </DialogDescription>
+          <DialogTitle>{tr("导出阅读包")}</DialogTitle>
+          <DialogDescription>{tr("把这张卡和选中的故事打成一个 .ste-reading 文件，在手机上导入即可阅读。 带上正文、章节标记、书签、总结和评分；不带预设、世界书、正则规则。")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>共 {stories.length} 篇故事</span>
+            <span>{tr("共 {{v0}} 篇故事", { v0: stories.length })}</span>
             <button
               type="button"
               className="rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground transition-colors"
               onClick={() => setPicked(allPicked ? new Set() : new Set(stories.map((s) => s.id)))}
             >
-              {allPicked ? '全不选' : '全选'}
+              {allPicked ? tr("全不选") : tr("全选")}
             </button>
           </div>
 
@@ -116,14 +116,13 @@ export function ReadingPackExportDialog({
                   <Checkbox
                     checked={picked.has(s.id)}
                     onCheckedChange={() => toggle(s.id)}
-                    aria-label={`选择故事「${s.title}」`}
+                    aria-label={tr("选择故事「{{v0}}」", { v0: s.title })}
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{s.title}</span>
                     <span className="block text-xs text-muted-foreground">
-                      {s.session.messages.length} 楼
-                      {s.wordCount !== undefined && ` · ${formatWordCount(s.wordCount)}`}
-                      {(s.branches?.length ?? 0) > 0 && ` · ${s.branches!.length} 个分支`}
+                      {s.session.messages.length}{tr(" 楼")}{s.wordCount !== undefined && ` · ${formatWordCount(s.wordCount)}`}
+                      {(s.branches?.length ?? 0) > 0 && tr(" · {{v0}} 个分支", { v0: s.branches!.length })}
                     </span>
                   </span>
                 </label>
@@ -131,18 +130,16 @@ export function ReadingPackExportDialog({
             </div>
           </ScrollArea>
 
-          <p className="text-xs text-muted-foreground">
-            已选 {selected.length} 篇
-            {totalWords > 0 && ` · 约 ${formatWordCount(totalWords)}`}
+          <p className="text-xs text-muted-foreground">{tr("已选 {{v0}} 篇", { v0: selected.length })}{totalWords > 0 && tr(" · 约 {{v0}}", { v0: formatWordCount(totalWords) })}
           </p>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>取消</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>{tr("取消")}</Button>
           <Button onClick={() => void handleExport()} disabled={busy || selected.length === 0}>
             {busy
-              ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />打包中…</>
-              : <><Package className="mr-1.5 h-4 w-4" />导出</>}
+              ? <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />{tr("打包中…")}</>
+              : <><Package className="mr-1.5 h-4 w-4" />{tr("导出")}</>}
           </Button>
         </DialogFooter>
       </DialogContent>

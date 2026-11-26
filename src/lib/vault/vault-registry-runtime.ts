@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { createTauriFs, isTauri, pickDirectory, setVaultRoot } from './tauri-fs';
 import type { VaultStat } from './fs';
 import { createVault } from './vault-backend';
@@ -24,20 +25,20 @@ function emitChanged(profile: VaultProfile): void {
 export { loadVaultRegistry } from './vault-registry-store';
 
 async function assertVaultDirectory(path: string): Promise<void> {
-  if (!path.trim()) throw new Error('库路径不能为空');
+  if (!path.trim()) throw new Error(tr("库路径不能为空"));
   let stat: VaultStat;
   try {
     stat = await createTauriFs(path).stat('');
   } catch {
-    throw new Error(`无法访问文件库目录：${path}`);
+    throw new Error(tr("无法访问文件库目录：{{v0}}", { v0: path }));
   }
-  if (!stat.exists) throw new Error(`文件库目录不存在：${path}`);
-  if (!stat.isDir) throw new Error(`文件库路径不是文件夹：${path}`);
+  if (!stat.exists) throw new Error(tr("文件库目录不存在：{{v0}}", { v0: path }));
+  if (!stat.isDir) throw new Error(tr("文件库路径不是文件夹：{{v0}}", { v0: path }));
   await assertCompatibleVault(createTauriFs(path));
 }
 
 export async function registerAndActivateVault(path: string, name?: string): Promise<VaultProfile> {
-  if (!isTauri()) throw new Error('网页版不支持本机文件库切换');
+  if (!isTauri()) throw new Error(tr("网页版不支持本机文件库切换"));
   await assertVaultDirectory(path);
   const current = await loadVaultRegistry();
   const upserted = upsertVaultProfile(current, path, name);
@@ -68,7 +69,7 @@ export async function selectRegisteredVaultForNextBoot(id: string): Promise<Vaul
 
 export async function chooseAndActivateVault(): Promise<VaultProfile | null> {
   const path = await pickDirectory(
-    '选择 STE 库文件夹（可新增演示库或打开已有库）',
+    tr("选择 STE 库文件夹（可新增演示库或打开已有库）"),
     { persistAuthorization: true },
   );
   return path ? registerAndActivateVault(path) : null;
@@ -76,7 +77,7 @@ export async function chooseAndActivateVault(): Promise<VaultProfile | null> {
 
 /** 运行中新增/打开库：注册为下一次启动目标，不替换当前页面后端。 */
 export async function registerVaultForNextBoot(path: string, name?: string): Promise<VaultProfile> {
-  if (!isTauri()) throw new Error('网页版不支持本机文件库切换');
+  if (!isTauri()) throw new Error(tr("网页版不支持本机文件库切换"));
   await assertVaultDirectory(path);
   const current = await loadVaultRegistry();
   const upserted = upsertVaultProfile(current, path, name);
@@ -88,7 +89,7 @@ export async function registerVaultForNextBoot(path: string, name?: string): Pro
 
 export async function chooseVaultForNextBoot(): Promise<VaultProfile | null> {
   const path = await pickDirectory(
-    '选择 STE 库文件夹（可新增演示库或打开已有库）',
+    tr("选择 STE 库文件夹（可新增演示库或打开已有库）"),
     { persistAuthorization: true },
   );
   return path ? registerVaultForNextBoot(path) : null;
@@ -100,11 +101,11 @@ export async function chooseVaultForNextBoot(): Promise<VaultProfile | null> {
  * 当前正在用的库不能移除——应用整个跑在它上面，先切到别的库再来。
  */
 export async function unregisterVault(id: string): Promise<VaultProfile> {
-  if (!isTauri()) throw new Error('网页版没有本机库列表');
+  if (!isTauri()) throw new Error(tr("网页版没有本机库列表"));
   const current = await loadVaultRegistry();
   const profile = current.vaults.find((item) => item.id === id);
-  if (!profile) throw new Error('该库已不在列表中，刷新设置页即可');
-  if (current.activeId === id) throw new Error('这是当前正在使用的库，先切换到别的库再移除');
+  if (!profile) throw new Error(tr("该库已不在列表中，刷新设置页即可"));
+  if (current.activeId === id) throw new Error(tr("这是当前正在使用的库，先切换到别的库再移除"));
   await persistVaultRegistry(removeVaultProfile(current, id));
   return profile;
 }

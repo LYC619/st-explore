@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { Pencil, Save, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,7 @@ interface TemplatePickerProps {
 export function TemplatePicker({
   kind, templates, selectedId, onSelect, content, onContentChange, onTemplatesChanged,
 }: TemplatePickerProps) {
+  useI18n();
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
   const [saveAsOpen, setSaveAsOpen] = useState(false);
@@ -50,7 +53,7 @@ export function TemplatePicker({
   const handleSaveAs = async () => {
     const title = saveAsName.trim();
     if (!title) {
-      toast({ title: '请输入模板名称', variant: 'destructive' });
+      toast({ title: tr("请输入模板名称"), variant: 'destructive' });
       return;
     }
     const tpl: SummaryTemplate = {
@@ -66,7 +69,7 @@ export function TemplatePicker({
     setSaveAsName('');
     onTemplatesChanged();
     onSelect(tpl.id);
-    toast({ title: '已保存为自定义模板', description: title });
+    toast({ title: tr("已保存为自定义模板"), description: title });
   };
 
   const handleUpdateCustom = async () => {
@@ -75,7 +78,7 @@ export function TemplatePicker({
     await saveSummaryTemplate(tpl);
     setEditOpen(false);
     onTemplatesChanged();
-    toast({ title: '模板已更新', description: selected.title });
+    toast({ title: tr("模板已更新"), description: selected.title });
   };
 
   // 删除自定义模板（内置只读不可删）；父组件重载列表后会自动回落到默认模板
@@ -85,28 +88,28 @@ export function TemplatePicker({
     setDeleteOpen(false);
     setEditOpen(false);
     onTemplatesChanged();
-    toast({ title: '已删除自定义模板', description: selected.title });
+    toast({ title: tr("已删除自定义模板"), description: selected.title });
   };
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <Label className="text-sm shrink-0">提示词模板</Label>
+        <Label className="text-sm shrink-0">{tr("提示词模板")}</Label>
         <Select value={selectedId} onValueChange={onSelect}>
           <SelectTrigger className="h-8 flex-1">
-            <SelectValue placeholder="选择模板" />
+            <SelectValue placeholder={tr("选择模板")} />
           </SelectTrigger>
           <SelectContent>
             {templates.map((t) => (
               <SelectItem key={t.id} value={t.id}>
-                {t.title}{isBuiltinTemplate(t) ? '' : '（自定义）'}
+                {isBuiltinTemplate(t) ? t.title : tr("{{v0}}（自定义）", { v0: t.title })}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditOpen(true)}>
           <Pencil className="w-3.5 h-3.5" />
-          {isBuiltin ? '查看' : '编辑'}
+          {isBuiltin ? tr("查看") : tr("编辑")}
         </Button>
       </div>
 
@@ -114,32 +117,29 @@ export function TemplatePicker({
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="!max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{isBuiltin ? '查看内置模板' : '编辑自定义模板'} · {selected?.title}</DialogTitle>
+            <DialogTitle>{isBuiltin ? tr("查看内置模板") : tr("编辑自定义模板")} · {selected?.title}</DialogTitle>
           </DialogHeader>
           <Textarea
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
             className="min-h-[50vh] font-mono text-xs"
-            placeholder="提示词全文，支持 {{char}} / {{user}} / {{volume}} 宏"
+            placeholder={tr("提示词全文，支持 {{char}} / {{user}} / {{volume}} 宏")}
           />
           <p className="text-xs text-muted-foreground">
             {isBuiltin
-              ? '内置模板不可直接改写。修改后请「另存为自定义模板」，本次生成也会用当前正文。'
-              : '编辑后点「保存修改」更新此自定义模板；也可另存为新模板。'}
+              ? tr("内置模板不可直接改写。修改后请「另存为自定义模板」，本次生成也会用当前正文。")
+              : tr("编辑后点「保存修改」更新此自定义模板；也可另存为新模板。")}
           </p>
           <DialogFooter className="gap-2">
             {!isBuiltin && (
               <Button variant="ghost" className="text-destructive gap-1 mr-auto" onClick={() => setDeleteOpen(true)}>
-                <Trash2 className="w-4 h-4" />删除模板
-              </Button>
+                <Trash2 className="w-4 h-4" />{tr("删除模板")}</Button>
             )}
-            <Button variant="outline" className="gap-1" onClick={() => { setSaveAsName(selected ? `${selected.title} 副本` : ''); setSaveAsOpen(true); }}>
-              <Plus className="w-4 h-4" />另存为自定义
-            </Button>
+            <Button variant="outline" className="gap-1" onClick={() => { setSaveAsName(selected ? tr("{{v0}} 副本", { v0: selected.title }) : ''); setSaveAsOpen(true); }}>
+              <Plus className="w-4 h-4" />{tr("另存为自定义")}</Button>
             {!isBuiltin && (
               <Button className="gap-1" onClick={handleUpdateCustom}>
-                <Save className="w-4 h-4" />保存修改
-              </Button>
+                <Save className="w-4 h-4" />{tr("保存修改")}</Button>
             )}
           </DialogFooter>
         </DialogContent>
@@ -149,12 +149,12 @@ export function TemplatePicker({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除模板「{selected?.title}」？</AlertDialogTitle>
-            <AlertDialogDescription>此操作不可撤销。已用该模板生成的总结不受影响。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("删除模板「{{v0}}」？", { v0: selected?.title })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("此操作不可撤销。已用该模板生成的总结不受影响。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeleteCustom}>删除</AlertDialogAction>
+            <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteCustom}>{tr("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -163,20 +163,20 @@ export function TemplatePicker({
       <Dialog open={saveAsOpen} onOpenChange={setSaveAsOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>另存为自定义模板</DialogTitle>
+            <DialogTitle>{tr("另存为自定义模板")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="tpl-name">模板名称</Label>
+            <Label htmlFor="tpl-name">{tr("模板名称")}</Label>
             <Input
               id="tpl-name"
               value={saveAsName}
               onChange={(e) => setSaveAsName(e.target.value)}
-              placeholder="给这个模板起个名字"
+              placeholder={tr("给这个模板起个名字")}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSaveAsOpen(false)}>取消</Button>
-            <Button onClick={handleSaveAs}>保存</Button>
+            <Button variant="outline" onClick={() => setSaveAsOpen(false)}>{tr("取消")}</Button>
+            <Button onClick={handleSaveAs}>{tr("保存")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

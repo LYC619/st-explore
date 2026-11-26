@@ -1,0 +1,39 @@
+name: Public documentation (manual)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+      - name: Generate public pages only
+        env:
+          STE_SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: npm run deploy:prepare -- --target pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site-dist
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

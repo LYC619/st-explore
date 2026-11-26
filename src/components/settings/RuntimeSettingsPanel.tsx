@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useEffect, useState } from 'react';
 import { Check, Eye, FolderOpen, FolderSearch, KeyRound, Loader2, RefreshCw, Tags, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +40,7 @@ import {
 } from '@/lib/vault/vault-registry-runtime';
 import { loadVaultRegistry } from '@/lib/vault/vault-registry-store';
 import type { VaultProfile, VaultRegistry } from '@/lib/vault/vault-registry';
+import { LanguagePicker } from './LanguagePicker';
 
 interface STCounts {
   characters: number;
@@ -66,6 +69,7 @@ function hasSTContent(counts: STCounts): boolean {
 }
 
 export function DisplaySettingsPanel() {
+  useI18n();
   const [blurNsfw, setBlurNsfw] = useState(() => getNsfwBlur());
   const [hideUnusedTags, setHideUnusedTags] = useState(() => getHideUnusedLibraryTags());
 
@@ -81,34 +85,33 @@ export function DisplaySettingsPanel() {
 
   return (
     <section className="rounded-md border border-border p-4 space-y-3">
+      <LanguagePicker />
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3 min-w-0">
           <Eye className="w-4 h-4 mt-0.5 text-primary shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold">显示偏好</h3>
-            <p className="text-xs text-muted-foreground mt-1">角色卡面标记为 NSFW 时，列表和详情默认模糊。</p>
+            <h3 className="text-sm font-semibold">{tr("显示偏好")}</h3>
+            <p className="text-xs text-muted-foreground mt-1">{tr("角色卡面标记为 NSFW 时，列表和详情默认模糊。")}</p>
           </div>
         </div>
         <Switch
           checked={blurNsfw}
           onCheckedChange={handleBlurChange}
-          aria-label="默认模糊 NSFW 卡面"
+          aria-label={tr("默认模糊 NSFW 卡面")}
         />
       </div>
       <div className="flex items-start justify-between gap-4 border-t border-border pt-3">
         <div className="flex min-w-0 items-start gap-3">
           <Tags className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold">隐藏未使用标签</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              只精简角色库左侧筛选栏；类型标签仍全部显示，标签管理中的定义不会被删除。
-            </p>
+            <h3 className="text-sm font-semibold">{tr("隐藏未使用标签")}</h3>
+            <p className="mt-1 text-xs text-muted-foreground">{tr("只精简角色库左侧筛选栏；类型标签仍全部显示，标签管理中的定义不会被删除。")}</p>
           </div>
         </div>
         <Switch
           checked={hideUnusedTags}
           onCheckedChange={handleHideUnusedTagsChange}
-          aria-label="隐藏未使用标签"
+          aria-label={tr("隐藏未使用标签")}
         />
       </div>
     </section>
@@ -116,6 +119,7 @@ export function DisplaySettingsPanel() {
 }
 
 export function DirectorySettingsPanel() {
+  useI18n();
   const { toast } = useToast();
   const client = isTauri();
   // 「不是桌面端」有两种：网页版和 Android 客户端。文案得分清，否则手机上会说自己是网页版
@@ -147,7 +151,7 @@ export function DirectorySettingsPanel() {
     setBusy('st');
     try {
       const root = await pickDirectory(
-        '选择 SillyTavern 目录（安装根目录或 data/default-user）',
+        tr("选择 SillyTavern 目录（安装根目录或 data/default-user）"),
         { persistAuthorization: true, purpose: 'source' },
       );
       if (!root) return;
@@ -155,8 +159,8 @@ export function DirectorySettingsPanel() {
       const counts = scanCounts(scan);
       if (!hasSTContent(counts)) {
         toast({
-          title: '没有找到 ST 内容',
-          description: '该目录下没有可识别的角色卡、聊天、世界书、预设或正则。',
+          title: tr("没有找到 ST 内容"),
+          description: tr("该目录下没有可识别的角色卡、聊天、世界书、预设或正则。"),
           variant: 'destructive',
         });
         return;
@@ -165,13 +169,13 @@ export function DirectorySettingsPanel() {
       setStRoot(root);
       setStCounts(counts);
       toast({
-        title: 'ST 目录已更新',
-        description: `找到 ${counts.characters} 张角色卡、${counts.chats} 场聊天、${counts.worldbooks} 本世界书。`,
+        title: tr("ST 目录已更新"),
+        description: tr("找到 {{v0}} 张角色卡、{{v1}} 场聊天、{{v2}} 本世界书。", { v0: counts.characters, v1: counts.chats, v2: counts.worldbooks }),
       });
     } catch (error) {
       toast({
-        title: '更新 ST 目录失败',
-        description: error instanceof Error ? error.message : '无法读取所选目录',
+        title: tr("更新 ST 目录失败"),
+        description: error instanceof Error ? error.message : tr("无法读取所选目录"),
         variant: 'destructive',
       });
     } finally {
@@ -187,12 +191,12 @@ export function DirectorySettingsPanel() {
       if (!picked) return;
       setVaultRootState(picked.path);
       setVaultRegistry(await loadVaultRegistry().catch(() => null));
-      toast({ title: '库目录已切换', description: '应用将重新载入并使用新目录；旧目录不会自动迁移或修改。' });
+      toast({ title: tr("库目录已切换"), description: tr("应用将重新载入并使用新目录；旧目录不会自动迁移或修改。") });
       window.location.reload();
     } catch (error) {
       toast({
-        title: '切换库目录失败',
-        description: error instanceof Error ? error.message : '无法激活所选目录',
+        title: tr("切换库目录失败"),
+        description: error instanceof Error ? error.message : tr("无法激活所选目录"),
         variant: 'destructive',
       });
     } finally {
@@ -204,12 +208,12 @@ export function DirectorySettingsPanel() {
     setBusy('vault');
     try {
       const next = await selectRegisteredVaultForNextBoot(id);
-      if (!next) throw new Error('所选库已不在注册表中，请刷新设置后重试');
+      if (!next) throw new Error(tr("所选库已不在注册表中，请刷新设置后重试"));
       window.location.reload();
     } catch (error) {
       toast({
-        title: '切换已注册库失败',
-        description: error instanceof Error ? error.message : '无法激活所选目录',
+        title: tr("切换已注册库失败"),
+        description: error instanceof Error ? error.message : tr("无法激活所选目录"),
         variant: 'destructive',
       });
     } finally {
@@ -222,11 +226,11 @@ export function DirectorySettingsPanel() {
     try {
       await unregisterVault(profile.id);
       setVaultRegistry(await loadVaultRegistry().catch(() => null));
-      toast({ title: `已从列表移除「${profile.name}」`, description: '磁盘上的库文件夹保持原样，重新「更换库目录」选回来即可。' });
+      toast({ title: tr("已从列表移除「{{v0}}」", { v0: profile.name }), description: tr("磁盘上的库文件夹保持原样，重新「更换库目录」选回来即可。") });
     } catch (error) {
       toast({
-        title: '移除失败',
-        description: error instanceof Error ? error.message : '无法移除该库',
+        title: tr("移除失败"),
+        description: error instanceof Error ? error.message : tr("无法移除该库"),
         variant: 'destructive',
       });
     } finally {
@@ -242,21 +246,19 @@ export function DirectorySettingsPanel() {
           <div className="flex items-start gap-3 min-w-0">
             <FolderSearch className="w-4 h-4 mt-0.5 text-primary shrink-0" />
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold">SillyTavern 目录</h3>
+              <h3 className="text-sm font-semibold">{tr("SillyTavern 目录")}</h3>
               <p className="text-xs text-muted-foreground mt-1">
                 {stRoot
-                  ? '已接入，可直接重新扫描并选择最新内容。'
-                  : '尚未接入 SillyTavern 目录；只有云端导出的 zip 也能直接导入。'}
+                  ? tr("已接入，可直接重新扫描并选择最新内容。")
+                  : tr("尚未接入 SillyTavern 目录；只有云端导出的 zip 也能直接导入。")}
               </p>
             </div>
           </div>
-          {stRoot && <Check className="w-4 h-4 text-primary shrink-0" aria-label="已接入" />}
+          {stRoot && <Check className="w-4 h-4 text-primary shrink-0" aria-label={tr("已接入")} />}
         </div>
         {stRoot && <p className="text-xs break-all rounded bg-muted/50 px-2.5 py-2">{stRoot}</p>}
         {stCounts && (
-          <p className="text-xs text-muted-foreground">
-            最近扫描：{stCounts.characters} 张角色卡 · {stCounts.chats} 场聊天 · {stCounts.worldbooks} 本世界书 · {stCounts.presets} 份预设 · {stCounts.regexes} 条正则 · {stCounts.archivedFiles} 个扩展/媒体文件
-          </p>
+          <p className="text-xs text-muted-foreground">{tr("最近扫描：")}{stCounts.characters}{tr(" 张角色卡 · ")}{stCounts.chats}{tr(" 场聊天 · ")}{stCounts.worldbooks}{tr(" 本世界书 · ")}{stCounts.presets}{tr(" 份预设 · ")}{stCounts.regexes}{tr(" 条正则 · ")}{stCounts.archivedFiles}{tr(" 个扩展/媒体文件")}</p>
         )}
         <div className="flex flex-wrap gap-2">
           {client && (
@@ -264,15 +266,13 @@ export function DirectorySettingsPanel() {
           )}
           <Button variant="outline" size="sm" onClick={handleChangeStRoot} disabled={!client || busy !== null}>
             {busy === 'st' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <FolderOpen className="w-4 h-4 mr-1.5" />}
-            {stRoot ? '更换 ST 目录' : '选择 ST 目录'}
+            {stRoot ? tr("更换 ST 目录") : tr("选择 ST 目录")}
           </Button>
           {client && stRoot && (
             <Button variant="ghost" size="sm" onClick={() => setStConfigOpen(true)}>
-              <KeyRound className="w-4 h-4 mr-1.5" />
-              查看 ST 配置
-            </Button>
+              <KeyRound className="w-4 h-4 mr-1.5" />{tr("查看 ST 配置")}</Button>
           )}
-          {!client && <span className="text-xs text-muted-foreground self-center">{RUNTIME_LABEL[runtime]}无法读取本机 ST 目录</span>}
+          {!client && <span className="text-xs text-muted-foreground self-center">{tr("{{v0}}无法读取本机 ST 目录", { v0: RUNTIME_LABEL[runtime] })}</span>}
         </div>
       </section>
 
@@ -280,19 +280,15 @@ export function DirectorySettingsPanel() {
         <div className="flex items-start gap-3 min-w-0">
           <FolderOpen className="w-4 h-4 mt-0.5 text-primary shrink-0" />
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold">STE 库目录</h3>
-            <p className="text-xs text-muted-foreground mt-1">
-              客户端当前使用的业务数据目录。切换只改变当前库，不自动迁移旧目录内容。
-            </p>
+            <h3 className="text-sm font-semibold">{tr("STE 库目录")}</h3>
+            <p className="text-xs text-muted-foreground mt-1">{tr("客户端当前使用的业务数据目录。切换只改变当前库，不自动迁移旧目录内容。")}</p>
           </div>
         </div>
         {vaultRoot && <p className="text-xs break-all rounded bg-muted/50 px-2.5 py-2">{vaultRoot}</p>}
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={handleChangeVaultRoot} disabled={!client || busy !== null}>
-            {busy === 'vault' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}
-            更换库目录
-          </Button>
-          {!client && <span className="text-xs text-muted-foreground">{RUNTIME_LABEL[runtime]}使用浏览器本地存储</span>}
+            {busy === 'vault' ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1.5" />}{tr("更换库目录")}</Button>
+          {!client && <span className="text-xs text-muted-foreground">{tr("{{v0}}使用浏览器本地存储", { v0: RUNTIME_LABEL[runtime] })}</span>}
         </div>
       </section>
 
@@ -301,8 +297,8 @@ export function DirectorySettingsPanel() {
           <div className="flex items-start gap-3">
             <RefreshCw className="w-4 h-4 mt-0.5 text-primary shrink-0" />
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold">已注册的库</h3>
-              <p className="text-xs text-muted-foreground mt-1">演示库和私人库各自独立；切换后会重新载入页面，避免旧库缓存混入。移除只是不再记住这个路径，磁盘上的文件夹不动。</p>
+              <h3 className="text-sm font-semibold">{tr("已注册的库")}</h3>
+              <p className="text-xs text-muted-foreground mt-1">{tr("演示库和私人库各自独立；切换后会重新载入页面，避免旧库缓存混入。移除只是不再记住这个路径，磁盘上的文件夹不动。")}</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -325,8 +321,8 @@ export function DirectorySettingsPanel() {
                     size="icon"
                     className="shrink-0 text-muted-foreground hover:text-destructive"
                     disabled={active || busy !== null}
-                    title={active ? '当前正在使用的库不能移除，先切换到别的库' : '从列表移除（不删除磁盘文件）'}
-                    aria-label={`从列表移除 ${profile.name}`}
+                    title={active ? tr("当前正在使用的库不能移除，先切换到别的库") : tr("从列表移除（不删除磁盘文件）")}
+                    aria-label={tr("从列表移除 {{v0}}", { v0: profile.name })}
                     onClick={() => setPendingRemoval(profile)}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -341,19 +337,14 @@ export function DirectorySettingsPanel() {
       <AlertDialog open={pendingRemoval !== null} onOpenChange={(open) => { if (!open) setPendingRemoval(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>从列表移除「{pendingRemoval?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>
-              只是不再记住这个路径，{pendingRemoval?.path} 里的角色、故事和资产一个都不删。
-              以后用「更换库目录」选回同一个文件夹即可重新加进列表。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tr("从列表移除「{{v0}}」？", { v0: pendingRemoval?.name })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("只是不再记住这个路径，")}{pendingRemoval?.path}{tr(" 里的角色、故事和资产一个都不删。 以后用「更换库目录」选回同一个文件夹即可重新加进列表。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => { if (pendingRemoval) void handleRemoveRegisteredVault(pendingRemoval); }}
-            >
-              移除
-            </AlertDialogAction>
+            >{tr("移除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

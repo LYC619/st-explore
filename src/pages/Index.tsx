@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { RemoveOptions } from '@/lib/repo';
 import { duplicateArchiveStory } from '@/lib/story-maintenance';
 /**
@@ -6,7 +9,7 @@ import { duplicateArchiveStory } from '@/lib/story-maintenance';
  * 导入落地、自动落库、跨页指针、引导教程，以及「未绑定 → 绑定到角色」升级。
  * 阶段5 书架退役：未绑定聊天直接存为归档故事（characterId 为空），本页空态列出暂存记录。
  */
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback  } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Link2, MessageSquare, Trash2, Clock, BookOpenCheck, ExternalLink, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,6 +78,7 @@ import {
 import { prepareStoryPlay } from '@/lib/roleplay/open-story';
 
 const Index = () => {
+  useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
@@ -221,7 +225,7 @@ const Index = () => {
           setSyncPending(false);
         })
         .catch(() => {
-          if (alive) toastRef.current({ title: '最新聊天尚未读回', description: '请重新打开这条故事后再编辑，以保留酒馆刚保存的内容。', variant: 'destructive' });
+          if (alive) toastRef.current({ title: tr("最新聊天尚未读回"), description: tr("请重新打开这条故事后再编辑，以保留酒馆刚保存的内容。"), variant: 'destructive' });
         });
     };
     syncLatest();
@@ -257,15 +261,15 @@ const Index = () => {
       if (cancelled) return;
       if (!story) {
         if (getEditorStoryId() === targetId) setEditorStoryId(null);
-        if (routeStoryId) toast({ title: '找不到这条故事', variant: 'destructive' });
+        if (routeStoryId) toast({ title: tr("找不到这条故事"), variant: 'destructive' });
         return;
       }
       hydrateStory(story, pointer, routeBranchId, routeFloor);
     }).catch((err) => {
       if (!cancelled) {
         toast({
-          title: routeStoryId ? '故事加载失败' : '读取上次编辑的故事没成功',
-          description: err instanceof Error ? err.message : '可以从下方暂存列表重新选择故事打开',
+          title: routeStoryId ? tr("故事加载失败") : tr("读取上次编辑的故事没成功"),
+          description: err instanceof Error ? err.message : tr("可以从下方暂存列表重新选择故事打开"),
           variant: 'destructive',
         });
       }
@@ -295,7 +299,7 @@ const Index = () => {
             }
             return merged.sort((a, b) => a.messageIndex - b.messageIndex);
           });
-          toast({ title: `已导入 ${parsed.length} 个 AI 生成的章节标记` });
+          toast({ title: tr("已导入 {{v0}} 个 AI 生成的章节标记", { v0: parsed.length }) });
         }
       } catch { /* ignore */ }
     }
@@ -334,9 +338,9 @@ const Index = () => {
       const next = { storyId: currentStoryId, branchId: currentBranchId, session, markers, favorites, settings, lastFloor: currentFloor };
       await updateArchiveStory(currentStoryId, (current) => {
         const line = getBranchLine(current, currentBranchId);
-        if (!line) throw new Error('故事分支不存在');
+        if (!line) throw new Error(tr("故事分支不存在"));
         if (base.session !== session && stableJson(line.session) !== stableJson(base.session)) {
-          throw new Error('这条分支有新的聊天内容，请重新打开后再编辑；当前内容未覆盖');
+          throw new Error(tr("这条分支有新的聊天内容，请重新打开后再编辑；当前内容未覆盖"));
         }
         const updated = updateBranchLine(current, currentBranchId, {
           lastFloor: currentFloor,
@@ -363,8 +367,8 @@ const Index = () => {
     storySyncTimerRef.current = setTimeout(() => {
       void persistCurrentStory().catch((error) => {
         toast({
-          title: '聊天处理内容尚未保存',
-          description: error instanceof Error ? error.message : '保存失败，请重试',
+          title: tr("聊天处理内容尚未保存"),
+          description: error instanceof Error ? error.message : tr("保存失败，请重试"),
           variant: 'destructive',
         });
       });
@@ -376,8 +380,8 @@ const Index = () => {
     if (storySyncTimerRef.current) clearTimeout(storySyncTimerRef.current);
     void latestPersistRef.current().catch((error: unknown) => {
       toastRef.current({
-        title: '离开页面时保存暂存故事未成功',
-        description: error instanceof Error ? error.message : '请回到聊天处理页检查最新改动',
+        title: tr("离开页面时保存暂存故事未成功"),
+        description: error instanceof Error ? error.message : tr("请回到聊天处理页检查最新改动"),
         variant: 'destructive',
       });
     });
@@ -401,21 +405,21 @@ const Index = () => {
       navigate(buildEditorChatPath(story.id), { replace: true });
 
       // Build description with swipes stats
-      let description = '已自动暂存，绑定角色后进入故事工作区';
+      let description = tr("已自动暂存，绑定角色后进入故事工作区");
       if (stats && stats.swipesRemoved > 0) {
         const sizeStr = stats.swipesBytesEstimate < 1024
           ? `${stats.swipesBytesEstimate} B`
           : stats.swipesBytesEstimate < 1024 * 1024
             ? `${(stats.swipesBytesEstimate / 1024).toFixed(1)} KB`
             : `${(stats.swipesBytesEstimate / (1024 * 1024)).toFixed(1)} MB`;
-        description = `导入 ${stats.totalMessages} 楼 · 发现 ${stats.swipesRemoved} 条多余备选回复（约 ${sizeStr}），导出时将自动精简`;
+        description = tr("导入 {{v0}} 楼 · 发现 {{v1}} 条多余备选回复（约 {{v2}}），导出时将自动精简", { v0: stats.totalMessages, v1: stats.swipesRemoved, v2: sizeStr });
       }
-      toast({ title: '导入成功', description });
+      toast({ title: tr("导入成功"), description });
     } catch (error) {
       console.error('Auto-save failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({
-        title: '自动暂存失败',
-        description: '聊天已在当前页面打开，但未能写入本地库；请先点右上角「导出」留存备份，再检查磁盘空间或文件库权限。',
+        title: tr("自动暂存失败"),
+        description: tr("聊天已在当前页面打开，但未能写入本地库；请先点右上角「导出」留存备份，再检查磁盘空间或文件库权限。"),
         variant: 'destructive',
       });
     }
@@ -441,7 +445,7 @@ const Index = () => {
     try {
       await persistCurrentStory();
     } catch {
-      toast({ title: '当前故事保存失败，已取消切换', variant: 'destructive' });
+      toast({ title: tr("当前故事保存失败，已取消切换"), variant: 'destructive' });
       return;
     }
     let fresh: ArchiveStory | null = null;
@@ -451,7 +455,7 @@ const Index = () => {
       fresh = null;
     }
     if (!fresh) {
-      toast({ title: '故事读取失败，已取消切换', variant: 'destructive' });
+      toast({ title: tr("故事读取失败，已取消切换"), variant: 'destructive' });
       return;
     }
     hydrateStory(fresh);
@@ -472,8 +476,8 @@ const Index = () => {
       navigate(buildEditorChatPath(currentStoryId, { branchId: nextBranchId }), { replace: true });
     } catch (error) {
       toast({
-        title: '切换分支未成功',
-        description: error instanceof Error ? error.message : '请先保存当前改动后重试',
+        title: tr("切换分支未成功"),
+        description: error instanceof Error ? error.message : tr("请先保存当前改动后重试"),
         variant: 'destructive',
       });
     }
@@ -509,7 +513,7 @@ const Index = () => {
     } catch (error) {
       reservation?.cancelIfUnused();
       toast({
-        title: '暂时未能进入聊天',
+        title: tr("暂时未能进入聊天"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -527,8 +531,8 @@ const Index = () => {
       setAllStories((current) => current.filter((story) => story.id !== target.id));
       if (target.id === currentStoryId) handleReset();
     }, {
-      onSuccess: () => toast({ title: `已删除暂存故事「${target.title}」` }),
-      onFailure: () => toast({ title: '删除暂存故事失败', variant: 'destructive' }),
+      onSuccess: () => toast({ title: tr("已删除暂存故事「{{v0}}」", { v0: target.title }) }),
+      onFailure: () => toast({ title: tr("删除暂存故事失败"), variant: 'destructive' }),
     });
     if (deleted) setDeleteTarget(null);
     return deleted;
@@ -554,15 +558,15 @@ const Index = () => {
       setEditorStoryId(story.id);
       setAllStories((current) => [toStoryIndex(story), ...current.filter((item) => item.id !== story.id)]);
       toast({
-        title: `已绑定到「${character.name}」`,
-        description: carried > 0 ? `${carried} 条总结/故事树已一并带走` : undefined,
+        title: tr("已绑定到「{{v0}}」", { v0: character.name }),
+        description: carried > 0 ? tr("{{v0}} 条总结/故事树已一并带走", { v0: carried }) : undefined,
       });
       navigate(buildEditorChatPath(story.id, currentBranchId ? { branchId: currentBranchId } : undefined), { replace: true });
     } catch (error) {
       console.error('Bind failed:', error instanceof Error ? error.name : 'UnknownError');
       toast({
-        title: '归入角色名下没成功',
-        description: '当前暂存对话并未丢失，请稍后重新点「绑定到角色」再试一次。',
+        title: tr("归入角色名下没成功"),
+        description: tr("当前暂存对话并未丢失，请稍后重新点「绑定到角色」再试一次。"),
         variant: 'destructive',
       });
     }
@@ -579,8 +583,8 @@ const Index = () => {
       } catch {
         setNovelStory(null);
         toast({
-          title: '未能读取当前故事的润色存档',
-          description: '小说视图已按预览模式打开，暂不支持写入润色记录',
+          title: tr("未能读取当前故事的润色存档"),
+          description: tr("小说视图已按预览模式打开，暂不支持写入润色记录"),
         });
       }
     } else {
@@ -599,10 +603,8 @@ const Index = () => {
               <div className="max-w-xl mx-auto animate-fade-in">
             {/* Tour replaces old onboarding */}
             <div className="text-center mb-8">
-              <h2 className="font-display text-3xl mb-3 text-gradient">处理你的对话记录</h2>
-              <p className="text-muted-foreground">
-                导入 SillyTavern 聊天记录，支持正则清理、章节标记、范围导出和多种阅读主题
-              </p>
+              <h2 className="font-display text-3xl mb-3 text-gradient">{tr("处理你的对话记录")}</h2>
+              <p className="text-muted-foreground">{tr("导入 SillyTavern 聊天记录，支持正则清理、章节标记、范围导出和多种阅读主题")}</p>
             </div>
             <ChatImporter onImport={handleImport} initialFile={handoffFile} />
 
@@ -613,13 +615,13 @@ const Index = () => {
             {/* 未绑定暂存列表：书架退役后，临时聊天的唯一入口 */}
             {storiesLoadFailed && (
               <div role="alert" className="mt-6 flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5 text-sm">
-                <span>暂存记录列表读取没成功，原有记录仍保存在库里。</span>
-                <Button variant="outline" size="sm" onClick={() => void refreshStories()}>重新读取</Button>
+                <span>{tr("暂存记录列表读取没成功，原有记录仍保存在库里。")}</span>
+                <Button variant="outline" size="sm" onClick={() => void refreshStories()}>{tr("重新读取")}</Button>
               </div>
             )}
             {unboundStories.length > 0 && (
               <div className="mt-8">
-                <h3 className="text-sm font-medium text-muted-foreground mb-2">未绑定的暂存记录</h3>
+                <h3 className="text-sm font-medium text-muted-foreground mb-2">{tr("未绑定的暂存记录")}</h3>
                 <div className="space-y-2">
                   {unboundStories.map((story) => (
                     <div
@@ -640,11 +642,11 @@ const Index = () => {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate" title={story.title}>{story.title}</p>
                         <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
-                          <span>{story.floorCount} 楼</span>
+                          <span>{tr("{{v0}} 楼", { v0: story.floorCount })}</span>
                           {story.meta.lastModel && <span className="truncate" title={story.meta.lastModel}>{story.meta.lastModel}</span>}
                           <span className="flex items-center gap-0.5">
                             <Clock className="w-3 h-3" />
-                            {new Date(story.updatedAt).toLocaleDateString()}
+                            {new Date(story.updatedAt).toLocaleDateString(getLocale())}
                           </span>
                         </p>
                       </div>
@@ -653,16 +655,16 @@ const Index = () => {
                           event.stopPropagation(); setCopyingStory(story.id);
                           void duplicateArchiveStory(story.id).then(copy => {
                             setAllStories(current => [...current, toStoryIndex(copy)]);
-                            toast({ title: '已复制故事', description: copy.title });
-                          }).catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
+                            toast({ title: tr("已复制故事"), description: copy.title });
+                          }).catch(error => toast({ title: tr("复制失败"), description: String(error), variant: 'destructive' }))
                             .finally(() => setCopyingStory(null));
-                        }}>{copyingStory === story.id ? '正在复制…' : '复制故事'}</Button>
+                        }}>{copyingStory === story.id ? tr("正在复制…") : tr("复制故事")}</Button>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="shrink-0 text-muted-foreground hover:text-destructive"
                         onClick={(e) => { e.stopPropagation(); setDeleteTarget(story); }}
-                        aria-label="删除暂存记录"
+                        aria-label={tr("删除暂存记录")}
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -683,10 +685,9 @@ const Index = () => {
               data-detached-sync-banner
               className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-4 py-2 text-xs text-[color:var(--text-primary)]"
             >
-              <span>当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）</span>
+              <span>{tr("当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）")}</span>
               <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
-                <ExternalLink className="w-3.5 h-3.5 mr-1" />聚焦酒馆窗口
-              </Button>
+                <ExternalLink className="w-3.5 h-3.5 mr-1" />{tr("聚焦酒馆窗口")}</Button>
             </div>
           )}
           {/* 工作态不再放最近故事栏（用户拍板：只在导入前需要）；切故事走全局菜单/窄工具栏 */}
@@ -719,18 +720,16 @@ const Index = () => {
                       type="button"
                       onClick={() => navigate(`/character/${encodeURIComponent(boundCharacterId)}`)}
                       className="tap-target inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-foreground hover:border-primary/40 hover:text-primary transition-colors"
-                      title="打开所属角色主页"
+                      title={tr("打开所属角色主页")}
                     >
-                      <span>{boundCharacter?.displayMeta?.name || boundCharacter?.name || '角色主页'}</span>
+                      <span>{boundCharacter?.displayMeta?.name || boundCharacter?.name || tr("角色主页")}</span>
                     </button>
                   ) : (
                     <Badge
                       variant="outline"
                       className="shrink-0 text-muted-foreground"
-                      title="这条故事尚未绑定角色卡"
-                    >
-                      未绑定
-                    </Badge>
+                      title={tr("这条故事尚未绑定角色卡")}
+                    >{tr("未绑定")}</Badge>
                   )}
                   {(loadedStory?.branches?.length ?? 0) > 0 && (
                     <DropdownMenu>
@@ -738,13 +737,13 @@ const Index = () => {
                         <button
                           type="button"
                           className="tap-target inline-flex items-center gap-1 rounded-md border border-border bg-card px-2 py-0.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          title="切换故事主线或分支"
+                          title={tr("切换故事主线或分支")}
                         >
                           <GitBranch className="w-3 h-3" />
                           <span>
                             {currentBranchId
-                              ? (loadedStory?.branches?.find((b) => b.id === currentBranchId)?.name ?? '分支')
-                              : '主线'}
+                              ? (loadedStory?.branches?.find((b) => b.id === currentBranchId)?.name ?? tr("分支"))
+                              : tr("主线")}
                           </span>
                         </button>
                       </DropdownMenuTrigger>
@@ -752,17 +751,14 @@ const Index = () => {
                         <DropdownMenuItem
                           className={currentBranchId === null ? 'bg-primary/10 text-primary' : ''}
                           onClick={() => { void handleSwitchBranch(null); }}
-                        >
-                          主线（{loadedStory?.session.messages.length ?? 0} 楼）
-                        </DropdownMenuItem>
+                        >{tr("主线（{{v0}} 楼）", { v0: loadedStory?.session.messages.length ?? 0 })}</DropdownMenuItem>
                         {(loadedStory?.branches ?? []).map((b) => (
                           <DropdownMenuItem
                             key={b.id}
                             className={currentBranchId === b.id ? 'bg-primary/10 text-primary' : ''}
                             onClick={() => { void handleSwitchBranch(b.id); }}
                           >
-                            {b.name}（{b.session.messages.length} 楼）
-                          </DropdownMenuItem>
+                            {tr("{{v0}}（{{v1}} 楼）", { v0: b.name, v1: b.session.messages.length })}</DropdownMenuItem>
                         ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -777,21 +773,17 @@ const Index = () => {
                       size="sm"
                       disabled={playBusy}
                       onClick={() => { void runContinuePlay(); }}
-                      title="接着当前剧情进入酒馆继续聊"
+                      title={tr("接着当前剧情进入酒馆继续聊")}
                     >
                       <MessageSquare className="w-4 h-4 mr-1.5" />
-                      {isLiveInDetachedTavern ? '聚焦酒馆' : '继续聊天'}
+                      {isLiveInDetachedTavern ? tr("聚焦酒馆") : tr("继续聊天")}
                     </Button>
                   )}
-                  <Button variant="outline" size="sm" onClick={handleOpenNovel} title="小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）">
-                    <BookOpenCheck className="w-4 h-4 mr-1.5" />
-                    小说视图
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleOpenNovel} title={tr("小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）")}>
+                    <BookOpenCheck className="w-4 h-4 mr-1.5" />{tr("小说视图")}</Button>
                   {!boundCharacterId && (
                     <Button variant="outline" size="sm" onClick={() => setBindDialogOpen(true)}>
-                      <Link2 className="w-4 h-4 mr-1.5" />
-                      绑定到角色
-                    </Button>
+                      <Link2 className="w-4 h-4 mr-1.5" />{tr("绑定到角色")}</Button>
                   )}
                 </>
               }
@@ -821,8 +813,8 @@ const Index = () => {
 
       <DeleteConfirmDialog
         open={!!deleteTarget}
-        title={`删除暂存故事「${deleteTarget?.title ?? ''}」？`}
-        description={`日记、总结和故事树会保留为未绑定记录。当前共 ${deleteTarget?.floorCount ?? 0} 楼。`}
+        title={tr("删除暂存故事「{{v0}}」？", { v0: deleteTarget?.title ?? '' })}
+        description={tr("日记、总结和故事树会保留为未绑定记录。当前共 {{v0}} 楼。", { v0: deleteTarget?.floorCount ?? 0 })}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         fileTarget={deleteTarget ? { store: 'archiveStories', id: deleteTarget.id } : undefined}
         onConfirm={handleDeleteUnbound}
@@ -836,7 +828,7 @@ const Index = () => {
           onComplete={() => {
             setTourCompleted('home');
             setShowTour(false);
-            toast({ title: '引导完成！', description: '您可以清除示例数据并导入自己的文件。' });
+            toast({ title: tr("引导完成！"), description: tr("您可以清除示例数据并导入自己的文件。") });
           }}
           onSkip={() => {
             setTourCompleted('home');

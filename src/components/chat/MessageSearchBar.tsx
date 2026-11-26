@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Search, ChevronUp, ChevronDown, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -17,6 +19,7 @@ interface MessageSearchBarProps {
 
 /** 预览区全文搜索框：补虚拟化后浏览器 Ctrl+F 只能搜可视区的缺口。 */
 export function MessageSearchBar({ query, onQueryChange, total, current, onNext, onPrev }: MessageSearchBarProps) {
+  useI18n();
   const hasQuery = query.trim().length > 0;
   const { isCompact } = useViewport();
   return (
@@ -37,7 +40,7 @@ export function MessageSearchBar({ query, onQueryChange, total, current, onNext,
             e.currentTarget.blur();
           }
         }}
-        placeholder="搜索正文 (Ctrl+F)…"
+        placeholder={tr("搜索正文 (Ctrl+F)…")}
         /* 窄屏收窄输入框：整条搜索栏在 390px 视口里占掉三分之二，
            而它前后还有外观、小说视图、导出。搜关键词一般就几个字，
            w-24 够看；桌面档保留 w-40。 */
@@ -45,21 +48,21 @@ export function MessageSearchBar({ query, onQueryChange, total, current, onNext,
           'min-w-0 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0',
           isCompact ? 'w-24' : 'w-40',
         )}
-        aria-label="搜索消息正文"
+        aria-label={tr("搜索消息正文")}
       />
       {hasQuery && (
         <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground tabular-nums">
-          {total > 0 ? `${current}/${total}` : '无结果'}
+          {total > 0 ? `${current}/${total}` : tr("无结果")}
         </span>
       )}
-      <Button variant="ghost" size="icon" onClick={onPrev} disabled={total === 0} aria-label="上一个命中">
+      <Button variant="ghost" size="icon" onClick={onPrev} disabled={total === 0} aria-label={tr("上一个命中")}>
         <ChevronUp className="h-3.5 w-3.5" />
       </Button>
-      <Button variant="ghost" size="icon" onClick={onNext} disabled={total === 0} aria-label="下一个命中">
+      <Button variant="ghost" size="icon" onClick={onNext} disabled={total === 0} aria-label={tr("下一个命中")}>
         <ChevronDown className="h-3.5 w-3.5" />
       </Button>
       {hasQuery && (
-        <Button variant="ghost" size="icon" onClick={() => onQueryChange('')} aria-label="清除搜索">
+        <Button variant="ghost" size="icon" onClick={() => onQueryChange('')} aria-label={tr("清除搜索")}>
           <X className="h-3.5 w-3.5" />
         </Button>
       )}

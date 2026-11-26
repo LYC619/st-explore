@@ -2,6 +2,7 @@
  * IndexedDB storage management utilities
  */
 
+import { tr } from '@/lib/i18n';
 import { openDB, ALL_STORES, DB_VERSION, type StoreName } from '@/lib/idb';
 import { isRuntimePath, runtimeFileId } from '@/lib/roleplay/paths';
 import { checkChain, validCommit, type WorldCommit } from '@/play/storage/world-commit';
@@ -43,23 +44,23 @@ function withoutCredentials(value: unknown): unknown {
  */
 const STORE_SPECS: readonly StoreSpec[] = [
   // 'books'（书架）已随 2.0 阶段5 退役，不再进备份；旧备份里的 books 数组导入时被忽略
-  { key: 'worldbooks', label: '世界书', isValid: (w) => !!w.id },
-  { key: 'presets', label: '预设', isValid: (p) => !!p.id },
-  { key: 'cards', label: '角色卡', isValid: (c) => !!c.id && !!c.card },
-  { key: 'summaries', label: '总结', isValid: (s) => !!s.id && typeof s.content === 'string' },
-  { key: 'summaryTemplates', label: '总结模板', isValid: (t) => !!t.id && typeof t.content === 'string' },
-  { key: 'stories', label: '故事树', isValid: (s) => !!s.id && Array.isArray(s.nodes) },
-  { key: 'characters', label: '角色档案', isValid: (c) => !!c.id && !!c.card },
-  { key: 'archiveStories', label: '归档故事', isValid: (s) => !!s.id && !!s.session },
-  { key: 'archiveMeta', label: '文件库与游玩设置', isValid: m => typeof m.id === 'string' && !!m.id
+  { key: 'worldbooks', get label() { return tr("世界书"); }, isValid: (w) => !!w.id },
+  { key: 'presets', get label() { return tr("预设"); }, isValid: (p) => !!p.id },
+  { key: 'cards', get label() { return tr("角色卡"); }, isValid: (c) => !!c.id && !!c.card },
+  { key: 'summaries', get label() { return tr("总结"); }, isValid: (s) => !!s.id && typeof s.content === 'string' },
+  { key: 'summaryTemplates', get label() { return tr("总结模板"); }, isValid: (t) => !!t.id && typeof t.content === 'string' },
+  { key: 'stories', get label() { return tr("故事树"); }, isValid: (s) => !!s.id && Array.isArray(s.nodes) },
+  { key: 'characters', get label() { return tr("角色档案"); }, isValid: (c) => !!c.id && !!c.card },
+  { key: 'archiveStories', get label() { return tr("归档故事"); }, isValid: (s) => !!s.id && !!s.session },
+  { key: 'archiveMeta', get label() { return tr("文件库与游玩设置"); }, isValid: m => typeof m.id === 'string' && !!m.id
     && typeof m.schemaVersion === 'number' && Number.isFinite(m.schemaVersion) && typeof m.updatedAt === 'number',
     prepare: m => withoutCredentials(m) as Record<string, unknown> },
-  { key: 'regexes', label: '正则规则集', isValid: (r) => !!r.id && Array.isArray(r.rules) },
-  { key: 'ratingTemplates', label: '评分模板', isValid: (t) => !!t.id && Array.isArray(t.dimensions) },
-  { key: 'roleplayFiles', label: '游玩记忆与记录', isValid: f => typeof f.storyId === 'string' && typeof f.text === 'string'
+  { key: 'regexes', get label() { return tr("正则规则集"); }, isValid: (r) => !!r.id && Array.isArray(r.rules) },
+  { key: 'ratingTemplates', get label() { return tr("评分模板"); }, isValid: (t) => !!t.id && Array.isArray(t.dimensions) },
+  { key: 'roleplayFiles', get label() { return tr("游玩记忆与记录"); }, isValid: f => typeof f.storyId === 'string' && typeof f.text === 'string'
     && isRuntimePath(f.path) && f.id === runtimeFileId(f.storyId, f.path) },
-  { key: 'worldCommits', label: '沙盘世界与回放', isValid: validCommit },
-  { key: 'worldMedia', label: '世界与剧场素材', isValid: validWorldMedia },
+  { key: 'worldCommits', get label() { return tr("沙盘世界与回放"); }, isValid: validCommit },
+  { key: 'worldMedia', get label() { return tr("世界与剧场素材"); }, isValid: validWorldMedia },
 ];
 
 /**
@@ -173,9 +174,9 @@ function locateJsonError(err: unknown, text: string): string {
     const before = text.slice(0, Math.max(0, pos));
     const line = before.split('\n').length;
     const col = pos - before.lastIndexOf('\n');
-    return `JSON 解析失败：第 ${line} 行第 ${col} 列附近（${raw}）`;
+    return tr("JSON 解析失败：第 {{v0}} 行第 {{v1}} 列附近（{{v2}}）", { v0: line, v1: col, v2: raw });
   }
-  return `JSON 解析失败：${raw}`;
+  return tr("JSON 解析失败：{{v0}}", { v0: raw });
 }
 
 /**
@@ -186,11 +187,11 @@ export async function parseBackupFile(file: File): Promise<ParsedBackup> {
   const isJsonName = /\.json$/i.test(file.name);
   const isJsonType = !file.type || file.type.includes('json') || file.type === 'text/plain';
   if (!isJsonName && !isJsonType) {
-    throw new BackupError(`文件类型不对：请选择 .json 备份文件（当前：${file.name || file.type || '未知'}）`);
+    throw new BackupError(tr("文件类型不对：请选择 .json 备份文件（当前：{{v0}}）", { v0: file.name || file.type || tr("未知") }));
   }
   if (file.size > MAX_BACKUP_BYTES) {
     throw new BackupError(
-      `文件过大（${formatBytes(file.size)}），超过 ${formatBytes(MAX_BACKUP_BYTES)} 上限，已拒绝导入以免撑爆内存`,
+      tr("文件过大（{{v0}}），超过 {{v1}} 上限，已拒绝导入以免撑爆内存", { v0: formatBytes(file.size), v1: formatBytes(MAX_BACKUP_BYTES) }),
     );
   }
 
@@ -203,11 +204,11 @@ export async function parseBackupFile(file: File): Promise<ParsedBackup> {
   }
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    throw new BackupError('备份内容不是一个 JSON 对象，格式无效');
+    throw new BackupError(tr("备份内容不是一个 JSON 对象，格式无效"));
   }
   const obj = data as Record<string, unknown>;
   if (obj.app !== 'silly-tavern-explorer') {
-    throw new BackupError('这不像本应用导出的备份（缺少 app 标记），已拒绝导入');
+    throw new BackupError(tr("这不像本应用导出的备份（缺少 app 标记），已拒绝导入"));
   }
 
   const byStore: Partial<Record<StoreName, unknown[]>> = {};
@@ -245,12 +246,12 @@ function validItems(spec: StoreSpec, items: unknown[]): Record<string, unknown>[
 function backupWorlds(parsed: ParsedBackup): Map<string, WorldCommit[]> {
   const groups = new Map<string, WorldCommit[]>();
   for (const item of parsed.byStore.worldCommits ?? []) {
-    if (!validCommit(item)) throw new BackupError('沙盘世界备份含损坏提交，未写入任何数据');
+    if (!validCommit(item)) throw new BackupError(tr("沙盘世界备份含损坏提交，未写入任何数据"));
     const rows = groups.get(item.worldId) ?? []; rows.push(item); groups.set(item.worldId, rows);
   }
   for (const rows of groups.values()) {
     rows.sort((a, b) => a.revision - b.revision);
-    try { checkChain(rows); } catch { throw new BackupError('沙盘世界历史不完整，未写入任何数据'); }
+    try { checkChain(rows); } catch { throw new BackupError(tr("沙盘世界历史不完整，未写入任何数据")); }
   }
   return groups;
 }
@@ -304,7 +305,7 @@ export async function importBackup(parsed: ParsedBackup): Promise<BackupCounts> 
   const db = await openDB();
   const targets = STORE_SPECS.filter((s) => db.objectStoreNames.contains(s.key));
   if (targets.length === 0) {
-    throw new BackupError('数据库缺少可写入的对象存储');
+    throw new BackupError(tr("数据库缺少可写入的对象存储"));
   }
 
   return new Promise<BackupCounts>((resolve, reject) => {
@@ -318,13 +319,13 @@ export async function importBackup(parsed: ParsedBackup): Promise<BackupCounts> 
         'readwrite',
       );
     } catch (e) {
-      reject(e instanceof Error ? e : new BackupError('无法开启写入事务'));
+      reject(e instanceof Error ? e : new BackupError(tr("无法开启写入事务")));
       return;
     }
 
     tx.oncomplete = () => resolve(counts);
-    tx.onerror = () => reject(tx.error ?? new BackupError('恢复失败，事务出错（未改动现有数据）'));
-    tx.onabort = () => reject(tx.error ?? new BackupError('恢复失败，事务已回滚（未改动现有数据）'));
+    tx.onerror = () => reject(tx.error ?? new BackupError(tr("恢复失败，事务出错（未改动现有数据）")));
+    tx.onabort = () => reject(tx.error ?? new BackupError(tr("恢复失败，事务已回滚（未改动现有数据）")));
 
     try {
       for (const spec of targets) {
@@ -353,7 +354,7 @@ export async function importBackup(parsed: ParsedBackup): Promise<BackupCounts> 
       } catch {
         /* 事务可能已在中止 */
       }
-      reject(e instanceof Error ? e : new BackupError('恢复失败，写入被中止（未改动现有数据）'));
+      reject(e instanceof Error ? e : new BackupError(tr("恢复失败，写入被中止（未改动现有数据）")));
     }
   });
 }

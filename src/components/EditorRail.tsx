@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 编辑区窄工具栏（0816 反馈）：固定在全局侧栏右侧，编辑区内所有页面共用。
  * 聊天处理、总结和故事树共享当前故事；没有记忆时分别回落到各自选择/导入页。
@@ -31,17 +33,18 @@ interface RailItem {
 }
 
 const RAIL_ITEMS: RailItem[] = [
-  { key: 'chat', label: '聊天处理', icon: MessageSquare, fallbackPath: '/chat', storyNav: true, prefix: '/chat' },
-  { key: 'summary', label: '总结', icon: ScrollText, fallbackPath: '/tools?focus=summary', storyNav: true, focus: 'summary' },
-  { key: 'story-tree', label: '故事树', icon: Network, fallbackPath: '/tools?focus=story-tree', storyNav: true, focus: 'story-tree' },
-  { key: 'worldbook', label: '世界书', icon: BookOpen, fallbackPath: '/tools?focus=worldbook', prefix: '/worldbook', focus: 'worldbook' },
-  { key: 'card', label: '角色卡', icon: IdCard, fallbackPath: '/card-viewer', prefix: '/card-viewer' },
-  { key: 'preset', label: '预设', icon: SlidersHorizontal, fallbackPath: '/presets?mode=select', prefix: '/preset' },
-  { key: 'regex', label: '正则', icon: Regex, fallbackPath: '/regex', prefix: '/regex' },
-  { key: 'beautify', label: '美化', icon: Palette, fallbackPath: '/beautify', prefix: '/beautify' },
+  { key: 'chat', get label() { return tr("聊天处理"); }, icon: MessageSquare, fallbackPath: '/chat', storyNav: true, prefix: '/chat' },
+  { key: 'summary', get label() { return tr("总结"); }, icon: ScrollText, fallbackPath: '/tools?focus=summary', storyNav: true, focus: 'summary' },
+  { key: 'story-tree', get label() { return tr("故事树"); }, icon: Network, fallbackPath: '/tools?focus=story-tree', storyNav: true, focus: 'story-tree' },
+  { key: 'worldbook', get label() { return tr("世界书"); }, icon: BookOpen, fallbackPath: '/tools?focus=worldbook', prefix: '/worldbook', focus: 'worldbook' },
+  { key: 'card', get label() { return tr("角色卡"); }, icon: IdCard, fallbackPath: '/card-viewer', prefix: '/card-viewer' },
+  { key: 'preset', get label() { return tr("预设"); }, icon: SlidersHorizontal, fallbackPath: '/presets?mode=select', prefix: '/preset' },
+  { key: 'regex', get label() { return tr("正则"); }, icon: Regex, fallbackPath: '/regex', prefix: '/regex' },
+  { key: 'beautify', get label() { return tr("美化"); }, icon: Palette, fallbackPath: '/beautify', prefix: '/beautify' },
 ];
 
 export function EditorRail() {
+  useI18n();
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const [storyId, setStoryId] = useState<string | null>(() => getEditorStoryId());
@@ -59,7 +62,7 @@ export function EditorRail() {
   return (
     <nav
       data-editor-rail
-      aria-label="编辑区工具"
+      aria-label={tr("编辑区工具")}
       className="w-16 shrink-0 overflow-y-auto border-r border-[color:var(--border-subtle)] bg-chrome px-1.5 py-2"
     >
       <div className="flex flex-col gap-1">

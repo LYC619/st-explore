@@ -1,3 +1,5 @@
+import { tr, getLocale } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useRef, useState } from 'react';
 import { Database, Eye, FolderCog, Info, KeyRound, Settings, BookText } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
@@ -28,12 +30,13 @@ import { BuiltinPromptsPanel } from '@/components/settings/BuiltinPromptsPanel';
 import { cn } from '@/lib/utils';
 
 const SECTION_ITEMS = [
-  { key: 'display', label: '显示', icon: Eye },
-  { key: 'ai', label: 'AI 配置', icon: KeyRound },
-  { key: 'prompts', label: '内置提示词', icon: BookText },
-  { key: 'directories', label: '目录与连接', icon: FolderCog },
-  { key: 'data', label: '数据与备份', icon: Database },
-  { key: 'about', label: '关于与引导', icon: Info },
+  // English uses a section noun here; the same Chinese word is also the Show action.
+  { key: 'display', get label() { return getLocale() === 'en' ? 'Display' : tr("显示"); }, icon: Eye },
+  { key: 'ai', get label() { return tr("AI 配置"); }, icon: KeyRound },
+  { key: 'prompts', get label() { return tr("内置提示词"); }, icon: BookText },
+  { key: 'directories', get label() { return tr("目录与连接"); }, icon: FolderCog },
+  { key: 'data', get label() { return tr("数据与备份"); }, icon: Database },
+  { key: 'about', get label() { return tr("关于与引导"); }, icon: Info },
 ] satisfies Array<{ key: SettingsSection; label: string; icon: typeof Eye }>;
 
 function renderSettingsPanel(
@@ -47,10 +50,8 @@ function renderSettingsPanel(
       return (
         <div className="space-y-3" data-tour="ai-config">
           <div className="flex items-center gap-1.5">
-            <p className="text-sm text-muted-foreground">全应用 AI 能力共用这里的提供商配置。</p>
-            <HelpCard>
-              支持保存多个 OpenAI 兼容提供商并随时切换，可拉取模型列表、测试连通。密钥仅保存在本地，客户端另镜像到系统配置目录，不写入库文件夹。
-            </HelpCard>
+            <p className="text-sm text-muted-foreground">{tr("全应用 AI 能力共用这里的提供商配置。")}</p>
+            <HelpCard>{tr("支持保存多个 OpenAI 兼容提供商并随时切换，可拉取模型列表、测试连通。密钥仅保存在本地，客户端另镜像到系统配置目录，不写入库文件夹。")}</HelpCard>
           </div>
           <APIConfigCard onDirtyStateChange={onAiDirtyStateChange} />
         </div>
@@ -67,6 +68,7 @@ function renderSettingsPanel(
 }
 
 const SettingsPage = () => {
+  useI18n();
   const [activeSection, setActiveSection] = useState<SettingsSection>(() => loadSettingsSection());
   const [pendingSection, setPendingSection] = useState<SettingsSection | null>(null);
   const aiDirtyRef = useRef<{ dirty: boolean; save: () => boolean }>({ dirty: false, save: () => true });
@@ -96,14 +98,14 @@ const SettingsPage = () => {
       leftActions={
         <div className="flex items-center gap-2">
           <Settings className="w-4 h-4 text-primary" />
-          <span className="font-display font-semibold">设置</span>
+          <span className="font-display font-semibold">{tr("设置")}</span>
         </div>
       }
     >
       <div className="mx-auto w-full max-w-6xl px-4 py-5 md:px-6">
         <div className="grid gap-5 md:grid-cols-[190px_minmax(0,1fr)] md:gap-8">
           <nav
-            aria-label="设置分区"
+            aria-label={tr("设置分区")}
             className="flex gap-1 overflow-x-auto border-b border-border pb-2 md:sticky md:top-0 md:h-fit md:flex-col md:overflow-visible md:border-b-0 md:border-r md:pb-0 md:pr-4"
           >
             {SECTION_ITEMS.map((item) => {
@@ -141,13 +143,11 @@ const SettingsPage = () => {
       <AlertDialog open={pendingSection !== null} onOpenChange={(open) => { if (!open) setPendingSection(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>AI 服务配置还未保存</AlertDialogTitle>
-            <AlertDialogDescription>
-              你刚修改了接口地址、密钥或模型，切换设置分区会丢失未保存的改动。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tr("AI 服务配置还未保存")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("你刚修改了接口地址、密钥或模型，切换设置分区会丢失未保存的改动。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel autoFocus>继续编辑</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>{tr("继续编辑")}</AlertDialogCancel>
             <Button
               variant="outline"
               onClick={() => {
@@ -155,9 +155,7 @@ const SettingsPage = () => {
                 setPendingSection(null);
                 if (next) applySection(next);
               }}
-            >
-              放弃修改并切换
-            </Button>
+            >{tr("放弃修改并切换")}</Button>
             <AlertDialogAction
               onClick={(event) => {
                 event.preventDefault();
@@ -167,9 +165,7 @@ const SettingsPage = () => {
                   if (next) applySection(next);
                 }
               }}
-            >
-              保存并切换
-            </AlertDialogAction>
+            >{tr("保存并切换")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

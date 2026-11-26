@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 批量打标签弹窗（10.2-B4）：给所选角色批量添加标签（并集，不覆盖已有）。
  * 选项 = 内置打底 ∪ 库里已出现的标签；也可输入「类别/xx」自建。
@@ -27,6 +29,7 @@ interface BatchTagDialogProps {
 }
 
 export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onDone }: BatchTagDialogProps) {
+  useI18n();
   const { toast } = useToast();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [custom, setCustom] = useState('');
@@ -75,13 +78,13 @@ export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onD
           return { ...applyCharacterTagPatch(current, { tags: merged }), updatedAt: Date.now() };
         });
       }
-      toast({ title: `已为 ${targets.length} 张卡添加 ${tags.size} 个标签` });
+      toast({ title: tr("已为 {{v0}} 张卡添加 {{v1}} 个标签", { v0: targets.length, v1: tags.size }) });
       setPicked(new Set());
       setCustom('');
       await onDone();
       onOpenChange(false);
     } catch {
-      toast({ title: '批量打标签失败', variant: 'destructive' });
+      toast({ title: tr("批量打标签失败"), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -91,8 +94,8 @@ export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onD
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>批量打标签</DialogTitle>
-          <DialogDescription>给所选 {targets.length} 张卡添加标签（并集，不影响已有标签）。</DialogDescription>
+          <DialogTitle>{tr("批量打标签")}</DialogTitle>
+          <DialogDescription>{tr("给所选 {{v0}} 张卡添加标签（并集，不影响已有标签）。", { v0: targets.length })}</DialogDescription>
         </DialogHeader>
         <div className="max-h-[50vh] overflow-y-auto space-y-3 pr-1">
           {cats.map((cat) => {
@@ -100,7 +103,7 @@ export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onD
             if (opts.length === 0) return null;
             return (
               <section key={cat}>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">{cat}</p>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">{tr(cat)}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {opts.map((o) => (
                     <button
@@ -113,7 +116,7 @@ export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onD
                           : 'border-[color:var(--border-normal)] text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]',
                       )}
                     >
-                      {o.label}
+                      {tr(o.label)}
                     </button>
                   ))}
                 </div>
@@ -121,20 +124,18 @@ export function BatchTagDialog({ open, onOpenChange, targets, allCharacters, onD
             );
           })}
           <section>
-            <p className="text-xs font-medium text-muted-foreground mb-1.5">自建（格式「类别/子标签」，无类别归未分类）</p>
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">{tr("自建（格式「类别/子标签」，无类别归未分类）")}</p>
             <Input
               value={custom}
               onChange={(e) => setCustom(e.target.value)}
-              placeholder="如 世界观/蒸汽朋克"
+              placeholder={tr("如 世界观/蒸汽朋克")}
               className="text-sm"
             />
           </section>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
-          <Button onClick={handleApply} disabled={busy || (picked.size === 0 && !custom.trim())}>
-            应用到 {targets.length} 张卡
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
+          <Button onClick={handleApply} disabled={busy || (picked.size === 0 && !custom.trim())}>{tr("应用到 {{v0}} 张卡", { v0: targets.length })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -1,3 +1,5 @@
+import { formatList, tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Trash2 } from 'lucide-react';
@@ -28,12 +30,13 @@ function strategyIcon(entry: WorldBookEntry) {
 /** 关键词格的悬浮内容：主关键词一行，有次要关键词再补一行说明它是「次要」 */
 function keywordPreview(entry: WorldBookEntry): string {
   const lines: string[] = [];
-  if (entry.key.length > 0) lines.push(entry.key.join('、'));
-  if (entry.keysecondary.length > 0) lines.push(`次要关键词：${entry.keysecondary.join('、')}`);
+  if (entry.key.length > 0) lines.push(formatList(entry.key));
+  if (entry.keysecondary.length > 0) lines.push(tr("次要关键词：{{v0}}", { v0: formatList(entry.keysecondary) }));
   return lines.join('\n');
 }
 
 export function EntryListRow({ entry, entryKey, selected, onClick, onToggleEnabled, onDelete, batchMode, batchChecked, onBatchToggle }: Props) {
+  useI18n();
   return (
     <tr
       data-entry-key={entryKey}
@@ -61,7 +64,7 @@ export function EntryListRow({ entry, entryKey, selected, onClick, onToggleEnabl
           鼠标停一下就能读到才是这一格最有用的信息 */}
       <HoverPreview text={entry.content || entry.comment}>
         <td className="px-2 py-1.5 font-medium truncate max-w-[200px]">
-          {entry.comment || '(无标题)'}
+          {entry.comment || tr("(无标题)")}
         </td>
       </HoverPreview>
       {/* 原来这格挂的是 title={entry.content}，可显示的是关键词，对不上；
@@ -81,8 +84,8 @@ export function EntryListRow({ entry, entryKey, selected, onClick, onToggleEnabl
             <button
               onClick={onDelete}
               className="text-muted-foreground hover:text-destructive transition-colors inline-flex"
-              aria-label="删除此条目"
-              title="删除此条目"
+              aria-label={tr("删除此条目")}
+              title={tr("删除此条目")}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>

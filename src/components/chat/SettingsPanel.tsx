@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { BookOpen, MessageCircle, Minus, Sparkles, SlidersHorizontal } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -9,11 +11,11 @@ import { PAPER_WIDTH_ADAPTIVE, PAPER_WIDTH_FULL } from '@/lib/session-storage';
 import type { ThemeStyle, ExportSettings, PrefixMode } from '@/types/chat';
 
 const FONT_OPTIONS = [
-  { value: 'sans-serif', label: '系统默认' },
-  { value: '"Noto Serif SC", "Source Han Serif SC", serif', label: '宋体' },
-  { value: '"LXGW WenKai", "KaiTi", cursive', label: '楷体' },
-  { value: '"Noto Sans SC", "Source Han Sans SC", sans-serif', label: '黑体' },
-  { value: '"JetBrains Mono", "Fira Code", monospace', label: '等宽' },
+  { value: 'sans-serif', get label() { return tr("系统默认"); } },
+  { value: '"Noto Serif SC", "Source Han Serif SC", serif', get label() { return tr("宋体"); } },
+  { value: '"LXGW WenKai", "KaiTi", cursive', get label() { return tr("楷体"); } },
+  { value: '"Noto Sans SC", "Source Han Sans SC", sans-serif', get label() { return tr("黑体"); } },
+  { value: '"JetBrains Mono", "Fira Code", monospace', get label() { return tr("等宽"); } },
 ];
 
 interface SettingsPanelProps {
@@ -22,17 +24,17 @@ interface SettingsPanelProps {
 }
 
 const themes: { id: ThemeStyle; name: string; icon: React.ReactNode; desc: string }[] = [
-  { id: 'elegant', name: '典雅', icon: <Sparkles className="w-4 h-4" />, desc: '装饰边框，书籍排版' },
-  { id: 'novel', name: '小说', icon: <BookOpen className="w-4 h-4" />, desc: '经典小说对话格式' },
-  { id: 'social', name: '社交', icon: <MessageCircle className="w-4 h-4" />, desc: '聊天气泡样式' },
-  { id: 'minimal', name: '简约', icon: <Minus className="w-4 h-4" />, desc: '简洁左侧边框' },
+  { id: 'elegant', get name() { return tr("典雅"); }, icon: <Sparkles className="w-4 h-4" />, get desc() { return tr("装饰边框，书籍排版"); } },
+  { id: 'novel', get name() { return tr("小说"); }, icon: <BookOpen className="w-4 h-4" />, get desc() { return tr("经典小说对话格式"); } },
+  { id: 'social', get name() { return tr("社交"); }, icon: <MessageCircle className="w-4 h-4" />, get desc() { return tr("聊天气泡样式"); } },
+  { id: 'minimal', get name() { return tr("简约"); }, icon: <Minus className="w-4 h-4" />, get desc() { return tr("简洁左侧边框"); } },
 ];
 
 const prefixModes: { id: PrefixMode; name: string; desc: string }[] = [
-  { id: 'name', name: '角色名', desc: '使用对话中的角色与玩家名称' },
-  { id: 'human-assistant', name: '问答角色前缀', desc: '固定标为 Human / Assistant' },
-  { id: 'user-model', name: '玩家与模型标识', desc: '固定标为 user / model' },
-  { id: 'none', name: '无前缀', desc: '仅导出台词与描写正文' },
+  { id: 'name', get name() { return tr("角色名"); }, get desc() { return tr("使用对话中的角色与玩家名称"); } },
+  { id: 'human-assistant', get name() { return tr("问答角色前缀"); }, get desc() { return tr("固定标为 Human / Assistant"); } },
+  { id: 'user-model', get name() { return tr("玩家与模型标识"); }, get desc() { return tr("固定标为 user / model"); } },
+  { id: 'none', get name() { return tr("无前缀"); }, get desc() { return tr("仅导出台词与描写正文"); } },
 ];
 
 /**
@@ -40,6 +42,7 @@ const prefixModes: { id: PrefixMode; name: string; desc: string }[] = [
  * 给阅读区让出空间。包含主题、字号、宽度、时间戳、字体、TXT 导出格式。
  */
 export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps) {
+  useI18n();
   const updateSetting = <K extends keyof ExportSettings>(
     key: K,
     value: ExportSettings[K]
@@ -51,15 +54,13 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
     <Popover>
       <PopoverTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
-          <SlidersHorizontal className="w-4 h-4" />
-          外观
-        </Button>
+          <SlidersHorizontal className="w-4 h-4" />{tr("外观")}</Button>
       </PopoverTrigger>
       <PopoverContent className="w-80 max-h-[70vh] overflow-y-auto" align="end">
         <div className="space-y-5">
           {/* 主题风格 */}
           <div className="space-y-2">
-            <Label className="text-sm font-display">主题风格</Label>
+            <Label className="text-sm font-display">{tr("主题风格")}</Label>
             <div className="grid grid-cols-2 gap-2">
               {themes.map((theme) => (
                 <button
@@ -84,7 +85,7 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
           {/* 字号 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">字号</Label>
+              <Label className="text-sm">{tr("字号")}</Label>
               <span className="text-xs text-muted-foreground">{settings.fontSize}px</span>
             </div>
             <Slider
@@ -99,13 +100,13 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
           {/* 宽度 */}
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <Label className="text-sm">阅读宽度</Label>
+              <Label className="text-sm">{tr("阅读宽度")}</Label>
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground tabular-nums mr-1">
                   {settings.paperWidth <= 0
-                    ? '自适应'
+                    ? tr("自适应")
                     : settings.paperWidth >= PAPER_WIDTH_FULL
-                      ? '铺满可用宽度'
+                      ? tr("铺满可用宽度")
                       : `${settings.paperWidth}px`}
                 </span>
                 <button
@@ -117,22 +118,18 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
                       ? 'border-primary bg-primary/10 text-primary font-medium'
                       : 'border-border text-muted-foreground hover:text-foreground'
                   }`}
-                >
-                  自适应
-                </button>
+                >{tr("自适应")}</button>
                 <button
                   type="button"
                   onClick={() => updateSetting('paperWidth', settings.paperWidth >= PAPER_WIDTH_FULL ? PAPER_WIDTH_ADAPTIVE : PAPER_WIDTH_FULL)}
                   aria-pressed={settings.paperWidth >= PAPER_WIDTH_FULL}
-                  aria-label="铺满可用宽度"
+                  aria-label={tr("铺满可用宽度")}
                   className={`tap-target rounded px-2 py-0.5 text-xs border transition-colors ${
                     settings.paperWidth >= PAPER_WIDTH_FULL
                       ? 'border-primary bg-primary/10 text-primary font-medium'
                       : 'border-border text-muted-foreground hover:text-foreground'
                   }`}
-                >
-                  铺满
-                </button>
+                >{tr("铺满")}</button>
               </div>
             </div>
             {settings.paperWidth < PAPER_WIDTH_FULL && (
@@ -149,7 +146,7 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
           {/* 社交气泡头像 */}
           {settings.theme === 'social' && (
             <div className="flex items-center justify-between">
-              <Label className="text-sm">显示气泡头像</Label>
+              <Label className="text-sm">{tr("显示气泡头像")}</Label>
               <Switch
                 checked={settings.showAvatar}
                 onCheckedChange={(checked) => updateSetting('showAvatar', checked)}
@@ -159,7 +156,7 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
 
           {/* 时间戳 */}
           <div className="flex items-center justify-between">
-            <Label className="text-sm">显示时间戳</Label>
+            <Label className="text-sm">{tr("显示时间戳")}</Label>
             <Switch
               checked={settings.showTimestamp}
               onCheckedChange={(checked) => updateSetting('showTimestamp', checked)}
@@ -169,8 +166,8 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
           {/* 生成模型 */}
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <Label className="text-sm">显示模型</Label>
-              <p className="text-xs text-muted-foreground">在角色名旁标出这一楼是哪个模型生成的（记录里没写就不显示）。</p>
+              <Label className="text-sm">{tr("显示模型")}</Label>
+              <p className="text-xs text-muted-foreground">{tr("在角色名旁标出这一楼是哪个模型生成的（记录里没写就不显示）。")}</p>
             </div>
             <Switch
               checked={settings.showModel !== false}
@@ -180,13 +177,13 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
 
           {/* 预览字体 */}
           <div className="space-y-2">
-            <Label className="text-sm">预览字体</Label>
+            <Label className="text-sm">{tr("预览字体")}</Label>
             <Select
               value={settings.fontFamily || 'sans-serif'}
               onValueChange={(value) => updateSetting('fontFamily', value)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="选择字体" />
+                <SelectValue placeholder={tr("选择字体")} />
               </SelectTrigger>
               <SelectContent>
                 {FONT_OPTIONS.map((f) => (
@@ -200,13 +197,13 @@ export function SettingsPanel({ settings, onSettingsChange }: SettingsPanelProps
 
           {/* TXT 导出格式 */}
           <div className="space-y-2">
-            <Label className="text-sm">TXT 导出格式</Label>
+            <Label className="text-sm">{tr("TXT 导出格式")}</Label>
             <Select
               value={settings.prefixMode}
               onValueChange={(value: PrefixMode) => updateSetting('prefixMode', value)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="选择前缀模式" />
+                <SelectValue placeholder={tr("选择前缀模式")} />
               </SelectTrigger>
               <SelectContent>
                 {prefixModes.map((mode) => (

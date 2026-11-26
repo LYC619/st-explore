@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { memo, useRef } from 'react';
 import {
   Bookmark,
@@ -57,7 +60,7 @@ function renderPreviewHighlight(content: string, rule: RegexRule): React.ReactNo
 
 function formatTime(timestamp?: number): string {
   if (!timestamp) return '';
-  return new Date(timestamp).toLocaleString('zh-CN', {
+  return new Date(timestamp).toLocaleString(getLocale(), {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -115,6 +118,7 @@ export const MessageRow = memo(function MessageRow({
   onCaptureMessage,
   characterAvatarUrl,
 }: MessageRowProps) {
+  useI18n();
   const captureText = useRef('');
   const rowRef = useRef<HTMLDivElement>(null);
   const realFloor = message.rawFloor ?? index;
@@ -124,7 +128,7 @@ export const MessageRow = memo(function MessageRow({
   const model = !isUser && showModel ? formatMessageModelLabel(rawData) : undefined;
   const displayTimestamp = message.timestamp ?? parseSTDate(rawData?.send_date);
   const generationHint = rawData?.gen_started || rawData?.gen_finished
-    ? `生成耗时：${rawData.gen_started ?? '未记录'} → ${rawData.gen_finished ?? '未记录'}`
+    ? tr("生成耗时：{{v0}} → {{v1}}", { v0: rawData.gen_started ?? tr("未记录"), v1: rawData.gen_finished ?? tr("未记录") })
     : undefined;
   const speakerName = message.name || (isUser ? userName : charName);
 
@@ -172,12 +176,10 @@ export const MessageRow = memo(function MessageRow({
           <div className="mb-1.5 inline-flex items-center gap-1 rounded bg-muted/70 px-1.5 py-0.5 text-xs text-muted-foreground">
             {message.ooc ? (
               <>
-                <MessageSquareDashed className="w-3 h-3" />OOC / 场外备注
-              </>
+                <MessageSquareDashed className="w-3 h-3" />{tr("OOC / 场外备注")}</>
             ) : (
               <>
-                <EyeOff className="w-3 h-3" />酒馆中已隐藏
-                {onUnhideMessage && (
+                <EyeOff className="w-3 h-3" />{tr("酒馆中已隐藏")}{onUnhideMessage && (
                   <button
                     type="button"
                     className="ml-1 rounded px-1.5 py-0.5 text-[11px] text-primary hover:bg-primary/10"
@@ -185,9 +187,7 @@ export const MessageRow = memo(function MessageRow({
                       event.stopPropagation();
                       onUnhideMessage(message.id, realFloor);
                     }}
-                  >
-                    恢复显示
-                  </button>
+                  >{tr("恢复显示")}</button>
                 )}
               </>
             )}
@@ -213,11 +213,11 @@ export const MessageRow = memo(function MessageRow({
                   ) : (
                     <BookmarkPlus className="w-3.5 h-3.5" />
                   )}
-                  <span>{hasMarker ? '已标记' : '设章节'}</span>
+                  <span>{hasMarker ? tr("已标记") : tr("设章节")}</span>
                 </div>
               </TooltipTrigger>
               <TooltipContent side="left">
-                {hasMarker ? '点击修改章节标题' : '点击把这一楼设为新章起点'}
+                {hasMarker ? tr("点击修改章节标题") : tr("点击把这一楼设为新章起点")}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -253,7 +253,7 @@ export const MessageRow = memo(function MessageRow({
                   disabled={message.swipeId <= 0}
                   onClick={() => onSwipeSelect(message.id, message.swipeId - 1)}
                   className="tap-target inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
-                  aria-label="上一条回复版本"
+                  aria-label={tr("上一条回复版本")}
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
@@ -265,17 +265,15 @@ export const MessageRow = memo(function MessageRow({
                   disabled={message.swipeId >= message.swipeTotal - 1}
                   onClick={() => onSwipeSelect(message.id, message.swipeId + 1)}
                   className="tap-target inline-flex h-5 w-5 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:pointer-events-none"
-                  aria-label="下一条回复版本"
+                  aria-label={tr("下一条回复版本")}
                 >
                   <ChevronRight className="w-3.5 h-3.5" />
                 </button>
                 {message.swipeIsSteEdit && (
                   <span
                     className="ml-0.5 rounded border border-primary/40 px-1 py-px text-[11px] leading-none text-primary/80"
-                    title="重复导入时保留的本地修改版（酒馆新回复可通过左右切换查看）"
-                  >
-                    本地精修版
-                  </span>
+                    title={tr("重复导入时保留的本地修改版（酒馆新回复可通过左右切换查看）")}
+                  >{tr("本地精修版")}</span>
                 )}
               </span>
             )}
@@ -287,7 +285,7 @@ export const MessageRow = memo(function MessageRow({
                 <button
                   type="button"
                   className="tap-target h-7 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                  aria-label={`收录第 ${realFloor} 楼`}
+                  aria-label={tr("收录第 {{v0}} 楼", { v0: realFloor })}
                   onMouseDown={(event) => {
                     captureText.current = readSelectedSnippet();
                     event.preventDefault();
@@ -297,9 +295,7 @@ export const MessageRow = memo(function MessageRow({
                     onCaptureMessage(message.id, captureText.current || message.content);
                     captureText.current = '';
                   }}
-                >
-                  收录
-                </button>
+                >{tr("收录")}</button>
               )}
               {onHideMessage && !message.hidden && !message.ooc && (
                 <Tooltip>
@@ -307,7 +303,7 @@ export const MessageRow = memo(function MessageRow({
                     <button
                       type="button"
                       className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`隐藏第 ${realFloor} 楼`}
+                      aria-label={tr("隐藏第 {{v0}} 楼", { v0: realFloor })}
                       onClick={(e) => {
                         e.stopPropagation();
                         onHideMessage(message.id, realFloor);
@@ -316,7 +312,7 @@ export const MessageRow = memo(function MessageRow({
                       <EyeOff className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>隐藏本楼</TooltipContent>
+                  <TooltipContent>{tr("隐藏本楼")}</TooltipContent>
                 </Tooltip>
               )}
               {onEditMessage && (
@@ -326,7 +322,7 @@ export const MessageRow = memo(function MessageRow({
                       type="button"
                       data-tour="msg-edit-pencil"
                       className="tap-target flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                      aria-label={`编辑第 ${realFloor} 楼`}
+                      aria-label={tr("编辑第 {{v0}} 楼", { v0: realFloor })}
                       onClick={(e) => {
                         e.stopPropagation();
                         onEditMessage(message.id, realFloor);
@@ -335,7 +331,7 @@ export const MessageRow = memo(function MessageRow({
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent>编辑本楼</TooltipContent>
+                  <TooltipContent>{tr("编辑本楼")}</TooltipContent>
                 </Tooltip>
               )}
             </div>

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 「绑定到角色」选择框（定稿第六章）：未绑定聊天随时绑定角色卡，原地升级为故事工作区。
  */
@@ -18,6 +20,7 @@ interface BindStoryDialogProps {
 }
 
 export function BindStoryDialog({ open, onOpenChange, onSelect }: BindStoryDialogProps) {
+  useI18n();
   const navigate = useNavigate();
   const [characters, setCharacters] = useState<ArchiveCharacter[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -38,17 +41,15 @@ export function BindStoryDialog({ open, onOpenChange, onSelect }: BindStoryDialo
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="font-display">绑定到角色</DialogTitle>
-          <DialogDescription>
-            这份聊天记录会成为所选角色名下的归档故事，章节标记、收藏和已生成的总结/故事树一并带走。
-          </DialogDescription>
+          <DialogTitle className="font-display">{tr("绑定到角色")}</DialogTitle>
+          <DialogDescription>{tr("这份聊天记录会成为所选角色名下的归档故事，章节标记、收藏和已生成的总结/故事树一并带走。")}</DialogDescription>
         </DialogHeader>
 
         {loaded && characters.length === 0 ? (
           <div className="py-8 text-center space-y-3">
             <Users className="w-10 h-10 mx-auto text-muted-foreground/50" />
-            <p className="text-sm text-muted-foreground">角色库还是空的，先导入一张角色卡</p>
-            <Button size="sm" onClick={() => navigate('/library')}>去角色库</Button>
+            <p className="text-sm text-muted-foreground">{tr("角色库还是空的，先导入一张角色卡")}</p>
+            <Button size="sm" onClick={() => navigate('/library')}>{tr("去角色库")}</Button>
           </div>
         ) : (
           <>
@@ -56,7 +57,7 @@ export function BindStoryDialog({ open, onOpenChange, onSelect }: BindStoryDialo
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="搜索角色名"
+                placeholder={tr("搜索角色名")}
               />
             )}
             {/* 原生滚动：Radix ScrollArea 在 max-h 弹性容器里拿不到确定高度，列表会溢出无滚动条 */}
@@ -88,7 +89,7 @@ export function BindStoryDialog({ open, onOpenChange, onSelect }: BindStoryDialo
                   </button>
                 ))}
                 {filtered.length === 0 && (
-                  <p className="py-6 text-center text-sm text-muted-foreground">没有匹配的角色</p>
+                  <p className="py-6 text-center text-sm text-muted-foreground">{tr("没有匹配的角色")}</p>
                 )}
               </div>
             </div>

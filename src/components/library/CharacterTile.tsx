@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { ReactNode } from 'react';
 import { MessageSquare } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,12 +15,13 @@ function RatingTimeBadge({ rating, timestamp, compact = false }: {
   timestamp: number;
   compact?: boolean;
 }) {
+  useI18n();
   return (
     <span
       className="flex items-center gap-1.5 px-2 py-[3px] rounded-full text-[11px] bg-[rgba(0,0,0,0.65)] backdrop-blur-sm border border-[rgba(255,255,255,0.12)] min-w-0"
       title={compact ? formatFullTime(timestamp) : undefined}
     >
-      <b className="font-semibold text-[color:var(--brand-hi)]">{rating !== undefined ? rating : '未评分'}</b>
+      <b className="font-semibold text-[color:var(--brand-hi)]">{rating !== undefined ? rating : tr("未评分")}</b>
       {!compact && (
         <span className="text-white/70 truncate" title={formatFullTime(timestamp)}>
           {formatListTime(timestamp)}

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useTheme } from 'next-themes';
 import { Palette, Check } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -13,18 +15,19 @@ export function ThemeSwitcher({
   side?: 'top' | 'right' | 'bottom' | 'left';
   trigger?: React.ReactNode;
 }) {
+  useI18n();
   const { theme, setTheme } = useTheme();
   return (
     <Popover>
       <PopoverTrigger asChild>
         {trigger ?? (
-          <Button variant="ghost" size="icon" title="主题" aria-label="切换主题">
+          <Button variant="ghost" size="icon" title={tr("主题")} aria-label={tr("切换主题")}>
             <Palette className="w-4 h-4" />
           </Button>
         )}
       </PopoverTrigger>
       <PopoverContent side={side} align="end" className="w-44 p-2">
-        <div className="text-xs text-muted-foreground px-2 pb-1.5">主题</div>
+        <div className="text-xs text-muted-foreground px-2 pb-1.5">{tr("主题")}</div>
         <div className="flex flex-col gap-0.5">
           {THEMES.map((t) => (
             <button

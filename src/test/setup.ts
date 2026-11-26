@@ -14,6 +14,8 @@ import "@testing-library/jest-dom/vitest";
  * ReferenceError，整个文件收集不到用例。
  */
 if (typeof window !== "undefined") {
+  // Existing behavior tests use Chinese. English workflows set their locale explicitly.
+  window.localStorage.setItem('ste-language', 'zh-CN');
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: (query: string) => ({

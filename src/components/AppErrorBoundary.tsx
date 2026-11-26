@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Component, Fragment, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation, useNavigate, useRouteError } from 'react-router-dom';
 import { BUILD_INFO, formatBuildInfo } from '@/lib/build-info';
@@ -5,26 +7,26 @@ import { openLogDirectory, reportError } from '@/lib/diagnostics';
 import { isTauri } from '@/lib/runtime';
 
 function CrashFallback({error,retry,home}:{error:unknown;retry:()=>void;home:()=>void}) {
+  useI18n();
   const [logError,setLogError]=useState(false);
   const message=error instanceof Error ? error.message : '';
   const chunkFailure=/dynamically imported module|loading chunk|chunkloaderror|importing a module script/i.test(message);
   const name=error instanceof Error && ['Error','TypeError','SyntaxError','RangeError','ReferenceError'].includes(error.name) ? error.name : 'Error';
   const buttonClass='min-h-11 rounded-md border border-border px-4 py-2 text-sm hover:bg-muted';
   return <section role="alert" data-app-error className="mx-auto my-8 w-full max-w-xl space-y-4 rounded-xl border border-border bg-background p-6 text-foreground">
-    <h1 className="text-lg font-semibold">{chunkFailure?'页面资源加载失败':'当前页面暂时无法显示'}</h1>
-    <p className="text-sm text-muted-foreground">{chunkFailure?'请重新加载，获取完整的页面资源。':'请重试，或返回首页继续操作。'}</p>
+    <h1 className="text-lg font-semibold">{chunkFailure?tr("页面资源加载失败"):tr("当前页面暂时无法显示")}</h1>
+    <p className="text-sm text-muted-foreground">{chunkFailure?tr("请重新加载，获取完整的页面资源。"):tr("请重试，或返回首页继续操作。")}</p>
     <div className="flex flex-wrap gap-2">
-      {!chunkFailure&&<button className={buttonClass} onClick={retry}>重试</button>}
-      <button className={buttonClass} onClick={home}>返回首页</button>
-      <button className={buttonClass} onClick={()=>window.location.reload()}>重新加载</button>
-      {isTauri()&&<button className={buttonClass} onClick={()=>{void openLogDirectory().catch(()=>setLogError(true));}}>打开日志文件夹</button>}
+      {!chunkFailure&&<button className={buttonClass} onClick={retry}>{tr("重试")}</button>}
+      <button className={buttonClass} onClick={home}>{tr("返回首页")}</button>
+      <button className={buttonClass} onClick={()=>window.location.reload()}>{tr("重新加载")}</button>
+      {isTauri()&&<button className={buttonClass} onClick={()=>{void openLogDirectory().catch(()=>setLogError(true));}}>{tr("打开日志文件夹")}</button>}
     </div>
-    {logError&&<p className="text-sm text-muted-foreground">无法打开日志文件夹，请稍后重试。</p>}
+    {logError&&<p className="text-sm text-muted-foreground">{tr("无法打开日志文件夹，请稍后重试。")}</p>}
     <details className="text-xs text-muted-foreground">
-      <summary className="cursor-pointer">技术细节</summary>
-      <p className="mt-2">错误类型：{name}</p>
-      <p className="break-words">构建：{formatBuildInfo(BUILD_INFO)}</p>
-      <p>为保护资料，不显示可能包含正文的原始错误消息。</p>
+      <summary className="cursor-pointer">{tr("技术细节")}</summary>
+      <p className="mt-2">{tr("错误类型：")}{name}</p>
+      <p className="break-words">{tr("构建：")}{formatBuildInfo(BUILD_INFO)}</p>
     </details>
   </section>;
 }

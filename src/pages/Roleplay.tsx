@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
@@ -58,6 +60,7 @@ export default function Roleplay({
   taskDock: HTMLDivElement | null;
   worldRequested?: boolean;
 }) {
+  useI18n();
   const activeRef = useRef(active);
   activeRef.current = active;
   const detachedRef = useRef(detached);
@@ -76,7 +79,7 @@ export default function Roleplay({
   const frame = useRef<HTMLIFrameElement>(null);
   const returnTarget = useRef({ storyId: id, branchId });
   const [src, setSrc] = useState<string>();
-  const [status, setStatus] = useState('正在打开酒馆…');
+  const [status, setStatus] = useState(() => tr("正在打开酒馆…"));
   const [ready, setReady] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [startupSlow, setStartupSlow] = useState(false);
@@ -114,7 +117,7 @@ export default function Roleplay({
   const reportSaveError = useCallback((reason: unknown, kind: 'chat' | 'flush' = 'flush') => {
     saveFailureKind.current = kind;
     setSaveFailed(true);
-    setError('尚未保存全部内容，当前聊天仍保留在窗口中：' + errorMessage(reason));
+    setError(tr("尚未保存全部内容，当前聊天仍保留在窗口中：") + errorMessage(reason));
   }, []);
 
   const saveBeforeExit = useCallback(() => {
@@ -127,7 +130,7 @@ export default function Roleplay({
         saveFailureKind.current = undefined;
         setSaveFailed(false);
         setError(undefined);
-        setStatus('已保存');
+        setStatus(tr("已保存"));
       })
       .catch((reason) => {
         reportSaveError(reason);
@@ -173,7 +176,7 @@ export default function Roleplay({
       })
       .catch((err) => {
         lastSyncedProfileSig.current = '';
-        console.warn('[Roleplay] 同步全局活跃连接至酒馆未完成:', err);
+        console.warn(tr("[Roleplay] 同步全局活跃连接至酒馆未完成:"), err);
       });
   }, [activeProfile, isGenerating, processHost, ready]);
 
@@ -236,7 +239,7 @@ export default function Roleplay({
     libraryRefreshPending.current = false;
     void child.__STE_TAVERN_REFRESH_LIBRARY__().catch((reason) => {
       libraryRefreshPending.current = true;
-      setError('资料库列表刷新未完成：' + errorMessage(reason));
+      setError(tr("资料库列表刷新未完成：") + errorMessage(reason));
     });
   }, [active, ready, status]);
 
@@ -248,7 +251,7 @@ export default function Roleplay({
       if (!ready || generating.current) return;
       const child = frame.current?.contentWindow as TavernFrameWindow | null;
       void child?.__STE_TAVERN_REFRESH_LIBRARY__?.().catch((err) => {
-        console.warn('[Roleplay] 聚焦独立窗口时刷新资料库未完成:', err);
+        console.warn(tr("[Roleplay] 聚焦独立窗口时刷新资料库未完成:"), err);
       });
     };
     const onChildBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -336,7 +339,7 @@ export default function Roleplay({
     const epoch = getVaultEpoch();
     setReady(false);
     setError(undefined);
-    setStatus('正在打开酒馆…');
+    setStatus(tr("正在打开酒馆…"));
     setProcessHost(undefined);
     setSrc(undefined);
     const curProf = activeProfileRef.current;
@@ -346,10 +349,10 @@ export default function Roleplay({
     lastSyncedProfileSig.current = '';
     const open = async () => {
       allowExit.current = false;
-      if (!launch.storyId) throw new Error('缺少故事 ID');
+      if (!launch.storyId) throw new Error(tr("缺少故事 ID"));
       const response = await fetch('/ste/tavern-defaults.json');
       if (disposed || epoch !== getVaultEpoch()) return;
-      if (!response.ok) throw new Error('酒馆资源尚未准备完成，请重新构建应用');
+      if (!response.ok) throw new Error(tr("酒馆资源尚未准备完成，请重新构建应用"));
       const defaults = await response.json();
       if (disposed || epoch !== getVaultEpoch()) return;
       const host = await createTavernHost({
@@ -358,7 +361,7 @@ export default function Roleplay({
         defaults,
         onCommit: () => {
           if (disposed) return;
-          setStatus('正文已保存');
+          setStatus(tr("正文已保存"));
           if (saveFailureKind.current === 'chat' && !exitTask.current) {
             saveFailureKind.current = undefined;
             setSaveFailed(false);
@@ -368,13 +371,13 @@ export default function Roleplay({
         onSaveError: (message) => { if (!disposed) reportSaveError(message, 'chat'); },
         onStartup: (message, failed) => {
           if (disposed) return;
-          setStatus(failed ? '酒馆加载失败' : message);
+          setStatus(failed ? tr("酒馆加载失败") : message);
           if (failed) setError(message);
         },
         onReady: () => {
           if (disposed) return;
           setReady(true);
-          setStatus(runtimeStatus.current ?? '无 Agent · 自动保存');
+          setStatus(runtimeStatus.current ?? tr("无 Agent · 自动保存"));
           if (!saveFailureKind.current) setError(undefined);
           try { if (!localStorage.getItem('ste-play-guide-seen')) setGuideOpen(true); } catch { /* Optional preference */ }
         },
@@ -383,7 +386,7 @@ export default function Roleplay({
           generating.current = genActive;
           setIsGenerating(genActive);
           setRoleplayGeneratingState(genActive);
-          setStatus(genActive ? '正在生成…' : runtimeStatus.current ?? '无 Agent · 自动保存');
+          setStatus(genActive ? tr("正在生成…") : runtimeStatus.current ?? tr("无 Agent · 自动保存"));
         },
         onAgentStatus: (state) => {
           runtimeStatus.current = state.message;
@@ -427,7 +430,7 @@ export default function Roleplay({
             await child.__STE_TAVERN_FLUSH__();
           } catch (err) {
             if (!child.closed) throw err;
-            console.warn('[Roleplay] 独立子窗口已关闭，跳过前端快照冲刷并继续落盘宿主状态:', err);
+            console.warn(tr("[Roleplay] 独立子窗口已关闭，跳过前端快照冲刷并继续落盘宿主状态:"), err);
           }
         }
         await host.flush();
@@ -438,7 +441,7 @@ export default function Roleplay({
     void open().catch((reason) => {
       if (!disposed) {
         setError(errorMessage(reason));
-        setStatus('酒馆加载失败');
+        setStatus(tr("酒馆加载失败"));
       }
     });
     return () => {
@@ -486,7 +489,7 @@ export default function Roleplay({
     if (leaving || detached || generating.current) return;
     const reservation = preopenDetachedTavernWindow(true);
     if (!reservation) {
-      setError('当前环境拦截了独立窗口，请允许弹窗权限后再试（也可继续在页内游玩）。');
+      setError(tr("当前环境拦截了独立窗口，请允许弹窗权限后再试（也可继续在页内游玩）。"));
       return;
     }
     const targetStoryId = returnTarget.current.storyId ?? id;
@@ -499,7 +502,7 @@ export default function Roleplay({
       return;
     }
     setReady(false);
-    setStatus('正在切换窗口…');
+    setStatus(tr("正在切换窗口…"));
     navigate(fromChats ? '/play' : buildStoryReadPath(targetStoryId, { branchId: targetBranchId }), { replace: true });
     launchRoleplayTarget({
       storyId: targetStoryId,
@@ -524,7 +527,7 @@ export default function Roleplay({
     try { if (!closeDetachedTavernWindow()) return; }
     finally { allowChildClose.current = false; }
     setReady(false);
-    setStatus('正在切换窗口…');
+    setStatus(tr("正在切换窗口…"));
     launchRoleplayTarget({
       storyId: targetStoryId,
       branchId: targetBranchId,
@@ -550,16 +553,16 @@ export default function Roleplay({
     setExportNotice(undefined);
     try {
       const child = frame.current?.contentWindow as TavernFrameWindow | null;
-      if (!child?.__STE_TAVERN_SNAPSHOT__) throw new Error('聊天界面尚未准备好');
+      if (!child?.__STE_TAVERN_SNAPSHOT__) throw new Error(tr("聊天界面尚未准备好"));
       const output = await child.__STE_TAVERN_SNAPSHOT__();
-      const result = await saveTextFile({ ...output, label: '聊天恢复文件', extension: 'jsonl' });
+      const result = await saveTextFile({ ...output, label: tr("聊天恢复文件"), extension: 'jsonl' });
       setExportNotice(
         result === 'cancelled'
-          ? '已取消导出，当前聊天仍未保存。'
-          : '已导出当时的聊天、编辑内容和未发送输入。之后的修改需要再次导出。',
+          ? tr("已取消导出，当前聊天仍未保存。")
+          : tr("已导出当时的聊天、编辑内容和未发送输入。之后的修改需要再次导出。"),
       );
     } catch (reason) {
-      setExportNotice('导出未完成：' + errorMessage(reason));
+      setExportNotice(tr("导出未完成：") + errorMessage(reason));
     } finally {
       setExporting(false);
     }
@@ -605,7 +608,7 @@ export default function Roleplay({
       style={active ? undefined : { position: 'fixed', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}
     >
       <div className="flex h-dvh min-h-0 flex-col bg-background text-foreground">
-        {!detached && isTauri() && <ClientTitleBar titleBarContent="聊天" />}
+        {!detached && isTauri() && <ClientTitleBar titleBarContent={tr("聊天")} />}
         <RoleplayHeaderBar
           detached={detached}
           fromChats={fromChats}
@@ -650,7 +653,7 @@ export default function Roleplay({
         />
 
         {src ? (
-          <iframe ref={frame} title="SillyTavern 角色扮演" src={src} className="min-h-0 w-full flex-1 border-0" />
+          <iframe ref={frame} title={tr("SillyTavern 角色扮演")} src={src} className="min-h-0 w-full flex-1 border-0" />
         ) : (
           !error && (
             <div className="flex flex-1 items-center justify-center">
@@ -697,10 +700,9 @@ export default function Roleplay({
               + '?branch=' + encodeURIComponent(returnTarget.current.branchId ?? '')
               + (fromChats ? '&from=chats' : ''),
             )}
-          >
-            返回聊天 · {saveFailed ? '保存未完成' : status}
+          >{tr("返回聊天 · {{v0}}", { v0: saveFailed ? tr("保存未完成") : status })}
           </Button>
-          <Button variant="ghost" size="icon" aria-label="关闭后台聊天" disabled={leaving} onClick={() => { void closeChat(); }}>
+          <Button variant="ghost" size="icon" aria-label={tr("关闭后台聊天")} disabled={leaving} onClick={() => { void closeChat(); }}>
             <X className="h-4 w-4" />
           </Button>
         </div>,

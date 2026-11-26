@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 全局搜索（10.1-A2 最小可用）：标题栏 ⌘K 搜索框的数据层。
  * 名称和列表资料的子串匹配（不检索正文）：角色名 / 故事名 / 资产标题及预设管理资料。
@@ -21,11 +22,11 @@ export interface SearchEntry {
 }
 
 export const SEARCH_KIND_LABEL: Record<SearchKind, string> = {
-  character: '角色',
-  story: '故事',
-  worldbook: '世界书',
-  preset: '预设',
-  regex: '正则',
+  get character() { return tr("角色"); },
+  get story() { return tr("故事"); },
+  get worldbook() { return tr("世界书"); },
+  get preset() { return tr("预设"); },
+  get regex() { return tr("正则"); },
 };
 
 interface BuildInput {
@@ -53,7 +54,7 @@ export function buildSearchEntries(input: BuildInput): SearchEntry[] {
       kind: 'story',
       id: s.id,
       title: s.title,
-      sub: s.characterId ? charName.get(s.characterId) : '未绑定',
+      sub: s.characterId ? charName.get(s.characterId) : tr("未绑定"),
       path: `/chat?storyId=${encodeURIComponent(s.id)}`,
     })),
     ...input.worldbooks.map<SearchEntry>((w) => ({

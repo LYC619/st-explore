@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useCallback, useEffect, useRef, useState, useSyncExternalStore  } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Download, Search, Star, LayoutGrid, List, CheckSquare, SlidersHorizontal, Eye, Tags, Trash2, X } from 'lucide-react';
 import type { PresetCatalog as Catalog } from '@/types/preset';
@@ -26,7 +28,7 @@ import { PresetTagManager } from './PresetTagManager';
 import { PresetCollection } from './PresetCollection';
 import { PresetCatalogDetails } from './PresetCatalogDetails';
 import { PresetPackageImport } from './PresetPackageImport';
-import { catalogSelectClass } from './PresetCatalogFields';
+import { catalogSelectClass, displayPresetTag, displayPresetTagCategory, displayPresetTagLabel } from './PresetCatalogFields';
 import { PresetDiscardDialog, PresetDraftBoundary } from './PresetDraftBoundary';
 
 interface ViewState {
@@ -58,6 +60,7 @@ export function PresetCatalog({ mode = 'manage' }: { mode?: 'manage' | 'select' 
 }
 
 function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: number }) {
+  useI18n();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const requestedId = params.get('presetId') ?? '';
@@ -180,7 +183,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     const failures: string[] = [], failedIds: string[] = [];
     for (const id of checked) {
       try {
-        if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，剩余修改已停止');
+        if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换，剩余修改已停止"));
         await updatePreset(id, latest => {
           const catalog = applyPresetBulkPatch({ ...latest.catalog, tags: getPresetTags(latest.catalog), ...(Object.keys(patch.models).length ? { models: getPresetPresentation(latest).models } : {}) }, patch);
           const rowPatch = patch.items?.[id];
@@ -194,7 +197,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
             }),
           };
         });
-      } catch (e) { failedIds.push(id); failures.push(`${items.find(item => item.id === id)?.title ?? id}：${e instanceof Error ? e.message : String(e)}`); }
+      } catch (e) { failedIds.push(id); failures.push(tr("{{v0}}：{{v1}}", { v0: items.find(item => item.id === id)?.title ?? id, v1: e instanceof Error ? e.message : String(e) })); }
     }
     if (!mounted.current || epoch !== getVaultEpoch()) return;
     setBusy(false); setChecked(failedIds); setBulkErrors(failures); setDetailRevision(n => n + 1);
@@ -204,20 +207,20 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
   return <div className="flex flex-col h-full min-h-0 min-w-0 px-4 py-4 md:px-6 gap-4" data-preset-catalog>
     <PresetDraftBoundary dirty={dirty || importDirty || bulkOpen} />
     <header className="flex flex-wrap items-center gap-3 shrink-0" data-preset-toolbar>
-      <div className="flex items-baseline gap-2 shrink-0"><h1 className="font-serif text-xl font-semibold">预设库</h1>{!loading && <span className="text-xs text-muted-foreground">{items.length} 份</span>}</div>
+      <div className="flex items-baseline gap-2 shrink-0"><h1 className="font-serif text-xl font-semibold">{tr("预设库")}</h1>{!loading && <span className="text-xs text-muted-foreground">{tr("{{v0}} 份", { v0: items.length })}</span>}</div>
         <div className="flex flex-wrap gap-2 items-center flex-1 min-w-0">
-          <div className="flex items-center rounded-lg bg-[var(--hover-overlay)] p-1 gap-0.5" aria-label="预设收藏范围">
-            <Button size="sm" variant={!view.favorite && !onlyDiy ? 'secondary' : 'ghost'} aria-pressed={!view.favorite && !onlyDiy} onClick={() => changeView({ favorite: false, onlyDiy: false })}>全部</Button>
-            <Button size="sm" variant={view.favorite ? 'secondary' : 'ghost'} aria-pressed={view.favorite} onClick={() => changeView({ favorite: true, onlyDiy: false })}><Star className="w-3.5 h-3.5 mr-1" />收藏</Button>
-            <Button size="sm" variant={onlyDiy ? 'secondary' : 'ghost'} aria-pressed={onlyDiy} onClick={() => changeView({ favorite: false, onlyDiy: true })}>我的 DIY</Button>
+          <div className="flex items-center rounded-lg bg-[var(--hover-overlay)] p-1 gap-0.5" aria-label={tr("预设收藏范围")}>
+            <Button size="sm" variant={!view.favorite && !onlyDiy ? 'secondary' : 'ghost'} aria-pressed={!view.favorite && !onlyDiy} onClick={() => changeView({ favorite: false, onlyDiy: false })}>{tr("全部")}</Button>
+            <Button size="sm" variant={view.favorite ? 'secondary' : 'ghost'} aria-pressed={view.favorite} onClick={() => changeView({ favorite: true, onlyDiy: false })}><Star className="w-3.5 h-3.5 mr-1" />{tr("收藏")}</Button>
+            <Button size="sm" variant={onlyDiy ? 'secondary' : 'ghost'} aria-pressed={onlyDiy} onClick={() => changeView({ favorite: false, onlyDiy: true })}>{tr("我的 DIY")}</Button>
           </div>
           <div className="relative min-w-40 flex-1">
             <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
             <Input
               ref={searchInputRef}
-              aria-label="搜索预设"
+              aria-label={tr("搜索预设")}
               className="pl-9 pr-8"
-              placeholder="搜索名称、作者、说明…（按 / 聚焦）"
+              placeholder={tr("搜索名称、作者、说明…（按 / 聚焦）")}
               value={view.query}
               onChange={e => changeView({ query: e.target.value })}
               onKeyDown={e => {
@@ -229,56 +232,56 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
               }}
             />
             {view.query && (
-              <button type="button" aria-label="清空预设搜索" onClick={() => changeView({ query: '' })} className="tap-target absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground">
+              <button type="button" aria-label={tr("清空预设搜索")} onClick={() => changeView({ query: '' })} className="tap-target absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground">
                 <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
-          <Button variant={view.preview ? 'secondary' : 'outline'} aria-pressed={view.preview} title={view.preview ? '当前：点击预设在右侧打开速览侧栏（再次点击切换为直接进入详情页）' : '开启后点击预设在右侧展开速览侧栏，不离开当前列表'} onClick={() => request(() => { changeView({ preview: !view.preview, selected: '' }); syncSelectionUrl(''); })}><Eye className="w-3.5 h-3.5 mr-1" />预览</Button>
-          <Button variant={batchMode ? 'secondary' : 'outline'} onClick={() => request(() => { setBatchMode(value => !value); setChecked([]); changeView({ selected: '' }); syncSelectionUrl(''); })}><CheckSquare className="w-3.5 h-3.5 mr-1" />{batchMode ? '完成' : '批量管理'}</Button>
+          <Button variant={view.preview ? 'secondary' : 'outline'} aria-pressed={view.preview} title={view.preview ? tr("当前：点击预设在右侧打开速览侧栏（再次点击切换为直接进入详情页）") : tr("开启后点击预设在右侧展开速览侧栏，不离开当前列表")} onClick={() => request(() => { changeView({ preview: !view.preview, selected: '' }); syncSelectionUrl(''); })}><Eye className="w-3.5 h-3.5 mr-1" />{tr("预览")}</Button>
+          <Button variant={batchMode ? 'secondary' : 'outline'} onClick={() => request(() => { setBatchMode(value => !value); setChecked([]); changeView({ selected: '' }); syncSelectionUrl(''); })}><CheckSquare className="w-3.5 h-3.5 mr-1" />{batchMode ? tr("完成") : tr("批量管理")}</Button>
         </div>
-      <Button onClick={() => request(() => setImportSeed({ author: view.author === '未分类作者' ? '' : view.author }))}><Download className="w-4 h-4 mr-1.5" />导入预设</Button>
+      <Button onClick={() => request(() => setImportSeed({ author: view.author === '未分类作者' ? '' : view.author }))}><Download className="w-4 h-4 mr-1.5" />{tr("导入预设")}</Button>
     </header>
     <div className="flex flex-1 min-h-0 min-w-0 gap-4">
-      <aside aria-label="预设筛选" className={`hidden md:flex w-44 xl:w-48 shrink-0 flex-col gap-5 overflow-y-auto pr-2 pb-3`}>
-        <section className="space-y-1"><h2 className="text-xs text-muted-foreground px-3 mb-2">适配模型</h2>
-          {['', ...options.models, '__unlabeled__'].map(model => <button key={model} aria-pressed={view.model === model} className={`w-full min-h-9 rounded-lg px-3 text-sm flex items-center text-left gap-2 ${view.model === model ? 'bg-[var(--brand-active-bg)] text-brand' : 'hover:bg-[var(--hover-overlay)] text-muted-foreground'}`} onClick={() => changeView({ model: model === view.model ? '' : model })}><span className="flex-1 truncate">{model === '__unlabeled__' ? '未标记' : model || '全部模型'}</span><span className="text-xs opacity-70">{items.filter(item => !model || (model === '__unlabeled__' ? !getPresetPresentation(item).models.length : getPresetPresentation(item).models.includes(model))).length}</span></button>)}
+      <aside aria-label={tr("预设筛选")} className={`hidden md:flex w-44 xl:w-48 shrink-0 flex-col gap-5 overflow-y-auto pr-2 pb-3`}>
+        <section className="space-y-1"><h2 className="text-xs text-muted-foreground px-3 mb-2">{tr("适配模型")}</h2>
+          {['', ...options.models, '__unlabeled__'].map(model => <button key={model} aria-pressed={view.model === model} className={`w-full min-h-9 rounded-lg px-3 text-sm flex items-center text-left gap-2 ${view.model === model ? 'bg-[var(--brand-active-bg)] text-brand' : 'hover:bg-[var(--hover-overlay)] text-muted-foreground'}`} onClick={() => changeView({ model: model === view.model ? '' : model })}><span className="flex-1 truncate">{model === '__unlabeled__' ? tr("未标记") : model || tr("全部模型")}</span><span className="text-xs opacity-70">{items.filter(item => !model || (model === '__unlabeled__' ? !getPresetPresentation(item).models.length : getPresetPresentation(item).models.includes(model))).length}</span></button>)}
         </section>
-        <section className="space-y-1 border-t border-[color:var(--border-subtle)] pt-4"><div className="flex items-center justify-between px-3 mb-2"><h2 className="text-xs text-muted-foreground">标签</h2><Button size="icon" variant="ghost" aria-label="管理预设标签" onClick={() => setTagsOpen(true)}><Tags className="w-3.5 h-3.5" /></Button></div>
-          <button className={`w-full text-left rounded-lg min-h-9 px-3 text-sm ${!view.tag ? 'text-brand bg-[var(--brand-active-bg)]' : 'text-muted-foreground'}`} onClick={() => changeView({ tag: '' })}>全部标签</button>
-          {[...new Set([...tagPreferences.categories, ...options.tags.map(tag => presetTagParts(tag).category)])].map(category => <details key={category} open className="pt-2"><summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">{category}</summary><div className="flex flex-wrap gap-1 p-1">
-            {options.tags.filter(tag => presetTagParts(tag).category === category && !tagPreferences.hidden.includes(tag)).map(tag => <button key={tag} title={tag} aria-pressed={view.tag === tag} className={`max-w-full flex items-center gap-2 text-left rounded-lg min-h-8 px-2 text-xs ${view.tag === tag ? 'text-brand bg-[var(--brand-active-bg)]' : 'hover:bg-[var(--hover-overlay)] text-muted-foreground'}`} onClick={() => changeView({ tag: tag === view.tag ? '' : tag })}><span className="truncate">{presetTagParts(tag).label}</span><span className="opacity-60">{items.filter(item => getPresetTags(item.catalog).includes(tag)).length}</span></button>)}
+        <section className="space-y-1 border-t border-[color:var(--border-subtle)] pt-4"><div className="flex items-center justify-between px-3 mb-2"><h2 className="text-xs text-muted-foreground">{tr("标签")}</h2><Button size="icon" variant="ghost" aria-label={tr("管理预设标签")} onClick={() => setTagsOpen(true)}><Tags className="w-3.5 h-3.5" /></Button></div>
+          <button className={`w-full text-left rounded-lg min-h-9 px-3 text-sm ${!view.tag ? 'text-brand bg-[var(--brand-active-bg)]' : 'text-muted-foreground'}`} onClick={() => changeView({ tag: '' })}>{tr("全部标签")}</button>
+          {[...new Set([...tagPreferences.categories, ...options.tags.map(tag => presetTagParts(tag).category)])].map(category => <details key={category} open className="pt-2"><summary className="cursor-pointer px-3 py-1.5 text-xs text-muted-foreground">{displayPresetTagCategory(category)}</summary><div className="flex flex-wrap gap-1 p-1">
+            {options.tags.filter(tag => presetTagParts(tag).category === category && !tagPreferences.hidden.includes(tag)).map(tag => <button key={tag} title={displayPresetTag(tag)} aria-pressed={view.tag === tag} className={`max-w-full flex items-center gap-2 text-left rounded-lg min-h-8 px-2 text-xs ${view.tag === tag ? 'text-brand bg-[var(--brand-active-bg)]' : 'hover:bg-[var(--hover-overlay)] text-muted-foreground'}`} onClick={() => changeView({ tag: tag === view.tag ? '' : tag })}><span className="truncate">{displayPresetTagLabel(presetTagParts(tag).label)}</span><span className="opacity-60">{items.filter(item => getPresetTags(item.catalog).includes(tag)).length}</span></button>)}
           </div></details>)}
-          {!options.tags.length && <p className="px-3 text-xs text-muted-foreground leading-relaxed">用标签整理自己的预设收藏。</p>}
+          {!options.tags.length && <p className="px-3 text-xs text-muted-foreground leading-relaxed">{tr("用标签整理自己的预设收藏。")}</p>}
         </section>
       </aside>
       <main className="flex-1 flex flex-col min-h-0 min-w-0 gap-3">
         <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
-          <select aria-label="筛选模型" className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.model} onChange={e => changeView({ model: e.target.value })}><option value="">全部模型</option>{options.models.map(value => <option key={value}>{value}</option>)}<option value="__unlabeled__">未标记</option></select>
-          <select aria-label="筛选标签" className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.tag} onChange={e => changeView({ tag: e.target.value })}><option value="">全部标签</option>{options.tags.filter(tag => !tagPreferences.hidden.includes(tag)).map(value => <option key={value}>{value}</option>)}</select>
-          <Button size="sm" variant="ghost" className="md:hidden" onClick={() => setTagsOpen(true)}>管理标签</Button>
-          <span className="text-muted-foreground">{new Set(filtered.map(presetSeriesKey)).size} 个系列 · {filtered.length} 份预设</span>
-          {!!filterCount && <Button size="sm" variant="ghost" onClick={() => changeView({ author: '', model: '', tag: '', query: '', favorite: false, onlyDiy: false })}>清除筛选</Button>}
+          <select aria-label={tr("筛选模型")} className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.model} onChange={e => changeView({ model: e.target.value })}><option value="">{tr("全部模型")}</option>{options.models.map(value => <option key={value}>{value}</option>)}<option value="__unlabeled__">{tr("未标记")}</option></select>
+          <select aria-label={tr("筛选标签")} className={`${catalogSelectClass} !h-9 md:hidden max-w-36`} value={view.tag} onChange={e => changeView({ tag: e.target.value })}><option value="">{tr("全部标签")}</option>{options.tags.filter(tag => !tagPreferences.hidden.includes(tag)).map(value => <option key={value} value={value}>{displayPresetTag(value)}</option>)}</select>
+          <Button size="sm" variant="ghost" className="md:hidden" onClick={() => setTagsOpen(true)}>{tr("管理标签")}</Button>
+          <span className="text-muted-foreground">{tr("{{v0}} 个系列 · {{v1}} 份预设", { v0: new Set(filtered.map(presetSeriesKey)).size, v1: filtered.length })}</span>
+          {!!filterCount && <Button size="sm" variant="ghost" onClick={() => changeView({ author: '', model: '', tag: '', query: '', favorite: false, onlyDiy: false })}>{tr("清除筛选")}</Button>}
           <span className="flex-1" />
-          <select aria-label="预设分组" className={catalogSelectClass} value={view.groupBy} onChange={e => changeView({ groupBy: e.target.value as ViewState['groupBy'] })}><option value="none">不分组</option><option value="series">按系列分组</option><option value="author">按作者分组</option></select>
-          <select aria-label="预设排序" className={`${catalogSelectClass} max-w-36`} value={view.sort} onChange={e => changeView({ sort: e.target.value as ViewState['sort'] })}><option value="version">系列与版本</option><option value="updated">最近更新</option></select>
-          <Button variant="ghost" size="icon" aria-label={view.layout === 'cards' ? '切换列表' : '切换卡片'} onClick={() => changeView({ layout: view.layout === 'cards' ? 'table' : 'cards' })}>{view.layout === 'cards' ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}</Button>
+          <select aria-label={tr("预设分组")} className={catalogSelectClass} value={view.groupBy} onChange={e => changeView({ groupBy: e.target.value as ViewState['groupBy'] })}><option value="none">{tr("不分组")}</option><option value="series">{tr("按系列分组")}</option><option value="author">{tr("按作者分组")}</option></select>
+          <select aria-label={tr("预设排序")} className={`${catalogSelectClass} max-w-36`} value={view.sort} onChange={e => changeView({ sort: e.target.value as ViewState['sort'] })}><option value="version">{tr("系列与版本")}</option><option value="updated">{tr("最近更新")}</option></select>
+          <Button variant="ghost" size="icon" aria-label={view.layout === 'cards' ? tr("切换列表") : tr("切换卡片")} onClick={() => changeView({ layout: view.layout === 'cards' ? 'table' : 'cards' })}>{view.layout === 'cards' ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}</Button>
         </div>
-        {batchMode && <div className="flex flex-wrap items-center gap-3 rounded-lg bg-[var(--brand-active-bg)] px-3 py-2 text-xs shrink-0"><label className="flex items-center gap-2"><Checkbox aria-label="选择当前筛选结果" checked={!!filtered.length && filtered.every(item => checked.includes(item.id))} onCheckedChange={value => setChecked(value ? filtered.map(item => item.id) : [])} />全选当前结果</label><span>已选 {checked.length} 份 · 点击卡片选择系列</span><Button size="sm" variant="outline" disabled={!checked.length || dirty} onClick={() => { setBulkOpen(true); setBulkErrors([]); }}>整理所选</Button><Button size="sm" variant="outline" disabled={!checked.length || busy} onClick={() => request(() => setDeleteIds([...checked]))}><Trash2 className="w-3.5 h-3.5 mr-1" />删除所选</Button></div>}
-    {error && <p role="alert" className="text-sm text-destructive">{error}<Button variant="ghost" onClick={() => void load()}>重新读取</Button></p>}
+        {batchMode && <div className="flex flex-wrap items-center gap-3 rounded-lg bg-[var(--brand-active-bg)] px-3 py-2 text-xs shrink-0"><label className="flex items-center gap-2"><Checkbox aria-label={tr("选择当前筛选结果")} checked={!!filtered.length && filtered.every(item => checked.includes(item.id))} onCheckedChange={value => setChecked(value ? filtered.map(item => item.id) : [])} />{tr("全选当前结果")}</label><span>{tr("已选 {{v0}} 份 · 点击卡片选择系列", { v0: checked.length })}</span><Button size="sm" variant="outline" disabled={!checked.length || dirty} onClick={() => { setBulkOpen(true); setBulkErrors([]); }}>{tr("整理所选")}</Button><Button size="sm" variant="outline" disabled={!checked.length || busy} onClick={() => request(() => setDeleteIds([...checked]))}><Trash2 className="w-3.5 h-3.5 mr-1" />{tr("删除所选")}</Button></div>}
+    {error && <p role="alert" className="text-sm text-destructive">{error}<Button variant="ghost" onClick={() => void load()}>{tr("重新读取")}</Button></p>}
     {!loading && !error && references === null && (
       <div role="status" className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground shrink-0">
-        <span>角色引用统计暂时未能读取，预设内容本身不受影响。</span>
-        <Button size="sm" variant="ghost" onClick={() => void load()}>重试</Button>
+        <span>{tr("角色引用统计暂时未能读取，预设内容本身不受影响。")}</span>
+        <Button size="sm" variant="ghost" onClick={() => void load()}>{tr("重试")}</Button>
       </div>
     )}
     <div className={`flex-1 min-h-0 grid gap-4 ${view.selected ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]' : ''}`}>
       <div ref={scrollRef} className={`min-h-0 overflow-y-auto pb-3 pr-1 ${view.selected ? 'hidden xl:block' : ''}`} onScroll={e => { const scroll = e.currentTarget.scrollTop; setView(value => ({ ...value, scroll })); }}>
-        {loading ? <AssetGridSkeleton count={6} /> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="font-serif text-base">{items.length ? '没有符合条件的预设' : '先收藏一份喜欢的预设'}</h2><p className="text-sm text-muted-foreground">{items.length ? '试试其他关键词，或清除筛选。' : '支持直接拖入 ZIP 压缩包或预设 JSON，自动识别适配模型、版本号与配套世界书。'}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? '清除筛选' : '导入预设'}</Button></div> : null}
+        {loading ? <AssetGridSkeleton count={6} /> : !error && !filtered.length ? <div className="py-16 text-center space-y-3"><SlidersHorizontal className="w-10 h-10 mx-auto text-muted-foreground" /><h2 className="font-serif text-base">{items.length ? tr("没有符合条件的预设") : tr("先收藏一份喜欢的预设")}</h2><p className="text-sm text-muted-foreground">{items.length ? tr("试试其他关键词，或清除筛选。") : tr("支持直接拖入 ZIP 压缩包或预设 JSON，自动识别适配模型、版本号与配套世界书。")}</p><Button variant="outline" onClick={() => items.length ? changeView({ ...initialView, selected: view.selected }) : setImportSeed({})}>{items.length ? tr("清除筛选") : tr("导入预设")}</Button></div> : null}
         <PresetCollection items={filtered} selected={view.selected} onSelect={select} batch={batchMode} checked={checked} onCheck={id => setChecked(ids => ids.includes(id) ? ids.filter(value => value !== id) : [...ids, id])} layout={view.layout} groupBy={view.groupBy} />
       </div>
-      {view.selected && <aside className="min-h-0 flex flex-col rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] overflow-hidden" aria-label="预设资料">
-        {!loading && !selected && !dirty ? <p className="p-4 text-sm">当前预设已不存在，请选择其他预设。</p> : <PresetCatalogDetails key={`${view.selected}:${detailRevision}`} id={view.selected} versions={items.filter(item => selected && presetSeriesKey(item) === presetSeriesKey(selected))} onOpenFull={() => request(() => navigate(`/presets/${encodeURIComponent(view.selected)}`))} onClose={() => select('')} onDirty={setDirty} onEdit={id => request(() => edit(id))} onOpenRegex={(name, text) => request(() => { setPendingToolFile('regex', new File([text], name, { type: 'application/json' })); navigate('/regex'); })} onOpenRegexAsset={assetId => request(() => navigate(`/regex?assetId=${encodeURIComponent(assetId)}`))} onImport={seed => request(() => setImportSeed(seed))} onSaved={() => void load()} onDelete={() => request(() => setDeleteId(view.selected))} />}
+      {view.selected && <aside className="min-h-0 flex flex-col rounded-xl border border-[color:var(--border-subtle)] bg-[var(--bg-elevated)] overflow-hidden" aria-label={tr("预设资料")}>
+        {!loading && !selected && !dirty ? <p className="p-4 text-sm">{tr("当前预设已不存在，请选择其他预设。")}</p> : <PresetCatalogDetails key={`${view.selected}:${detailRevision}`} id={view.selected} versions={items.filter(item => selected && presetSeriesKey(item) === presetSeriesKey(selected))} onOpenFull={() => request(() => navigate(`/presets/${encodeURIComponent(view.selected)}`))} onClose={() => select('')} onDirty={setDirty} onEdit={id => request(() => edit(id))} onOpenRegex={(name, text) => request(() => { setPendingToolFile('regex', new File([text], name, { type: 'application/json' })); navigate('/regex'); })} onOpenRegexAsset={assetId => request(() => navigate(`/regex?assetId=${encodeURIComponent(assetId)}`))} onImport={seed => request(() => setImportSeed(seed))} onSaved={() => void load()} onDelete={() => request(() => setDeleteId(view.selected))} />}
       </aside>}
     </div>
       </main>
@@ -287,11 +290,11 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
     <PresetDiscardDialog open={!!pending} cancel={() => { setPending(null); if (requestedId !== view.selected) syncSelectionUrl(view.selected); }} discard={() => { const action = pending; setPending(null); setDirty(false); setDetailRevision(n => n + 1); setConfirmedAction(() => action); }} />
     {bulkOpen && <PresetBulkEdit items={items.filter(item => checked.includes(item.id))} allItems={items} tags={options.tags} busy={busy} errors={bulkErrors} onClose={() => setBulkOpen(false)} onApply={patch => void applyBulk(patch)} />}
     {tagsOpen && <PresetTagManager preferences={tagPreferences} items={items} onClose={() => setTagsOpen(false)} onChanged={() => void load()} />}
-    <DeleteConfirmDialog open={!!deleteIds.length} title={`删除 ${deleteIds.length} 份预设？`} description="所选版本会从预设库移除，已有引用会显示失效。可同时删除 STE 库内文件。" fileTargets={deleteIds.map(id => ({ store: 'presets', id }))} onOpenChange={open => { if (!open) setDeleteIds([]); }} onConfirm={async options => {
+    <DeleteConfirmDialog open={!!deleteIds.length} title={tr("删除 {{v0}} 份预设？", { v0: deleteIds.length })} description={tr("所选版本会从预设库移除，已有引用会显示失效。可同时删除 STE 库内文件。")} fileTargets={deleteIds.map(id => ({ store: 'presets', id }))} onOpenChange={open => { if (!open) setDeleteIds([]); }} onConfirm={async options => {
       const failures: string[] = [], removed: string[] = [];
       for (const id of deleteIds) {
-        try { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换'); await deletePreset(id, options); removed.push(id); }
-        catch (e) { failures.push(`${items.find(item => item.id === id)?.title || id}：${e instanceof Error ? e.message : String(e)}`); }
+        try { if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换")); await deletePreset(id, options); removed.push(id); }
+        catch (e) { failures.push(tr("{{v0}}：{{v1}}", { v0: items.find(item => item.id === id)?.title || id, v1: e instanceof Error ? e.message : String(e) })); }
       }
       if (epoch !== getVaultEpoch()) return false;
       setChecked(ids => ids.filter(id => !removed.includes(id))); setDeleteIds(ids => ids.filter(id => !removed.includes(id)));
@@ -300,7 +303,7 @@ function CatalogSession({ mode, epoch }: { mode: 'manage' | 'select'; epoch: num
       if (failures.length) throw new Error(failures.join('\n'));
       return true;
     }} />
-    <DeleteConfirmDialog open={!!deleteId} title="删除预设？" description={`预设会从库内移除。${references && deleteId ? `当前被 ${references[deleteId]?.length ?? 0} 张角色卡引用。` : '角色引用信息未知。'}已有引用在删除后会显示失效；已导出的取用副本独立保留。`} onOpenChange={open => { if (!open) setDeleteId(null); }} fileTarget={deleteId ? { store: 'presets', id: deleteId } : undefined} onConfirm={async options => {
+    <DeleteConfirmDialog open={!!deleteId} title={tr("删除预设？")} description={references && deleteId ? tr("预设会从库内移除。当前被 {{v0}} 张角色卡引用。已有引用在删除后会显示失效；已导出的取用副本独立保留。", { v0: references[deleteId]?.length ?? 0 }) : tr("预设会从库内移除。角色引用信息未知。已有引用在删除后会显示失效；已导出的取用副本独立保留。")} onOpenChange={open => { if (!open) setDeleteId(null); }} fileTarget={deleteId ? { store: 'presets', id: deleteId } : undefined} onConfirm={async options => {
       if (!deleteId || epoch !== getVaultEpoch()) return false;
       await deletePreset(deleteId, options); if (view.selected === deleteId) syncSelectionUrl(''); setDirty(false); setView(value => ({ ...value, selected: value.selected === deleteId ? '' : value.selected })); setChecked(ids => ids.filter(id => id !== deleteId)); void load(); return true;
     }} />

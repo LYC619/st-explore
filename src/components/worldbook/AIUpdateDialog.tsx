@@ -1,8 +1,10 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
 import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPromptDefault, getBuiltinPrompt, formatBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback  } from 'react';
 import { Sparkles, Loader2, StopCircle, Wand2, FileWarning, Pencil, RotateCcw } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -30,6 +32,7 @@ export const DEFAULT_WB_UPDATE_PROMPT = getBuiltinPromptDefault('worldbook.updat
 
 
 export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }: Props) {
+  useI18n();
   const { toast } = useToast();
   const [truncated, setTruncated] = useState(false);
   const [session, setSession] = useState<ChatSession | null>(null);
@@ -53,16 +56,16 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   };
 
   const handlePromptSave = () => {
-    try { saveBuiltinPrompt('worldbook.update', customPrompt); toast({ title: '提示词已保存到设置' }); }
-    catch (err) { toast({ title: '保存失败', description: String(err), variant: 'destructive' }); }
+    try { saveBuiltinPrompt('worldbook.update', customPrompt); toast({ title: tr("提示词已保存到设置") }); }
+    catch (err) { toast({ title: tr("保存失败"), description: String(err), variant: 'destructive' }); }
   };
 
   const handlePromptReset = () => {
     try {
       resetBuiltinPrompt('worldbook.update');
       setCustomPrompt(getBuiltinPrompt('worldbook.update'));
-      toast({ title: '已恢复默认提示词' });
-    } catch (err) { toast({ title: '恢复失败', description: String(err), variant: 'destructive' }); }
+      toast({ title: tr("已恢复默认提示词") });
+    } catch (err) { toast({ title: tr("恢复失败"), description: String(err), variant: 'destructive' }); }
   };
 
   // 打开时载入活跃聊天（API 配置统一在 AI 工具页维护，生成时即时读取）
@@ -96,11 +99,11 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   const handleGenerate = useCallback(async () => {
     const config = loadAPIConfig(); // 生成时即时读取（配置在 AI 工具页维护）
     if (!isLLMConfigured(config)) {
-      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+      toast({ title: tr("请先配置接口地址和模型"), description: tr("前往「AI 配置」页配置后回来生成"), variant: 'destructive' });
       return;
     }
     if (!session || floorCount === 0) {
-      toast({ title: '请先选择要分析的楼层', variant: 'destructive' });
+      toast({ title: tr("请先选择要分析的楼层"), variant: 'destructive' });
       return;
     }
 
@@ -121,9 +124,9 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
       });
     } catch (e) {
       if (isLLMCancelled(e)) {
-        toast({ title: '已停止生成' });
+        toast({ title: tr("已停止生成") });
       } else {
-        toast({ title: '生成失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
+        toast({ title: tr("生成失败"), description: e instanceof Error ? e.message : tr("请检查 API 配置"), variant: 'destructive' });
       }
     } finally {
       setLoading(false);
@@ -150,7 +153,7 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
   const handleAppend = () => {
     if (!parsed) return;
     if (parsed.count === 0) {
-      toast({ title: 'AI 未提炼出新设定', description: '对话中没有可新增的世界观条目' });
+      toast({ title: tr("AI 未提炼出新设定"), description: tr("对话中没有可新增的世界观条目") });
       return;
     }
     onAppend(parsed.wb);
@@ -163,15 +166,11 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
         <CompletionWarning truncated={truncated} />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-primary" />
-            AI 按聊天内容追加世界书条目
-          </DialogTitle>
+            <Sparkles className="w-5 h-5 text-primary" />{tr("AI 按聊天内容追加世界书条目")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <p className="text-xs text-muted-foreground">
-            根据聊天记录提炼<strong>新</strong>设定，<strong>追加</strong>为新条目（不改动现有条目）。想修改某一条，请在该条目编辑区用「AI 改写」。
-          </p>
+          <p className="text-xs text-muted-foreground">{tr("根据聊天记录提炼")}<strong>{tr("新")}</strong>{tr("设定，")}<strong>{tr("追加")}</strong>{tr("为新条目（不改动现有条目）。想修改某一条，请在该条目编辑区用「AI 改写」。")}</p>
 
           <ApiStatusLine />
 
@@ -179,8 +178,8 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
           {sessionLoaded && !session && (
             <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
               <FileWarning className="w-8 h-8" />
-              <p className="text-sm">没有正在编辑的聊天记录。</p>
-              <p className="text-xs">请先到「聊天处理」导入或从书架打开一份聊天记录，再回来使用此功能。</p>
+              <p className="text-sm">{tr("没有正在编辑的聊天记录。")}</p>
+              <p className="text-xs">{tr("请先到「聊天处理」导入或从书架打开一份聊天记录，再回来使用此功能。")}</p>
             </div>
           )}
 
@@ -201,7 +200,7 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
                   onClick={() => setPromptOpen((o) => !o)}
                 >
                   <Pencil className="w-3 h-3" />
-                  {promptOpen ? '收起提示词' : '查看/编辑提示词'}
+                  {promptOpen ? tr("收起提示词") : tr("查看/编辑提示词")}
                 </button>
                 {promptOpen && (
                   <div className="space-y-1.5">
@@ -211,13 +210,10 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
                       className="min-h-[30vh] font-mono text-xs"
                     />
                     <div className="flex flex-wrap items-center gap-2 justify-between">
-                      <p className="text-xs text-muted-foreground">
-                        本次生成使用当前输入；保存后供所有入口使用。注意保留 {'{ "entries": ... }'} 的 JSON 输出约定，否则无法解析并入。
-                      </p>
-                      <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>保存提示词</Button>
+                      <p className="text-xs text-muted-foreground">{tr("本次生成使用当前输入；保存后供所有入口使用。注意保留 {{v0}} 的 JSON 输出约定，否则无法解析并入。", { v0: '{ "entries": ... }' })}</p>
+                      <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>{tr("保存提示词")}</Button>
                       <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={handlePromptReset}>
-                        <RotateCcw className="w-3 h-3" />恢复默认
-                      </Button>
+                        <RotateCcw className="w-3 h-3" />{tr("恢复默认")}</Button>
                     </div>
                   </div>
                 )}
@@ -226,31 +222,26 @@ export function AIUpdateDialog({ open, onOpenChange, existingEntries, onAppend }
               <div className="flex items-center gap-2">
                 {!loading ? (
                   <Button onClick={handleGenerate} className="gap-1.5" disabled={floorCount === 0}>
-                    <Wand2 className="w-4 h-4" /> 生成新条目（{floorCount} 楼）
-                  </Button>
+                    <Wand2 className="w-4 h-4" />{tr(" 生成新条目（{{v0}} 楼）", { v0: floorCount })}</Button>
                 ) : (
                   <Button variant="destructive" onClick={handleStop} className="gap-1.5">
-                    <StopCircle className="w-4 h-4" /> 停止
-                  </Button>
+                    <StopCircle className="w-4 h-4" />{tr(" 停止")}</Button>
                 )}
                 {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
-                <span className="text-xs text-muted-foreground">
-                  已有 {existingEntries.length} 条 · AI 只提炼新设定、避免重复
-                </span>
+                <span className="text-xs text-muted-foreground">{tr("已有 {{v0}} 条 · AI 只提炼新设定、避免重复", { v0: existingEntries.length })}</span>
               </div>
 
               {/* 输出 */}
               {output && (
                 <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">AI 输出：</div>
+                  <div className="text-xs text-muted-foreground">{tr("AI 输出：")}</div>
                   <pre className="text-xs whitespace-pre-wrap rounded-md border border-border bg-secondary/30 p-3 max-h-60 overflow-auto">{output}</pre>
                   {!loading && (
                     parsed ? (
                       <Button onClick={handleAppend} className="gap-1.5">
-                        <Sparkles className="w-4 h-4" /> 并入世界书（{parsed.count} 条新条目）
-                      </Button>
+                        <Sparkles className="w-4 h-4" />{tr(" 并入世界书（{{v0}} 条新条目）", { v0: parsed.count })}</Button>
                     ) : (
-                      <p className="text-xs text-[color:var(--status-warn)]">AI 返回的内容不是有效的世界书 JSON，可点「停止」后重试或调整选择范围。</p>
+                      <p className="text-xs text-[color:var(--status-warn)]">{tr("AI 返回的内容不是有效的世界书 JSON，可点「停止」后重试或调整选择范围。")}</p>
                     )
                   )}
                 </div>

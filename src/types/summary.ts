@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 总结页数据类型（总结功能一期）。
  *
@@ -13,9 +14,9 @@ export type SummaryKind = 'volume' | 'diary' | 'diy';
 export type SummarySurfaceKind = SummaryKind | 'mini';
 
 export const SUMMARY_KIND_LABELS: Record<SummaryKind, string> = {
-  volume: '分卷总结',
-  diary: '角色日记',
-  diy: 'DIY 创作',
+  get volume() { return tr("分卷总结"); },
+  get diary() { return tr("角色日记"); },
+  get diy() { return tr("DIY 创作"); },
 };
 
 /** 生成参数快照：重新生成时按此回填挂载与模板 */

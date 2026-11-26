@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, ChevronsUp, ChevronsDown, Star, Bookmark, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -64,6 +66,7 @@ export function MessageNavBar({
   onJumpToMessageId,
   stickyTop = 0,
 }: MessageNavBarProps) {
+  useI18n();
   const [floorInput, setFloorInput] = useState(String(currentFloor));
   const [editing, setEditing] = useState(false);
 
@@ -105,7 +108,7 @@ export function MessageNavBar({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              aria-label="首楼"
+              aria-label={tr("首楼")}
               variant="ghost"
               size="icon"
               onClick={onFirst ?? (() => onJumpToFloor(minFloor))}
@@ -114,17 +117,17 @@ export function MessageNavBar({
               <ChevronsUp className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">跳至首楼</TooltipContent>
+          <TooltipContent side="right">{tr("跳至首楼")}</TooltipContent>
         </Tooltip>
 
         {/* 上一楼 */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button aria-label="上一楼" variant="ghost" size="icon" onClick={onPrev} disabled={!prevEnabled}>
+            <Button aria-label={tr("上一楼")} variant="ghost" size="icon" onClick={onPrev} disabled={!prevEnabled}>
               <ChevronUp className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">上一楼</TooltipContent>
+          <TooltipContent side="right">{tr("上一楼")}</TooltipContent>
         </Tooltip>
 
         {/* 楼层号输入 + 当前/总楼 */}
@@ -156,8 +159,8 @@ export function MessageNavBar({
             className="w-11 px-1 text-center text-xs tabular-nums"
             inputMode="numeric"
             enterKeyHint="go"
-            title="输入楼层号后按回车跳转"
-            aria-label="跳转到楼层"
+            title={tr("输入楼层号后按回车跳转")}
+            aria-label={tr("跳转到楼层")}
           />
           <span className="text-[11px] leading-none text-muted-foreground tabular-nums">/ {effectiveMaxFloor}</span>
         </form>
@@ -165,18 +168,18 @@ export function MessageNavBar({
         {/* 下一楼 */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button aria-label="下一楼" variant="ghost" size="icon" onClick={onNext} disabled={!nextEnabled}>
+            <Button aria-label={tr("下一楼")} variant="ghost" size="icon" onClick={onNext} disabled={!nextEnabled}>
               <ChevronDown className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">下一楼</TooltipContent>
+          <TooltipContent side="right">{tr("下一楼")}</TooltipContent>
         </Tooltip>
 
         {/* 末楼 */}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              aria-label="末楼"
+              aria-label={tr("末楼")}
               variant="ghost"
               size="icon"
               onClick={onLast ?? (() => onJumpToFloor(effectiveMaxFloor))}
@@ -185,7 +188,7 @@ export function MessageNavBar({
               <ChevronsDown className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">跳至末楼</TooltipContent>
+          <TooltipContent side="right">{tr("跳至末楼")}</TooltipContent>
         </Tooltip>
 
         <div className="my-0.5 h-px w-6 bg-border" />
@@ -196,14 +199,14 @@ export function MessageNavBar({
             <Button
               variant="ghost"
               size="icon"
-              aria-label={isCurrentFavorited ? '取消收藏当前楼层' : '收藏当前楼层'}
+              aria-label={isCurrentFavorited ? tr("取消收藏当前楼层") : tr("收藏当前楼层")}
               disabled={!currentMessageId}
               onClick={() => currentMessageId && onToggleFavorite(currentMessageId)}
             >
               <Star className={`h-4 w-4 ${isCurrentFavorited ? 'fill-primary text-primary' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent side="right">{isCurrentFavorited ? '取消收藏当前楼层' : '收藏当前楼层'}</TooltipContent>
+          <TooltipContent side="right">{isCurrentFavorited ? tr("取消收藏当前楼层") : tr("收藏当前楼层")}</TooltipContent>
         </Tooltip>
 
         {/* 收藏列表 */}
@@ -211,7 +214,7 @@ export function MessageNavBar({
           <Tooltip>
             <TooltipTrigger asChild>
               <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative" aria-label="收藏列表">
+                <Button variant="ghost" size="icon" className="relative" aria-label={tr("收藏列表")}>
                   <Bookmark className="h-4 w-4" />
                   {favorites.length > 0 && (
                     <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[11px] font-medium text-primary-foreground">
@@ -221,13 +224,12 @@ export function MessageNavBar({
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>
-            <TooltipContent side="right">收藏列表</TooltipContent>
+            <TooltipContent side="right">{tr("收藏列表")}</TooltipContent>
           </Tooltip>
           <PopoverContent side="right" align="center" className="w-72 p-0">
             {favorites.length === 0 ? (
-              <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                还没有收藏的楼层<br />
-                <span className="text-xs">可点每楼右上角的「☆」或上方星标收藏</span>
+              <div className="px-4 py-6 text-center text-sm text-muted-foreground">{tr("还没有收藏的楼层")}<br />
+                <span className="text-xs">{tr("可点每楼右上角的「☆」或上方星标收藏")}</span>
               </div>
             ) : (
               <div className="max-h-72 overflow-y-auto overscroll-contain">
@@ -248,8 +250,8 @@ export function MessageNavBar({
                         variant="ghost"
                         size="icon"
                         className="mr-1 shrink-0"
-                        aria-label={f.floor !== null ? `删除第 ${f.floor} 楼书签` : '删除失效书签'}
-                        title="删除书签"
+                        aria-label={f.floor !== null ? tr("删除第 {{v0}} 楼书签", { v0: f.floor }) : tr("删除失效书签")}
+                        title={tr("删除书签")}
                         onClick={() => onToggleFavorite(f.messageId)}
                       >
                         <Trash2 className="h-4 w-4" />

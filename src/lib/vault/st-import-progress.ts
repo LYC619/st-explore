@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * ST 导入三个阶段（解压 / 扫描 / 入库）共用的进度与取消约定。
  *
@@ -82,8 +83,8 @@ export function throttleProgress(
 
 /** 阶段名 → 界面文案。进度弹窗和选择弹窗共用，避免两处各写一份。 */
 export const ST_IMPORT_PHASE_LABEL: Record<STImportPhase, string> = {
-  validate: '校验备份包',
-  extract: '解压备份包',
-  scan: '扫描内容',
-  import: '写入库中',
+  get validate() { return tr("校验备份包"); },
+  get extract() { return tr("解压备份包"); },
+  get scan() { return tr("扫描内容"); },
+  get import() { return tr("写入库中"); },
 };

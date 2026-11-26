@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -42,8 +44,8 @@ function renderStageText(
   rules: RegexRule[],
 ): string {
   const expanded = raw
-    .replace(/\{\{char\}\}/gi, charName || '角色')
-    .replace(/\{\{user\}\}/gi, userName || '你');
+    .replace(/\{\{char\}\}/gi, charName || tr("角色"))
+    .replace(/\{\{user\}\}/gi, userName || tr("你"));
   if (!rules.length) return expanded;
   return applyRegexRules(expanded, rules, false, 0).trim() || expanded;
 }
@@ -55,14 +57,14 @@ function shortSnippet(raw: string): string {
     .replace(/[*_`~「」『』"']/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!oneLine) return '空台词';
+  if (!oneLine) return tr("空台词");
   return oneLine.length > 10 ? `${oneLine.slice(0, 10)}…` : oneLine;
 }
 
 export function GreetingsSection({
   edits,
   characterName,
-  userName = '你',
+  userName,
   displayRegexRules = [],
   dirty = false,
   saving = false,
@@ -72,6 +74,7 @@ export function GreetingsSection({
   onStartWithGreeting,
   startingGreetingIndex = null,
 }: GreetingsSectionProps) {
+  useI18n();
   const hasAnyContent = Boolean(
     edits.firstMessage.trim() || edits.alternateGreetings.some((g) => g.trim()),
   );
@@ -80,11 +83,11 @@ export function GreetingsSection({
   const pendingFocusIndexRef = useRef<number | null>(null);
   const textareaRefs = useRef<Record<number, HTMLTextAreaElement | null>>({});
 
-  const allGreetings = useMemo(
+  const allGreetings = useLocalizedMemo(
     () => [
-      { label: '默认开场白', text: edits.firstMessage, index: 0 },
+      { label: tr("默认开场白"), text: edits.firstMessage, index: 0 },
       ...edits.alternateGreetings.map((text, idx) => ({
-        label: `备选 ${idx + 1}`,
+        label: tr("备选 {{v0}}", { v0: idx + 1 }),
         text,
         index: idx + 1,
       })),
@@ -116,7 +119,7 @@ export function GreetingsSection({
   };
 
   const activeItem = allGreetings[activeIndex] ?? allGreetings[0];
-  const resolvedCharName = characterName || edits.name || '角色';
+  const resolvedCharName = characterName || edits.name || tr("角色");
 
   return (
     <section className="rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] p-5">
@@ -124,19 +127,13 @@ export function GreetingsSection({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <MessageSquare className="h-4 w-4 text-[color:var(--brand-hi)]" />
-            <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">开场白剧场</h2>
-            <Badge variant="outline" className="h-5 px-2 text-[11px] font-normal text-[color:var(--text-muted)]">
-              共 {allGreetings.length} 段
-            </Badge>
+            <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">{tr("开场白剧场")}</h2>
+            <Badge variant="outline" className="h-5 px-2 text-[11px] font-normal text-[color:var(--text-muted)]">{tr("共 {{v0}} 段", { v0: allGreetings.length })}</Badge>
             {dirty && (
-              <Badge variant="secondary" className="h-5 px-2 text-[11px] font-normal text-brand">
-                有未保存修改
-              </Badge>
+              <Badge variant="secondary" className="h-5 px-2 text-[11px] font-normal text-brand">{tr("有未保存修改")}</Badge>
             )}
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
-            像翻剧场台本一样赏玩每段开场白，看中哪段可以直接带入酒馆开聊（支持 ← → 方向键切换）。
-          </p>
+          <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">{tr("像翻剧场台本一样赏玩每段开场白，看中哪段可以直接带入酒馆开聊（支持 ← → 方向键切换）。")}</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -152,9 +149,7 @@ export function GreetingsSection({
                   : 'text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]',
               )}
             >
-              <Eye className="h-3.5 w-3.5" />
-              剧场赏玩
-            </button>
+              <Eye className="h-3.5 w-3.5" />{tr("剧场赏玩")}</button>
             <button
               type="button"
               aria-pressed={mode === 'edit'}
@@ -169,9 +164,7 @@ export function GreetingsSection({
                   : 'text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]',
               )}
             >
-              <PenLine className="h-3.5 w-3.5" />
-              编辑台词
-            </button>
+              <PenLine className="h-3.5 w-3.5" />{tr("编辑台词")}</button>
           </div>
 
           <Button
@@ -185,9 +178,7 @@ export function GreetingsSection({
               setMode('edit');
             }}
           >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            新增备选
-          </Button>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />{tr("新增备选")}</Button>
 
           {dirty && onDiscard && (
             <Button
@@ -196,9 +187,7 @@ export function GreetingsSection({
               size="sm"
               disabled={saving}
               onClick={onDiscard}
-            >
-              放弃修改
-            </Button>
+            >{tr("放弃修改")}</Button>
           )}
 
           {onSave && (dirty || mode === 'edit') && (
@@ -209,7 +198,7 @@ export function GreetingsSection({
               onClick={() => void onSave()}
             >
               <Save className="mr-1.5 h-3.5 w-3.5" />
-              {saving ? '保存中…' : '保存开场白'}
+              {saving ? tr("保存中…") : tr("保存开场白")}
             </Button>
           )}
         </div>
@@ -219,7 +208,7 @@ export function GreetingsSection({
         <div
           className="space-y-3.5 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           tabIndex={0}
-          aria-label="开场白剧场切换区（支持左右方向键切换）"
+          aria-label={tr("开场白剧场切换区（支持左右方向键切换）")}
           onKeyDown={(e) => {
             if (e.altKey || e.ctrlKey || e.metaKey) return;
             const target = e.target instanceof HTMLElement ? e.target : null;
@@ -244,7 +233,7 @@ export function GreetingsSection({
                     key={item.index}
                     type="button"
                     aria-pressed={isSelected}
-                    title={`${item.label}：${snippet}`}
+                    title={tr("{{v0}}：{{v1}}", { v0: item.label, v1: snippet })}
                     onClick={() => setActiveIndex(item.index)}
                     className={cn(
                       'tap-target shrink-0 rounded-full px-3 py-1 text-xs transition-colors border',
@@ -275,8 +264,7 @@ export function GreetingsSection({
                 </span>
                 {activeItem.text.trim() && (
                   <span className="text-xs text-[color:var(--text-muted)]">
-                    {activeItem.text.trim().length} 字
-                  </span>
+                    {activeItem.text.trim().length}{tr(" 字")}</span>
                 )}
               </div>
 
@@ -288,7 +276,7 @@ export function GreetingsSection({
                       size="icon"
                       disabled={activeIndex <= 0}
                       onClick={() => setActiveIndex((i) => Math.max(0, i - 1))}
-                      aria-label="上一段开场白"
+                      aria-label={tr("上一段开场白")}
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </Button>
@@ -300,7 +288,7 @@ export function GreetingsSection({
                       size="icon"
                       disabled={activeIndex >= allGreetings.length - 1}
                       onClick={() => setActiveIndex((i) => Math.min(allGreetings.length - 1, i + 1))}
-                      aria-label="下一段开场白"
+                      aria-label={tr("下一段开场白")}
                     >
                       <ChevronRight className="h-4 w-4" />
                     </Button>
@@ -315,9 +303,7 @@ export function GreetingsSection({
                     setMode('edit');
                   }}
                 >
-                  <PenLine className="mr-1 h-3.5 w-3.5" />
-                  修改这段
-                </Button>
+                  <PenLine className="mr-1 h-3.5 w-3.5" />{tr("修改这段")}</Button>
 
                 {onStartWithGreeting && (
                   <Button
@@ -326,7 +312,7 @@ export function GreetingsSection({
                     onClick={() => onStartWithGreeting(activeItem.index)}
                   >
                     <MessageSquareReply className="mr-1.5 h-3.5 w-3.5" />
-                    {startingGreetingIndex === activeItem.index ? '正在展开场景…' : '用这段开场白开聊'}
+                    {startingGreetingIndex === activeItem.index ? tr("正在展开场景…") : tr("用这段开场白开聊")}
                   </Button>
                 )}
               </div>
@@ -338,14 +324,14 @@ export function GreetingsSection({
                   text={renderStageText(
                     activeItem.text,
                     resolvedCharName,
-                    userName,
+                    userName ?? tr("你"),
                     displayRegexRules,
                   )}
                 />
               </div>
             ) : (
               <div className="py-10 text-center space-y-2">
-                <p className="text-sm text-[color:var(--text-muted)]">这段开场白还没有写内容</p>
+                <p className="text-sm text-[color:var(--text-muted)]">{tr("这段开场白还没有写内容")}</p>
                 <Button
                   variant="outline"
                   size="sm"
@@ -353,9 +339,7 @@ export function GreetingsSection({
                     pendingFocusIndexRef.current = activeIndex;
                     setMode('edit');
                   }}
-                >
-                  去填写台词
-                </Button>
+                >{tr("去填写台词")}</Button>
               </div>
             )}
           </div>
@@ -364,9 +348,7 @@ export function GreetingsSection({
         <div className="space-y-5">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <label htmlFor="default-greeting-input" className="text-sm font-medium text-[color:var(--character-label)]">
-                默认开场白
-              </label>
+              <label htmlFor="default-greeting-input" className="text-sm font-medium text-[color:var(--character-label)]">{tr("默认开场白")}</label>
               {onStartWithGreeting && edits.firstMessage.trim() && (
                 <Button
                   variant="ghost"
@@ -375,9 +357,7 @@ export function GreetingsSection({
                   disabled={startingGreetingIndex !== null}
                   onClick={() => onStartWithGreeting(0)}
                 >
-                  <MessageSquareReply className="mr-1 h-3.5 w-3.5" />
-                  用默认开场白开聊
-                </Button>
+                  <MessageSquareReply className="mr-1 h-3.5 w-3.5" />{tr("用默认开场白开聊")}</Button>
               )}
             </div>
             <Textarea
@@ -385,20 +365,18 @@ export function GreetingsSection({
               ref={(el) => { textareaRefs.current[0] = el; }}
               value={edits.firstMessage}
               onChange={(event) => onEditChange('firstMessage', event.target.value)}
-              placeholder="写下角色初见时的场景描写与第一句台词（支持 {{char}} 与 {{user}} 占位符）…"
+              placeholder={tr("写下角色初见时的场景描写与第一句台词（支持 {{char}} 与 {{user}} 占位符）…")}
               className="min-h-[180px] text-sm leading-relaxed"
             />
           </div>
 
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-[color:var(--character-label)]">
-              备选开场白（{edits.alternateGreetings.length}）
+            <h3 className="text-sm font-semibold text-[color:var(--character-label)]">{tr("备选开场白（{{v0}}）", { v0: edits.alternateGreetings.length })}
             </h3>
             {edits.alternateGreetings.map((greeting, index) => (
               <div key={index} className="rounded-lg border border-[color:var(--border-subtle)] bg-chrome p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[color:var(--text-muted)]">
-                    备选开场 #{index + 1}
+                  <span className="text-xs font-medium text-[color:var(--text-muted)]">{tr("备选开场 #")}{index + 1}
                   </span>
                   <div className="flex items-center gap-1">
                     {onStartWithGreeting && greeting.trim() && (
@@ -409,9 +387,7 @@ export function GreetingsSection({
                         disabled={startingGreetingIndex !== null}
                         onClick={() => onStartWithGreeting(index + 1)}
                       >
-                        <MessageSquareReply className="mr-1 h-3.5 w-3.5" />
-                        用这段开聊
-                      </Button>
+                        <MessageSquareReply className="mr-1 h-3.5 w-3.5" />{tr("用这段开聊")}</Button>
                     )}
                     <Button
                       variant="ghost"
@@ -420,7 +396,7 @@ export function GreetingsSection({
                       onClick={() =>
                         onEditChange('alternateGreetings', edits.alternateGreetings.filter((_, i) => i !== index))
                       }
-                      aria-label={`删除备选开场白 ${index + 1}`}
+                      aria-label={tr("删除备选开场白 {{v0}}", { v0: index + 1 })}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -428,18 +404,16 @@ export function GreetingsSection({
                 </div>
                 <Textarea
                   ref={(el) => { textareaRefs.current[index + 1] = el; }}
-                  aria-label={`备选开场白 ${index + 1}`}
+                  aria-label={tr("备选开场白 {{v0}}", { v0: index + 1 })}
                   value={greeting}
                   onChange={(event) => updateGreeting(index, event.target.value)}
-                  placeholder="平行时间线、不同身份或季节的另一段初遇场景…"
+                  placeholder={tr("平行时间线、不同身份或季节的另一段初遇场景…")}
                   className="min-h-[132px] text-sm leading-relaxed"
                 />
               </div>
             ))}
             {edits.alternateGreetings.length === 0 && (
-              <p className="text-xs text-[color:var(--text-muted)]">
-                还没有备选开场白。点右上角「新增备选」，可以为同一角色准备多条平行初见剧情。
-              </p>
+              <p className="text-xs text-[color:var(--text-muted)]">{tr("还没有备选开场白。点右上角「新增备选」，可以为同一角色准备多条平行初见剧情。")}</p>
             )}
           </div>
         </div>

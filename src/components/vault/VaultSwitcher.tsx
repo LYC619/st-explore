@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useCallback, useEffect, useState  } from 'react';
 import { Check, FolderOpen, Plus, RefreshCw } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -14,6 +16,7 @@ function activeProfile(registry: VaultRegistry | null): VaultProfile | null {
 
 /** 客户端全局库切换器：只切换活动根目录，刷新应用以清空旧库的读缓存。 */
 export function VaultSwitcher({ expanded }: { expanded: boolean }) {
+  useI18n();
   const { toast } = useToast();
   const client = isTauri();
   const [open, setOpen] = useState(false);
@@ -36,7 +39,7 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
   if (!client) return null;
 
   const reloadAfter = (profile: VaultProfile, message: string) => {
-    toast({ title: message, description: `当前库：${profile.name}` });
+    toast({ title: message, description: tr("当前库：{{v0}}", { v0: profile.name }) });
     setOpen(false);
     window.location.reload();
   };
@@ -47,10 +50,10 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
     try {
       const { selectRegisteredVaultForNextBoot } = await import('@/lib/vault/vault-registry-runtime');
       const profile = await selectRegisteredVaultForNextBoot(id);
-      if (!profile) throw new Error('所选库已不在注册表中，请刷新后重试');
-      reloadAfter(profile, '已切换文件库');
+      if (!profile) throw new Error(tr("所选库已不在注册表中，请刷新后重试"));
+      reloadAfter(profile, tr("已切换文件库"));
     } catch (error) {
-      toast({ title: '切换文件库失败', description: error instanceof Error ? error.message : '无法打开所选目录', variant: 'destructive' });
+      toast({ title: tr("切换文件库失败"), description: error instanceof Error ? error.message : tr("无法打开所选目录"), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -61,9 +64,9 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
     try {
       const { chooseVaultForNextBoot } = await import('@/lib/vault/vault-registry-runtime');
       const profile = await chooseVaultForNextBoot();
-      if (profile) reloadAfter(profile, '已打开文件库');
+      if (profile) reloadAfter(profile, tr("已打开文件库"));
     } catch (error) {
-      toast({ title: '打开文件库失败', description: error instanceof Error ? error.message : '无法打开所选目录', variant: 'destructive' });
+      toast({ title: tr("打开文件库失败"), description: error instanceof Error ? error.message : tr("无法打开所选目录"), variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -74,8 +77,8 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={current ? `当前文件库：${current.name}` : '选择文件库'}
-          title={current ? `${current.name}\n${current.path}` : '选择文件库'}
+          aria-label={current ? tr("当前文件库：{{v0}}", { v0: current.name }) : tr("选择文件库")}
+          title={current ? `${current.name}\n${current.path}` : tr("选择文件库")}
           data-vault-switcher
           className={cn(
             'flex w-full items-center rounded-md transition-colors text-left',
@@ -84,15 +87,15 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
           )}
         >
           <FolderOpen className="h-[18px] w-[18px] shrink-0" />
-          <span className={cn('min-w-0 truncate', expanded ? 'flex-1 text-xs' : 'text-[11px] leading-none')} title={current?.name ?? '文件库'}>{current?.name ?? '文件库'}</span>
+          <span className={cn('min-w-0 truncate', expanded ? 'flex-1 text-xs' : 'text-[11px] leading-none')} title={current?.name ?? tr("文件库")}>{current?.name ?? tr("文件库")}</span>
         </button>
       </PopoverTrigger>
       <PopoverContent side="right" align="end" className="w-80 p-2" data-vault-switcher-menu>
         <div className="flex items-center gap-2 px-2 pb-2">
           <FolderOpen className="h-4 w-4 text-brand" />
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold">文件库</p>
-            <p className="text-[11px] text-muted-foreground">演示库和私人库可以分开保存</p>
+            <p className="text-xs font-semibold">{tr("文件库")}</p>
+            <p className="text-[11px] text-muted-foreground">{tr("演示库和私人库可以分开保存")}</p>
           </div>
           {loading && <RefreshCw className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
         </div>
@@ -115,9 +118,7 @@ export function VaultSwitcher({ expanded }: { expanded: boolean }) {
         </div>
         <div className="mt-2 border-t border-border pt-2">
           <Button type="button" variant="outline" size="sm" className="w-full justify-start gap-1.5" disabled={loading} onClick={() => void addVault()}>
-            <Plus className="h-3.5 w-3.5" />
-            打开或新增一个库
-          </Button>
+            <Plus className="h-3.5 w-3.5" />{tr("打开或新增一个库")}</Button>
         </div>
       </PopoverContent>
     </Popover>

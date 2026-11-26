@@ -1,5 +1,6 @@
 node_modules
 dist
+site-dist
 .git
 .gitignore
 .cache
@@ -10,6 +11,13 @@ android/build
 _reference
 .user
 .planning
+.codex
+.claude
+_archive
+docs/private
+user
+.env
+.env.*
 README.md
 Dockerfile
 .dockerignore

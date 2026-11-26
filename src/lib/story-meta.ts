@@ -6,8 +6,13 @@
  * - 模型：extra.model / extra.api；重掷后必须读当前 swipe_info[swipe_id]，不能只看顶层
  * - 时间：gen_started / gen_finished（ISO，优先）→ send_date（两种奇葩格式）→ 不可靠则「未统计」
  */
+import type { StoryStatus } from '@/types/archive';
 import type { ChatMessage, STRawMessage } from '@/types/chat';
 import { parseSTDate } from '@/lib/adapters/st/chat-jsonl';
+import { getLocale, tr } from '@/lib/i18n';
+
+/** 故事状态全部取值（10.0，四档；顺序即 UI 显示顺序） */
+export const STORY_STATUSES: StoryStatus[] = ['未开始', '进行中', '已完结', '已搁置'];
 
 /** 15 分钟：游玩时段切分阈值（定稿第四章，用户选 3B 固定 15 分钟） */
 export const PLAY_SESSION_GAP_MS = 15 * 60_000;
@@ -113,12 +118,12 @@ export function estimatePlayTime(messages: ChatMessage[], gapMs = PLAY_SESSION_G
 
 /** 格式化时长为「12.4 小时 / 46 分钟」样式；null → 「未统计」 */
 export function formatPlayTime(estimate: PlayTimeEstimate | null): string {
-  if (!estimate) return '未统计';
+  if (!estimate) return tr('未统计');
   const minutes = estimate.totalMs / 60_000;
-  if (minutes < 1) return '不足 1 分钟';
-  if (minutes < 60) return `${Math.round(minutes)} 分钟`;
+  if (minutes < 1) return tr('不足 1 分钟');
+  if (minutes < 60) return tr('{{v0}} 分钟', { v0: Math.round(minutes) });
   const hours = Math.round((minutes / 60) * 10) / 10; // 保留 1 位小数（整数自然不显示小数）
-  return `${hours} 小时`;
+  return tr('{{v0}} 小时', { v0: hours });
 }
 
 // ---------- 物化字段（10.0：故事级 wordCount / lastMessageAt，0801 反馈） ----------
@@ -150,6 +155,7 @@ export function computeStoryProps(messages: ChatMessage[]): { wordCount: number;
 
 /** 字数展示：≥1 万显示「x.x 万字」，否则「n 字」 */
 export function formatWordCount(n: number): string {
+  if (getLocale() === 'en') return `${n.toLocaleString('en')} characters`;
   if (n >= 10000) return `${(Math.round(n / 1000) / 10).toFixed(1)} 万字`;
   return `${n} 字`;
 }

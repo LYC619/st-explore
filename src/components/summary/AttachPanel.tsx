@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { SlidersHorizontal, Globe, X, ChevronDown } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -34,6 +37,7 @@ const NONE = '__none__';
 
 /** 挂载预设/世界书面板：选预设、选世界书 + 注入范围(constant/all/manual)，展示 token 估算 */
 export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps) {
+  useI18n();
   const [worldbooks, setWorldbooks] = useState<WorldBookItem[]>([]);
   const [wbLoadError, setWbLoadError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
@@ -51,7 +55,7 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
         })
         .catch((error: unknown) => {
           if (!live || cur !== seq) return;
-          setWbLoadError(error instanceof Error ? error.message : '无法读取世界书列表');
+          setWbLoadError(error instanceof Error ? error.message : tr("无法读取世界书列表"));
         });
     };
     load();
@@ -83,9 +87,8 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
       <Card>
         <CollapsibleTrigger className="group flex w-full items-center gap-2 px-4 py-3 text-left hover:bg-accent/30">
           <SlidersHorizontal className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">挂载设定（可选）</span>
-          <Badge variant="secondary" className="font-normal">
-            约 {tokenEstimate.toLocaleString()} tokens
+          <span className="text-sm font-medium">{tr("挂载设定（可选）")}</span>
+          <Badge variant="secondary" className="font-normal">{tr("约 ")}{tokenEstimate.toLocaleString(getLocale())} tokens
           </Badge>
           <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground transition-transform group-data-[state=closed]:-rotate-90" />
         </CollapsibleTrigger>
@@ -95,29 +98,26 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
         {/* 预设 */}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground flex items-center gap-1">
-            <SlidersHorizontal className="w-3.5 h-3.5" />预设（决定上下文组装顺序）
-          </Label>
+            <SlidersHorizontal className="w-3.5 h-3.5" />{tr("预设（决定上下文组装顺序）")}</Label>
           <PresetSelect value={value.presetId} onChange={presetId => set({ presetId })} />
         </div>
 
         {/* 世界书 */}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground flex items-center gap-1">
-            <Globe className="w-3.5 h-3.5" />世界书
-          </Label>
+            <Globe className="w-3.5 h-3.5" />{tr("世界书")}</Label>
           <Select
             value={value.worldbookId ?? NONE}
             onValueChange={(v) => set({ worldbookId: v === NONE ? null : v, worldbookUids: [] })}
           >
             <SelectTrigger className="h-8">
-              <SelectValue placeholder="不挂世界书" />
+              <SelectValue placeholder={tr("不挂世界书")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={NONE}>不挂世界书</SelectItem>
+              <SelectItem value={NONE}>{tr("不挂世界书")}</SelectItem>
               {worldbooks.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
-                  {w.title}（{Object.keys(w.worldbook.entries).length} 条）
-                </SelectItem>
+                  {tr("{{v0}}（{{v1}} 条）", { v0: w.title, v1: Object.keys(w.worldbook.entries).length })}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -125,7 +125,7 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
           {wbLoadError && (
             <div role="alert" className="flex items-center justify-between gap-2 text-xs text-destructive">
               <span>{wbLoadError}</span>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setReloadTick((n) => n + 1)}>重试读取</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setReloadTick((n) => n + 1)}>{tr("重试读取")}</Button>
             </div>
           )}
 
@@ -138,15 +138,15 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
               >
                 <div className="flex items-center gap-1.5">
                   <RadioGroupItem value="constant" id="wm-const" />
-                  <Label htmlFor="wm-const" className="cursor-pointer">仅常驻（{constantCount} 条）</Label>
+                  <Label htmlFor="wm-const" className="cursor-pointer">{tr("仅常驻（")}{constantCount}{tr(" 条）")}</Label>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <RadioGroupItem value="all" id="wm-all" />
-                  <Label htmlFor="wm-all" className="cursor-pointer">全部启用（{enabledEntries.length} 条）</Label>
+                  <Label htmlFor="wm-all" className="cursor-pointer">{tr("全部启用（")}{enabledEntries.length}{tr(" 条）")}</Label>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <RadioGroupItem value="manual" id="wm-manual" />
-                  <Label htmlFor="wm-manual" className="cursor-pointer">手动勾选（{value.worldbookUids.length} 条）</Label>
+                  <Label htmlFor="wm-manual" className="cursor-pointer">{tr("手动勾选（")}{value.worldbookUids.length}{tr(" 条）")}</Label>
                 </div>
               </RadioGroup>
 
@@ -159,20 +159,18 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
                           checked={value.worldbookUids.includes(e.uid)}
                           onCheckedChange={() => toggleUid(e.uid)}
                         />
-                        {e.constant && <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">常驻</Badge>}
-                        <span className="truncate text-muted-foreground" title={e.comment || e.content}>{e.comment || e.content.slice(0, 30) || '(无标题)'}</span>
+                        {e.constant && <Badge variant="outline" className="text-[11px] px-1 py-0 shrink-0">{tr("常驻")}</Badge>}
+                        <span className="truncate text-muted-foreground" title={e.comment || e.content}>{e.comment || e.content.slice(0, 30) || tr("(无标题)")}</span>
                       </label>
                     ))}
                     {enabledEntries.length === 0 && (
-                      <p className="text-xs text-muted-foreground p-2">该世界书没有启用的条目</p>
+                      <p className="text-xs text-muted-foreground p-2">{tr("该世界书没有启用的条目")}</p>
                     )}
                   </div>
                 </ScrollArea>
               )}
 
-              <p className="text-xs text-muted-foreground">
-                大型世界书全部注入会占用大量 token，默认「仅常驻」。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr("大型世界书全部注入会占用大量 token，默认「仅常驻」。")}</p>
             </div>
           )}
         </div>
@@ -184,8 +182,7 @@ export function AttachPanel({ value, onChange, tokenEstimate }: AttachPanelProps
             className="gap-1 text-muted-foreground"
             onClick={() => onChange({ presetId: null, worldbookId: null, worldbookMode: 'constant', worldbookUids: [] })}
           >
-            <X className="w-3.5 h-3.5" />清除挂载
-          </Button>
+            <X className="w-3.5 h-3.5" />{tr("清除挂载")}</Button>
         )}
       </CardContent>
         </CollapsibleContent>

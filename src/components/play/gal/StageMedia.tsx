@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { useEffect, useState } from 'react';
 import type { Backdrop } from '@/play/gal/scene';
 import type { StageMediaPool } from '@/play/media/pool';
@@ -6,7 +7,7 @@ function AssetImage({ id, pool, repo, className }: { id: string; pool: StageMedi
   const [url, setUrl] = useState<string>(), [failed, setFailed] = useState(false);
   useEffect(() => {
     let alive = true, release: (() => void) | undefined; setUrl(undefined); setFailed(false);
-    void repo.get(id).then(asset => { if (!alive) return; if (!asset) throw new Error('素材缺失'); const handle = pool.acquire(asset); release = handle.release; setUrl(handle.url); }).catch(() => { if (alive) setFailed(true); });
+    void repo.get(id).then(asset => { if (!alive) return; if (!asset) throw new Error(tr("素材缺失")); const handle = pool.acquire(asset); release = handle.release; setUrl(handle.url); }).catch(() => { if (alive) setFailed(true); });
     return () => { alive = false; release?.(); };
   }, [id, pool, repo]);
   return url && !failed ? <img className={className} src={url} alt="" onError={() => setFailed(true)} /> : null;

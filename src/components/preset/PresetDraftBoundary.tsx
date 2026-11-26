@@ -1,13 +1,16 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useContext, useEffect } from 'react';
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 export function PresetDiscardDialog({ open, cancel, discard }: { open: boolean; cancel: () => void; discard: () => void }) {
+  useI18n();
   return <AlertDialog open={open} onOpenChange={open => { if (!open) cancel(); }}>
-    <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>放弃未保存的修改？</AlertDialogTitle>
-      <AlertDialogDescription>返回继续整理可保留当前输入；放弃后将载入已保存的内容。</AlertDialogDescription>
-    </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>返回继续整理</AlertDialogCancel>
-      <AlertDialogAction onClick={discard}>放弃修改</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
+    <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tr("放弃未保存的修改？")}</AlertDialogTitle>
+      <AlertDialogDescription>{tr("返回继续整理可保留当前输入；放弃后将载入已保存的内容。")}</AlertDialogDescription>
+    </AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{tr("返回继续整理")}</AlertDialogCancel>
+      <AlertDialogAction onClick={discard}>{tr("放弃修改")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent>
   </AlertDialog>;
 }
 

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { LocateFixed } from 'lucide-react';
 import { MarkdownLite } from '@/components/MarkdownLite';
 import { Button } from '@/components/ui/button';
@@ -22,20 +24,21 @@ export function ReviewRecords({
   onStories: () => void;
   onJumpToRecordFloor?: (storyId: string, branchId: string | null, floor: number) => void;
 }) {
-  if (loading) return <p role="status" className="py-12 text-center text-sm text-muted-foreground">{LOADING_LABEL}</p>;
+  useI18n();
+  if (loading) return <p role="status" className="py-12 text-center text-sm text-muted-foreground">{tr(LOADING_LABEL)}</p>;
   if (error) {
     return (
       <div role="alert" className="space-y-3 py-8 text-sm">
-        <p>读取总结和日记失败：{error}。记录仍保留在库中。</p>
-        <Button variant="outline" onClick={onRetry}>重试读取</Button>
+        <p>{tr("读取总结和日记失败：{{v0}}。记录仍保留在库中。", { v0: error })}</p>
+        <Button variant="outline" onClick={onRetry}>{tr("重试读取")}</Button>
       </div>
     );
   }
   if (!groups.length) {
     return (
       <div className="space-y-3 py-12 text-center text-sm text-muted-foreground">
-        <p>还没有{kind === 'volume' ? '总结' : '日记'}</p>
-        <Button variant="outline" onClick={onStories}>查看故事</Button>
+        <p>{kind === 'volume' ? tr("还没有总结") : tr("还没有日记")}</p>
+        <Button variant="outline" onClick={onStories}>{tr("查看故事")}</Button>
       </div>
     );
   }
@@ -57,10 +60,16 @@ export function ReviewRecords({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-1">
-                      <h5 className="font-medium">{record.title || (kind === 'volume' ? '总结' : '日记')}</h5>
+                      <h5 className="font-medium">{record.title || (kind === 'volume' ? tr("总结") : tr("日记"))}</h5>
                       <p className="text-xs leading-relaxed text-muted-foreground">
                         {group.story.title} · {branch.name}
-                        {record.volumeNumber !== undefined && ` · 第 ${record.volumeNumber} 卷`} · 覆盖第 {record.floorStart}–{record.floorEnd} 楼 · {record.genParams ? '生成' : '手动录入'}于 {formatFullTime(record.createdAt)}
+                        {record.volumeNumber !== undefined ? ` · ${tr("第 {{v0}} 卷", { v0: record.volumeNumber })}` : ''}
+                        {' · '}
+                        {tr("覆盖第 {{v0}}–{{v1}} 楼", { v0: record.floorStart, v1: record.floorEnd })}
+                        {' · '}
+                        {record.genParams
+                          ? tr("生成于 {{v0}}", { v0: formatFullTime(record.createdAt) })
+                          : tr("手动录入于 {{v0}}", { v0: formatFullTime(record.createdAt) })}
                       </p>
                     </div>
                     {onJumpToRecordFloor && !record.rangeDetached && Number.isSafeInteger(record.floorStart) && (
@@ -70,9 +79,7 @@ export function ReviewRecords({
                         className="shrink-0 gap-1 text-xs"
                         onClick={() => onJumpToRecordFloor(group.story.id, branch.id ?? null, record.floorStart)}
                       >
-                        <LocateFixed className="h-3.5 w-3.5" />
-                        回味 #{record.floorStart} 楼
-                      </Button>
+                        <LocateFixed className="h-3.5 w-3.5" />{tr("回味 #{{v0}} 楼", { v0: record.floorStart })}</Button>
                     )}
                   </div>
                   <MarkdownLite text={record.content} className="text-sm leading-7" />

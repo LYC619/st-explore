@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { matchPath, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
@@ -15,6 +17,7 @@ const Roleplay = lazy(loadRoleplayModule);
 
 /** One live chat per vault, rendered inline on `/play/:id` or portaled into a same-origin detached split-screen window. */
 export function RoleplayWorkspace() {
+  useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch);
@@ -78,7 +81,7 @@ export function RoleplayWorkspace() {
   return (
     <>
       {saved?.epoch === epoch && (
-        <Suspense fallback={inlineActive ? <div>正在打开酒馆…</div> : null}>
+        <Suspense fallback={inlineActive ? <div>{tr("正在打开酒馆…")}</div> : null}>
           <Roleplay
             id={saved.id}
             branchId={saved.branchId}
@@ -95,18 +98,16 @@ export function RoleplayWorkspace() {
       {!inlineActive && (
         worldRequested && saved?.epoch === epoch ? (
           <div className="flex min-h-dvh flex-col items-center justify-center gap-4 bg-background p-6 text-center">
-            <h1 className="text-xl">正在收好当前故事</h1>
-            <p className="max-w-md text-muted-foreground">等待当前回复结束并保存后，将自动进入山海世界。若保存失败，可返回聊天重试。</p>
+            <h1 className="text-xl">{tr("正在收好当前故事")}</h1>
+            <p className="max-w-md text-muted-foreground">{tr("等待当前回复结束并保存后，将自动进入山海世界。若保存失败，可返回聊天重试。")}</p>
             <button
               type="button"
               className="min-h-11 rounded-lg border px-5"
               onClick={() => navigate('/play/' + encodeURIComponent(saved.id))}
-            >
-              返回当前聊天
-            </button>
+            >{tr("返回当前聊天")}</button>
           </div>
         ) : (
-          <Suspense fallback={<div className="p-6">{worldRequested ? '正在打开世界…' : '正在加载…'}</div>}>
+          <Suspense fallback={<div className="p-6">{worldRequested ? tr("正在打开世界…") : tr("正在加载…")}</div>}>
             <Outlet />
           </Suspense>
         )

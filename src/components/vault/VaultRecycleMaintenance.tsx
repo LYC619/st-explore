@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useSyncExternalStore } from 'react';
 import { getActiveVault, getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import { recycleExpiredFiles } from '@/lib/vault/file-maintenance';
@@ -5,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 
 /** Check after the first screen and hourly while this vault remains open. */
 export function VaultRecycleMaintenance() {
+  useI18n();
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
   const { toast } = useToast();
   useEffect(() => {
@@ -18,12 +21,12 @@ export function VaultRecycleMaintenance() {
         const result = await recycleExpiredFiles(vault);
         if (active && getVaultEpoch() === epoch && result.failed.length && !reported) {
           reported = true;
-          toast({ title: '部分到期文件暂未移入系统回收站', description: '文件仍保留在库内，可到设置的文件检查中查看；稍后会重试。' });
+          toast({ title: tr("部分到期文件暂未移入系统回收站"), description: tr("文件仍保留在库内，可到设置的文件检查中查看；稍后会重试。") });
         }
       } catch (error) {
         if (active && getVaultEpoch() === epoch && !reported) {
           reported = true;
-          toast({ title: '自动回收暂未完成，文件继续保留', description: error instanceof Error ? error.message : String(error) });
+          toast({ title: tr("自动回收暂未完成，文件继续保留"), description: error instanceof Error ? error.message : String(error) });
         }
       } finally { busy = false; }
     };

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import { LocateFixed, Minus, Plus } from 'lucide-react';
 import { EDGES, isRaining } from '@/play/world/simulation';
@@ -15,6 +17,7 @@ function actorPosition(state: WorldState, actor: Actor): [number, number] {
 export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion, visiblePeople, playerId }: {
   state: WorldState; visiblePeople?: string[]; playerId?: string; selected: string; focusRegion?: string; onSelect: (id: string) => void; onRegion: (id: string) => void;
 }) {
+  useI18n();
   const svg = useRef<SVGSVGElement>(null), drag = useRef<{ x: number; y: number; px: number; py: number }>();
   const [zoom, setZoom] = useState(1), [pan, setPan] = useState({ x: 0, y: 0 }), [scale, setScale] = useState(1);
   const [tracking, setTracking] = useState(true);
@@ -35,7 +38,7 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion, 
   }, [x, y, zoom, tracking, focusRegion, state.regions, scale]);
   const hit = Math.max(23, 23 / (scale * zoom));
   return <div className={'world-canvas' + (isRaining(state) ? ' raining' : '')}>
-    <svg ref={svg} viewBox="0 0 1040 760" preserveAspectRatio="xMidYMid slice" role="group" aria-label="山海地图，拖动平移，选择人物追踪"
+    <svg ref={svg} viewBox="0 0 1040 760" preserveAspectRatio="xMidYMid slice" role="group" aria-label={tr("山海地图，拖动平移，选择人物追踪")}
       onPointerDown={event => { if ((event.target as Element).closest('[data-map-target]')) return; setTracking(false); drag.current = { x: event.clientX, y: event.clientY, px: pan.x, py: pan.y }; event.currentTarget.setPointerCapture(event.pointerId); }}
       onPointerMove={event => { if (!drag.current) return; setPan({ x: Math.max(-700, Math.min(700, drag.current.px + (event.clientX - drag.current.x) / scale)), y: Math.max(-500, Math.min(500, drag.current.py + (event.clientY - drag.current.y) / scale)) }); }}
       onPointerUp={() => { drag.current = undefined; }} onPointerCancel={() => { drag.current = undefined; }}>
@@ -63,17 +66,17 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion, 
           return <g key={edge.from + edge.to}><path d={`M${a.x} ${a.y}L${b.x} ${b.y}`} stroke={closed ? '#c08d7b' : '#d7c594'} strokeWidth="6" opacity=".7" fill="none" strokeDasharray={edge.ferry ? '6 8' : undefined} />
             <path d={`M${a.x} ${a.y}L${b.x} ${b.y}`} stroke="#6c6747" strokeWidth="1" strokeDasharray="2 8" fill="none" /></g>;
         })}
-        {Object.values(state.regions).map(region => <g key={region.id} data-map-target="region" role="button" tabIndex={0} aria-label={`查看地区 ${region.name}`}
+        {Object.values(state.regions).map(region => <g key={region.id} data-map-target="region" role="button" tabIndex={0} aria-label={tr("查看地区 {{v0}}", { v0: region.name })}
           onClick={() => onRegion(region.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRegion(region.id); } }} className="world-region" opacity={playerId && region.id !== actor.region ? .45 : 1}>
           <circle cx={region.x} cy={region.y} r={hit} fill="transparent" />
           <path d={`M${region.x - 10} ${region.y + 8}v-14h20v14zM${region.x - 15} ${region.y - 6}l15-12 15 12z`} fill="#dcd4aa" stroke="#4a5e48" strokeWidth="2" />
           <text x={region.x} y={region.y - 62} textAnchor="middle" className="world-region-name">{region.name}</text>
-          {region.id === 'ferry' && isRaining(state) && <text x={region.x} y={region.y - 40} textAnchor="middle" className="world-map-warning">渡口封闭</text>}
+          {region.id === 'ferry' && isRaining(state) && <text x={region.x} y={region.y - 40} textAnchor="middle" className="world-map-warning">{tr("渡口封闭")}</text>}
         </g>)}
         {actor.job?.type === 'move' && <path d={`M${x} ${y}L${state.regions[actor.job.to!].x} ${state.regions[actor.job.to!].y}`} stroke="#fff0b9" strokeWidth="3" strokeDasharray="4 5" />}
         {state.actors.filter(person => !visiblePeople || visiblePeople.includes(person.id)).map(person => {
           const [px, py] = actorPosition(state, person), chosen = person.id === selected;
-          return <g key={person.id} data-map-target="actor" data-actor-id={person.id} role="button" tabIndex={0} aria-label={`追踪${person.name}`}
+          return <g key={person.id} data-map-target="actor" data-actor-id={person.id} role="button" tabIndex={0} aria-label={tr("追踪{{v0}}", { v0: person.name })}
             className={'world-actor' + (chosen ? ' chosen' : '')} style={{ transform: `translate(${px}px, ${py}px)` }}
             onClick={() => onSelect(person.id)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(person.id); } }}>
             <circle r={hit} fill="transparent" /><circle className="world-actor-halo" r="28" fill="none" stroke="#f4d59a" strokeDasharray="3 5" />
@@ -82,11 +85,11 @@ export function WorldCanvas({ state, selected, focusRegion, onSelect, onRegion, 
             <text y="37" textAnchor="middle" className="world-actor-name">{person.name}</text>
           </g>;
         })}
-        <g transform="translate(950 75)" fill="#e4ddbb" opacity=".8"><path d="M0-26L7-3 0 22-7-3z" /><path d="M-21 0H21" stroke="#e4ddbb" /><text y="-35" textAnchor="middle" fontSize="12">北</text></g>
+        <g transform="translate(950 75)" fill="#e4ddbb" opacity=".8"><path d="M0-26L7-3 0 22-7-3z" /><path d="M-21 0H21" stroke="#e4ddbb" /><text y="-35" textAnchor="middle" fontSize="12">{tr("北")}</text></g>
       </g>
       <rect x="0" y="0" width="1040" height="760" fill="url(#world-vignette)" pointerEvents="none" />
     </svg>
-    <div className="world-map-title"><span className="world-eyebrow">{state.setting === 'sanctuary' ? '星门之间 · 异界休息室' : '山海之间 · 原生世界'}</span><h2>{state.setting === 'sanctuary' ? '来时异路，此刻同灯。' : '一念，山海有变。'}</h2><span className="world-weather">{isRaining(state) ? `雨 · 渡口封闭，剩余 ${state.weather.rainUntil - state.tick + 1} 步` : '晴 · 行路无碍'}</span></div>
-    <div className="world-map-tools"><button aria-label="缩小地图" onClick={() => setZoom(v => Math.max(.7, v - .2))}><Minus size={17} /></button><button aria-label="放大地图" onClick={() => setZoom(v => Math.min(2, v + .2))}><Plus size={17} /></button><button aria-label="定位追踪人物" onClick={() => { setZoom(1); setPan({ x: 520 - x, y: 380 - y }); setTracking(true); }}><LocateFixed size={17} /></button></div>
+    <div className="world-map-title"><span className="world-eyebrow">{state.setting === 'sanctuary' ? tr("星门之间 · 异界休息室") : tr("山海之间 · 原生世界")}</span><h2>{state.setting === 'sanctuary' ? tr("来时异路，此刻同灯。") : tr("一念，山海有变。")}</h2><span className="world-weather">{isRaining(state) ? tr("雨 · 渡口封闭，剩余 {{v0}} 步", { v0: state.weather.rainUntil - state.tick + 1 }) : tr("晴 · 行路无碍")}</span></div>
+    <div className="world-map-tools"><button aria-label={tr("缩小地图")} onClick={() => setZoom(v => Math.max(.7, v - .2))}><Minus size={17} /></button><button aria-label={tr("放大地图")} onClick={() => setZoom(v => Math.min(2, v + .2))}><Plus size={17} /></button><button aria-label={tr("定位追踪人物")} onClick={() => { setZoom(1); setPan({ x: 520 - x, y: 380 - y }); setTracking(true); }}><LocateFixed size={17} /></button></div>
   </div>;
 }

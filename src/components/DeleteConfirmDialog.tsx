@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { StoreName } from '@/lib/idb';
 import type { RemoveOptions } from '@/lib/repo';
@@ -33,10 +35,11 @@ export function DeleteConfirmDialog({
   description,
   onOpenChange,
   onConfirm,
-  confirmLabel = '确认删除',
+  confirmLabel = tr("确认删除"),
   fileTarget,
   fileTargets,
 }: DeleteConfirmDialogProps) {
+  useI18n();
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [pending, setPending] = useState(false);
@@ -61,7 +64,7 @@ export function DeleteConfirmDialog({
     void prepareFileRemovals(vault, targets)
       .then(results => {
         if (!cancelled) setPreview({ count: results.reduce((n, r) => n + r.count, 0), bytes: results.reduce((n, r) => n + r.bytes, 0), usesTrash: results.every(r => r.usesTrash) });
-      }).catch(e => { if (!cancelled) setPreviewError(`暂未读取到文件信息：${e instanceof Error ? e.message : String(e)}。确认时将重新读取目标。`); });
+      }).catch(e => { if (!cancelled) setPreviewError(tr("暂未读取到文件信息：{{v0}}。确认时将重新读取目标。", { v0: e instanceof Error ? e.message : String(e) })); });
     return () => { cancelled = true; };
   }, [open, epoch, targetsKey]);
 
@@ -84,25 +87,23 @@ export function DeleteConfirmDialog({
         </AlertDialogHeader>
         {hasFiles && <div className="space-y-2 text-sm">
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={deleteFiles} disabled={pending || scopeChanged} onChange={e => setDeleteFiles(e.target.checked)} />
-            同时删除 STE 库内文件
-          </label>
+            <input type="checkbox" checked={deleteFiles} disabled={pending || scopeChanged} onChange={e => setDeleteFiles(e.target.checked)} />{tr("同时删除 STE 库内文件")}</label>
           <p className="text-xs text-muted-foreground">
-            {preview ? `预计涉及 ${preview.count} 个文件 · ${(preview.bytes / 1024).toFixed(1)} KB。` : '正在读取目标文件信息，可直接确认删除。'}
+            {preview ? tr("预计涉及 {{v0}} 个文件 · {{v1}} KB。", { v0: preview.count, v1: (preview.bytes / 1024).toFixed(1) }) : tr("正在读取目标文件信息，可直接确认删除。")}
             {deleteFiles
-              ? '文件先移入库内回收站，每个文件保留满 30 天后移入系统回收站；不支持或失败时继续保留。'
-              : '文件会长期保留，可在「设置 → 数据与备份 → 库内回收站」查看和恢复，不参与 30 天自动回收。'}
+              ? tr("文件先移入库内回收站，每个文件保留满 30 天后移入系统回收站；不支持或失败时继续保留。")
+              : tr("文件会长期保留，可在「设置 → 数据与备份 → 库内回收站」查看和恢复，不参与 30 天自动回收。")}
           </p>
         </div>}
         {previewError && <p className="text-xs text-muted-foreground">{previewError}</p>}
         {(error || scopeChanged) && <div role="alert" className="text-sm text-destructive">
-          {scopeChanged ? '文件库已切换，请关闭后重新选择删除目标。' : error.length > 300 ? <>
-            <p>删除未完成，请查看具体原因。</p><details className="mt-2"><summary className="cursor-pointer">查看问题详情</summary><p className="mt-2 max-h-40 overflow-y-auto break-all text-xs">{error}</p></details>
+          {scopeChanged ? tr("文件库已切换，请关闭后重新选择删除目标。") : error.length > 300 ? <>
+            <p>{tr("删除未完成，请查看具体原因。")}</p><details className="mt-2"><summary className="cursor-pointer">{tr("查看问题详情")}</summary><p className="mt-2 max-h-40 overflow-y-auto break-all text-xs">{error}</p></details>
           </> : <p className="break-words">{error}</p>}
         </div>}
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={pending}>取消</AlertDialogCancel>
-          <Button variant="destructive" disabled={pending || scopeChanged} onClick={() => void confirm()}>{pending ? '正在删除…' : confirmLabel}</Button>
+          <AlertDialogCancel disabled={pending}>{tr("取消")}</AlertDialogCancel>
+          <Button variant="destructive" disabled={pending || scopeChanged} onClick={() => void confirm()}>{pending ? tr("正在删除…") : confirmLabel}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

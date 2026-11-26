@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { ArrowLeft, BookOpen, LocateFixed, NotebookText, Wrench } from 'lucide-react';
@@ -43,6 +45,7 @@ function SummaryRouteBlocker({
   hasDraft: () => boolean;
   skipRef: React.MutableRefObject<boolean>;
 }) {
+  useI18n();
   const blocker = useBlocker(({ currentLocation, nextLocation }) => {
     if (skipRef.current) {
       skipRef.current = false;
@@ -70,12 +73,12 @@ function SummaryRouteBlocker({
     <AlertDialog open onOpenChange={(open) => { if (!open) blocker.reset(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>放弃未保存的总结草稿？</AlertDialogTitle>
-          <AlertDialogDescription>当前记录尚有未保存的修改，离开后无法恢复这些修改。</AlertDialogDescription>
+          <AlertDialogTitle>{tr("放弃未保存的总结草稿？")}</AlertDialogTitle>
+          <AlertDialogDescription>{tr("当前记录尚有未保存的修改，离开后无法恢复这些修改。")}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus onClick={() => blocker.reset()}>继续编辑</AlertDialogCancel>
-          <AlertDialogAction onClick={() => blocker.proceed()}>放弃草稿并离开</AlertDialogAction>
+          <AlertDialogCancel autoFocus onClick={() => blocker.reset()}>{tr("继续编辑")}</AlertDialogCancel>
+          <AlertDialogAction onClick={() => blocker.proceed()}>{tr("放弃草稿并离开")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -99,6 +102,7 @@ export function SummaryWorkspace({
   onKindChange,
   onJumpToFloor,
 }: SummaryWorkspaceProps) {
+  useI18n();
   const [view, setView] = useState<'workshop' | 'gallery'>('workshop');
   const [selectedRecord, setSelectedRecord] = useState<SummaryItem | null>(null);
   const [truncatedRecords, setTruncatedRecords] = useState<Set<string>>(() => new Set());
@@ -219,15 +223,15 @@ export function SummaryWorkspace({
               <NotebookText className="h-4 w-4 text-primary-foreground" />
             </div>
             <div className="flex items-center gap-1">
-              <h1 className="font-display text-lg font-semibold">总结与手账</h1>
-              <HelpCard>左侧选择楼层范围与提示词模板生成，右侧查看已保存记录；点击楼层号可一键跳回故事原文核对。</HelpCard>
+              <h1 className="font-display text-lg font-semibold">{tr("总结与手账")}</h1>
+              <HelpCard>{tr("左侧选择楼层范围与提示词模板生成，右侧查看已保存记录；点击楼层号可一键跳回故事原文核对。")}</HelpCard>
             </div>
           </div>
 
           <Tabs value={view} onValueChange={(value) => changeView(value as 'workshop' | 'gallery')}>
             <TabsList className="flex h-8 w-fit">
-              <TabsTrigger value="workshop" className="h-7 gap-1.5 whitespace-nowrap px-3"><Wrench className="h-3.5 w-3.5" />生成工作台</TabsTrigger>
-              <TabsTrigger value="gallery" className="h-7 gap-1.5 whitespace-nowrap px-3"><BookOpen className="h-3.5 w-3.5" />展示页</TabsTrigger>
+              <TabsTrigger value="workshop" className="h-7 gap-1.5 whitespace-nowrap px-3"><Wrench className="h-3.5 w-3.5" />{tr("生成工作台")}</TabsTrigger>
+              <TabsTrigger value="gallery" className="h-7 gap-1.5 whitespace-nowrap px-3"><BookOpen className="h-3.5 w-3.5" />{tr("展示页")}</TabsTrigger>
             </TabsList>
           </Tabs>
 
@@ -236,7 +240,7 @@ export function SummaryWorkspace({
             <TabsList className="flex h-8 w-fit">
               {KINDS.map((item) => (
                 <TabsTrigger key={item} value={item} className="h-7 whitespace-nowrap px-3 text-xs">
-                  {item === 'mini' ? '小总结' : SUMMARY_KIND_LABELS[item]}
+                  {item === 'mini' ? tr("小总结") : SUMMARY_KIND_LABELS[item]}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -245,7 +249,7 @@ export function SummaryWorkspace({
           <div className="ml-auto hidden min-w-0 items-center gap-3 xl:flex">
             <div className="max-w-72 truncate text-xs text-muted-foreground" title={story.title}>
               <span className="font-medium text-foreground">{story.title}</span>
-              <span> · {currentLine.session.messages.length} 楼</span>
+              <span> · {currentLine.session.messages.length}{tr(" 楼")}</span>
             </div>
             <ApiStatusLine />
           </div>
@@ -283,8 +287,7 @@ export function SummaryWorkspace({
                 detailMode ? (
                   <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-subtle)] pb-2 flex-wrap">
                     <Button variant="ghost" size="sm" className="gap-1.5" onClick={backToList}>
-                      <ArrowLeft className="h-3.5 w-3.5" />返回已生成总结
-                    </Button>
+                      <ArrowLeft className="h-3.5 w-3.5" />{tr("返回已生成总结")}</Button>
                     <div className="flex items-center gap-2 min-w-0">
                       {selectedRecord && !selectedRecord.rangeDetached && Number.isSafeInteger(selectedRecord.floorStart) && onJumpToFloor && (
                         <Button
@@ -296,11 +299,9 @@ export function SummaryWorkspace({
                             onJumpToFloor(selectedRecord.floorStart, selectedRecord.branchId ?? null);
                           })}
                         >
-                          <LocateFixed className="h-3.5 w-3.5" />
-                          跳回 #{selectedRecord.floorStart} 楼原文
-                        </Button>
+                          <LocateFixed className="h-3.5 w-3.5" />{tr("跳回 #{{v0}} 楼原文", { v0: selectedRecord.floorStart })}</Button>
                       )}
-                      <span className="truncate text-xs text-muted-foreground">{selectedRecord?.title || '新建记录'}</span>
+                      <span className="truncate text-xs text-muted-foreground">{selectedRecord?.title || tr("新建记录")}</span>
                     </div>
                   </div>
                 ) : (
@@ -328,18 +329,16 @@ export function SummaryWorkspace({
       <AlertDialog open={pendingDiscard !== null} onOpenChange={(open) => { if (!open) setPendingDiscard(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>放弃未保存的总结草稿？</AlertDialogTitle>
-            <AlertDialogDescription>当前记录尚有未保存的修改，继续后无法恢复这些修改。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("放弃未保存的总结草稿？")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("当前记录尚有未保存的修改，继续后无法恢复这些修改。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel autoFocus>继续编辑</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>{tr("继续编辑")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               const action = pendingDiscard;
               setPendingDiscard(null);
               action?.();
-            }}>
-              放弃草稿并切换
-            </AlertDialogAction>
+            }}>{tr("放弃草稿并切换")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

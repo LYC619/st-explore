@@ -1,0 +1,15 @@
+name: Feature or translation / 功能与翻译
+description: Suggest an improvement or report interface wording.
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What are you trying to do? / 想完成什么？
+      description: Explain the workflow, current obstacle, and desired result. For translations, name the page and language.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Possible approach / 建议方案
+      description: Optional. Use synthetic examples only.

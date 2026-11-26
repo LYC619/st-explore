@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { RemoveOptions } from '@/lib/repo';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
 import { useCallback, useEffect, useState } from 'react';
@@ -39,6 +41,7 @@ function downloadJSON(name: string, content: string): void {
 }
 
 export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJumpToFloor }: StoryTreeWorkspaceProps) {
+  useI18n();
   const { toast } = useToast();
   const [trees, setTrees] = useState<StoryTree[]>([]);
   const [currentTreeId, setCurrentTreeId] = useState<string | null>(null);
@@ -62,7 +65,7 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
         return mine[0]?.id ?? null;
       });
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : '读取故事树失败，请检查文件库连接后重试');
+      setLoadError(error instanceof Error ? error.message : tr("读取故事树失败，请检查文件库连接后重试"));
     } finally {
       setLoaded(true);
     }
@@ -74,17 +77,17 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
     const now = Date.now();
     const item: StoryTree = {
       id: generateStoryTreeId(), bookId: story.id, bookTitle: story.title,
-      branchId: currentBranchId ?? undefined, title: `${story.title} 的故事树`, nodes: [],
+      branchId: currentBranchId ?? undefined, title: tr("{{v0}} 的故事树", { v0: story.title }), nodes: [],
       createdAt: now, updatedAt: now, autoSaved: false,
     };
     try {
       await saveStoryTree(item);
       await reload(item.id);
-      toast({ title: '已新建故事树' });
+      toast({ title: tr("已新建故事树") });
     } catch (error) {
       toast({
-        title: '新建故事树未成功',
-        description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+        title: tr("新建故事树未成功"),
+        description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
         variant: 'destructive',
       });
     }
@@ -94,7 +97,7 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
     try {
       const parsed = parseStoryTreeJSON(await file.text());
       if (parsed.ok !== true) {
-        toast({ title: '导入失败', description: parsed.error, variant: 'destructive' });
+        toast({ title: tr("导入失败"), description: parsed.error, variant: 'destructive' });
         return;
       }
       const now = Date.now();
@@ -105,11 +108,11 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
       };
       await saveStoryTree(item);
       await reload(item.id);
-      toast({ title: '已导入故事树', description: `${item.nodes.length} 个节点` });
+      toast({ title: tr("已导入故事树"), description: tr("{{v0}} 个节点", { v0: item.nodes.length }) });
     } catch (error) {
       toast({
-        title: '导入故事树未成功',
-        description: error instanceof Error ? error.message : '请检查文件内容及库目录权限后重试',
+        title: tr("导入故事树未成功"),
+        description: error instanceof Error ? error.message : tr("请检查文件内容及库目录权限后重试"),
         variant: 'destructive',
       });
     }
@@ -120,21 +123,21 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
     await deleteStoryTree(currentTree.id, options);
     setDeleteOpen(false);
     await reload(null);
-    toast({ title: '已删除故事树' });
+    toast({ title: tr("已删除故事树") });
   };
 
   const exportJSON = () => {
     if (!currentTree) return;
-    downloadJSON(currentTree.title || '故事树', storyTreeToJSON(currentTree));
-    toast({ title: '已导出 JSON' });
+    downloadJSON(currentTree.title || tr("故事树"), storyTreeToJSON(currentTree));
+    toast({ title: tr("已导出 JSON") });
   };
 
   const exportMarkdown = async () => {
     if (!currentTree) return;
-    const result = await downloadMarkdown(currentTree.title || '故事树', storyTreeToObsidian(currentTree));
+    const result = await downloadMarkdown(currentTree.title || tr("故事树"), storyTreeToObsidian(currentTree));
     routeTextFileExportResult(result, {
-      onComplete: () => toast({ title: '已导出 Markdown', description: 'Obsidian 友好（含 frontmatter）' }),
-      onFailure: () => toast({ title: '导出失败', description: '没有写入任何文件，请重新选择位置后再试。', variant: 'destructive' }),
+      onComplete: () => toast({ title: tr("已导出 Markdown"), description: tr("Obsidian 友好（含 frontmatter）") }),
+      onFailure: () => toast({ title: tr("导出失败"), description: tr("没有写入任何文件，请重新选择位置后再试。"), variant: 'destructive' }),
     });
   };
 
@@ -145,11 +148,11 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg gold-gradient flex items-center justify-center shadow-card"><Network className="w-5 h-5 text-primary-foreground" /></div>
             <div>
-              <div className="flex items-center gap-1"><h1 className="font-display text-xl font-semibold">故事树</h1><HelpCard>用可视化事实树整理人物、事件、关系与地点；点击节点即可在右侧展开详情编辑，支持跳回提及楼层。</HelpCard></div>
-              <p className="text-xs text-muted-foreground">回顾故事的记忆锚点</p>
+              <div className="flex items-center gap-1"><h1 className="font-display text-xl font-semibold">{tr("故事树")}</h1><HelpCard>{tr("用可视化事实树整理人物、事件、关系与地点；点击节点即可在右侧展开详情编辑，支持跳回提及楼层。")}</HelpCard></div>
+              <p className="text-xs text-muted-foreground">{tr("回顾故事的记忆锚点")}</p>
             </div>
           </div>
-          <div className="text-xs text-muted-foreground text-right pt-1"><span className="font-medium text-foreground">{story.title}</span> · {currentLine.session.messages.length} 楼</div>
+          <div className="text-xs text-muted-foreground text-right pt-1"><span className="font-medium text-foreground">{story.title}</span> · {currentLine.session.messages.length}{tr(" 楼")}</div>
         </div>
 
         {currentTree ? (
@@ -163,29 +166,29 @@ export function StoryTreeWorkspace({ story, currentBranchId, initialTarget, onJu
               <Card data-story-tree-selector>
                 <CardContent className="p-3 flex items-center gap-2 flex-wrap">
                   <Select value={currentTree.id} onValueChange={setCurrentTreeId}>
-                    <SelectTrigger className="h-8 w-52 shrink-0"><SelectValue placeholder="选择故事树" /></SelectTrigger>
-                    <SelectContent>{trees.map((item) => <SelectItem key={item.id} value={item.id}>{item.title}（{item.nodes.length} 节点）</SelectItem>)}</SelectContent>
+                    <SelectTrigger className="h-8 w-52 shrink-0"><SelectValue placeholder={tr("选择故事树")} /></SelectTrigger>
+                    <SelectContent>{trees.map((item) => <SelectItem key={item.id} value={item.id}>{tr("{{v0}}（{{v1}} 节点）", { v0: item.title, v1: item.nodes.length })}</SelectItem>)}</SelectContent>
                   </Select>
-                  <Input value={title} onChange={(event) => onTitleChange(event.target.value)} className="flex-1 min-w-[160px]" placeholder="故事树名称" />
+                  <Input value={title} onChange={(event) => onTitleChange(event.target.value)} className="flex-1 min-w-[160px]" placeholder={tr("故事树名称")} />
                   <div className="flex items-center gap-1 ml-auto">
-                    <Button variant="outline" size="sm" className="gap-1" onClick={createTree}><Plus className="w-4 h-4" />新建</Button>
-                    <label><Button variant="ghost" size="sm" className="gap-1" asChild><span><Download className="w-4 h-4" />导入</span></Button><input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTree(file); event.target.value = ''; }} /></label>
-                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="gap-1"><Upload className="w-4 h-4" />导出</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={exportJSON}>JSON（可再次导入）</DropdownMenuItem><DropdownMenuItem onSelect={exportMarkdown}>Markdown（Obsidian 友好）</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
-                    <Button variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 className="w-4 h-4" />删除</Button>
+                    <Button variant="outline" size="sm" className="gap-1" onClick={createTree}><Plus className="w-4 h-4" />{tr("新建")}</Button>
+                    <label><Button variant="ghost" size="sm" className="gap-1" asChild><span><Download className="w-4 h-4" />{tr("导入")}</span></Button><input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTree(file); event.target.value = ''; }} /></label>
+                    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="gap-1"><Upload className="w-4 h-4" />{tr("导出")}</Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={exportJSON}>{tr("JSON（可再次导入）")}</DropdownMenuItem><DropdownMenuItem onSelect={exportMarkdown}>{tr("Markdown（Obsidian 友好）")}</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+                    <Button variant="ghost" size="sm" className="gap-1 text-destructive" onClick={() => setDeleteOpen(true)}><Trash2 className="w-4 h-4" />{tr("删除")}</Button>
                   </div>
                 </CardContent>
               </Card>
             )}
           />
         ) : loadError ? (
-          <Card role="alert"><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="font-medium text-foreground">故事树列表暂时没能读出来，库里的原文件未受影响</p><p className="text-sm text-muted-foreground break-words">{loadError}</p><Button variant="outline" onClick={() => void reload()}>重新读取</Button></CardContent></Card>
+          <Card role="alert"><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="font-medium text-foreground">{tr("故事树列表暂时没能读出来，库里的原文件未受影响")}</p><p className="text-sm text-muted-foreground break-words">{loadError}</p><Button variant="outline" onClick={() => void reload()}>{tr("重新读取")}</Button></CardContent></Card>
         ) : loaded ? (
-          <Card data-story-tree-selector><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="text-muted-foreground">用一棵事实树梳理这个故事的人物、事件与关系。</p><div className="flex gap-2 justify-center flex-wrap"><Button onClick={createTree} className="gap-1"><Plus className="w-4 h-4" />新建故事树</Button><label><Button variant="outline" className="gap-1" asChild><span><Download className="w-4 h-4" />导入</span></Button><input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTree(file); event.target.value = ''; }} /></label></div></CardContent></Card>
-        ) : <div className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</div>}
+          <Card data-story-tree-selector><CardContent className="p-8 text-center space-y-3"><Network className="w-8 h-8 mx-auto text-muted-foreground" /><p className="text-muted-foreground">{tr("用一棵事实树梳理这个故事的人物、事件与关系。")}</p><div className="flex gap-2 justify-center flex-wrap"><Button onClick={createTree} className="gap-1"><Plus className="w-4 h-4" />{tr("新建故事树")}</Button><label><Button variant="outline" className="gap-1" asChild><span><Download className="w-4 h-4" />{tr("导入")}</span></Button><input type="file" accept=".json,application/json" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importTree(file); event.target.value = ''; }} /></label></div></CardContent></Card>
+        ) : <div className="py-16 text-center text-sm text-muted-foreground">{tr(LOADING_LABEL)}</div>}
       </div>
 
-      <DeleteConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title="删除整棵故事树？"
-        description="该故事树将从列表移除。" fileTarget={currentTree ? { store: 'stories', id: currentTree.id } : undefined}
+      <DeleteConfirmDialog open={deleteOpen} onOpenChange={setDeleteOpen} title={tr("删除整棵故事树？")}
+        description={tr("该故事树将从列表移除。")} fileTarget={currentTree ? { store: 'stories', id: currentTree.id } : undefined}
         onConfirm={deleteTree} />
     </div>
   );

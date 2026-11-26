@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 处理区入口的文件类型猜测（2.0 阶段5，定稿第六章）。
  * 丢进来一个文件，按扩展名 + 内容形状给出默认猜测，用户确认后分流到对应工具。
@@ -7,11 +8,11 @@
 export type ToolFileType = 'chat' | 'worldbook' | 'preset' | 'card' | 'regex';
 
 export const TOOL_TYPE_LABELS: Record<ToolFileType, string> = {
-  chat: '聊天记录',
-  worldbook: '世界书',
-  preset: '预设',
-  card: '角色卡',
-  regex: '正则规则',
+  get chat() { return tr("聊天记录"); },
+  get worldbook() { return tr("世界书"); },
+  get preset() { return tr("预设"); },
+  get card() { return tr("角色卡"); },
+  get regex() { return tr("正则规则"); },
 };
 
 /** 单条 ST 正则脚本的形状（scriptName + findRegex 是它的指纹） */

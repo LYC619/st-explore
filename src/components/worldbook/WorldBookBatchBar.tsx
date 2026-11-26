@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { BatchOperations } from '@/components/worldbook/BatchOperations';
 import type { BatchSelection } from '@/hooks/use-batch-selection';
 import type { WorldBookItem } from '@/types/worldbook';
@@ -18,6 +20,7 @@ interface WorldBookBatchBarProps {
 export function WorldBookBatchBar({
   batch, totalFiltered, savedItems, currentItemId, onBatchDelete, onBatchCopyTo,
 }: WorldBookBatchBarProps) {
+  useI18n();
   const count = batch.batchSelected.size;
   return (
     <BatchOperations
@@ -28,7 +31,7 @@ export function WorldBookBatchBar({
       onExitBatch={batch.exitBatchMode}
       onBatchPrefix={(prefix) => batch.applyBatch(
         (e) => (e.comment.startsWith(prefix) ? null : { comment: prefix + e.comment }),
-        { title: '前缀已添加', description: `已为 ${count} 个条目添加前缀` },
+        { title: tr("前缀已添加"), description: tr("已为 {{v0}} 个条目添加前缀", { v0: count }) },
       )}
       onBatchDelete={onBatchDelete}
       onBatchPosition={(position, depth, role) => batch.applyBatch(
@@ -37,17 +40,17 @@ export function WorldBookBatchBar({
           ...(depth !== undefined ? { depth } : {}),
           ...(role !== undefined ? { role } : {}),
         }),
-        { title: '位置已修改', description: `已修改 ${count} 个条目的插入位置` },
+        { title: tr("位置已修改"), description: tr("已修改 {{v0}} 个条目的插入位置", { v0: count }) },
       )}
       onBatchStrategy={(strategy) => batch.applyBatch(
         () => ({ constant: strategy === 'constant', vectorized: strategy === 'vectorized' }),
-        { title: '策略已修改', description: `已修改 ${count} 个条目的触发策略` },
+        { title: tr("策略已修改"), description: tr("已修改 {{v0}} 个条目的触发策略", { v0: count }) },
       )}
       onBatchEnable={(enabled) => batch.applyBatch(
         () => ({ enabled }),
         {
-          title: enabled ? '已启用' : '已停用',
-          description: `已${enabled ? '启用' : '停用'} ${count} 个条目`,
+          title: enabled ? tr("已启用") : tr("已停用"),
+          description: enabled ? tr("已启用 {{v0}} 个条目", { v0: count }) : tr("已停用 {{v0}} 个条目", { v0: count }),
         },
       )}
       copyTargets={savedItems.filter((i) => i.id !== currentItemId).map((i) => ({ id: i.id, title: i.title }))}

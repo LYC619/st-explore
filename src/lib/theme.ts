@@ -1,13 +1,14 @@
+import { tr } from '@/lib/i18n';
 /**
  * 主题系统元数据（新前端交接包定稿）：四套主题共用一套 CSS 变量，
  * 切换 = 换 <html data-theme>；品牌橙跨主题不变。
  * dark 字段驱动 .dark class 同步（tailwind dark: 变体）与 sonner 明暗。
  */
 export const THEMES = [
-  { key: 'cocoa', label: '深咖啡', swatch: '#1e1610', swatchAccent: '#d8894b', dark: true },
-  { key: 'ink', label: '墨黑', swatch: '#0e0e10', swatchAccent: '#8f9aa8', dark: true },
-  { key: 'midnight', label: '深夜蓝', swatch: '#0f131c', swatchAccent: '#5d8fca', dark: true },
-  { key: 'cream', label: '米色典雅', swatch: '#f5f0e6', swatchAccent: '#b47743', dark: false },
+  { key: 'cocoa', get label() { return tr("深咖啡"); }, swatch: '#1e1610', swatchAccent: '#d8894b', dark: true },
+  { key: 'ink', get label() { return tr("墨黑"); }, swatch: '#0e0e10', swatchAccent: '#8f9aa8', dark: true },
+  { key: 'midnight', get label() { return tr("深夜蓝"); }, swatch: '#0f131c', swatchAccent: '#5d8fca', dark: true },
+  { key: 'cream', get label() { return tr("米色典雅"); }, swatch: '#f5f0e6', swatchAccent: '#b47743', dark: false },
 ] as const;
 
 export type ThemeKey = (typeof THEMES)[number]['key'];

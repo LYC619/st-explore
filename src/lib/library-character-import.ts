@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { buildCharacterFromCard } from '@/lib/archive-db';
 import { applyCharacterTagPatch, applyCharacterTypePatch } from '@/lib/character-tag-domain';
 import {
@@ -52,10 +53,10 @@ async function readFileBuffer(file: File): Promise<ArrayBuffer> {
   if (typeof direct === 'function') return direct.call(file);
   return new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error(`无法读取文件：${file.name}`));
+    reader.onerror = () => reject(reader.error ?? new Error(tr("无法读取文件：{{v0}}", { v0: file.name })));
     reader.onload = () => {
       if (reader.result instanceof ArrayBuffer) resolve(reader.result);
-      else reject(new Error(`无法读取文件：${file.name}`));
+      else reject(new Error(tr("无法读取文件：{{v0}}", { v0: file.name })));
     };
     reader.readAsArrayBuffer(file);
   });
@@ -66,7 +67,7 @@ async function readFileText(file: File): Promise<string> {
   if (typeof direct === 'function') return direct.call(file);
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error(`无法读取文件：${file.name}`));
+    reader.onerror = () => reject(reader.error ?? new Error(tr("无法读取文件：{{v0}}", { v0: file.name })));
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
     reader.readAsText(file);
   });
@@ -77,10 +78,10 @@ async function readBlobBuffer(blob: Blob): Promise<ArrayBuffer> {
   if (typeof direct === 'function') return direct.call(blob);
   return new Promise<ArrayBuffer>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(reader.error ?? new Error('无法读取转换后的 PNG 图片'));
+    reader.onerror = () => reject(reader.error ?? new Error(tr("无法读取转换后的 PNG 图片")));
     reader.onload = () => {
       if (reader.result instanceof ArrayBuffer) resolve(reader.result);
-      else reject(new Error('无法读取转换后的 PNG 图片'));
+      else reject(new Error(tr("无法读取转换后的 PNG 图片")));
     };
     reader.readAsArrayBuffer(blob);
   });
@@ -92,24 +93,25 @@ async function rasterImageToPng(buffer: ArrayBuffer, mime: string): Promise<Arra
     const image = new Image();
     image.src = objectUrl;
     await image.decode();
-    if (!image.naturalWidth || !image.naturalHeight) throw new Error('图片尺寸无效');
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error(tr("图片尺寸无效"));
 
     const canvas = document.createElement('canvas');
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     const context = canvas.getContext('2d');
-    if (!context) throw new Error('无法创建图片转换画布');
+    if (!context) throw new Error(tr("无法创建图片转换画布"));
     context.drawImage(image, 0, 0);
     const png = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error('无法生成 PNG 图片'))),
+        (blob) => (blob ? resolve(blob) : reject(new Error(tr("无法生成 PNG 图片")))),
         'image/png',
       );
     });
     return readBlobBuffer(png);
   } catch (error) {
-    const reason = error instanceof Error ? `：${error.message}` : '';
-    throw new Error(`图片内容无法转换为 PNG${reason}`);
+    throw new Error(error instanceof Error
+      ? tr("图片内容无法转换为 PNG：{{v0}}", { v0: error.message })
+      : tr("图片内容无法转换为 PNG"));
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -183,7 +185,7 @@ export async function prepareLibraryCharacterFile(file: File): Promise<PreparedL
     return { fileName: file.name, kind: 'character-card', character: buildCharacterFromCard(card) };
   }
 
-  throw new Error(`不支持的角色卡文件：${file.name}`);
+  throw new Error(tr("不支持的角色卡文件：{{v0}}", { v0: file.name }));
 }
 
 export function registerLibraryImportCustomTag(
@@ -191,11 +193,11 @@ export function registerLibraryImportCustomTag(
   input: string,
 ): { preferences: LibraryTagPreferences; raw: string } {
   const value = input.trim();
-  if (!value) throw new Error('自定义标签不能为空');
+  if (!value) throw new Error(tr("自定义标签不能为空"));
 
   const slash = value.indexOf('/');
   if (slash !== -1 && value.indexOf('/', slash + 1) !== -1) {
-    throw new Error('自定义标签只支持“一级/二级”两层');
+    throw new Error(tr("自定义标签只支持“一级/二级”两层"));
   }
 
   let category: TagCategory = '未分类';
@@ -203,7 +205,7 @@ export function registerLibraryImportCustomTag(
   if (slash > 0) {
     category = value.slice(0, slash).trim();
     label = value.slice(slash + 1).trim();
-    if (!category || !label) throw new Error('请使用“一级/二级”格式填写自定义标签');
+    if (!category || !label) throw new Error(tr("请使用“一级/二级”格式填写自定义标签"));
   }
 
   const raw = makeTag(category, label);

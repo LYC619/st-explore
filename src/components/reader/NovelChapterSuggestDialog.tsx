@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, Sparkles, Square } from 'lucide-react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
@@ -43,6 +45,7 @@ export function NovelChapterSuggestDialog({
   onMarkersChange,
   story,
 }: NovelChapterSuggestDialogProps) {
+  useI18n();
   const { toast } = useToast();
   const [volumeSummaries, setVolumeSummaries] = useState<SummaryItem[]>([]);
   const [summaryLoadFailed, setSummaryLoadFailed] = useState(false);
@@ -87,8 +90,8 @@ export function NovelChapterSuggestDialog({
     const config = loadAPIConfig();
     if (!isLLMConfigured(config)) {
       toast({
-        title: '还没配好 AI 接口',
-        description: '去「设置 → AI 配置」填好接口地址和模型再来试试',
+        title: tr("还没配好 AI 接口"),
+        description: tr("去「设置 → AI 配置」填好接口地址和模型再来试试"),
         variant: 'destructive',
       });
       return;
@@ -107,8 +110,8 @@ export function NovelChapterSuggestDialog({
       const parsed = parseChapterSuggestions(text, session.messages.length);
       if (!parsed || parsed.length === 0) {
         toast({
-          title: '这次没提取出章节节点',
-          description: '可以点「重新生成」再试一次，或在 AI 配置里换个理解力更好的模型',
+          title: tr("这次没提取出章节节点"),
+          description: tr("可以点「重新生成」再试一次，或在 AI 配置里换个理解力更好的模型"),
           variant: 'destructive',
         });
       } else {
@@ -116,11 +119,11 @@ export function NovelChapterSuggestDialog({
       }
     } catch (err) {
       if (isLLMCancelled(err)) {
-        toast({ title: '已停止生成' });
+        toast({ title: tr("已停止生成") });
       } else {
         toast({
-          title: '生成章节建议没成功',
-          description: err instanceof Error ? err.message : '请检查 AI 配置里的连接是否可用',
+          title: tr("生成章节建议没成功"),
+          description: err instanceof Error ? err.message : tr("请检查 AI 配置里的连接是否可用"),
           variant: 'destructive',
         });
       }
@@ -142,13 +145,13 @@ export function NovelChapterSuggestDialog({
         createdAt: Date.now(),
       }));
     if (additions.length === 0) {
-      toast({ title: '没有新的章节可添加', description: '勾选的楼层原本已经有章节标记了' });
+      toast({ title: tr("没有新的章节可添加"), description: tr("勾选的楼层原本已经有章节标记了") });
       return;
     }
     onMarkersChange([...markers, ...additions].sort((a, b) => a.messageIndex - b.messageIndex));
     onOpenChange(false);
     setSuggestions(null);
-    toast({ title: `已加上 ${additions.length} 个章节标记`, description: '随时可以在目录里跳转或继续修改标题' });
+    toast({ title: tr("已加上 {{v0}} 个章节标记", { v0: additions.length }), description: tr("随时可以在目录里跳转或继续修改标题") });
   };
 
   return (
@@ -164,26 +167,21 @@ export function NovelChapterSuggestDialog({
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
         <CompletionWarning truncated={suggestTruncated} />
         <DialogHeader>
-          <DialogTitle>AI 帮你划分章节</DialogTitle>
-          <DialogDescription>
-            AI 不会硬啃整篇原文：
-            {summaryLoadFailed
-              ? '分卷总结暂时没能读取出来，这次先按抽样楼层来判断'
+          <DialogTitle>{tr("AI 帮你划分章节")}</DialogTitle>
+          <DialogDescription>{tr("AI 不会硬啃整篇原文：")}{summaryLoadFailed
+              ? tr("分卷总结暂时没能读取出来，这次先按抽样楼层来判断")
               : volumeSummaries.length > 0
-                ? `会结合已有的 ${volumeSummaries.length} 卷总结与抽样楼层来找剧情转折点`
-                : '这篇故事还没有分卷总结，会先按抽样楼层判断（先做分卷总结会更准）'}
-            。生成结果只是草稿，勾选确认后才会正式标进故事。
-          </DialogDescription>
+                ? tr("会结合已有的 {{v0}} 卷总结与抽样楼层来找剧情转折点", { v0: volumeSummaries.length })
+                : tr("这篇故事还没有分卷总结，会先按抽样楼层判断（先做分卷总结会更准）")}{tr("。生成结果只是草稿，勾选确认后才会正式标进故事。")}</DialogDescription>
         </DialogHeader>
 
         {!suggestions && (
           !suggesting ? (
             <Button className="gap-1" onClick={() => void handleSuggestChapters()}>
-              <Sparkles className="w-4 h-4" />生成章节建议
-            </Button>
+              <Sparkles className="w-4 h-4" />{tr("生成章节建议")}</Button>
           ) : (
             <Button variant="destructive" className="gap-1" onClick={() => abortRef.current?.abort()}>
-              <Square className="w-4 h-4" />停止<Loader2 className="w-4 h-4 animate-spin" />
+              <Square className="w-4 h-4" />{tr("停止")}<Loader2 className="w-4 h-4 animate-spin" />
             </Button>
           )
         )}
@@ -193,16 +191,16 @@ export function NovelChapterSuggestDialog({
             {suggestions.map((s, i) => (
               <div key={`${s.floor}`} className="flex items-center gap-2">
                 <Checkbox
-                  aria-label={`选择第 ${s.floor} 楼章节建议`}
+                  aria-label={tr("选择第 {{v0}} 楼章节建议", { v0: s.floor })}
                   checked={s.picked}
                   onCheckedChange={(c) =>
                     setSuggestions((prev) => prev!.map((x, j) => (j === i ? { ...x, picked: !!c } : x)))
                   }
                 />
-                <span className="text-xs text-muted-foreground w-16 shrink-0">#{s.floor} 楼</span>
+                <span className="text-xs text-muted-foreground w-16 shrink-0">{tr("#{{v0}} 楼", { v0: s.floor })}</span>
                 <Input
                   size="sm"
-                  aria-label={`第 ${s.floor} 楼章节标题`}
+                  aria-label={tr("第 {{v0}} 楼章节标题", { v0: s.floor })}
                   value={s.title}
                   onChange={(e) =>
                     setSuggestions((prev) => prev!.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))
@@ -212,12 +210,8 @@ export function NovelChapterSuggestDialog({
               </div>
             ))}
             <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" size="sm" onClick={() => void handleSuggestChapters()}>
-                重新生成
-              </Button>
-              <Button size="sm" onClick={handleApplySuggestions}>
-                应用 {suggestions.filter((s) => s.picked).length} 个章节标记
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => void handleSuggestChapters()}>{tr("重新生成")}</Button>
+              <Button size="sm" onClick={handleApplySuggestions}>{tr("应用 ")}{suggestions.filter((s) => s.picked).length}{tr(" 个章节标记")}</Button>
             </div>
           </div>
         )}

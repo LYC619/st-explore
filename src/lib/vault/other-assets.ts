@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type { VaultEntry, VaultFs } from './fs';
 import { joinPath } from './fs';
 
@@ -26,13 +27,13 @@ export interface OtherAssetCategorySummary extends OtherAssetCategoryMeta {
 }
 
 export const OTHER_ASSET_CATEGORIES: readonly OtherAssetCategoryMeta[] = [
-  { id: 'extensions', label: '扩展', description: '查看扩展清单、版本与归档源码', relativePath: 'extensions' },
-  { id: 'assets', label: '扩展资产', description: '浏览扩展资产文件，保持原相对路径', relativePath: 'assets' },
-  { id: 'quick-replies', label: '快速回复', description: '直接核对回复选项与命令正文', relativePath: 'quick-replies' },
-  { id: 'personas', label: '用户人设', description: '查看用户名称、头像、描述与关联', relativePath: 'personas' },
-  { id: 'backgrounds', label: '背景', description: '浏览并预览聊天背景图片', relativePath: 'backgrounds' },
-  { id: 'appearance', label: '主题与布局', description: '查看主题配色和界面布局配置', relativePath: 'appearance' },
-  { id: 'user-media', label: '用户媒体', description: '浏览用户图片、文件与工作流', relativePath: 'user-media' },
+  { id: 'extensions', get label() { return tr("扩展"); }, get description() { return tr("查看扩展清单、版本与归档源码"); }, relativePath: 'extensions' },
+  { id: 'assets', get label() { return tr("扩展资产"); }, get description() { return tr("浏览扩展资产文件，保持原相对路径"); }, relativePath: 'assets' },
+  { id: 'quick-replies', get label() { return tr("快速回复"); }, get description() { return tr("直接核对回复选项与命令正文"); }, relativePath: 'quick-replies' },
+  { id: 'personas', get label() { return tr("用户人设"); }, get description() { return tr("查看用户名称、头像、描述与关联"); }, relativePath: 'personas' },
+  { id: 'backgrounds', get label() { return tr("背景"); }, get description() { return tr("浏览并预览聊天背景图片"); }, relativePath: 'backgrounds' },
+  { id: 'appearance', get label() { return tr("主题与布局"); }, get description() { return tr("查看主题配色和界面布局配置"); }, relativePath: 'appearance' },
+  { id: 'user-media', get label() { return tr("用户媒体"); }, get description() { return tr("浏览用户图片、文件与工作流"); }, relativePath: 'user-media' },
 ] as const;
 
 export interface ArchivedExtension {
@@ -113,7 +114,7 @@ function withoutExtension(name: string): string {
 
 function archivePath(relativePath = ''): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean);
-  if (parts.some((part) => part === '.' || part === '..')) throw new Error('归档路径越界');
+  if (parts.some((part) => part === '.' || part === '..')) throw new Error(tr("归档路径越界"));
   return joinPath(OTHER_ASSET_ROOT, ...parts);
 }
 
@@ -165,7 +166,7 @@ async function loadExtension(fs: VaultFs, directory: string): Promise<ArchivedEx
     return { ...extensionFromRecord(directory, raw), manifestPath };
   } catch {
     const manifestExists = (await fs.stat(manifestPath).catch(() => ({ exists: false, isDir: false }))).exists;
-    if (manifestExists) manifestError = '清单格式异常';
+    if (manifestExists) manifestError = tr("清单格式异常");
   }
 
   try {
@@ -188,13 +189,13 @@ export async function loadExtensions(fs: VaultFs): Promise<ArchivedExtension[]> 
   return Promise.all(directories.map((entry) => loadExtension(fs, entry.name)));
 }
 
-const QUICK_REPLY_TRIGGERS: Array<[key: string, label: string]> = [
-  ['executeOnStartup', '启动时'],
-  ['executeOnUser', '用户消息后'],
-  ['executeOnAi', 'AI 消息后'],
-  ['executeOnChatChange', '切换聊天时'],
-  ['executeOnNewChat', '新聊天时'],
-  ['executeBeforeGeneration', '生成前'],
+const QUICK_REPLY_TRIGGERS: Array<[key: string, label: () => string]> = [
+  ['executeOnStartup', () => tr("启动时")],
+  ['executeOnUser', () => tr("用户消息后")],
+  ['executeOnAi', () => tr("AI 消息后")],
+  ['executeOnChatChange', () => tr("切换聊天时")],
+  ['executeOnNewChat', () => tr("新聊天时")],
+  ['executeBeforeGeneration', () => tr("生成前")],
 ];
 
 function parseQuickReplyItem(raw: unknown, index: number): QuickReplyItem {
@@ -202,12 +203,12 @@ function parseQuickReplyItem(raw: unknown, index: number): QuickReplyItem {
   const title = stringField(record.title);
   return {
     id: String(record.id ?? index + 1),
-    label: stringField(record.label) ?? title ?? `回复 ${index + 1}`,
+    label: stringField(record.label) ?? title ?? tr("回复 {{v0}}", { v0: index + 1 }),
     title,
     message: typeof record.message === 'string' ? record.message : '',
     preventAutoExecute: boolField(record.preventAutoExecute),
     hidden: boolField(record.isHidden),
-    triggers: QUICK_REPLY_TRIGGERS.filter(([key]) => record[key] === true).map(([, label]) => label),
+    triggers: QUICK_REPLY_TRIGGERS.filter(([key]) => record[key] === true).map(([, label]) => label()),
   };
 }
 
@@ -235,7 +236,7 @@ async function loadQuickReplySet(fs: VaultFs, entry: VaultEntry): Promise<QuickR
       items: Array.isArray(raw.qrList) ? raw.qrList.map(parseQuickReplyItem) : [],
     };
   } catch {
-    return { ...fallback, parseError: 'JSON 格式异常' };
+    return { ...fallback, parseError: tr("JSON 格式异常") };
   }
 }
 
@@ -305,7 +306,13 @@ export async function loadOtherAssetOverview(fs: VaultFs): Promise<OtherAssetCat
     appearance,
     'user-media': userMedia,
   };
-  return OTHER_ASSET_CATEGORIES.map((category) => ({ ...category, count: counts[category.id] }));
+  return OTHER_ASSET_CATEGORIES.map((category) => ({
+    id: category.id,
+    get label() { return category.label; },
+    get description() { return category.description; },
+    relativePath: category.relativePath,
+    count: counts[category.id],
+  }));
 }
 
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);

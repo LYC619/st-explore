@@ -1,9 +1,11 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页左信息栏：展开为 304px，收起为 36px；展开内容可滚动但不显示滚动轨道。
  * 立绘 3:4（点击 lightbox 放大）→ 信息行（名称/类型下拉/评分/最后游玩/字数/游玩时长 tooltip）
  * → 「操作」入口 → 右侧抽屉（编辑角色卡/读取内置资源/导出角色卡/删除角色卡）。
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useEffect, useState  } from 'react';
 import { BookOpen, Wrench, PackageOpen, Trash2, Upload, FileJson, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -57,6 +59,7 @@ function InfoRow({ label, value, title }: { label: string; value: React.ReactNod
 export function CharacterInfoRail({
   character, norm, stories, onPatch, onReadEmbedded, onExport, onExportJson, onDelete, stacked = false,
 }: CharacterInfoRailProps) {
+  useI18n();
   const [collapsed, setCollapsed] = useState(() => scopedGet('ste-character-info-collapsed') === '1');
   const toggleCollapsed = () => {
     scopedSet('ste-character-info-collapsed', collapsed ? '0' : '1');
@@ -93,7 +96,7 @@ export function CharacterInfoRail({
     <aside
       data-character-info-rail={stacked ? 'stacked' : 'rail'}
       data-info-collapsed={collapsed}
-      aria-label="角色卡图与信息"
+      aria-label={tr("角色卡图与信息")}
       className={cn(
         'relative overflow-hidden border-[color:var(--hairline-inner)]',
         stacked ? 'shrink-0' : 'min-h-0',
@@ -102,7 +105,7 @@ export function CharacterInfoRail({
           : 'w-[304px] shrink-0 border-r flex flex-col',
       )}
     >
-      <div hidden={collapsed} data-character-info-scroll aria-label="角色信息内容" tabIndex={!stacked && !collapsed ? 0 : undefined}
+      <div hidden={collapsed} data-character-info-scroll aria-label={tr("角色信息内容")} tabIndex={!stacked && !collapsed ? 0 : undefined}
         className={cn('min-h-0', stacked ? 'px-4 pt-4 pb-14' : 'flex-1 pl-6 pr-10 pt-6 pb-6 overflow-x-hidden overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand')}>
       <div className={cn(stacked && 'flex items-start gap-4')}>
       {/* 立绘 3:4（设计稿），点击放大 */}
@@ -119,7 +122,7 @@ export function CharacterInfoRail({
           }
           setLightbox(true);
         }}
-        aria-label="放大立绘"
+        aria-label={tr("放大立绘")}
       >
         {character.pngBase64 ? (
           <NsfwImage
@@ -139,19 +142,19 @@ export function CharacterInfoRail({
       {/* 信息行：仅在自定义了不同展示名时显示原卡名，避免与右侧标题重复 */}
       <div className={cn(stacked ? 'min-w-0 flex-1' : 'mt-4')}>
         {character.displayMeta?.name && character.displayMeta.name !== character.name && (
-          <InfoRow label="原卡名" value={character.name} title={character.name} />
+          <InfoRow label={tr("原卡名")} value={character.name} title={character.name} />
         )}
         <div className="flex items-center justify-between gap-3 py-2.5 border-b border-[color:var(--hairline-inner)]">
-          <span className="text-sm text-[color:var(--character-label)] shrink-0">类型</span>
+          <span className="text-sm text-[color:var(--character-label)] shrink-0">{tr("类型")}</span>
           <Select
             value={character.type ?? 'none'}
             onValueChange={(v) => { void onPatch({ type: v === 'none' ? undefined : (v as CharacterType) }).catch(() => {}); }}
           >
-            <SelectTrigger className="h-7 w-24 text-xs" title="类型：每张卡只归一类（替代旧版游玩状态）">
+            <SelectTrigger className="h-7 w-24 text-xs" title={tr("类型：每张卡只归一类（替代旧版游玩状态）")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">未分类</SelectItem>
+              <SelectItem value="none">{tr("未分类")}</SelectItem>
               {CHARACTER_TYPES.map((t) => (
                 <SelectItem key={t} value={t}>{t}</SelectItem>
               ))}
@@ -159,19 +162,19 @@ export function CharacterInfoRail({
           </Select>
         </div>
         <div className="flex items-center justify-between gap-2 py-1.5 border-b border-[color:var(--hairline-inner)]">
-          <span className="text-sm text-[color:var(--character-label)] shrink-0">评分</span>
+          <span className="text-sm text-[color:var(--character-label)] shrink-0">{tr("评分")}</span>
           <RatingPanel character={character} norm={norm} stories={stories} onPatch={onPatch} />
         </div>
         <InfoRow
-          label="最后游玩"
+          label={tr("最后游玩")}
           value={agg.lastPlayed !== undefined ? formatListTime(agg.lastPlayed) : '—'}
           title={agg.lastPlayed !== undefined ? formatFullTime(agg.lastPlayed) : undefined}
         />
-        <InfoRow label="字数" value={agg.words > 0 ? formatWordCount(agg.words) : '—'} title="各故事正文字数相加" />
+        <InfoRow label={tr("字数")} value={agg.words > 0 ? formatWordCount(agg.words) : '—'} title={tr("各故事正文字数相加")} />
         <InfoRow
-          label="游玩时长"
-          value={agg.hasPlay ? formatPlayTime({ totalMs: agg.playMs, sessionCount: 0, sampledMessages: 0 }) : '未统计'}
-          title="按消息时间戳估算：间隔超过 15 分钟视为离开，不计入时长"
+          label={tr("游玩时长")}
+          value={agg.hasPlay ? formatPlayTime({ totalMs: agg.playMs, sessionCount: 0, sampledMessages: 0 }) : tr("未统计")}
+          title={tr("按消息时间戳估算：间隔超过 15 分钟视为离开，不计入时长")}
         />
       </div>
       </div>
@@ -183,49 +186,38 @@ export function CharacterInfoRail({
           size="sm"
           className="flex-1"
           onClick={onExport}
-          title="按当前角色卡原格式（PNG 或 JSON）一键导出"
+          title={tr("按当前角色卡原格式（PNG 或 JSON）一键导出")}
         >
-          <Upload className="w-3.5 h-3.5 mr-1.5" />
-          导出角色卡
-        </Button>
+          <Upload className="w-3.5 h-3.5 mr-1.5" />{tr("导出角色卡")}</Button>
 
         <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
           <SheetTrigger asChild>
-            <Button variant="outline" size="sm" title="更多文件级操作">
-              <Wrench className="w-3.5 h-3.5 mr-1" />
-              操作
-            </Button>
+            <Button variant="outline" size="sm" title={tr("更多文件级操作")}>
+              <Wrench className="w-3.5 h-3.5 mr-1" />{tr("操作")}</Button>
           </SheetTrigger>
           <SheetContent side="right" className="w-80">
             <SheetHeader>
-              <SheetTitle>角色卡操作</SheetTitle>
-              <SheetDescription>对这张卡的文件级操作；整理信息（类型/标签/评分）在页面上直接改。</SheetDescription>
+              <SheetTitle>{tr("角色卡操作")}</SheetTitle>
+              <SheetDescription>{tr("对这张卡的文件级操作；整理信息（类型/标签/评分）在页面上直接改。")}</SheetDescription>
             </SheetHeader>
             <div className="mt-5 flex flex-col gap-2">
               <Button
                 variant="outline"
                 className="justify-start"
-                title="重新扫描卡内嵌的世界书/正则并入库挂关联"
+                title={tr("重新扫描卡内嵌的世界书/正则并入库挂关联")}
                 onClick={() => { setDrawerOpen(false); onReadEmbedded(); }}
               >
-                <PackageOpen className="w-4 h-4 mr-2" />
-                读取内置资源
-              </Button>
+                <PackageOpen className="w-4 h-4 mr-2" />{tr("读取内置资源")}</Button>
               <Button variant="outline" className="justify-start" onClick={onExport}>
-                <Upload className="w-4 h-4 mr-2" />
-                导出角色卡（原格式）
-              </Button>
+                <Upload className="w-4 h-4 mr-2" />{tr("导出角色卡（原格式）")}</Button>
               {onExportJson && <Button variant="outline" className="justify-start" onClick={onExportJson}>
-                <FileJson className="w-4 h-4 mr-2" /> 导出角色卡 JSON
-              </Button>}
+                <FileJson className="w-4 h-4 mr-2" />{tr(" 导出角色卡 JSON")}</Button>}
               <Button
                 variant="outline"
                 className="justify-start text-destructive hover:text-destructive"
                 onClick={() => { setDrawerOpen(false); onDelete(); }}
               >
-                <Trash2 className="w-4 h-4 mr-2" />
-                删除角色卡
-              </Button>
+                <Trash2 className="w-4 h-4 mr-2" />{tr("删除角色卡")}</Button>
             </div>
           </SheetContent>
         </Sheet>
@@ -235,15 +227,15 @@ export function CharacterInfoRail({
 
       <Button variant="ghost" size="icon" onClick={toggleCollapsed}
         className={cn('absolute bottom-2 bg-background/90 p-0 text-muted-foreground hover:text-foreground', stacked ? 'right-2' : 'right-0.5')}
-        aria-expanded={!collapsed} aria-label={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}
-        title={collapsed ? '展开角色卡图与信息' : '折叠角色卡图与信息'}>
+        aria-expanded={!collapsed} aria-label={collapsed ? tr("展开角色卡图与信息") : tr("折叠角色卡图与信息")}
+        title={collapsed ? tr("展开角色卡图与信息") : tr("折叠角色卡图与信息")}>
         {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
       </Button>
 
       {/* lightbox */}
       <Dialog open={lightbox} onOpenChange={setLightbox}>
         <DialogContent className="max-w-3xl p-2 bg-transparent border-0 shadow-none">
-          <DialogTitle className="sr-only">{character.name} 立绘</DialogTitle>
+          <DialogTitle className="sr-only">{character.name}{tr(" 立绘")}</DialogTitle>
           {character.pngBase64 && (
             <NsfwImage
               src={`data:image/png;base64,${character.pngBase64}`}

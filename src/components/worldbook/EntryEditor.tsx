@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,6 +29,7 @@ function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
   dashed?: boolean;
   placeholder?: string;
 }) {
+  useI18n();
   const [input, setInput] = useState('');
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -65,14 +68,14 @@ function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
         <Textarea
           value={bulkText}
           onChange={(e) => setBulkText(e.target.value)}
-          placeholder="逗号分隔，整体替换（清空文本即删除全部关键词）"
+          placeholder={tr("逗号分隔，整体替换（清空文本即删除全部关键词）")}
           className="text-sm min-h-[70px]"
           autoFocus
         />
         <div className="flex items-center gap-2">
-          <Button size="sm" className="text-xs" onClick={applyBulk}>应用</Button>
-          <Button size="sm" variant="ghost" className="text-xs" onClick={() => setBulkMode(false)}>取消</Button>
-          <span className="text-xs text-muted-foreground">编辑 / 删除多个后整体替换</span>
+          <Button size="sm" className="text-xs" onClick={applyBulk}>{tr("应用")}</Button>
+          <Button size="sm" variant="ghost" className="text-xs" onClick={() => setBulkMode(false)}>{tr("取消")}</Button>
+          <span className="text-xs text-muted-foreground">{tr("编辑 / 删除多个后整体替换")}</span>
         </div>
       </div>
     );
@@ -97,10 +100,8 @@ function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
             type="button"
             onClick={openBulk}
             className="text-xs text-muted-foreground hover:text-foreground underline decoration-dotted ml-0.5"
-            title="批量编辑：文本框内逗号分隔，整体替换"
-          >
-            批量编辑
-          </button>
+            title={tr("批量编辑：文本框内逗号分隔，整体替换")}
+          >{tr("批量编辑")}</button>
         )}
       </div>
       <Input
@@ -116,20 +117,21 @@ function TagInput({ tags, onChange, dashed = false, placeholder = '' }: {
 }
 
 export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
+  useI18n();
   const [contentExpanded, setContentExpanded] = useState(false);
   const [uidDraft, setUidDraft] = useState(String(entry.uid));
   useEffect(() => setUidDraft(String(entry.uid)), [entry.uid]);
   const nextUid = Number(uidDraft);
   const uidError = !uidDraft.trim() || !Number.isSafeInteger(nextUid) || nextUid < 0
-    ? 'UID 必须是非负安全整数'
-    : nextUid !== entry.uid && usedUids.includes(nextUid) ? `UID ${nextUid} 已被占用` : '';
+    ? tr("UID 必须是非负安全整数")
+    : nextUid !== entry.uid && usedUids.includes(nextUid) ? tr("UID {{v0}} 已被占用", { v0: nextUid }) : '';
   const update = <K extends keyof WorldBookEntry>(key: K, value: WorldBookEntry[K]) => {
     onChange({ ...entry, [key]: value });
   };
 
   return (
     <div className="space-y-4 p-4 overflow-y-auto">
-      <h3 className="font-semibold text-base text-foreground">编辑条目</h3>
+      <h3 className="font-semibold text-base text-foreground">{tr("编辑条目")}</h3>
 
       <div className="space-y-1">
         <Label htmlFor="entry-uid">UID</Label>
@@ -144,48 +146,42 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
 
       {/* Title */}
       <div className="space-y-1">
-        <Label>标题 / Memo</Label>
+        <Label>{tr("标题 / Memo")}</Label>
         <Input value={entry.comment} onChange={(e) => update('comment', e.target.value)} />
       </div>
 
       {/* Enabled */}
       <div className="flex items-center gap-2">
-        <Label>启用</Label>
+        <Label>{tr("启用")}</Label>
         <Switch checked={entry.enabled} onCheckedChange={(v) => update('enabled', v)} />
       </div>
 
       {/* Strategy — single atomic update */}
       <div className="space-y-1">
-        <Label>策略</Label>
+        <Label>{tr("策略")}</Label>
         <div className="flex gap-2">
           <label className="flex items-center gap-1 text-sm">
             <input type="radio" checked={!entry.constant && !entry.vectorized}
-              onChange={() => onChange({ ...entry, constant: false, vectorized: false })} />
-            🟢 关键词
-          </label>
+              onChange={() => onChange({ ...entry, constant: false, vectorized: false })} />{tr("🟢 关键词")}</label>
           <label className="flex items-center gap-1 text-sm">
             <input type="radio" checked={entry.constant}
-              onChange={() => onChange({ ...entry, constant: true, vectorized: false })} />
-            🔵 常驻
-          </label>
+              onChange={() => onChange({ ...entry, constant: true, vectorized: false })} />{tr("🔵 常驻")}</label>
           <label className="flex items-center gap-1 text-sm">
             <input type="radio" checked={entry.vectorized}
-              onChange={() => onChange({ ...entry, vectorized: true, constant: false })} />
-            🔗 向量
-          </label>
+              onChange={() => onChange({ ...entry, vectorized: true, constant: false })} />{tr("🔗 向量")}</label>
         </div>
       </div>
 
       {/* Keywords */}
       <div className="space-y-1">
-        <Label>关键词 (Key)</Label>
-        <TagInput tags={entry.key} onChange={(t) => update('key', t)} placeholder="逗号分隔或回车添加" />
+        <Label>{tr("关键词 (Key)")}</Label>
+        <TagInput tags={entry.key} onChange={(t) => update('key', t)} placeholder={tr("逗号分隔或回车添加")} />
       </div>
 
       {/* Secondary keywords */}
       <div className="space-y-1">
-        <Label>可选过滤词 (Optional Filter)</Label>
-        <TagInput tags={entry.keysecondary} onChange={(t) => update('keysecondary', t)} dashed placeholder="可选过滤词" />
+        <Label>{tr("可选过滤词 (Optional Filter)")}</Label>
+        <TagInput tags={entry.keysecondary} onChange={(t) => update('keysecondary', t)} dashed placeholder={tr("可选过滤词")} />
         <Select value={String(entry.selectiveLogic)} onValueChange={(v) => update('selectiveLogic', Number(v))}>
           <SelectTrigger className="h-8 w-40 text-sm">
             <SelectValue />
@@ -202,9 +198,9 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
       <div className="space-y-1">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Label>内容 (Content)</Label>
-            <span className="text-[11px] text-muted-foreground" title="粗略估算（CJK≈1字1token），仅供预算参考">
-              {entry.content.length} 字 · ≈{estimateTokens(entry.content)} tokens
+            <Label>{tr("内容 (Content)")}</Label>
+            <span className="text-[11px] text-muted-foreground" title={tr("粗略估算（CJK≈1字1token），仅供预算参考")}>
+              {tr("{{v0}} 字 · ≈{{v1}} tokens", { v0: entry.content.length, v1: estimateTokens(entry.content) })}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -215,10 +211,9 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
               size="sm"
               className="px-2 text-xs text-muted-foreground hover:text-foreground"
               onClick={() => setContentExpanded(true)}
-              title="放大编辑"
+              title={tr("放大编辑")}
             >
-              <Maximize2 className="w-3.5 h-3.5 mr-1" /> 放大
-            </Button>
+              <Maximize2 className="w-3.5 h-3.5 mr-1" />{tr(" 放大")}</Button>
           </div>
         </div>
         <Textarea value={entry.content} onChange={(e) => update('content', e.target.value)} rows={8} className="text-sm" />
@@ -233,7 +228,7 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
         >
           <DialogHeader className="shrink-0">
             <DialogTitle className="text-base flex items-center justify-between gap-2 pr-8">
-              <span>编辑内容{entry.comment ? ` — ${entry.comment}` : ''}</span>
+              <span>{tr("编辑内容")}{entry.comment ? ` — ${entry.comment}` : ''}</span>
               <AIRewriteContent content={entry.content} onResult={(text) => update('content', text)} />
             </DialogTitle>
           </DialogHeader>
@@ -241,18 +236,18 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
             value={entry.content}
             onChange={(e) => update('content', e.target.value)}
             className="text-sm font-mono flex-1 min-h-0 resize-none leading-relaxed"
-            placeholder="在此自由编辑条目内容..."
+            placeholder={tr("在此自由编辑条目内容...")}
             autoFocus
           />
           <div className="flex justify-end shrink-0">
-            <Button size="sm" onClick={() => setContentExpanded(false)}>完成</Button>
+            <Button size="sm" onClick={() => setContentExpanded(false)}>{tr("完成")}</Button>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Position */}
       <div className="space-y-1">
-        <Label>插入位置</Label>
+        <Label>{tr("插入位置")}</Label>
         <Select value={String(entry.position)} onValueChange={(v) => update('position', Number(v))}>
           <SelectTrigger className="h-8 text-sm">
             <SelectValue />
@@ -269,11 +264,11 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
       {entry.position === 6 && (
         <div className="flex gap-3">
           <div className="space-y-1 flex-1">
-            <Label>深度 (Depth)</Label>
+            <Label>{tr("深度 (Depth)")}</Label>
             <Input type="number" value={entry.depth} onChange={(e) => update('depth', Number(e.target.value))} />
           </div>
           <div className="space-y-1 flex-1">
-            <Label>角色 (Role)</Label>
+            <Label>{tr("角色 (Role)")}</Label>
             <Select value={String(entry.role)} onValueChange={(v) => update('role', Number(v))}>
               <SelectTrigger className="h-8 text-sm">
                 <SelectValue />
@@ -296,33 +291,31 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
 
       {/* Probability */}
       <div className="space-y-1">
-        <Label>触发概率: {entry.probability}%</Label>
+        <Label>{tr("触发概率: {{v0}}%", { v0: entry.probability })}</Label>
         <Slider value={[entry.probability]} min={0} max={100} step={1} onValueChange={([v]) => update('probability', v)} />
       </div>
 
       {/* Group */}
       <div className="space-y-1">
         <Label>Inclusion Group</Label>
-        <Input value={entry.group} onChange={(e) => update('group', e.target.value)} placeholder="分组名称" />
+        <Input value={entry.group} onChange={(e) => update('group', e.target.value)} placeholder={tr("分组名称")} />
       </div>
 
       {/* Advanced: Timing */}
       <Collapsible>
         <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-          <ChevronDown className="w-4 h-4" />
-          高级：时效设置
-        </CollapsibleTrigger>
+          <ChevronDown className="w-4 h-4" />{tr("高级：时效设置")}</CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 pt-2">
           <div className="space-y-1">
-            <Label>Sticky (轮次)</Label>
+            <Label>{tr("Sticky (轮次)")}</Label>
             <Input type="number" value={entry.sticky} onChange={(e) => update('sticky', Number(e.target.value))} />
           </div>
           <div className="space-y-1">
-            <Label>Cooldown (轮次)</Label>
+            <Label>{tr("Cooldown (轮次)")}</Label>
             <Input type="number" value={entry.cooldown} onChange={(e) => update('cooldown', Number(e.target.value))} />
           </div>
           <div className="space-y-1">
-            <Label>Delay (轮次)</Label>
+            <Label>{tr("Delay (轮次)")}</Label>
             <Input type="number" value={entry.delay} onChange={(e) => update('delay', Number(e.target.value))} />
           </div>
         </CollapsibleContent>
@@ -331,20 +324,18 @@ export function EntryEditor({ entry, onChange, usedUids = [] }: Props) {
       {/* Advanced: Recursion */}
       <Collapsible>
         <CollapsibleTrigger className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-          <ChevronDown className="w-4 h-4" />
-          高级：递归设置
-        </CollapsibleTrigger>
+          <ChevronDown className="w-4 h-4" />{tr("高级：递归设置")}</CollapsibleTrigger>
         <CollapsibleContent className="space-y-3 pt-2">
           <div className="flex items-center justify-between">
-            <Label className="text-sm">排除递归 (Exclude Recursion)</Label>
+            <Label className="text-sm">{tr("排除递归 (Exclude Recursion)")}</Label>
             <Switch checked={entry.excludeRecursion} onCheckedChange={(v) => update('excludeRecursion', v)} />
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">阻止后续递归 (Prevent Recursion)</Label>
+            <Label className="text-sm">{tr("阻止后续递归 (Prevent Recursion)")}</Label>
             <Switch checked={entry.preventRecursion} onCheckedChange={(v) => update('preventRecursion', v)} />
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">延迟到递归时激活 (Delay Until Recursion)</Label>
+            <Label className="text-sm">{tr("延迟到递归时激活 (Delay Until Recursion)")}</Label>
             <Switch checked={entry.delayUntilRecursion} onCheckedChange={(v) => update('delayUntilRecursion', v)} />
           </div>
         </CollapsibleContent>

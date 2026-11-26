@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 故事树（可视化事实树）数据类型 —— 二期。
  *
@@ -14,12 +15,12 @@ export type StoryNodeType = 'category' | 'character' | 'location' | 'item' | 'ev
 export const STORY_NODE_TYPES: StoryNodeType[] = ['category', 'character', 'location', 'item', 'event', 'custom'];
 
 export const NODE_TYPE_LABELS: Record<StoryNodeType, string> = {
-  category: '分类',
-  character: '角色',
-  location: '地点',
-  item: '物品',
-  event: '事件',
-  custom: '自定义',
+  get category() { return tr("分类"); },
+  get character() { return tr("角色"); },
+  get location() { return tr("地点"); },
+  get item() { return tr("物品"); },
+  get event() { return tr("事件"); },
+  get custom() { return tr("自定义"); },
 };
 
 /** 六色贯穿：树行小圆点 / 卡片左边条（完整类名字面量，Tailwind JIT 需要） */

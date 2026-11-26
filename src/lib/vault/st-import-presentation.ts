@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type {
   STImportDetail,
   STImportSummary,
@@ -46,28 +47,28 @@ export function buildImportResultStatus({
   if (failed > 0) {
     return {
       needsAttention: true,
-      title: '所选内容已处理，部分项目需要确认',
-      description: `${failed} 项处理失败，其余成功结果不受影响。`,
+      title: tr("所选内容已处理，部分项目需要确认"),
+      description: tr("{{v0}} 项处理失败，其余成功结果不受影响。", { v0: failed }),
     };
   }
   if (unresolved > 0) {
     return {
       needsAttention: true,
-      title: '所选内容已处理，部分项目需要确认',
-      description: '部分历史世界书引用在来源目录中不存在或无法唯一匹配，其余内容已正常导入。',
+      title: tr("所选内容已处理，部分项目需要确认"),
+      description: tr("部分历史世界书引用在来源目录中不存在或无法唯一匹配，其余内容已正常导入。"),
     };
   }
   if (warnings > 0) {
     return {
       needsAttention: true,
-      title: '所选内容已处理，部分项目需要确认',
-      description: `扫描时为保护目录边界安全跳过了 ${warnings} 项；其余所选内容已正常处理。`,
+      title: tr("所选内容已处理，部分项目需要确认"),
+      description: tr("扫描时为保护目录边界安全跳过了 {{v0}} 项；其余所选内容已正常处理。", { v0: warnings }),
     };
   }
   return {
     needsAttention: false,
-    title: '所选内容已全部处理',
-    description: '没有发现解析失败、未解决的世界书关联或扫描警告。',
+    title: tr("所选内容已全部处理"),
+    description: tr("没有发现解析失败、未解决的世界书关联或扫描警告。"),
   };
 }
 
@@ -83,12 +84,12 @@ export function buildImportManifestNotice(details: STImportDetail[]): ImportMani
   if (writeFailed) {
     return {
       saved: false,
-      description: '本次结果已显示，但完整清单写入失败；请展开处理明细查看原因。',
+      description: tr("本次结果已显示，但完整清单写入失败；请展开处理明细查看原因。"),
     };
   }
   return {
     saved: true,
-    description: `完整清单已保存到“${IMPORT_MANIFEST_PATH}”。`,
+    description: tr("完整清单已保存到“{{v0}}”。", { v0: IMPORT_MANIFEST_PATH }),
   };
 }
 

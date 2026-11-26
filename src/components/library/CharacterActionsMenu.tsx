@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { BookOpen, ExternalLink, MessageSquare, MoreVertical, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   DropdownMenu,
@@ -34,45 +36,34 @@ export function CharacterActionsMenu({
   triggerClassName,
   iconClassName,
 }: CharacterActionsMenuProps) {
+  useI18n();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-        <button type="button" aria-label="更多操作" className={triggerClassName}>
+        <button type="button" aria-label={tr("更多操作")} className={triggerClassName}>
           <MoreVertical className={cn('w-3.5 h-3.5', iconClassName)} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={onOpen}>
-          <ExternalLink className="w-3.5 h-3.5 mr-2" />
-          打开角色主页
-        </DropdownMenuItem>
+          <ExternalLink className="w-3.5 h-3.5 mr-2" />{tr("打开角色主页")}</DropdownMenuItem>
         {onContinueChat && (
           <DropdownMenuItem onClick={onContinueChat}>
-            <MessageSquare className="w-3.5 h-3.5 mr-2 text-brand" />
-            接着上次续聊
-          </DropdownMenuItem>
+            <MessageSquare className="w-3.5 h-3.5 mr-2 text-brand" />{tr("接着上次续聊")}</DropdownMenuItem>
         )}
         {onReminisceStory && (
           <DropdownMenuItem onClick={onReminisceStory}>
-            <BookOpen className="w-3.5 h-3.5 mr-2" />
-            回味最近故事
-          </DropdownMenuItem>
+            <BookOpen className="w-3.5 h-3.5 mr-2" />{tr("回味最近故事")}</DropdownMenuItem>
         )}
         {onOpenGreetings && (
           <DropdownMenuItem onClick={onOpenGreetings}>
-            <Sparkles className="w-3.5 h-3.5 mr-2" />
-            赏玩开场白
-          </DropdownMenuItem>
+            <Sparkles className="w-3.5 h-3.5 mr-2" />{tr("赏玩开场白")}</DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onExport}>
-          <Upload className="w-3.5 h-3.5 mr-2" />
-          导出角色卡
-        </DropdownMenuItem>
+          <Upload className="w-3.5 h-3.5 mr-2" />{tr("导出角色卡")}</DropdownMenuItem>
         <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
-          <Trash2 className="w-3.5 h-3.5 mr-2" />
-          删除角色
-        </DropdownMenuItem>
+          <Trash2 className="w-3.5 h-3.5 mr-2" />{tr("删除角色")}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

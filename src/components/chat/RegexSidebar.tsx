@@ -1,3 +1,5 @@
+import { tr, formatList } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { X, Plus, Trash2, RotateCcw, ChevronDown, ChevronUp, Regex, GripVertical, Eye, Bookmark, Upload, Download, Stamp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,6 +59,7 @@ interface RegexSidebarProps {
 }
 
 export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewChange, previewId = null, onApplyToOriginal, readOnly = false, stickyTop = 0 }: RegexSidebarProps) {
+  useI18n();
   const { toast } = useToast();
   const { isCompact } = useViewport();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -123,20 +126,20 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     if (readOnly) return;
     const name = presetName.trim();
     if (!name) {
-      toast({ title: '请输入预设名称', variant: 'destructive' });
+      toast({ title: tr("请输入预设名称"), variant: 'destructive' });
       return;
     }
     const updated = addRegexPreset(name, rules);
     setPresets(updated);
     setPresetName('');
-    toast({ title: '已保存预设', description: `「${name}」包含 ${rules.length} 条规则` });
+    toast({ title: tr("已保存预设"), description: tr("「{{v0}}」包含 {{v1}} 条规则", { v0: name, v1: rules.length }) });
   };
 
   const handleLoadPreset = (preset: RegexPreset) => {
     if (readOnly) return;
     commitRulesChange(JSON.parse(JSON.stringify(preset.rules)));
     setPresetOpen(false);
-    toast({ title: '已加载预设', description: `「${preset.name}」（${preset.rules.length} 条规则）` });
+    toast({ title: tr("已加载预设"), description: tr("「{{v0}}」（{{v1}} 条规则）", { v0: preset.name, v1: preset.rules.length }) });
   };
 
   const handleDeletePreset = (id: string) => {
@@ -159,8 +162,8 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     }
     if (imported.length === 0) {
       toast({
-        title: '未发现可导入的规则',
-        description: failed.length > 0 ? `解析失败：${failed.join('、')}` : undefined,
+        title: tr("未发现可导入的规则"),
+        description: failed.length > 0 ? tr("解析失败：{{v0}}", { v0: formatList(failed) }) : undefined,
         variant: 'destructive',
       });
       return;
@@ -170,15 +173,15 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     imported.forEach((r) => byId.set(r.id, r));
     commitRulesChange(Array.from(byId.values()));
     toast({
-      title: '已导入 ST 正则',
-      description: `导入 ${imported.length} 条规则${files.length > 1 ? `（${files.length - failed.length}/${files.length} 个文件）` : ''}${failed.length > 0 ? `；失败：${failed.join('、')}` : ''}`,
+      title: tr("已导入 ST 正则"),
+      description: tr("导入 {{v0}} 条规则{{v1}}{{v2}}", { v0: imported.length, v1: files.length > 1 ? tr("（{{v0}}/{{v1}} 个文件）", { v0: files.length - failed.length, v1: files.length }) : '', v2: failed.length > 0 ? tr("；失败：{{v0}}", { v0: formatList(failed) }) : '' }),
     });
   };
 
   // 导出当前规则为 ST 正则脚本 .json
   const handleExportST = () => {
     if (rules.length === 0) {
-      toast({ title: '当前没有规则可导出', variant: 'destructive' });
+      toast({ title: tr("当前没有规则可导出"), variant: 'destructive' });
       return;
     }
     const json = exportSTRegex(rules);
@@ -189,7 +192,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     a.download = rules.length === 1 ? `${rules[0].name || 'regex'}.json` : 'regex-scripts.json';
     a.click();
     URL.revokeObjectURL(url);
-    toast({ title: '已导出 ST 正则', description: `导出 ${rules.length} 条规则` });
+    toast({ title: tr("已导出 ST 正则"), description: tr("导出 {{v0}} 条规则", { v0: rules.length }) });
   };
 
   const handleAddRule = (rule?: RegexRule) => {
@@ -201,7 +204,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
     } else {
       const newRule: RegexRule = {
         id: crypto.randomUUID(),
-        name: `自定义规则 ${rules.filter(r => !r.id.startsWith('builtin-')).length + 1}`,
+        name: tr("自定义规则 {{v0}}", { v0: rules.filter(r => !r.id.startsWith('builtin-')).length + 1 }),
         findRegex: '',
         replaceString: '',
         placement: ['all'],
@@ -311,16 +314,13 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
       <div className="shrink-0 p-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Regex className="w-4 h-4 text-primary" />
-          <h3 className="font-display font-medium">正则清理规则</h3>
-          <HelpCard>
-            正则规则用于自动清理 AI 输出中的杂项内容（如思维链 &lt;thinking&gt;、状态栏标签等）。可通过「快速添加」按标签包裹或指定内容快速生成规则，也可手动添加。规则按用户消息和助手消息分别应用，处理后导出的文件会更干净。
-          </HelpCard>
+          <h3 className="font-display font-medium">{tr("正则清理规则")}</h3>
+          <HelpCard>{tr("正则规则用于自动清理 AI 输出中的杂项内容（如思维链 &lt;thinking&gt;、状态栏标签等）。可通过「快速添加」按标签包裹或指定内容快速生成规则，也可手动添加。规则按用户消息和助手消息分别应用，处理后导出的文件会更干净。")}</HelpCard>
           <span className="text-xs text-muted-foreground">
-            ({enabledCount}/{rules.length} 启用)
-          </span>
+            ({enabledCount}/{rules.length}{tr(" 启用)")}</span>
         </div>
         {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose} aria-label="关闭">
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label={tr("关闭")}>
             <X className="w-4 h-4" />
           </Button>
         )}
@@ -328,9 +328,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
 
       <div data-regex-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
       {/* Description */}
-      <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border">
-        使用正则表达式移除思维链、状态栏等无关内容
-      </div>
+      <div className="px-4 py-2 text-xs text-muted-foreground border-b border-border">{tr("使用正则表达式移除思维链、状态栏等无关内容")}</div>
 
       {/* Rules List */}
       <div>
@@ -375,7 +373,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                     onClick={() =>
                       setEditingId(editingId === rule.id ? null : rule.id)
                     }
-                    aria-label={editingId === rule.id ? '收起' : '展开编辑'}
+                    aria-label={editingId === rule.id ? tr("收起") : tr("展开编辑")}
                   >
                     {editingId === rule.id ? (
                       <ChevronUp className="w-3 h-3" />
@@ -388,7 +386,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                       variant="ghost"
                       size="sm"
                       onClick={() => handleDeleteRule(rule.id)}
-                      aria-label="删除规则"
+                      aria-label={tr("删除规则")}
                     >
                       <Trash2 className="w-3 h-3" />
                     </Button>
@@ -400,7 +398,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
               {editingId === rule.id && (
                 <div className="space-y-3 pt-2 border-t border-border/50">
                   <div className="space-y-1.5">
-                    <Label className="text-xs">规则名称</Label>
+                    <Label className="text-xs">{tr("规则名称")}</Label>
                     <Input
                       value={rule.name}
                       readOnly={readOnly}
@@ -412,20 +410,20 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">匹配正则</Label>
+                    <Label className="text-xs">{tr("匹配正则")}</Label>
                     <Textarea
                       value={rule.findRegex}
                       readOnly={readOnly}
                       onChange={(e) =>
                         handleUpdateRule(rule.id, { findRegex: e.target.value })
                       }
-                      placeholder="/pattern/flags 或纯 pattern"
+                      placeholder={tr("/pattern/flags 或纯 pattern")}
                       className="max-w-full text-xs font-mono min-h-[60px] break-words"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">替换为</Label>
+                    <Label className="text-xs">{tr("替换为")}</Label>
                     <Input
                       value={rule.replaceString}
                       readOnly={readOnly}
@@ -434,13 +432,13 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                           replaceString: e.target.value,
                         })
                       }
-                      placeholder="留空表示删除"
+                      placeholder={tr("留空表示删除")}
                       className="text-sm"
                     />
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs">应用于</Label>
+                    <Label className="text-xs">{tr("应用于")}</Label>
                     <div className="flex items-center gap-3 flex-wrap">
                       <label className="flex items-center gap-1.5 text-xs">
                         <Checkbox
@@ -449,9 +447,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                           onCheckedChange={(checked) =>
                             handlePlacementChange(rule.id, 'all', !!checked)
                           }
-                        />
-                        全部
-                      </label>
+                        />{tr("全部")}</label>
                       <label className="flex items-center gap-1.5 text-xs">
                         <Checkbox
                           checked={rule.placement.includes('user')}
@@ -459,9 +455,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                           onCheckedChange={(checked) =>
                             handlePlacementChange(rule.id, 'user', !!checked)
                           }
-                        />
-                        用户
-                      </label>
+                        />{tr("用户")}</label>
                       <label className="flex items-center gap-1.5 text-xs">
                         <Checkbox
                           checked={rule.placement.includes('assistant')}
@@ -486,7 +480,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                       onClick={() => onPreviewChange(previewId === rule.id ? null : rule)}
                     >
                       <Eye className="w-3 h-3" />
-                      {previewId === rule.id ? '退出预览' : '在正文中预览'}
+                      {previewId === rule.id ? tr("退出预览") : tr("在正文中预览")}
                     </Button>
                   )}
                 </div>
@@ -507,40 +501,34 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
               onClick={() => handleAddRule()}
               className="flex-1 gap-1"
             >
-              <Plus className="w-3 h-3" />
-              手动添加
-            </Button>
+              <Plus className="w-3 h-3" />{tr("手动添加")}</Button>
           </div>
         )}
         {!readOnly && <Popover open={presetOpen} onOpenChange={setPresetOpen}>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="w-full gap-1">
-              <Bookmark className="w-3 h-3" />
-              预设管理
-            </Button>
+              <Bookmark className="w-3 h-3" />{tr("预设管理")}</Button>
           </PopoverTrigger>
           <PopoverContent className="w-72 p-3" align="start" side="top">
             <div className="space-y-3">
               <div>
-                <Label className="text-xs">保存当前规则为预设</Label>
+                <Label className="text-xs">{tr("保存当前规则为预设")}</Label>
                 <div className="flex items-center gap-2 mt-1.5">
                   <Input
                     value={presetName}
                     onChange={(e) => setPresetName(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') handleSavePreset(); }}
-                    placeholder="预设名称"
+                    placeholder={tr("预设名称")}
                     className="text-sm"
                   />
-                  <Button size="sm" className="shrink-0" onClick={handleSavePreset}>
-                    保存
-                  </Button>
+                  <Button size="sm" className="shrink-0" onClick={handleSavePreset}>{tr("保存")}</Button>
                 </div>
               </div>
 
               <div className="border-t border-border pt-2">
-                <Label className="text-xs">已保存的预设</Label>
+                <Label className="text-xs">{tr("已保存的预设")}</Label>
                 {presets.length === 0 ? (
-                  <p className="text-xs text-muted-foreground italic mt-1.5">暂无预设</p>
+                  <p className="text-xs text-muted-foreground italic mt-1.5">{tr("暂无预设")}</p>
                 ) : (
                   <div className="mt-1.5 space-y-1 max-h-48 overflow-y-auto">
                     {presets.map((preset) => (
@@ -551,19 +539,18 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                         <button
                           className="flex-1 min-w-0 text-left text-sm hover:text-primary"
                           onClick={() => handleLoadPreset(preset)}
-                          title={`加载「${preset.name}」`}
+                          title={tr("加载「{{v0}}」", { v0: preset.name })}
                         >
                           <span className="truncate block" title={preset.name}>{preset.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {preset.rules.length} 条规则
-                          </span>
+                            {preset.rules.length}{tr(" 条规则")}</span>
                         </button>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="w-6 p-0 shrink-0"
                           onClick={() => handleDeletePreset(preset.id)}
-                          aria-label="删除预设"
+                          aria-label={tr("删除预设")}
                         >
                           <Trash2 className="w-3 h-3" />
                         </Button>
@@ -595,11 +582,9 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                 size="sm"
                 className="flex-1 gap-1"
                 onClick={() => importInputRef.current?.click()}
-                title="导入 SillyTavern 正则脚本 .json（可一次选多个文件）"
+                title={tr("导入 SillyTavern 正则脚本 .json（可一次选多个文件）")}
               >
-                <Download className="w-3 h-3" />
-                导入正则
-              </Button>
+                <Download className="w-3 h-3" />{tr("导入正则")}</Button>
             </>
           )}
           <Button
@@ -607,11 +592,9 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
             size="sm"
             className="flex-1 gap-1"
             onClick={handleExportST}
-            title="导出为 SillyTavern 正则脚本 .json"
+            title={tr("导出为 SillyTavern 正则脚本 .json")}
           >
-            <Upload className="w-3 h-3" />
-            导出正则
-          </Button>
+            <Upload className="w-3 h-3" />{tr("导出正则")}</Button>
         </div>
         {onApplyToOriginal && !readOnly && (
           <AlertDialog>
@@ -621,23 +604,18 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
                 size="sm"
                 className="w-full gap-1"
                 disabled={enabledCount === 0}
-                title={enabledCount === 0 ? '先启用至少一条规则' : '把当前处理效果永久写入原文'}
+                title={enabledCount === 0 ? tr("先启用至少一条规则") : tr("把当前处理效果永久写入原文")}
               >
-                <Stamp className="w-3 h-3" />
-                应用到原文
-              </Button>
+                <Stamp className="w-3 h-3" />{tr("应用到原文")}</Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>把正则处理结果写入原文？</AlertDialogTitle>
-                <AlertDialogDescription>
-                  将用当前启用的 {enabledCount} 条规则处理全部楼层并覆盖原始文本，随书架自动保存——之后换正则或重新打开这本书，看到的都是处理后的文本。
-                  应用后这些规则会自动停用，避免二次处理。操作完成后可立即点「撤销」恢复，错过则无法找回原文。
-                </AlertDialogDescription>
+                <AlertDialogTitle>{tr("把正则处理结果写入原文？")}</AlertDialogTitle>
+                <AlertDialogDescription>{tr("将用当前启用的 ")}{enabledCount}{tr(" 条规则处理全部楼层并覆盖原始文本，随书架自动保存——之后换正则或重新打开这本书，看到的都是处理后的文本。 应用后这些规则会自动停用，避免二次处理。操作完成后可立即点「撤销」恢复，错过则无法找回原文。")}</AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>取消</AlertDialogCancel>
-                <AlertDialogAction onClick={onApplyToOriginal}>应用</AlertDialogAction>
+                <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
+                <AlertDialogAction onClick={onApplyToOriginal}>{tr("应用")}</AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
@@ -649,9 +627,7 @@ export function RegexSidebar({ rules, onRulesChange, isOpen, onClose, onPreviewC
             onClick={handleResetToDefault}
             className="w-full gap-1"
           >
-            <RotateCcw className="w-3 h-3" />
-            重置为默认
-          </Button>
+            <RotateCcw className="w-3 h-3" />{tr("重置为默认")}</Button>
         )}
       </div>
       </div>

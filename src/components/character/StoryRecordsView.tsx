@@ -1,8 +1,10 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页故事子视图：总结 / 日记 / 自定义记录 / 故事树 的查看视图。
  * - 默认展示「全部脉络」防分支成果被静默藏起；支持多卷同时展开通读；日记支持切换手账本视图。
  */
-import { useState, useEffect, useMemo } from 'react';
+import { useMemo, useState, useEffect  } from 'react';
 import { BookHeart, ChevronsDownUp, ChevronsUpDown, ExternalLink, LocateFixed, NotebookPen, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,10 +33,10 @@ import { EditRecordDialog } from '@/components/summary/EditRecordDialog';
 export type RecordViewKind = 'volume' | 'diary' | 'diy' | 'tree';
 
 const KIND_LABELS: Record<RecordViewKind, string> = {
-  volume: '总结',
-  diary: '日记',
-  diy: '自定义记录',
-  tree: '故事树',
+  get volume() { return tr("总结"); },
+  get diary() { return tr("日记"); },
+  get diy() { return tr("自定义记录"); },
+  get tree() { return tr("故事树"); },
 };
 
 interface StoryRecordsViewProps {
@@ -49,6 +51,7 @@ interface StoryRecordsViewProps {
 type RecordBranchFilter = 'all' | 'main' | string;
 
 export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }: StoryRecordsViewProps) {
+  useI18n();
   const { toast } = useToast();
   const [storyId, setStoryId] = useState<string | null>(stories[0]?.id ?? null);
   const [summaries, setSummaries] = useState<SummaryItem[]>([]);
@@ -121,8 +124,8 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
 
   const branchNameOf = (branchId?: string) => (
     branchId
-      ? story?.branches?.find((b) => b.id === branchId)?.name ?? '分支已删除'
-      : '主线'
+      ? story?.branches?.find((b) => b.id === branchId)?.name ?? tr("分支已删除")
+      : tr("主线")
   );
 
   const visibleSummaries = useMemo(
@@ -177,8 +180,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
   if (stories.length === 0) {
     return (
       <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          还没有故事。先导入聊天记录，再来生成{KIND_LABELS[kind]}。
+        <CardContent className="py-10 text-center text-sm text-muted-foreground">{tr("还没有故事。先导入聊天记录，再来生成{{v0}}。", { v0: KIND_LABELS[kind].toLowerCase() })}
         </CardContent>
       </Card>
     );
@@ -191,7 +193,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
       <div className="flex items-center gap-2 flex-wrap">
         <Select value={storyId ?? undefined} onValueChange={setStoryId}>
           <SelectTrigger className="h-8 w-56 text-xs">
-            <SelectValue placeholder="选择故事" />
+            <SelectValue placeholder={tr("选择故事")} />
           </SelectTrigger>
           <SelectContent>
             {stories.map((s) => (
@@ -202,11 +204,11 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
         {(story?.branches?.length ?? 0) > 0 && (
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className="h-8 w-40 text-xs">
-              <SelectValue placeholder="选择脉络" />
+              <SelectValue placeholder={tr("选择脉络")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部脉络</SelectItem>
-              <SelectItem value="main">主线</SelectItem>
+              <SelectItem value="all">{tr("全部脉络")}</SelectItem>
+              <SelectItem value="main">{tr("主线")}</SelectItem>
               {(story?.branches ?? []).map((branch) => (
                 <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
               ))}
@@ -221,7 +223,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             onClick={() => setExpandedIds(allExpanded ? new Set() : new Set(visibleSummaries.map((i) => i.id)))}
           >
             {allExpanded ? <ChevronsDownUp className="w-3.5 h-3.5" /> : <ChevronsUpDown className="w-3.5 h-3.5" />}
-            {allExpanded ? '全部收起' : '全部展开'}
+            {allExpanded ? tr("全部收起") : tr("全部展开")}
           </Button>
         )}
         <div className="flex-1" />
@@ -232,7 +234,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             aria-pressed={batchMode}
             onClick={() => (batchMode ? exitBatchMode() : setBatchMode(true))}
           >
-            {batchMode ? '完成' : '批量管理'}
+            {batchMode ? tr("完成") : tr("批量管理")}
           </Button>
         )}
         {kind !== 'tree' && (
@@ -242,9 +244,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             className="text-xs"
             onClick={() => setManualOpen(true)}
           >
-            <Plus className="w-3.5 h-3.5 mr-1" />
-            手动录入
-          </Button>
+            <Plus className="w-3.5 h-3.5 mr-1" />{tr("手动录入")}</Button>
         )}
         {story && (
           <Button
@@ -253,44 +253,39 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
             className="text-xs"
             onClick={() => onGoGenerate(story.id, kind, selectedBranchId)}
           >
-            <ExternalLink className="w-3.5 h-3.5 mr-1" />
-            去处理区生成
-          </Button>
+            <ExternalLink className="w-3.5 h-3.5 mr-1" />{tr("去处理区生成")}</Button>
         )}
       </div>
 
       {batchMode && canBatch && (
-        <div aria-label="记录批量管理" className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-elevated px-3 py-2 text-xs">
+        <div aria-label={tr("记录批量管理")} className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-elevated px-3 py-2 text-xs">
           <label className="flex min-h-8 cursor-pointer items-center gap-2">
             <Checkbox
-              aria-label="全选当前记录"
+              aria-label={tr("全选当前记录")}
               checked={selected.size === visibleSummaries.length ? true : selected.size > 0 ? 'indeterminate' : false}
               onCheckedChange={(checked) => setSelected(checked === true ? new Set(visibleSummaries.map((item) => item.id)) : new Set())}
-            />
-            全选当前记录
-          </label>
-          <span className="text-muted-foreground">已选 {selected.size} 条</span>
+            />{tr("全选当前记录")}</label>
+          <span className="text-muted-foreground">{tr("已选 {{v0}} 条", { v0: selected.size })}</span>
           {selected.size > 0 && (
-            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setWorldbookOpen(true)}>
-              加入世界书（{selected.size}）
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setWorldbookOpen(true)}>{tr("加入世界书（{{v0}}）", { v0: selected.size })}
             </Button>
           )}
         </div>
       )}
 
       {recordsError ? (
-        <p role="alert" className="text-sm text-destructive">读取记录失败：{recordsError}</p>
+        <p role="alert" className="text-sm text-destructive">{tr("读取记录失败：")}{recordsError}</p>
       ) : loadingRecords ? (
-        <p role="status" className="text-sm text-muted-foreground">正在读取记录…</p>
+        <p role="status" className="text-sm text-muted-foreground">{tr("正在读取记录…")}</p>
       ) : items.length === 0 ? (
         <Card>
           <CardContent className="py-10 flex flex-col items-center gap-2 text-center">
             <NotebookPen className="w-8 h-8 text-muted-foreground/40" />
-            <p className="text-sm text-muted-foreground">这个故事还没有{KIND_LABELS[kind]}</p>
+            <p className="text-sm text-muted-foreground">{tr("这个故事还没有{{v0}}", { v0: KIND_LABELS[kind].toLowerCase() })}</p>
             <p className="text-xs text-muted-foreground/70">
               {hasAI
-                ? `点「去处理区生成」用 AI 生成${kind !== 'tree' ? '，或「手动录入」直接粘贴' : ''}`
-                : '还没配置模型连接：可先到「设置 → AI 配置」配好接口，再回处理区生成' + (kind !== 'tree' ? '；也可以「手动录入」' : '')}
+                ? (kind !== 'tree' ? tr("点「去处理区生成」用 AI 生成，或「手动录入」直接粘贴") : tr("点「去处理区生成」用 AI 生成"))
+                : tr("还没配置模型连接：可先到「设置 → AI 配置」配好接口，再回处理区生成") + (kind !== 'tree' ? tr("；也可以「手动录入」") : '')}
             </p>
           </CardContent>
         </Card>
@@ -303,7 +298,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                   <span className="truncate" title={t.title}>{t.title}</span>
                   <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(t.branchId)}</Badge>
                   <span className="text-xs text-muted-foreground font-normal shrink-0">
-                    {t.nodes.length} 个节点 · 更新于{formatListTime(t.updatedAt)}
+                    {tr("{{v0}} 个节点 · 更新于 {{v1}}", { v0: t.nodes.length, v1: formatListTime(t.updatedAt) })}
                   </span>
                 </div>
                 <div className="mt-2">
@@ -317,7 +312,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                     }
                   />
                 </div>
-                <Button variant="outline" size="sm" className="mt-2" onClick={() => setMoveRecord(t)}>移动到其他故事</Button>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => setMoveRecord(t)}>{tr("移动到其他故事")}</Button>
               </CardContent>
             </Card>
           ))}
@@ -338,7 +333,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                   <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                     {batchMode && (
                       <span onClick={(event) => event.stopPropagation()}>
-                        <Checkbox aria-label={`选择记录 ${item.title}`} checked={selected.has(item.id)} onCheckedChange={() => toggleSelected(item.id)} />
+                        <Checkbox aria-label={tr("选择记录 {{v0}}", { v0: item.title })} checked={selected.has(item.id)} onCheckedChange={() => toggleSelected(item.id)} />
                       </span>
                     )}
                     <span className="truncate" title={item.title}>{item.title}</span>
@@ -351,11 +346,11 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                     <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal shrink-0">{branchNameOf(item.branchId)}</Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5" title={formatFullTime(item.updatedAt)}>
-                    {manual ? '手动录入' : '生成'}于{formatListTime(item.updatedAt)}
-                    {item.source && ` · 收录自第 ${item.source.floor} 楼`}
+                    {manual ? tr("手动录入于 {{v0}}", { v0: formatListTime(item.updatedAt) }) : tr("生成于 {{v0}}", { v0: formatListTime(item.updatedAt) })}
+                    {item.source && tr(" · 收录自第 {{v0}} 楼", { v0: item.source.floor })}
                     {item.rangeDetached
-                      ? item.provenance ? ` · 原故事 ${item.floorStart}-${item.floorEnd} 楼` : ' · 覆盖范围未指定'
-                      : ` · 覆盖第 ${item.floorStart}-${item.floorEnd} 楼`}
+                      ? item.provenance ? tr(" · 原故事 {{v0}}-{{v1}} 楼", { v0: item.floorStart, v1: item.floorEnd }) : tr(" · 覆盖范围未指定")
+                      : tr(" · 覆盖第 {{v0}}-{{v1}} 楼", { v0: item.floorStart, v1: item.floorEnd })}
                   </p>
 
                   {useDiaryNotebook ? (
@@ -375,13 +370,13 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                     <div className="mt-3 flex flex-wrap gap-2 [&>button]:min-h-11" onClick={(event) => event.stopPropagation()}>
                       {!useDiaryNotebook && (
                         <Button variant="ghost" size="sm" aria-expanded={expanded} onClick={() => toggleExpanded(item.id)}>
-                          {expanded ? '收起全文' : '展开全文'}
+                          {expanded ? tr("收起全文") : tr("展开全文")}
                         </Button>
                       )}
                       {kind === 'diary' && (
                         <Button variant="outline" size="sm" onClick={() => toggleDiaryNotebook(item.id)}>
                           <BookHeart className="w-3.5 h-3.5 mr-1" />
-                          {useDiaryNotebook ? '切回列表排版' : '手账本翻阅'}
+                          {useDiaryNotebook ? tr("切回列表排版") : tr("手账本翻阅")}
                         </Button>
                       )}
                       {onJumpToFloor && story && (!item.rangeDetached && Number.isSafeInteger(item.floorStart) || Number.isSafeInteger(item.source?.floor)) && (
@@ -394,23 +389,19 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
                               : item.source!.floor;
                             onJumpToFloor(story.id, item.branchId ?? null, floor);
                           }}
-                          title={`打开大屏故事并直达第 #${!item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor} 楼回味原文`}
+                          title={tr("打开大屏故事并直达第 #{{v0}} 楼回味原文", { v0: !item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor })}
                         >
-                          <LocateFixed className="w-3.5 h-3.5 mr-1" />
-                          跳到 #{!item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor} 楼回味
-                        </Button>
+                          <LocateFixed className="w-3.5 h-3.5 mr-1" />{tr("跳到 #{{v0}} 楼回味", { v0: !item.rangeDetached && Number.isSafeInteger(item.floorStart) ? item.floorStart : item.source!.floor })}</Button>
                       )}
-                      <Button variant="outline" size="sm" onClick={() => setEditing(item)}>编辑记录</Button>
-                      <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>移动到其他故事</Button>
+                      <Button variant="outline" size="sm" onClick={() => setEditing(item)}>{tr("编辑记录")}</Button>
+                      <Button variant="outline" size="sm" onClick={() => setMoveRecord(item)}>{tr("移动到其他故事")}</Button>
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => void navigator.clipboard.writeText(item.content)
-                          .then(() => toast({ title: '已复制正文' }))
-                          .catch((error) => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))}
-                      >
-                        复制正文
-                      </Button>
+                          .then(() => toast({ title: tr("已复制正文") }))
+                          .catch((error) => toast({ title: tr("复制失败"), description: String(error), variant: 'destructive' }))}
+                      >{tr("复制正文")}</Button>
                     </div>
                   )}
                 </CardContent>
@@ -424,7 +415,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
         <EditRecordDialog
           record={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setRevision((value) => value + 1); toast({ title: '记录已更新' }); }}
+          onSaved={() => { setRevision((value) => value + 1); toast({ title: tr("记录已更新") }); }}
         />
       )}
       {moveRecord && story?.characterId && (
@@ -443,7 +434,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
           branchId={selectedBranchId}
           initialKind={kind}
           onClose={() => setManualOpen(false)}
-          onSaved={() => { setRevision((value) => value + 1); toast({ title: `已保存${KIND_LABELS[kind]}` }); }}
+          onSaved={() => { setRevision((value) => value + 1); toast({ title: tr("已保存{{v0}}", { v0: KIND_LABELS[kind] }) }); }}
         />
       )}
       {worldbookOpen && story?.characterId && (
@@ -451,7 +442,7 @@ export function StoryRecordsView({ stories, kind, onGoGenerate, onJumpToFloor }:
           characterId={story.characterId}
           records={visibleSummaries.filter((item) => selected.has(item.id))}
           onClose={() => setWorldbookOpen(false)}
-          onSaved={() => { exitBatchMode(); toast({ title: '已加入并保存世界书', description: '新增条目默认禁用，可从角色资产打开世界书启用。' }); }}
+          onSaved={() => { exitBatchMode(); toast({ title: tr("已加入并保存世界书"), description: tr("新增条目默认禁用，可从角色资产打开世界书启用。") }); }}
         />
       )}
     </div>

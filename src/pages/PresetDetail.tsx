@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
@@ -21,6 +23,7 @@ export default function PresetDetail() {
   return <AppLayout><DetailSession key={epoch} epoch={epoch} /></AppLayout>;
 }
 function DetailSession({ epoch }: { epoch: number }) {
+  useI18n();
   const { id = '' } = useParams(), navigate = useNavigate();
   const [items, setItems] = useState<AssetIndexEntry[]>([]), [error, setError] = useState(''), [loaded, setLoaded] = useState(false);
   const [dirty, setDirty] = useState(false), [seed, setSeed] = useState<PresetCatalog | null>(null), [importDirty, setImportDirty] = useState(false), [deleting, setDeleting] = useState(false);
@@ -58,11 +61,11 @@ function DetailSession({ epoch }: { epoch: number }) {
   const versions = current ? items.filter(item => presetSeriesKey(item) === presetSeriesKey(current)) : [];
   return <div className="flex flex-col h-full min-h-0 min-w-0" data-preset-detail-page>
     <PresetDraftBoundary dirty={dirty || importDirty} />
-    {(!!error || (loaded && !current && !dirty)) && <header className="shrink-0 border-b border-[color:var(--border-subtle)] px-3 py-2 flex items-center gap-3"><Button variant="ghost" onClick={() => navigate('/presets')}><ArrowLeft className="w-4 h-4 mr-2" />返回预设库</Button><span className="text-xs text-muted-foreground truncate">系列详情</span></header>}
-    {error && <p role="alert">{error}<Button variant="ghost" onClick={() => void load()}>重新读取</Button></p>}
-    {loaded && !current && !dirty ? <div className="p-6 text-sm space-y-3"><p role="status">预设文件已不存在，已从预设库移除。</p><Button variant="outline" onClick={() => navigate('/presets')}>返回预设库</Button></div> : <PresetCatalogDetails key={`${id}:${detailRevision}`} id={id} full onBack={() => navigate('/presets')} versions={versions} onVersion={next => request(() => navigate(`/presets/${encodeURIComponent(next)}`, { replace: true }))} onDirty={setDirty} onSaved={() => void load()} onEdit={next => request(() => navigate(`/preset?assetId=${encodeURIComponent(next)}&from=detail`))} onOpenRegex={(name, text) => request(() => { setPendingToolFile('regex', new File([text], name, { type: 'application/json' })); navigate('/regex'); })} onOpenRegexAsset={assetId => request(() => navigate(`/regex?assetId=${encodeURIComponent(assetId)}`))} onImport={next => request(() => setSeed(next))} onDelete={() => setDeleting(true)} />}
+    {(!!error || (loaded && !current && !dirty)) && <header className="shrink-0 border-b border-[color:var(--border-subtle)] px-3 py-2 flex items-center gap-3"><Button variant="ghost" onClick={() => navigate('/presets')}><ArrowLeft className="w-4 h-4 mr-2" />{tr("返回预设库")}</Button><span className="text-xs text-muted-foreground truncate">{tr("系列详情")}</span></header>}
+    {error && <p role="alert">{error}<Button variant="ghost" onClick={() => void load()}>{tr("重新读取")}</Button></p>}
+    {loaded && !current && !dirty ? <div className="p-6 text-sm space-y-3"><p role="status">{tr("预设文件已不存在，已从预设库移除。")}</p><Button variant="outline" onClick={() => navigate('/presets')}>{tr("返回预设库")}</Button></div> : <PresetCatalogDetails key={`${id}:${detailRevision}`} id={id} full onBack={() => navigate('/presets')} versions={versions} onVersion={next => request(() => navigate(`/presets/${encodeURIComponent(next)}`, { replace: true }))} onDirty={setDirty} onSaved={() => void load()} onEdit={next => request(() => navigate(`/preset?assetId=${encodeURIComponent(next)}&from=detail`))} onOpenRegex={(name, text) => request(() => { setPendingToolFile('regex', new File([text], name, { type: 'application/json' })); navigate('/regex'); })} onOpenRegexAsset={assetId => request(() => navigate(`/regex?assetId=${encodeURIComponent(assetId)}`))} onImport={next => request(() => setSeed(next))} onDelete={() => setDeleting(true)} />}
     {seed && <PresetPackageImport seed={seed} onDirtyChange={setImportDirty} onClose={() => { setImportDirty(false); setSeed(null); }} onImported={ids => { setImportDirty(false); setSeed(null); void load(); if (ids[0]) setImportedId(ids[0]); }} />}
     <PresetDiscardDialog open={!!pending} cancel={() => setPending(null)} discard={() => { const action = pending; setPending(null); setDirty(false); setDetailRevision(value => value + 1); setConfirmedAction(() => action); }} />
-    <DeleteConfirmDialog open={deleting} onOpenChange={setDeleting} title="删除当前版本？" description={`从 STE 库内移除此预设版本，已有引用将显示失效。其他版本和导出的副本保持独立。${dirty ? '当前尚未保存的笔记和资料也会随此版本丢弃。' : ''}`} fileTarget={{ store: 'presets', id }} onConfirm={async options => { if (epoch !== getVaultEpoch()) return false; await deletePreset(id, options); const next = versions.find(item => item.id !== id); setDirty(false); setDeletedDestination(next ? `/presets/${encodeURIComponent(next.id)}` : '/presets'); return true; }} />
+    <DeleteConfirmDialog open={deleting} onOpenChange={setDeleting} title={tr("删除当前版本？")} description={dirty ? tr("从 STE 库内移除此预设版本，已有引用将显示失效。其他版本和导出的副本保持独立。当前尚未保存的笔记和资料也会随此版本丢弃。") : tr("从 STE 库内移除此预设版本，已有引用将显示失效。其他版本和导出的副本保持独立。")} fileTarget={{ store: 'presets', id }} onConfirm={async options => { if (epoch !== getVaultEpoch()) return false; await deletePreset(id, options); const next = versions.find(item => item.id !== id); setDirty(false); setDeletedDestination(next ? `/presets/${encodeURIComponent(next.id)}` : '/presets'); return true; }} />
   </div>;
 }

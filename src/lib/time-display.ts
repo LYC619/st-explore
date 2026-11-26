@@ -5,11 +5,20 @@
  * UI 用法：<span title={formatFullTime(ts)}>{formatListTime(ts)}</span>
  */
 
+import { getLocale } from './i18n';
 const DAY_MS = 24 * 60 * 60_000;
 
 /** 列表处显示：≤7 天相对，>7 天 yyyy/M/d */
 export function formatListTime(ts: number, now = Date.now()): string {
   const diff = now - ts;
+  if (getLocale() === 'en') {
+    if (diff > 7 * DAY_MS) return new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(ts);
+    if (diff < 60_000) return 'just now';
+    const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+    if (diff < 3_600_000) return relative.format(-Math.floor(diff / 60_000), 'minute');
+    if (diff < DAY_MS) return relative.format(-Math.floor(diff / 3_600_000), 'hour');
+    return relative.format(-Math.floor(diff / DAY_MS), 'day');
+  }
   if (diff > 7 * DAY_MS) {
     const d = new Date(ts);
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
@@ -24,6 +33,7 @@ export function formatListTime(ts: number, now = Date.now()): string {
 
 /** hover title：精确到分钟的完整时间戳 */
 export function formatFullTime(ts: number): string {
+  if (getLocale() === 'en') return new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(ts);
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;

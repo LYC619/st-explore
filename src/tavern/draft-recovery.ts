@@ -6,7 +6,7 @@ type DraftHost = Pick<Host, 'request' | 'isGenerating'>;
 
 /** Sparse recovery drafts use the parent's story queue; the original ST chat stays the editing surface. */
 export function installDraftRecovery(st: DraftState, host: DraftHost): { select(key: string): Promise<void> } {
-    let chatKey: string | undefined, pending = false, loading = false, timer: ReturnType<typeof setTimeout> | undefined, tail: Promise<void> = Promise.resolve();
+    let chatKey: string | undefined, pending = false, loading = false, typedDuringLoad = false, timer: ReturnType<typeof setTimeout> | undefined, tail: Promise<void> = Promise.resolve();
     const banner = document.createElement('div'); banner.id = 'ste_draft_recovery'; banner.hidden = true;
     const style = document.createElement('style'); style.textContent = '#ste_draft_recovery[hidden]{display:none!important}'; document.head.append(style);
     banner.className = 'flex-container alignItemsCenter';
@@ -39,7 +39,9 @@ export function installDraftRecovery(st: DraftState, host: DraftHost): { select(
     async function select(key: string): Promise<void> {
         if (chatKey === key) return;
         await tail;
-        chatKey = key; loading = true; banner.hidden = true; snapshot = undefined;
+        chatKey = key; loading = true; typedDuringLoad = false; banner.hidden = true; snapshot = undefined;
+        const initialInput = document.querySelector<HTMLTextAreaElement>('#send_textarea');
+        if (initialInput) initialInput.value = '';
         try {
             snapshot = await request<DraftResponseSnapshot | null>('/ste/draft');
             pending = !!snapshot && (snapshot.changed || snapshot.conflict);
@@ -50,12 +52,15 @@ export function installDraftRecovery(st: DraftState, host: DraftHost): { select(
                 const input = document.querySelector<HTMLTextAreaElement>('#send_textarea');
                 const recovery = st.chat_metadata?.ste_recovery as { version?: number; input?: unknown } | undefined;
                 const exportedInput = recovery?.version === 1 && typeof recovery.input === 'string' ? recovery.input : '';
-                if (input) {
-                    input.value = snapshot?.draft.input ?? exportedInput;
+                const recoveredInput = snapshot?.draft.input ?? exportedInput;
+                if (input && (recoveredInput || !typedDuringLoad)) {
+                    input.value = recoveredInput;
                     // The next ordinary chat save consumes the import marker. Later empty drafts
                     // must not resurrect input that the player has already sent or cleared.
                     if (recovery?.version === 1) delete st.chat_metadata.ste_recovery;
                     input.dispatchEvent(new Event('input', { bubbles: true }));
+                } else if (recovery?.version === 1) {
+                    delete st.chat_metadata.ste_recovery;
                 }
             }
         } catch (error) {
@@ -86,6 +91,7 @@ export function installDraftRecovery(st: DraftState, host: DraftHost): { select(
     });
     document.addEventListener('input', event => {
         if (!(event.target instanceof Element) || !event.target.matches('#send_textarea, #chat .edit_textarea')) return;
+        if (loading && event.target.matches('#send_textarea')) typedDuringLoad = true;
         clearTimeout(timer); timer = setTimeout(() => { void capture().catch(error => toastr.error(errorMessage(error), '草稿未保存')); }, 400);
     });
     const interval = setInterval(() => { if (host.isGenerating()) void capture().catch(() => {}); }, 1000);

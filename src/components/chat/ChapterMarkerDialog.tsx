@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useEffect } from 'react';
 import {
   Dialog,
@@ -31,6 +33,7 @@ export function ChapterMarkerDialog({
   onSave,
   onDelete,
 }: ChapterMarkerDialogProps) {
+  useI18n();
   const [title, setTitle] = useState('');
   const [volume, setVolume] = useState('');
   const [summary, setSummary] = useState('');
@@ -41,7 +44,7 @@ export function ChapterMarkerDialog({
       setVolume(existingMarker.volume || '');
       setSummary(existingMarker.summary || '');
     } else {
-      setTitle(`第 #${messageIndex} 楼`);
+      setTitle(tr("第 #{{v0}} 楼", { v0: messageIndex }));
       setVolume('');
       setSummary('');
     }
@@ -64,40 +67,38 @@ export function ChapterMarkerDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="font-display">
-            {existingMarker ? '编辑章节标记' : '添加章节标记'}
+            {existingMarker ? tr("编辑章节标记") : tr("添加章节标记")}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          <div className="text-sm text-muted-foreground">
-            标记位置：第 #{messageIndex} 楼
-          </div>
+          <div className="text-sm text-muted-foreground">{tr("标记位置：第 #{{v0}} 楼", { v0: messageIndex })}</div>
 
           <div className="space-y-2">
-            <Label htmlFor="volume">卷名（可选）</Label>
+            <Label htmlFor="volume">{tr("卷名（可选）")}</Label>
             <Input
               id="volume"
-              placeholder="例：第一卷 - 初遇"
+              placeholder={tr("例：第一卷 - 初遇")}
               value={volume}
               onChange={(e) => setVolume(e.target.value)}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="title">章节标题</Label>
+            <Label htmlFor="title">{tr("章节标题")}</Label>
             <Input
               id="title"
-              placeholder="例：命运的相遇"
+              placeholder={tr("例：命运的相遇")}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="summary">章节概要（可选）</Label>
+            <Label htmlFor="summary">{tr("章节概要（可选）")}</Label>
             <Textarea
               id="summary"
-              placeholder="简要描述这一章节的内容..."
+              placeholder={tr("简要描述这一章节的内容...")}
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               rows={3}
@@ -114,16 +115,10 @@ export function ChapterMarkerDialog({
                 onOpenChange(false);
               }}
               className="mr-auto"
-            >
-              删除标记
-            </Button>
+            >{tr("删除标记")}</Button>
           )}
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
-          </Button>
-          <Button onClick={handleSave} disabled={!title.trim()}>
-            保存
-          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
+          <Button onClick={handleSave} disabled={!title.trim()}>{tr("保存")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

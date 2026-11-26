@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页 · 统一导入弹窗（10.3c，对照设计稿：先选类型，再选择/拖入文件）。
  * 类型见 lib/character-import IMPORT_KINDS；引用类额外支持直接粘贴文本。
@@ -6,7 +8,7 @@
  * 「关联文件」只在客户端出现（0830 条目 6）：它要往库文件夹里写任意文件，
  * 网页版没有文件库，摆出来只会点了报错。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useEffect, useRef, useState  } from 'react';
 import { Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +35,7 @@ interface CharacterImportDialogProps {
 export function CharacterImportDialog({
   open, onOpenChange, initialKind, onImport, onPasteQuote,
 }: CharacterImportDialogProps) {
+  useI18n();
   const [kind, setKind] = useState<CharacterImportKind>(initialKind);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -71,7 +74,7 @@ export function CharacterImportDialog({
     if (!body || busy) return;
     setBusy(true);
     try {
-      await onPasteQuote(quoteTitle.trim() || '引用', body);
+      await onPasteQuote(quoteTitle.trim() || tr("引用"), body);
       setQuoteTitle('');
       setQuoteBody('');
     } catch {
@@ -85,8 +88,8 @@ export function CharacterImportDialog({
     <Dialog open={open} onOpenChange={(next) => { if (!busy) onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>导入</DialogTitle>
-          <DialogDescription>先选类型，再选择文件；导入的内容会归到这张角色卡下。</DialogDescription>
+          <DialogTitle>{tr("导入")}</DialogTitle>
+          <DialogDescription>{tr("先选类型，再选择文件；导入的内容会归到这张角色卡下。")}</DialogDescription>
         </DialogHeader>
 
         {/* 类型选择（网页版少「关联文件」一格） */}
@@ -126,7 +129,7 @@ export function CharacterImportDialog({
           }}
         >
           <Download className="w-5 h-5 mx-auto mb-2 opacity-60" />
-          {busy ? '导入中…' : <>把文件拖到这里，或点击选择<br /><span className="text-[11px]">当前类型：{meta.label}</span></>}
+          {busy ? tr("导入中…") : <>{tr("把文件拖到这里，或点击选择")}<br /><span className="text-[11px]">{tr("当前类型：")}{meta.label}</span></>}
         </button>
         <input
           ref={fileRef}
@@ -140,23 +143,21 @@ export function CharacterImportDialog({
         {/* 引用：直接粘贴 */}
         {effectiveKind === 'quote' && (
           <div className="space-y-2 border-t border-border pt-3">
-            <p className="text-xs text-muted-foreground">或直接粘贴文本：</p>
+            <p className="text-xs text-muted-foreground">{tr("或直接粘贴文本：")}</p>
             <Input
               value={quoteTitle}
               onChange={(e) => setQuoteTitle(e.target.value)}
-              placeholder="引用标题（可空）"
+              placeholder={tr("引用标题（可空）")}
               disabled={busy}
             />
             <Textarea
               value={quoteBody}
               onChange={(e) => setQuoteBody(e.target.value)}
-              placeholder="粘贴摘录、语料片段…（空行分段）"
+              placeholder={tr("粘贴摘录、语料片段…（空行分段）")}
               rows={4}
               disabled={busy}
             />
-            <Button size="sm" onClick={() => void handlePasteQuote()} disabled={busy || !quoteBody.trim()}>
-              添加引用
-            </Button>
+            <Button size="sm" onClick={() => void handlePasteQuote()} disabled={busy || !quoteBody.trim()}>{tr("添加引用")}</Button>
           </div>
         )}
       </DialogContent>

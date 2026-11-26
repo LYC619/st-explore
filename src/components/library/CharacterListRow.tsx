@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { ReactNode } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { CharacterPortrait } from '@/components/library/CharacterPortrait';
@@ -26,6 +28,7 @@ export function CharacterListRow({
   character: c, storyCount, timestamp, nameSize, introSize,
   onActivate, batchMode, selected, actions,
 }: CharacterListRowProps) {
+  useI18n();
   const displayName = displayCharacterName(c);
   const intro = introOf(c);
 
@@ -71,16 +74,16 @@ export function CharacterListRow({
             intro ? 'text-[color:var(--text-muted)]' : 'text-[color:var(--text-faint)]',
           )}
           style={{ fontSize: introSize }}
-          title={intro ?? '暂无简介'}
+          title={intro ?? tr("暂无简介")}
         >
-          {intro ?? '暂无简介'}
+          {intro ?? tr("暂无简介")}
         </p>
       </div>
       <span className="text-right text-xs font-semibold text-[color:var(--brand-hi)]">
-        {c.rating !== undefined ? c.rating : <span className="font-normal text-[color:var(--text-faint)]">未评分</span>}
+        {c.rating !== undefined ? c.rating : <span className="font-normal text-[color:var(--text-faint)]">{tr("未评分")}</span>}
       </span>
       <span className="text-right text-xs text-[color:var(--text-muted)]">
-        {storyCount > 0 ? `${storyCount} 段故事` : '—'}
+        {storyCount > 0 ? tr("{{v0}} 段故事", { v0: storyCount }) : '—'}
       </span>
       <span className="text-right text-xs text-[color:var(--text-faint)]" title={formatFullTime(timestamp)}>
         {formatListTime(timestamp)}

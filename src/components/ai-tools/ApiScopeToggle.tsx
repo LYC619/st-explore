@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 // 「用通用配置 / 本库单独配置」开关（发布前一轮）。
 // 客户端整个应用跑在一个 webview origin 上，API 配置默认跨库共享；
 // 想让某个库用自己的密钥（或从零开始测一遍配置流程）就打开这个开关。
@@ -16,6 +18,7 @@ interface ApiScopeToggleProps {
 }
 
 export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeToggleProps) {
+  useI18n();
   const { toast } = useToast();
   const [perVault, setPerVault] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,17 +43,17 @@ export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeTogglePro
       setPerVault(checked);
       onChanged();
       toast({
-        title: checked ? '已改为本库单独配置' : '已改回通用配置',
+        title: checked ? tr("已改为本库单独配置") : tr("已改回通用配置"),
         description: checked
-          ? '当前配置已复制到本库，之后在这里的修改不再影响其它库'
-          : '本库改用所有库共享的那份配置（本库单独的那份仍保留，随时可切回）',
+          ? tr("当前配置已复制到本库，之后在这里的修改不再影响其它库")
+          : tr("本库改用所有库共享的那份配置（本库单独的那份仍保留，随时可切回）"),
       });
     } catch (err) {
       toast({
-        title: '切换失败',
+        title: tr("切换失败"),
         description: String(err).includes('STE_CONFIG_LOCK_TIMEOUT:')
-          ? '另一个 STE 窗口正在写配置，请稍后再试'
-          : err instanceof Error ? err.message : '请稍后重试',
+          ? tr("另一个 STE 窗口正在写配置，请稍后再试")
+          : err instanceof Error ? err.message : tr("请稍后重试"),
         variant: 'destructive',
       });
     } finally {
@@ -66,11 +69,8 @@ export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeTogglePro
       <div className="flex min-w-0 items-start gap-3">
         <Library className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold">本库单独配置</h4>
-          <p className="mt-1 text-xs text-muted-foreground">
-            默认关闭：所有库共用同一份提供商配置。打开后本库使用自己的一份（首次打开会复制当前配置作为起点），
-            适合给不同库配不同密钥，或测试从零配置的流程。密钥始终只存在系统配置目录，不写入库文件夹。
-          </p>
+          <h4 className="text-sm font-semibold">{tr("本库单独配置")}</h4>
+          <p className="mt-1 text-xs text-muted-foreground">{tr("默认关闭：所有库共用同一份提供商配置。打开后本库使用自己的一份（首次打开会复制当前配置作为起点）， 适合给不同库配不同密钥，或测试从零配置的流程。密钥始终只存在系统配置目录，不写入库文件夹。")}</p>
         </div>
       </div>
       {busy
@@ -80,7 +80,7 @@ export function ApiScopeToggle({ onChanged, onRequestChange }: ApiScopeTogglePro
             checked={perVault}
             disabled={!ready}
             onCheckedChange={(checked) => { const apply = () => { void handleChange(checked); }; if (onRequestChange) onRequestChange(apply); else apply(); }}
-            aria-label="本库单独配置"
+            aria-label={tr("本库单独配置")}
           />
         )}
     </div>

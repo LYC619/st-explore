@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useContext, useEffect, useState } from 'react';
 import { UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { Key, Check, AlertCircle, PlugZap, Loader2 } from 'lucide-react';
@@ -17,6 +19,7 @@ import { ModelNameInput } from './ModelNameInput';
 import { ApiConfigSyncNotice } from './ApiConfigSyncNotice';
 
 function RouteDirtyBlocker({ dirty, onSave }: { dirty: boolean; onSave: () => boolean }) {
+  useI18n();
   const blocker = useBlocker(({ currentLocation, nextLocation }) => (
     dirty && currentLocation.pathname !== nextLocation.pathname
   ));
@@ -37,22 +40,18 @@ function RouteDirtyBlocker({ dirty, onSave }: { dirty: boolean; onSave: () => bo
     <AlertDialog open onOpenChange={(open) => { if (!open) blocker.reset(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>AI 服务配置还未保存</AlertDialogTitle>
-          <AlertDialogDescription>
-            你刚修改了接口地址、密钥或模型，离开当前页面会丢失未保存的改动。
-          </AlertDialogDescription>
+          <AlertDialogTitle>{tr("AI 服务配置还未保存")}</AlertDialogTitle>
+          <AlertDialogDescription>{tr("你刚修改了接口地址、密钥或模型，离开当前页面会丢失未保存的改动。")}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus onClick={() => blocker.reset()}>继续编辑</AlertDialogCancel>
-          <Button variant="outline" onClick={() => blocker.proceed()}>放弃修改并离开</Button>
+          <AlertDialogCancel autoFocus onClick={() => blocker.reset()}>{tr("继续编辑")}</AlertDialogCancel>
+          <Button variant="outline" onClick={() => blocker.proceed()}>{tr("放弃修改并离开")}</Button>
           <AlertDialogAction
             onClick={(event) => {
               event.preventDefault();
               if (onSave()) blocker.proceed();
             }}
-          >
-            保存并离开
-          </AlertDialogAction>
+          >{tr("保存并离开")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -70,6 +69,7 @@ export function APIConfigCard({
 }: {
   onDirtyStateChange?: (state: { dirty: boolean; save: () => boolean }) => void;
 } = {}) {
+  useI18n();
   const {
     profiles, activeId, savedActive,
     name, setName, apiKey, setApiKey, apiUrl, setApiUrl, model, setModel, modelList, favoriteModels, setFavoriteModels,
@@ -95,17 +95,13 @@ export function APIConfigCard({
       <SafeApiRouteBlocker dirty={dirty} onSave={handleSave} />
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <Key className="w-5 h-5" />
-          AI 服务配置
-        </CardTitle>
-        <CardDescription>
-          每个服务保存自己的地址、密钥和常用模型。各 AI 工作区可直接切换已保存的服务与模型；连接信息在这里维护，密钥保存在本机。
-        </CardDescription>
+          <Key className="w-5 h-5" />{tr("AI 服务配置")}</CardTitle>
+        <CardDescription>{tr("每个服务保存自己的地址、密钥和常用模型。各 AI 工作区可直接切换已保存的服务与模型；连接信息在这里维护，密钥保存在本机。")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <ApiScopeToggle onChanged={reload} onRequestChange={requestChange} />
         <ApiConfigSyncNotice />
-        {!profiles.length && <p role="status" className="text-sm text-muted-foreground">尚无已保存连接。可重新读取本机连接，或填写下方信息后保存新服务。</p>}
+        {!profiles.length && <p role="status" className="text-sm text-muted-foreground">{tr("尚无已保存连接。可重新读取本机连接，或填写下方信息后保存新服务。")}</p>}
 
         <ProfileToolbar
           profiles={profiles}
@@ -117,12 +113,12 @@ export function APIConfigCard({
         />
 
         <div className="space-y-2">
-          <Label>提供商名称</Label>
+          <Label>{tr("提供商名称")}</Label>
           <Input
             value={name}
-            aria-label="提供商名称"
+            aria-label={tr("提供商名称")}
             onChange={(e) => { setName(e.target.value); setDirty(true); }}
-            placeholder="例如：OpenAI / 中转站 A / 本地 Ollama"
+            placeholder={tr("例如：OpenAI / 中转站 A / 本地 Ollama")}
           />
         </div>
 
@@ -142,25 +138,23 @@ export function APIConfigCard({
               />
             </div>
             <Button variant="outline" onClick={() => setIsKeyVisible(!isKeyVisible)}>
-              {isKeyVisible ? '隐藏' : '显示'}
+              {isKeyVisible ? tr("隐藏") : tr("显示")}
             </Button>
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label>API 接口地址</Label>
+          <Label>{tr("API 接口地址")}</Label>
           <Input
             value={apiUrl}
-            aria-label="API 接口地址"
+            aria-label={tr("API 接口地址")}
             autoCorrect="off"
             autoCapitalize="none"
             spellCheck={false}
             onChange={(e) => { setApiUrl(e.target.value); setDirty(true); }}
             placeholder={DEFAULT_API_URL}
           />
-          <p className="text-xs text-muted-foreground">
-            支持 OpenAI、Claude、Gemini 等官方及兼容中转站地址
-          </p>
+          <p className="text-xs text-muted-foreground">{tr("支持 OpenAI、Claude、Gemini 等官方及兼容中转站地址")}</p>
         </div>
 
         <ModelNameInput
@@ -173,15 +167,13 @@ export function APIConfigCard({
           onFetch={handleFetchModels}
         />
 
-        {externalChanged && <div role="status" className="rounded-md border border-border p-3 text-xs text-muted-foreground">当前使用的服务已在其他位置切换。这里保留的是「{name}」的草稿，保存只更新该服务。<Button variant="link" size="sm" onClick={() => requestChange(reload)}>查看当前配置</Button></div>}
+        {externalChanged && <div role="status" className="rounded-md border border-border p-3 text-xs text-muted-foreground">{tr("当前使用的服务已在其他位置切换。这里保留的是「{{v0}}」的草稿，保存只更新该服务。", { v0: name })}<Button variant="link" size="sm" onClick={() => requestChange(reload)}>{tr("查看当前配置")}</Button></div>}
 
         <div className="flex gap-2 pt-2 flex-wrap items-center">
-          <Button onClick={handleSave}>保存配置</Button>
+          <Button onClick={handleSave}>{tr("保存配置")}</Button>
           <Button variant="outline" className="gap-1" onClick={handleTest} disabled={testing}>
-            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
-            测试连通
-          </Button>
-          {dirty && <span className="text-xs text-primary font-medium">有未保存的修改</span>}
+            {testing ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}{tr("测试连通")}</Button>
+          {dirty && <span className="text-xs text-primary font-medium">{tr("有未保存的修改")}</span>}
         </div>
 
         {testResult && (
@@ -195,49 +187,44 @@ export function APIConfigCard({
               <span className="break-all">{testResult.text}</span>
             </div>
             {testResult.ok && dirty && (
-              <Button size="sm" onClick={handleSave} className="shrink-0">
-                保存并启用此配置
-              </Button>
+              <Button size="sm" onClick={handleSave} className="shrink-0">{tr("保存并启用此配置")}</Button>
             )}
           </div>
         )}
 
         {savedActive ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Check className="w-4 h-4 text-primary" />
-            已保存：{savedActive.name} · {savedActive.model}
-            {savedActive.apiUrl !== DEFAULT_API_URL && <span className="text-xs">· 自定义接口</span>}
+            <Check className="w-4 h-4 text-primary" />{tr("已保存：")}{savedActive.name} · {savedActive.model}
+            {savedActive.apiUrl !== DEFAULT_API_URL && <span className="text-xs">{tr("· 自定义接口")}</span>}
           </div>
         ) : (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <AlertCircle className="w-4 h-4 text-destructive" />
-            当前提供商尚未保存
-          </div>
+            <AlertCircle className="w-4 h-4 text-destructive" />{tr("当前提供商尚未保存")}</div>
         )}
       </CardContent>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除提供商「{savedActive?.name}」？</AlertDialogTitle>
-            <AlertDialogDescription>该提供商的密钥与配置将被移除，此操作不可撤销。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("确认删除提供商「{{v0}}」？", { v0: savedActive?.name })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("该提供商的密钥与配置将被移除，此操作不可撤销。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel autoFocus>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { handleDelete(); setDeleteOpen(false); }}>删除</AlertDialogAction>
+            <AlertDialogCancel autoFocus>{tr("取消")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { handleDelete(); setDeleteOpen(false); }}>{tr("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog open={!!pending} onOpenChange={(open) => { if (!open) setPending(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>服务配置还未保存</AlertDialogTitle>
-            <AlertDialogDescription>切换会离开当前草稿。可以先保存，或放弃这次修改。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("服务配置还未保存")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("切换会离开当前草稿。可以先保存，或放弃这次修改。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel autoFocus onClick={() => setPending(null)}>继续编辑</AlertDialogCancel>
-            <Button variant="outline" onClick={() => { const action = pending; setPending(null); action?.(); }}>放弃修改并切换</Button>
-            <AlertDialogAction onClick={(event) => { event.preventDefault(); if (handleSave()) { const action = pending; setPending(null); action?.(); } }}>保存并切换</AlertDialogAction>
+            <AlertDialogCancel autoFocus onClick={() => setPending(null)}>{tr("继续编辑")}</AlertDialogCancel>
+            <Button variant="outline" onClick={() => { const action = pending; setPending(null); action?.(); }}>{tr("放弃修改并切换")}</Button>
+            <AlertDialogAction onClick={(event) => { event.preventDefault(); if (handleSave()) { const action = pending; setPending(null); action?.(); } }}>{tr("保存并切换")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

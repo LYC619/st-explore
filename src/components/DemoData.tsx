@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Button } from '@/components/ui/button';
 import { Wand2 } from 'lucide-react';
 import type { ChatSession } from '@/types/chat';
@@ -10,6 +12,7 @@ interface DemoDataProps {
 // 示例故事树已随故事树页并入故事工作区（2.0 阶段3）移除——工作区内故事树不再需要空态引导锚点。
 
 export function DemoData({ onLoad }: DemoDataProps) {
+  useI18n();
   return (
     <Button
       variant="outline"
@@ -17,8 +20,6 @@ export function DemoData({ onLoad }: DemoDataProps) {
       onClick={() => onLoad(demoSession)}
       className="gap-2"
     >
-      <Wand2 className="w-4 h-4" />
-      加载示例
-    </Button>
+      <Wand2 className="w-4 h-4" />{tr("加载示例")}</Button>
   );
 }

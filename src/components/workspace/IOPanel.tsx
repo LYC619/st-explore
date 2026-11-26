@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 导入与导出（2.0 阶段4，定稿 5.3）：只管当前故事的聊天文件进出，独立资产不在这里。
  * 三区：① 检查 ST 更新（客户端期自动，网页版=手动重新导入走同一套合并规则）
@@ -54,9 +57,10 @@ function downloadJSON(name: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-const fmtTime = (t?: number) => (t ? new Date(t).toLocaleString('zh-CN') : '从未');
+const fmtTime = (t?: number) => (t ? new Date(t).toLocaleString(getLocale()) : tr("从未"));
 
 export function IOPanel({ story, branchId, line, settings, readOnly = false, onStoryUpdate }: IOPanelProps) {
+  useI18n();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [records, setRecords] = useState<SummaryItem[]>([]);
@@ -65,7 +69,7 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
   const [artifactsError, setArtifactsError] = useState<string | null>(null);
   const [artifactsReloadKey, setArtifactsReloadKey] = useState(0);
 
-  const branchName = branchId === null ? '主线' : story.branches?.find((b) => b.id === branchId)?.name ?? '分支';
+  const branchName = branchId === null ? tr("主线") : story.branches?.find((b) => b.id === branchId)?.name ?? tr("分支");
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +85,7 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
         if (cancelled) return;
         setRecords([]);
         setTrees([]);
-        setArtifactsError(error instanceof Error ? error.message : '无法读取总结与故事树');
+        setArtifactsError(error instanceof Error ? error.message : tr("无法读取总结与故事树"));
       } finally {
         if (!cancelled) setArtifactsLoading(false);
       }
@@ -110,7 +114,7 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
         return { ...updated, lastImportedAt: Date.now() };
       });
     }
-    toast({ title: '重新导入完成', description: result.summary });
+    toast({ title: tr("重新导入完成"), description: result.summary });
   };
 
   // 网页版「检查 ST 更新」的等价操作：手动重选同一个聊天文件，走 5.3① 合并规则
@@ -120,7 +124,7 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
     try {
       mergeText(await file.text(), file.name);
     } catch {
-      toast({ title: '导入失败', description: '无法解析该文件（应为 ST 聊天 JSONL/JSON）', variant: 'destructive' });
+      toast({ title: tr("导入失败"), description: tr("无法解析该文件（应为 ST 聊天 JSONL/JSON）"), variant: 'destructive' });
     } finally {
       if (fileRef.current) fileRef.current.value = '';
     }
@@ -135,8 +139,8 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
       mergeText(await readAbsText(story.sourcePath), story.sourcePath);
     } catch {
       toast({
-        title: '按原文件重新导入失败',
-        description: '来源文件可能已移动/删除或无法解析，可改用「另选文件重新导入」',
+        title: tr("按原文件重新导入失败"),
+        description: tr("来源文件可能已移动/删除或无法解析，可改用「另选文件重新导入」"),
         variant: 'destructive',
       });
     }
@@ -147,51 +151,48 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
     routeTextFileExportResult(result, {
       onComplete: () => {
         markExported();
-        toast({ title: '已导出 Markdown' });
+        toast({ title: tr("已导出 Markdown") });
       },
-      onFailure: () => toast({ title: '导出失败', description: '没有写入任何文件，请重新选择位置后再试。', variant: 'destructive' }),
+      onFailure: () => toast({ title: tr("导出失败"), description: tr("没有写入任何文件，请重新选择位置后再试。"), variant: 'destructive' }),
     });
   };
 
   const handleExportTreeMd = async (tree: StoryTree) => {
-    const result = await downloadMarkdown(tree.title || '故事树', storyTreeToObsidian(tree, { linkNodes: false }));
+    const result = await downloadMarkdown(tree.title || tr("故事树"), storyTreeToObsidian(tree, { linkNodes: false }));
     routeTextFileExportResult(result, {
       onComplete: () => {
         markExported();
-        toast({ title: '已导出 Markdown' });
+        toast({ title: tr("已导出 Markdown") });
       },
-      onFailure: () => toast({ title: '导出失败', description: '没有写入任何文件，请重新选择位置后再试。', variant: 'destructive' }),
+      onFailure: () => toast({ title: tr("导出失败"), description: tr("没有写入任何文件，请重新选择位置后再试。"), variant: 'destructive' }),
     });
   };
 
   const handleExportTreeJson = (tree: StoryTree) => {
-    downloadJSON(tree.title || '故事树', storyTreeToJSON(tree));
+    downloadJSON(tree.title || tr("故事树"), storyTreeToJSON(tree));
     markExported();
-    toast({ title: '已导出 JSON', description: '可用「整理与记录 → 新建▾导入」恢复为新树' });
+    toast({ title: tr("已导出 JSON"), description: tr("可用「整理与记录 → 新建▾导入」恢复为新树") });
   };
 
   return (
     <div className="h-full min-h-0 overflow-y-auto container mx-auto px-6 py-10 max-w-2xl space-y-4">
-      <h2 className="font-display text-xl font-semibold">导入与导出</h2>
-      <div className="space-y-2 rounded-lg border p-4"><p className="text-sm">完整故事包包含全部分支、角色、关联资产和文件记忆，可用于跨库继续游玩。</p><StoryPackageTools storyId={story.id} /></div>
+      <h2 className="font-display text-xl font-semibold">{tr("导入与导出")}</h2>
+      <div className="space-y-2 rounded-lg border p-4"><p className="text-sm">{tr("完整故事包包含全部分支、角色、关联资产和文件记忆，可用于跨库继续游玩。")}</p><StoryPackageTools storyId={story.id} /></div>
 
       {/* 当前故事：来源路径 / 绑定状态 / 上次导入导出时间（进入不自动扫描） */}
       <Card>
         <CardContent className="py-5 space-y-1.5">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-medium">当前故事</p>
+            <p className="text-sm font-medium">{tr("当前故事")}</p>
             <Badge variant={story.sourcePath ? 'secondary' : 'outline'} className="h-5 text-[11px]">
-              {story.sourcePath ? '已绑定 ST 路径' : '未绑定'}
+              {story.sourcePath ? tr("已绑定 ST 路径") : tr("未绑定")}
             </Badge>
           </div>
-          <p className="text-xs text-muted-foreground">
-            来源：{story.sourcePath ?? '手动导入（未绑定 ST 原路径，客户端版可绑定后写回）'}
+          <p className="text-xs text-muted-foreground">{tr("来源：")}{story.sourcePath ?? tr("手动导入（未绑定 ST 原路径，客户端版可绑定后写回）")}
           </p>
-          <p className="text-xs text-muted-foreground">
-            创建 {new Date(story.createdAt).toLocaleDateString('zh-CN')} · 最近修改 {new Date(story.updatedAt).toLocaleDateString('zh-CN')}
+          <p className="text-xs text-muted-foreground">{tr("创建 ")}{new Date(story.createdAt).toLocaleDateString(getLocale())}{tr(" · 最近修改 ")}{new Date(story.updatedAt).toLocaleDateString(getLocale())}
           </p>
-          <p className="text-xs text-muted-foreground">
-            上次重新导入：{fmtTime(story.lastImportedAt)} · 上次导出：{fmtTime(story.lastExportedAt)}
+          <p className="text-xs text-muted-foreground">{tr("上次重新导入：")}{fmtTime(story.lastImportedAt)}{tr(" · 上次导出：")}{fmtTime(story.lastExportedAt)}
           </p>
         </CardContent>
       </Card>
@@ -199,15 +200,9 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
       {/* ① 检查 ST 更新：网页版 = 手动重新导入同一文件，合并规则与客户端一致 */}
       <Card>
         <CardContent className="py-5 space-y-2">
-          <p className="text-sm font-medium">检查 ST 更新（重新导入）</p>
-          <p className="text-xs text-muted-foreground">
-            在 ST 里接着玩了？把同一个聊天文件再导入一次：新楼直接追加；同一楼两边不同时，
-            ST 新版当正文，STE 里的编辑版转成该楼候选并标「STE 编辑版」，不弹逐条对比。
-          </p>
-          <p className="text-xs text-muted-foreground">
-            合并进当前脉络：<span className="text-foreground">{branchName}</span>（{line.session.messages.length} 楼）。
-            分支文件请先在左栏切到对应分支再导入。
-          </p>
+          <p className="text-sm font-medium">{tr("检查 ST 更新（重新导入）")}</p>
+          <p className="text-xs text-muted-foreground">{tr("在 ST 里接着玩了？把同一个聊天文件再导入一次：新楼直接追加；同一楼两边不同时， ST 新版当正文，STE 里的编辑版转成该楼候选并标「STE 编辑版」，不弹逐条对比。")}</p>
+          <p className="text-xs text-muted-foreground">{tr("合并进当前脉络：")}<span className="text-foreground">{branchName}</span>{getLocale() === 'en' ? ' ' : ''}{tr("（{{v0}} 楼）。分支文件请先在左栏切到对应分支再导入。", { v0: line.session.messages.length })}</p>
           <input
             ref={fileRef}
             type="file"
@@ -218,20 +213,18 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
           <div className="flex flex-wrap items-center gap-2">
             {canReimportFromSource && (
               <Button size="sm" disabled={readOnly} onClick={handleReimportFromSource}>
-                <RefreshCw className="w-4 h-4 mr-1.5" />
-                按原绑定文件重新导入
-              </Button>
+                <RefreshCw className="w-4 h-4 mr-1.5" />{tr("按原绑定文件重新导入")}</Button>
             )}
             <Button variant="outline" size="sm" disabled={readOnly} onClick={() => fileRef.current?.click()}>
               <FileDown className="w-4 h-4 mr-1.5" />
-              {canReimportFromSource ? '另选文件重新导入' : '选择文件重新导入'}
+              {canReimportFromSource ? tr("另选文件重新导入") : tr("选择文件重新导入")}
             </Button>
           </div>
           {isTauri() && story.sourcePath && branchId !== null && (
-            <p className="text-[11px] text-muted-foreground/70">当前在分支上：原绑定文件属于主线，请切回主线再一键重导，或另选该分支的文件。</p>
+            <p className="text-[11px] text-muted-foreground/70">{tr("当前在分支上：原绑定文件属于主线，请切回主线再一键重导，或另选该分支的文件。")}</p>
           )}
           {!isTauri() && (
-            <p className="text-[11px] text-muted-foreground/70">客户端版打开故事时会自动比对 ST 目录并在角落提示，这里还可一键按原文件重导。</p>
+            <p className="text-[11px] text-muted-foreground/70">{tr("客户端版打开故事时会自动比对 ST 目录并在角落提示，这里还可一键按原文件重导。")}</p>
           )}
         </CardContent>
       </Card>
@@ -240,24 +233,22 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
       <Card>
         <CardContent className="py-5 space-y-3">
           <div>
-            <p className="text-sm font-medium">导出副本</p>
-            <p className="text-xs text-muted-foreground mt-1">
-              聊天（当前脉络：{branchName}）按阅读界面的楼层范围/正则/清理设置导出，支持 JSONL / TXT / Markdown。
-            </p>
+            <p className="text-sm font-medium">{tr("导出副本")}</p>
+            <p className="text-xs text-muted-foreground mt-1">{tr("聊天（当前脉络：")}{branchName}{tr("）按阅读界面的楼层范围/正则/清理设置导出，支持 JSONL / TXT / Markdown。")}</p>
           </div>
           <ExportButton session={line.session} settings={settings} markers={line.markers} onExported={markExported} />
 
           {artifactsLoading ? (
-            <p className="text-xs text-muted-foreground" data-io-artifacts-loading>{LOADING_LABEL}</p>
+            <p className="text-xs text-muted-foreground" data-io-artifacts-loading>{tr(LOADING_LABEL)}</p>
           ) : artifactsError ? (
             <div className="space-y-2 text-xs text-destructive" data-io-artifacts-load-error>
-              <p>读取总结与故事树失败：{artifactsError}</p>
-              <Button variant="outline" size="sm" className="text-xs" onClick={() => setArtifactsReloadKey((n) => n + 1)}>重试</Button>
+              <p>{tr("读取总结与故事树失败：")}{artifactsError}</p>
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setArtifactsReloadKey((n) => n + 1)}>{tr("重试")}</Button>
             </div>
           ) : (records.length > 0 || trees.length > 0) && (
             <>
               <Separator />
-              <p className="text-xs font-medium text-muted-foreground">本故事的整理成果</p>
+              <p className="text-xs font-medium text-muted-foreground">{tr("本故事的整理成果")}</p>
               <div className="space-y-1.5">
                 {records.map((r) => (
                   <div key={r.id} className="flex items-center gap-2 text-sm">
@@ -270,8 +261,8 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
                 ))}
                 {trees.map((t) => (
                   <div key={t.id} className="flex items-center gap-2 text-sm">
-                    <Badge variant="outline" className="h-5 shrink-0 text-[11px] font-normal">故事树</Badge>
-                    <span className="flex-1 truncate" title={t.title || '未命名故事树'}>{t.title || '未命名故事树'}</span>
+                    <Badge variant="outline" className="h-5 shrink-0 text-[11px] font-normal">{tr("故事树")}</Badge>
+                    <span className="flex-1 truncate" title={t.title || tr("未命名故事树")}>{t.title || tr("未命名故事树")}</span>
                     <Button variant="ghost" size="sm" className="px-2 text-xs shrink-0" onClick={() => handleExportTreeMd(t)}>
                       <FileUp className="w-3.5 h-3.5 mr-1" />MD
                     </Button>
@@ -294,13 +285,10 @@ export function IOPanel({ story, branchId, line, settings, readOnly = false, onS
           <CardContent className="py-5 space-y-1.5 opacity-70">
             <div className="flex items-center gap-2">
               <FileUp className="w-4 h-4 text-muted-foreground" />
-              <p className="text-sm font-medium">写回 ST</p>
-              <Badge variant="outline" className="h-5 text-[11px]">客户端版功能</Badge>
+              <p className="text-sm font-medium">{tr("写回 ST")}</p>
+              <Badge variant="outline" className="h-5 text-[11px]">{tr("客户端版功能")}</Badge>
             </div>
-            <p className="text-xs text-muted-foreground">
-              仅客户端版、且故事绑定了 ST 原路径时开放：写回前自动备份原文件（保留最近若干版可恢复），
-              确认摘要后执行并记录写回历史。
-            </p>
+            <p className="text-xs text-muted-foreground">{tr("仅客户端版、且故事绑定了 ST 原路径时开放：写回前自动备份原文件（保留最近若干版可恢复）， 确认摘要后执行并记录写回历史。")}</p>
           </CardContent>
         </Card>
       )}

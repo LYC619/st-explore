@@ -1,8 +1,11 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Badge } from '@/components/ui/badge';
 import { PROMPT_ROLE_LABELS } from '@/types/preset';
 
 /** 角色色条：system/user/assistant 用不同语义色，marker/未引用/空条目用专门样式 */
 export function RoleBadge({ role }: { role?: string }) {
+  useI18n();
   const label = role ? (PROMPT_ROLE_LABELS[role] ?? role) : '—';
   const cls =
     role === 'user'
@@ -14,38 +17,35 @@ export function RoleBadge({ role }: { role?: string }) {
 }
 
 export function MarkerBadge() {
+  useI18n();
   return (
     <Badge
       variant="outline"
       className="text-[11px] px-1.5 py-0 bg-muted text-muted-foreground border-border cursor-help"
-      title="系统插槽：内容由 SillyTavern 运行时自动填充（如世界书、角色描述、聊天历史），不是被禁用，也无需手动填写"
-    >
-      插槽
-    </Badge>
+      title={tr("系统插槽：内容由 SillyTavern 运行时自动填充（如世界书、角色描述、聊天历史），不是被禁用，也无需手动填写")}
+    >{tr("插槽")}</Badge>
   );
 }
 
 export function UnreferencedBadge() {
+  useI18n();
   return (
-    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-muted/60 text-muted-foreground border-dashed">
-      未引用
-    </Badge>
+    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-muted/60 text-muted-foreground border-dashed">{tr("未引用")}</Badge>
   );
 }
 
 export function EmptyBadge() {
+  useI18n();
   return (
-    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-[var(--status-warn-bg)] text-[color:var(--status-warn)] border-[var(--status-warn-bg)]">
-      空条目
-    </Badge>
+    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-[var(--status-warn-bg)] text-[color:var(--status-warn)] border-[var(--status-warn-bg)]">{tr("空条目")}</Badge>
   );
 }
 
 /** ST 绝对注入块（injection_position=1）：按深度注入聊天，不按激活顺序位置 */
 export function InjectionBadge({ depth }: { depth?: number }) {
+  useI18n();
   return (
-    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30">
-      注入{depth !== undefined ? ` @${depth}` : ''}
+    <Badge variant="outline" className="text-[11px] px-1.5 py-0 bg-violet-500/15 text-violet-600 dark:text-violet-400 border-violet-500/30">{tr("注入")}{depth !== undefined ? ` @${depth}` : ''}
     </Badge>
   );
 }

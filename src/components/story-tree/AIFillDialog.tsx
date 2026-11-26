@@ -1,8 +1,11 @@
+import { getLocale, formatList } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
 import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPrompt, saveBuiltinPrompt, resetBuiltinPrompt } from '@/lib/builtin-prompts';
 import { useBuiltinPrompt } from '@/hooks/use-builtin-prompt';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useMemo, useState, useRef, useEffect  } from 'react';
 import { Sparkles, Square, Loader2, Check, Pencil, RotateCcw, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -56,9 +59,9 @@ interface OpItem {
 }
 
 const OP_BADGE: Record<TreeOp['op'], { text: string; cls: string }> = {
-  insert: { text: '+ 新增', cls: 'text-[color:var(--status-ok)]' },
-  update: { text: '~ 更新', cls: 'text-[color:var(--status-warn)]' },
-  archive: { text: '⊘ 归档', cls: 'text-muted-foreground' },
+  insert: { get text() { return tr("+ 新增"); }, cls: 'text-[color:var(--status-ok)]' },
+  update: { get text() { return tr("~ 更新"); }, cls: 'text-[color:var(--status-warn)]' },
+  archive: { get text() { return tr("⊘ 归档"); }, cls: 'text-muted-foreground' },
 };
 
 /**
@@ -66,6 +69,7 @@ const OP_BADGE: Record<TreeOp['op'], { text: string; cls: string }> = {
  * API 配置在「AI 配置」页统一维护（此处只显示状态）；提示词可查看/编辑（localStorage 记忆）。
  */
 export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, storyId = null, branchId = null, treeId }: AIFillDialogProps) {
+  useI18n();
   const { toast } = useToast();
   const [truncated, setTruncated] = useState(false);
   const [floorStart, setFloorStart] = useState(0);
@@ -103,16 +107,16 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
   };
 
   const handlePromptSave = () => {
-    try { saveBuiltinPrompt('tree.fill', customPrompt); toast({ title: '提示词已保存到设置' }); }
-    catch (err) { toast({ title: '保存失败', description: String(err), variant: 'destructive' }); }
+    try { saveBuiltinPrompt('tree.fill', customPrompt); toast({ title: tr("提示词已保存到设置") }); }
+    catch (err) { toast({ title: tr("保存失败"), description: String(err), variant: 'destructive' }); }
   };
 
   const handlePromptReset = () => {
     try {
       resetBuiltinPrompt('tree.fill');
       setCustomPrompt(getBuiltinPrompt('tree.fill'));
-      toast({ title: '已恢复默认提示词' });
-    } catch (err) { toast({ title: '恢复失败', description: String(err), variant: 'destructive' }); }
+      toast({ title: tr("已恢复默认提示词") });
+    } catch (err) { toast({ title: tr("恢复失败"), description: String(err), variant: 'destructive' }); }
   };
 
   const abortRef = useRef<AbortController | null>(null);
@@ -124,7 +128,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
     setOpItems(null); setRawOutput(''); setOutputError(''); setStreaming(false);
     void Promise.all([getAllSummaries(), getAllPresets(), getAllWorldBooks(), storyId ? getArchiveStory(storyId) : Promise.resolve(undefined)]).then(([records, presets, books, story]) => {
       if (!active || requestEpoch.current !== getVaultEpoch()) return;
-      if (storyId && (!story || !getBranchLine(story, branchId))) throw new Error('来源故事或分支不存在');
+      if (storyId && (!story || !getBranchLine(story, branchId))) throw new Error(tr("来源故事或分支不存在"));
       setReferences(records.filter(record => record.bookId === storyId && (record.kind === 'volume' || record.kind === 'diary')));
       setPresets(presets); setBooks(books); setRules(story?.settings?.regexRules ?? []);
     }).catch(error => { if (active) setContextError(String(error)); }).finally(() => { if (active) setContextLoading(false); });
@@ -135,19 +139,19 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
 
   const handleGenerate = async () => {
     if (streaming || contextLoading || contextError) return;
-    if (requestEpoch.current !== getVaultEpoch()) { setOutputError('资料库已切换，请重新打开。'); return; }
+    if (requestEpoch.current !== getVaultEpoch()) { setOutputError(tr("资料库已切换，请重新打开。")); return; }
     const config = loadAPIConfig(); // 即时读取全局配置
     if (!isLLMConfigured(config)) {
-      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+      toast({ title: tr("请先配置接口地址和模型"), description: tr("前往「AI 配置」页配置后回来生成"), variant: 'destructive' });
       return;
     }
     const floorText = floorsToText(session, floorStart, floorEnd);
     if (!floorText.trim()) {
-      toast({ title: '选中的楼层没有内容', variant: 'destructive' });
+      toast({ title: tr("选中的楼层没有内容"), variant: 'destructive' });
       return;
     }
     if ((attach.presetId && !presets.some(preset => preset.id === attach.presetId)) || (attach.worldbookId && !books.some(book => book.id === attach.worldbookId))) {
-      setOutputError('所选预设或世界书已不存在，请重新选择'); return;
+      setOutputError(tr("所选预设或世界书已不存在，请重新选择")); return;
     }
     const messages = request.messages;
     const sequence = ++generation.current;
@@ -169,11 +173,11 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
       });
       if (generation.current !== sequence || requestEpoch.current !== getVaultEpoch()) return;
       const parsed = parseTreeOpsResult(outputRef.current);
-      if (parsed.status !== 'ok') { setOutputError(parsed.status === 'refused' ? '模型拒绝了本次请求，原始输出已保留。' : parsed.status === 'invalid-json' ? '模型输出不是有效 JSON，原始输出已保留。' : '没有有效树操作，原始输出已保留。'); return; }
+      if (parsed.status !== 'ok') { setOutputError(parsed.status === 'refused' ? tr("模型拒绝了本次请求，原始输出已保留。") : parsed.status === 'invalid-json' ? tr("模型输出不是有效 JSON，原始输出已保留。") : tr("没有有效树操作，原始输出已保留。")); return; }
       setOpItems(parsed.ops.map((op) => ({ op, included: true, expanded: false })));
     } catch (err) {
-      if (isLLMCancelled(err)) toast({ title: '已停止' });
-      else toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
+      if (isLLMCancelled(err)) toast({ title: tr("已停止") });
+      else toast({ title: tr("生成失败"), description: err instanceof Error ? err.message : tr("未知错误"), variant: 'destructive' });
     } finally {
       if (generation.current === sequence) { setStreaming(false); abortRef.current = null; }
     }
@@ -191,33 +195,33 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
   const handleConfirm = async () => {
     const sequence = generation.current;
     if (requestEpoch.current !== getVaultEpoch() || generatedNodes.current !== JSON.stringify(nodes)
-      || generatedRequest.current !== JSON.stringify({ floorStart, floorEnd, messages: request.messages })) { setOutputError('目标、输入或树内容已变化，请重新生成。'); return; }
+      || generatedRequest.current !== JSON.stringify({ floorStart, floorEnd, messages: request.messages })) { setOutputError(tr("目标、输入或树内容已变化，请重新生成。")); return; }
     const activeOps = opItems?.filter((it) => it.included).map((it) => it.op) ?? [];
     if (activeOps.length === 0) return;
     // 本批事实的卷/楼层标记（仅角色节点会按它分卷归档，见 applyTreeOps）。
     // 选中范围完整落在某个已存分卷内时用「第N卷」，否则用楼层区间。
     const lo = Math.min(floorStart, floorEnd);
     const hi = Math.max(floorStart, floorEnd);
-    let sectionLabel = `楼层 ${lo}~${hi}`;
+    let sectionLabel = tr("楼层 {{v0}}~{{v1}}", { v0: lo, v1: hi });
     try {
       const vol = (await getAllSummaries()).find((s) =>
         s.kind === 'volume' && s.volumeNumber != null && s.bookId === storyId && (s.branchId ?? null) === branchId && !s.rangeDetached
         && lo >= s.floorStart && hi <= s.floorEnd
       );
-      if (vol) sectionLabel = `第${vol.volumeNumber}卷 · 楼层 ${lo}~${hi}`;
+      if (vol) sectionLabel = tr("第{{v0}}卷 · 楼层 {{v1}}~{{v2}}", { v0: vol.volumeNumber, v1: lo, v2: hi });
     } catch { /* 查不到分卷就用楼层区间 */ }
     if (treeId) {
       try {
         const current = await getCurrentRepo<StoryTree>('stories').get(treeId);
-        if (!current || current.bookId !== storyId || (current.branchId ?? null) !== branchId) { setOutputError('故事树已移动或删除，请重新打开。'); return; }
-      } catch (error) { setOutputError(`读取目标故事树失败：${String(error)}`); return; }
+        if (!current || current.bookId !== storyId || (current.branchId ?? null) !== branchId) { setOutputError(tr("故事树已移动或删除，请重新打开。")); return; }
+      } catch (error) { setOutputError(tr("读取目标故事树失败：{{v0}}", { v0: String(error) })); return; }
     }
     if (sequence !== generation.current || requestEpoch.current !== getVaultEpoch()) return;
     const result = applyTreeOps(nodes, activeOps, { sectionLabel });
     onApply(result.nodes);
     toast({
-      title: '已应用到故事树',
-      description: `新增 ${result.inserted}·更新 ${result.updated}·归档 ${result.archived}${result.skipped ? `·跳过 ${result.skipped}` : ''}`,
+      title: tr("已应用到故事树"),
+      description: tr("新增 {{v0}}·更新 {{v1}}·归档 {{v2}}{{v3}}", { v0: result.inserted, v1: result.updated, v2: result.archived, v3: result.skipped ? tr("·跳过 {{v0}}", { v0: result.skipped }) : '' }),
     });
     onOpenChange(false);
     setOpItems(null);
@@ -234,16 +238,13 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
       <DialogContent className="!max-w-[min(64rem,94vw)] max-h-[88vh] overflow-y-auto" style={{ maxWidth: 'min(64rem, 94vw)' }}>
         <CompletionWarning truncated={truncated} />
         <DialogHeader>
-          <DialogTitle>AI 从楼层生成事实节点</DialogTitle>
+          <DialogTitle>{tr("AI 从楼层生成事实节点")}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
           <ApiStatusLine />
 
-          <p className="text-xs text-muted-foreground">
-            累加式生成：当前树的结构（含之前各卷生成的节点）会随请求一并发给 AI，AI 只输出增量更新——
-            按第二卷楼层生成时无需重选第一卷。角色的新事实会按卷归档进该角色名下；事件按发生顺序独立成节点。
-          </p>
+          <p className="text-xs text-muted-foreground">{tr("累加式生成：当前树的结构（含之前各卷生成的节点）会随请求一并发给 AI，AI 只输出增量更新—— 按第二卷楼层生成时无需重选第一卷。角色的新事实会按卷归档进该角色名下；事件按发生顺序独立成节点。")}</p>
 
           <FloorRangePicker
             total={session.messages.length}
@@ -251,29 +252,29 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
             end={floorEnd}
             onChange={(s, e) => { setFloorStart(s); setFloorEnd(e); }}
           />
-          {contextError && <p role="alert" className="text-sm text-destructive">读取上下文失败：{contextError}</p>}
+          {contextError && <p role="alert" className="text-sm text-destructive">{tr("读取上下文失败：")}{contextError}</p>}
           <fieldset disabled={streaming} className="space-y-2">
             <AttachPanel value={attach} onChange={setAttach} tokenEstimate={request.tokenEstimate} />
-            <label className="flex items-center gap-2 text-sm"><Checkbox checked={processed} onCheckedChange={value => setProcessed(value === true)} />使用本故事正则处理后的正文（不修改原文）</label>
-            <p className="text-xs text-muted-foreground">实际规则：{processed ? rules.filter(rule => !rule.disabled).map(rule => rule.name).join('、') || '无启用规则' : '原文'}；楼层 {floorStart}–{floorEnd}</p>
-            <details><summary className="cursor-pointer text-sm">参考总结/日记</summary>
-              <label className="flex items-center gap-2 text-sm"><Checkbox checked={crossBranch} onCheckedChange={value => { setCrossBranch(value === true); setSelectedRefs(new Set()); }} />显示本故事其他脉络，供显式引用</label>
+            <label className="flex items-center gap-2 text-sm"><Checkbox checked={processed} onCheckedChange={value => setProcessed(value === true)} />{tr("使用本故事正则处理后的正文（不修改原文）")}</label>
+            <p className="text-xs text-muted-foreground">{tr("实际规则：")}{processed ? formatList(rules.filter(rule => !rule.disabled).map(rule => rule.name)) || tr("无启用规则") : tr("原文")}{tr("；楼层 ")}{floorStart}–{floorEnd}</p>
+            <details><summary className="cursor-pointer text-sm">{tr("参考总结/日记")}</summary>
+              <label className="flex items-center gap-2 text-sm"><Checkbox checked={crossBranch} onCheckedChange={value => { setCrossBranch(value === true); setSelectedRefs(new Set()); }} />{tr("显示本故事其他脉络，供显式引用")}</label>
               {references.filter(record => crossBranch || (record.branchId ?? null) === branchId).map(record => <label key={record.id} className="flex items-center gap-2 py-1 text-sm">
                 <Checkbox checked={selectedRefs.has(record.id)} onCheckedChange={value => setSelectedRefs(previous => { const next = new Set(previous); if (value === true) next.add(record.id); else next.delete(record.id); return next; })} />
-                {record.title} · {record.kind === 'diary' ? `日记/${record.diaryOwner || record.genParams?.diaryOwner || '未指定人物'}` : '总结'} · {record.branchId ? '分支' : '主线'}
+                {record.title} · {record.kind === 'diary' ? tr("日记/{{v0}}", { v0: record.diaryOwner || record.genParams?.diaryOwner || tr("未指定人物") }) : tr("总结")} · {record.branchId ? tr("分支") : tr("主线")}
               </label>)}
             </details>
           </fieldset>
-          <details><summary className="cursor-pointer text-sm">最终请求预览（约 {request.tokenEstimate.toLocaleString()} tokens）</summary>
+          <details><summary className="cursor-pointer text-sm">{tr("最终请求预览（约 {{v0}} tokens）", { v0: request.tokenEstimate.toLocaleString(getLocale()) })}</summary>
             <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded border border-border p-2 text-xs">{request.messages.map(message => `[${message.role}]\n${message.content}`).join('\n\n')}</pre></details>
           {outputError && <p role="alert" className="text-sm text-destructive">{outputError}</p>}
 
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">额外要求（可选）</Label>
+            <Label className="text-xs text-muted-foreground">{tr("额外要求（可选）")}</Label>
             <Textarea
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
-              placeholder="例如：只关注角色关系变化；或：重点整理地点设定"
+              placeholder={tr("例如：只关注角色关系变化；或：重点整理地点设定")}
               className="min-h-[60px] text-sm"
             />
           </div>
@@ -285,7 +286,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
               onClick={() => setPromptOpen((o) => !o)}
             >
               <Pencil className="w-3 h-3" />
-              {promptOpen ? '收起提示词' : '查看/编辑提示词'}
+              {promptOpen ? tr("收起提示词") : tr("查看/编辑提示词")}
             </button>
             {promptOpen && (
               <div className="space-y-1.5">
@@ -295,13 +296,10 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                   className="min-h-[30vh] font-mono text-xs"
                 />
                 <div className="flex flex-wrap items-center gap-2 justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    本次生成使用当前输入；保存后供所有入口使用。注意保留 JSON ops 输出格式约定，否则无法解析。
-                  </p>
-                  <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>保存提示词</Button>
+                  <p className="text-xs text-muted-foreground">{tr("本次生成使用当前输入；保存后供所有入口使用。注意保留 JSON ops 输出格式约定，否则无法解析。")}</p>
+                  <Button variant="outline" size="sm" disabled={customPrompt === savedPrompt} onClick={handlePromptSave}>{tr("保存提示词")}</Button>
                   <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={handlePromptReset}>
-                    <RotateCcw className="w-3 h-3" />恢复默认
-                  </Button>
+                    <RotateCcw className="w-3 h-3" />{tr("恢复默认")}</Button>
                 </div>
               </div>
             )}
@@ -310,12 +308,10 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
           <div className="flex items-center gap-2">
             {!streaming ? (
               <Button className="gap-2" disabled={contextLoading || !!contextError} onClick={handleGenerate}>
-                <Sparkles className="w-4 h-4" />生成
-              </Button>
+                <Sparkles className="w-4 h-4" />{tr("生成")}</Button>
             ) : (
               <Button variant="destructive" className="gap-2" onClick={() => abortRef.current?.abort()}>
-                <Square className="w-4 h-4" />停止
-              </Button>
+                <Square className="w-4 h-4" />{tr("停止")}</Button>
             )}
             {streaming && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
           </div>
@@ -325,9 +321,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
             <div className="space-y-2">
               {opItems ? (
                 <>
-                  <Label className="text-xs text-muted-foreground">
-                    将应用的操作（{includedCount} / {opItems.length}）—— 点行展开预览与编辑
-                  </Label>
+                  <Label className="text-xs text-muted-foreground">{tr("将应用的操作（")}{includedCount} / {opItems.length}{tr("）—— 点行展开预览与编辑")}</Label>
                   <ScrollArea className="h-[48vh] border rounded-md">
                     <div className="p-1.5 space-y-1">
                       {opItems.map((item, i) => {
@@ -342,7 +336,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                               <Checkbox
                                 checked={item.included}
                                 onCheckedChange={(v) => patchItem(i, { included: v === true })}
-                                aria-label="是否应用此操作"
+                                aria-label={tr("是否应用此操作")}
                                 className="shrink-0"
                               />
                               <button
@@ -368,7 +362,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                                 size="icon"
                                 className="shrink-0 text-muted-foreground hover:text-destructive"
                                 onClick={() => removeItem(i)}
-                                title="删除此操作"
+                                title={tr("删除此操作")}
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </Button>
@@ -377,7 +371,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                               <div className="px-2 pb-2 pl-8 space-y-1.5">
                                 {item.op.op === 'insert' && (
                                   <div className="flex items-center gap-1.5">
-                                    <Label className="text-[11px] text-muted-foreground shrink-0">标题</Label>
+                                    <Label className="text-[11px] text-muted-foreground shrink-0">{tr("标题")}</Label>
                                     <Input size="sm"
                                       value={item.op.title ?? ''}
                                       onChange={(e) => patchOp(i, { title: e.target.value })}
@@ -388,7 +382,7 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                                 {item.op.op !== 'archive' && (
                                   <div className="space-y-0.5">
                                     <Label className="text-[11px] text-muted-foreground">
-                                      {item.op.op === 'insert' ? '正文' : '追加内容'}
+                                      {item.op.op === 'insert' ? tr("正文") : tr("追加内容")}
                                     </Label>
                                     <Textarea
                                       value={item.op.content ?? ''}
@@ -399,22 +393,22 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
                                 )}
                                 {(item.op.hint || item.op.keywords) && (
                                   <p className="text-[11px] text-muted-foreground">
-                                    {item.op.hint ? `提示：${item.op.hint}` : ''}
+                                    {item.op.hint ? tr("提示：{{v0}}", { v0: item.op.hint }) : ''}
                                     {item.op.hint && item.op.keywords ? ' · ' : ''}
                                     {item.op.keywords
-                                      ? `标签：${Array.isArray(item.op.keywords) ? item.op.keywords.join(', ') : item.op.keywords}`
+                                      ? tr("标签：{{v0}}", { v0: Array.isArray(item.op.keywords) ? item.op.keywords.join(', ') : item.op.keywords })
                                       : ''}
                                   </p>
                                 )}
                                 {item.op.op === 'archive' && (
-                                  <p className="text-xs text-muted-foreground">将把「{item.op.path}」标记为已归档（可在树中恢复）。</p>
+                                  <p className="text-xs text-muted-foreground">{tr("将把「{{v0}}」标记为已归档（可在树中恢复）。", { v0: item.op.path })}</p>
                                 )}
                               </div>
                             )}
                           </div>
                         );
                       })}
-                      {opItems.length === 0 && <p className="text-sm text-muted-foreground p-2">无有效操作</p>}
+                      {opItems.length === 0 && <p className="text-sm text-muted-foreground p-2">{tr("无有效操作")}</p>}
                     </div>
                   </ScrollArea>
                 </>
@@ -428,9 +422,9 @@ export function AIFillDialog({ open, onOpenChange, session, nodes, onApply, stor
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
           <Button className="gap-1" onClick={handleConfirm} disabled={includedCount === 0}>
-            <Check className="w-4 h-4" />应用到故事树（{includedCount}）
+            <Check className="w-4 h-4" />{tr("应用到故事树（{{v0}}）", { v0: includedCount })}
           </Button>
         </DialogFooter>
       </DialogContent>

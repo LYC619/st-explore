@@ -7,6 +7,7 @@
  * - 迁移：migrateLegacyTags 把 v1 标签映射进 v2（允许未分类，自定义标签全保留）
  */
 
+import { tr } from '@/lib/i18n';
 export const TAG_CATEGORIES = ['人物', '剧情', '玩法', '世界观', '卡面', '评价', '未分类'] as const;
 export type BuiltinTagCategory = (typeof TAG_CATEGORIES)[number];
 /** 标签组名称允许来自当前文件库的本地自定义定义。 */
@@ -25,13 +26,13 @@ export const BUILTIN_TAGS: Record<BuiltinTagCategory, string[]> = {
 
 /** 每组的问号悬浮说明（0801 反馈：内置标签右上角问号） */
 export const CATEGORY_HELP: Record<BuiltinTagCategory, string> = {
-  人物: '卡里角色的人物构成，如少女、群像（可多选）',
-  剧情: '故事题材走向，如悬疑、恋爱（可多选）',
-  玩法: '卡的玩法机制，如模拟、RPG（可多选）',
-  世界观: '故事世界背景，如玄幻、现代（可多选）',
-  卡面: '卡面尺度标记；NSFW 用开关维护，可在设置里开启模糊显示',
-  评价: '未评分按实际评分字段筛选；打分后自动更新档位，已有低分显示为 6分以下',
-  未分类: '没有归入任何类别的自定义标签',
+  get 人物() { return tr("卡里角色的人物构成，如少女、群像（可多选）"); },
+  get 剧情() { return tr("故事题材走向，如悬疑、恋爱（可多选）"); },
+  get 玩法() { return tr("卡的玩法机制，如模拟、RPG（可多选）"); },
+  get 世界观() { return tr("故事世界背景，如玄幻、现代（可多选）"); },
+  get 卡面() { return tr("卡面尺度标记；NSFW 用开关维护，可在设置里开启模糊显示"); },
+  get 评价() { return tr("未评分按实际评分字段筛选；打分后自动更新档位，已有低分显示为 6分以下"); },
+  get 未分类() { return tr("没有归入任何类别的自定义标签"); },
 };
 
 export interface ParsedTag {
@@ -136,10 +137,10 @@ export function characterFilterTags(character: { tags: string[]; rating?: number
  */
 export function validateUserTagInput(raw: string): string | null {
   if (raw === '类型' || raw.startsWith('类型/')) {
-    return '「类型」是独立字段，请使用类型选择维护，不能作为标签';
+    return tr("「类型」是独立字段，请使用类型选择维护，不能作为标签");
   }
   if (raw === '评价/未评分' || raw === '评价/低创' || RATING_TIER_LABELS.some((label) => raw === `评价/${label}`)) {
-    return '评价档位随评分自动维护，请通过评分调整';
+    return tr("评价档位随评分自动维护，请通过评分调整");
   }
   return null;
 }

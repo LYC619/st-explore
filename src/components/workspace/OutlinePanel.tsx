@@ -1,7 +1,9 @@
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 /**
  * 故事工作区左栏·章节目录 + 书签（当前脉络的，点击跳转到对应楼层）。
  */
-import { useMemo } from 'react';
+import { useMemo,   } from 'react';
 import { Bookmark, BookMarked } from 'lucide-react';
 import type { ChatSession, ChapterMarker } from '@/types/chat';
 
@@ -13,6 +15,7 @@ interface OutlinePanelProps {
 }
 
 export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePanelProps) {
+  useI18n();
   const indexById = useMemo(
     () => new Map(session.messages.map((m, i) => [m.id, i])),
     [session.messages],
@@ -26,13 +29,13 @@ export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePan
     [indexById, markers],
   );
 
-  const favoriteItems = useMemo(() => {
+  const favoriteItems = useLocalizedMemo(() => {
     const byId = new Map(session.messages.map((m, i) => [m.id, { msg: m, index: i }]));
     return favorites
       .map((id) => {
         const hit = byId.get(id);
         if (!hit) return null;
-        const snippet = hit.msg.content.replace(/\s+/g, ' ').trim().slice(0, 24) || '（空消息）';
+        const snippet = hit.msg.content.replace(/\s+/g, ' ').trim().slice(0, 24) || tr("（空消息）");
         return { messageId: id, index: hit.index, snippet };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
@@ -42,11 +45,9 @@ export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePan
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">章节目录</p>
+        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">{tr("章节目录")}</p>
         {sortedMarkers.length === 0 ? (
-          <p className="px-2 text-xs text-muted-foreground/70">
-            还没有章节。用工具条「章节标记」在楼层上落标。
-          </p>
+          <p className="px-2 text-xs text-muted-foreground/70">{tr("还没有章节。用工具条「章节标记」在楼层上落标。")}</p>
         ) : (
           <div className="space-y-0.5">
             {sortedMarkers.map((m) => (
@@ -67,11 +68,9 @@ export function OutlinePanel({ session, markers, favorites, onJump }: OutlinePan
       </div>
 
       <div>
-        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">书签</p>
+        <p className="text-xs font-medium text-muted-foreground px-2 mb-1">{tr("书签")}</p>
         {favoriteItems.length === 0 ? (
-          <p className="px-2 text-xs text-muted-foreground/70">
-            还没有书签。点击每楼右上角的「☆」即可收藏。
-          </p>
+          <p className="px-2 text-xs text-muted-foreground/70">{tr("还没有书签。点击每楼右上角的「☆」即可收藏。")}</p>
         ) : (
           <div className="space-y-0.5">
             {favoriteItems.map((f) => (

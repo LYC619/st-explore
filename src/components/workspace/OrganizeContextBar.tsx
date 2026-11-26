@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { ArrowLeft, BookOpenText, ChevronDown, GitBranch, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -49,8 +51,9 @@ export function OrganizeContextBar({
   branches = [],
   onSelectBranch,
 }: OrganizeContextBarProps) {
+  useI18n();
   const currentBranchName = currentBranchId
-    ? branches.find((b) => b.id === currentBranchId)?.name ?? '支线'
+    ? branches.find((b) => b.id === currentBranchId)?.name ?? tr("支线")
     : null;
   const canSwitchStory = Boolean(onSelectStory && stories && stories.length > 1);
   const canSwitchBranch = Boolean(onSelectBranch && branches.length > 0);
@@ -66,8 +69,8 @@ export function OrganizeContextBar({
           variant="ghost"
           size="icon"
           onClick={onExpandRail}
-          aria-label="展开故事目录栏"
-          title="展开左侧目录栏（切换总结/故事树/导入导出与书签）"
+          aria-label={tr("展开故事目录栏")}
+          title={tr("展开左侧目录栏（切换总结/故事树/导入导出与书签）")}
         >
           <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
         </Button>
@@ -96,13 +99,11 @@ export function OrganizeContextBar({
           <DropdownMenuContent align="start" className="max-h-80 min-w-56 overflow-y-auto overscroll-contain">
             {canSwitchBranch && onSelectBranch && (
               <>
-                <DropdownMenuLabel className="text-xs text-muted-foreground">当前故事脉络</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">{tr("当前故事脉络")}</DropdownMenuLabel>
                 <DropdownMenuItem
                   className={currentBranchId === null ? 'bg-primary/10 text-primary' : ''}
                   onSelect={() => onSelectBranch(null)}
-                >
-                  主线
-                </DropdownMenuItem>
+                >{tr("主线")}</DropdownMenuItem>
                 {branches.map((branch) => (
                   <DropdownMenuItem
                     key={branch.id}
@@ -118,7 +119,7 @@ export function OrganizeContextBar({
             {canSwitchStory && canSwitchBranch && <DropdownMenuSeparator />}
             {canSwitchStory && onSelectStory && stories && (
               <>
-                <DropdownMenuLabel className="text-xs text-muted-foreground">切换同角色故事</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">{tr("切换同角色故事")}</DropdownMenuLabel>
                 {stories.map((item) => (
                   <DropdownMenuItem
                     key={item.id}
@@ -143,9 +144,7 @@ export function OrganizeContextBar({
 
       {!hideReadAction && (
         <Button variant="outline" size="sm" className="shrink-0" onClick={onRead}>
-          <BookOpenText className="mr-1.5 h-4 w-4" />
-          阅读与编辑
-        </Button>
+          <BookOpenText className="mr-1.5 h-4 w-4" />{tr("阅读与编辑")}</Button>
       )}
     </header>
   );

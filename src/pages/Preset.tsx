@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -66,6 +68,7 @@ function cloneHistorySnapshot(np: NormalizedPreset): PromptHistorySnapshot {
 }
 
 export default function Preset() {
+  useI18n();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -173,17 +176,17 @@ export default function Preset() {
         identity.assetId ? getPreset(identity.assetId) : null,
         identity.characterId ? getCharacter(identity.characterId) : null,
         getAllPresets().catch((err: unknown) => {
-          readErr = err instanceof Error ? err.message : '读取预设列表失败';
+          readErr = err instanceof Error ? err.message : tr("读取预设列表失败");
           return [];
         }),
         initial && !identity.assetId ? initialTarget.current : null,
       ]);
-      if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，请从预设库重新打开');
+      if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换，请从预设库重新打开"));
       if (isCurrent()) {
         setListReadError(readErr);
         setSavedItems(item && !items.some((saved) => saved.id === item.id) ? [item, ...items] : items);
       }
-      if (identity.assetId && !item) throw new Error('找不到这套预设，它可能已被移除，请返回预设库重新选择');
+      if (identity.assetId && !item) throw new Error(tr("找不到这套预设，它可能已被移除，请返回预设库重新选择"));
       return { item: item ?? restored?.item ?? null, characterName: character?.name ?? '', imported: restored?.imported ?? false };
     },
     accept: (target, identity) => {
@@ -192,7 +195,7 @@ export default function Preset() {
       setCowCharacterName(target.characterName);
       if (target.imported && target.item) void persistImportedHistory(target.item);
     },
-    onError: (error) => toast({ title: '载入预设失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }),
+    onError: (error) => toast({ title: tr("载入预设失败"), description: error instanceof Error ? error.message : String(error), variant: 'destructive' }),
   });
 
   const refreshSaved = useCallback(async (isCurrent = captureCurrent()) => {
@@ -205,7 +208,7 @@ export default function Preset() {
       }
     } catch (error) {
       if (isCurrent() && epoch === getVaultEpoch()) {
-        setListReadError(error instanceof Error ? error.message : '无法刷新已存预设列表');
+        setListReadError(error instanceof Error ? error.message : tr("无法刷新已存预设列表"));
       }
     }
   }, [captureCurrent]);
@@ -336,7 +339,7 @@ export default function Preset() {
   const handleAddBlock = useCallback((name: string, kind: 'relative' | 'injection' = 'relative') => {
     const identifier = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     mutateWithHistory((prev) => {
-      const base = { identifier, name: name || (kind === 'injection' ? '新注入块' : '新提示词块'), role: 'system' as const, content: '' };
+      const base = { identifier, name: name || (kind === 'injection' ? tr("新注入块") : tr("新提示词块")), role: 'system' as const, content: '' };
       const newBlock = kind === 'injection'
         ? { ...base, injection_position: 1, injection_depth: 4, injection_order: 100, injection_trigger: [] as string[] }
         : base;
@@ -402,7 +405,7 @@ export default function Preset() {
     const isCurrent = captureCurrent();
     const epoch = getVaultEpoch();
     if (!file.name.toLowerCase().endsWith('.json')) {
-      toast({ title: '请选择 .json 预设文件', description: '若要导入整套 .zip 预设压缩包，请前往「预设库 → 导入预设」。', variant: 'destructive' });
+      toast({ title: tr("请选择 .json 预设文件"), description: tr("若要导入整套 .zip 预设压缩包，请前往「预设库 → 导入预设」。"), variant: 'destructive' });
       return;
     }
     try {
@@ -412,12 +415,12 @@ export default function Preset() {
       const item = { id: generatePresetId(), title: name, preset: np, createdAt: Date.now(), updatedAt: Date.now(), autoSaved: true };
       applyPreset(item);
       void persistImportedHistory(item);
-      toast({ title: '预设导入成功', description: `共读入 ${np.prompts.length} 个提示词块` });
+      toast({ title: tr("预设导入成功"), description: tr("共读入 {{v0}} 个提示词块", { v0: np.prompts.length }) });
     } catch (e) {
       if (!isCurrent()) return;
       toast({
-        title: '无法读取预设文件',
-        description: e instanceof Error ? e.message : '请检查文件是否为 SillyTavern 聊天补全预设 JSON',
+        title: tr("无法读取预设文件"),
+        description: e instanceof Error ? e.message : tr("请检查文件是否为 SillyTavern 聊天补全预设 JSON"),
         variant: 'destructive',
       });
     }
@@ -432,17 +435,17 @@ export default function Preset() {
 
   const handleSaveLocal = useCallback(async () => {
     if (!preset || saveInFlight.current) return;
-    const effectiveTitle = fileName.trim() || '未命名预设';
+    const effectiveTitle = fileName.trim() || tr("未命名预设");
     saveInFlight.current = true; setSaving(true);
     const isCurrent = captureCurrent();
     const epoch = getVaultEpoch();
-    const assertCurrent = () => { if (!isCurrent() || epoch !== getVaultEpoch() || epoch !== loadedEpoch.current) throw new Error('当前预设或资料库已切换，请重新打开后保存'); };
+    const assertCurrent = () => { if (!isCurrent() || epoch !== getVaultEpoch() || epoch !== loadedEpoch.current) throw new Error(tr("当前预设或资料库已切换，请重新打开后保存")); };
     const now = Date.now();
     try {
       assertCurrent();
       const base = currentItemId ? await getPreset(currentItemId) : undefined;
       assertCurrent();
-      if (currentItemId && !base && savedItems.some(item => item.id === currentItemId)) throw new Error('预设已被移除，请先在「导出」页签备份草稿');
+      if (currentItemId && !base && savedItems.some(item => item.id === currentItemId)) throw new Error(tr("预设已被移除，请先在「导出」页签备份草稿"));
       if (cowCharacterId && base) {
         const result = await saveAssetWithCow({
           kind: 'preset',
@@ -458,14 +461,14 @@ export default function Preset() {
           now,
           assertCurrent,
           validate: (_target, latestBase) => {
-            if (originalPreset && presetContentFingerprint(latestBase.preset) !== presetContentFingerprint(originalPreset)) throw new Error('来源预设已在其他位置修改，请先导出草稿，再重新打开');
+            if (originalPreset && presetContentFingerprint(latestBase.preset) !== presetContentFingerprint(originalPreset)) throw new Error(tr("来源预设已在其他位置修改，请先导出草稿，再重新打开"));
           },
         });
         if (!isCurrent() || epoch !== getVaultEpoch()) return;
         setFileName(result.title);
-        if (result.action === 'update') toast({ title: '已保存修改' });
-        else if (result.action === 'redirect') toast({ title: `已更新专属预设「${result.title}」`, description: '原共享预设未改动' });
-        else toast({ title: '已生成角色专属预设副本', description: `「${result.title}」，不影响其他角色` });
+        if (result.action === 'update') toast({ title: tr("已保存修改") });
+        else if (result.action === 'redirect') toast({ title: tr("已更新专属预设「{{v0}}」", { v0: result.title }), description: tr("原共享预设未改动") });
+        else toast({ title: tr("已生成角色专属预设副本"), description: tr("「{{v0}}」，不影响其他角色", { v0: result.title }) });
         const applySaved = () => {
           setCurrentItemId(result.targetId);
           setOriginalPreset(preset);
@@ -482,7 +485,7 @@ export default function Preset() {
       assertCurrent();
       if (cowCharacterId && !base) {
         const updatedCharacter = await updateCharacterAssetReference(cowCharacterId, 'preset', id, id, now);
-        if (!updatedCharacter) throw new Error('预设已保存，但角色挂载切换失败：角色可能已被移除');
+        if (!updatedCharacter) throw new Error(tr("预设已保存，但角色挂载切换失败：角色可能已被移除"));
       }
       if (!isCurrent()) return;
       const applySaved = () => {
@@ -494,11 +497,11 @@ export default function Preset() {
       if (ownsLocation()) acceptLocalAsset(id, applySaved);
       else applySaved();
       await refreshSaved();
-      toast({ title: '预设已保存', description: '修改已写入预设库，进入内置酒馆或重新刷新即可生效' });
+      toast({ title: tr("预设已保存"), description: tr("修改已写入预设库，进入内置酒馆或重新刷新即可生效") });
     } catch (error: unknown) {
       if (!isCurrent()) return;
       toast({
-        title: '保存失败',
+        title: tr("保存失败"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -510,14 +513,14 @@ export default function Preset() {
     saveInFlight.current = true; setSaving(true); setCreatingDiy(true);
     const isCurrent = captureCurrent(), epoch = getVaultEpoch();
     try {
-      if (epoch !== loadedEpoch.current) throw new Error('资料库已切换，请从预设库重新打开');
-      const item = await createPresetDiy(currentItemId, { title: fileName.trim() || '未命名预设', preset });
+      if (epoch !== loadedEpoch.current) throw new Error(tr("资料库已切换，请从预设库重新打开"));
+      const item = await createPresetDiy(currentItemId, { title: fileName.trim() || tr("未命名预设"), preset });
       if (!isCurrent() || epoch !== getVaultEpoch()) return;
       setOriginalPreset(preset); setOriginalFileName(fileName);
-      toast({ title: `已另存副本「${item.title}」`, description: '原版与已有角色挂载保持不动' });
+      toast({ title: tr("已另存副本「{{v0}}」", { v0: item.title }), description: tr("原版与已有角色挂载保持不动") });
       await refreshSaved(isCurrent);
       setDiyTarget(item.id);
-    } catch (error) { if (isCurrent()) toast({ title: '另存副本失败', description: error instanceof Error ? error.message : String(error), variant: 'destructive' }); }
+    } catch (error) { if (isCurrent()) toast({ title: tr("另存副本失败"), description: error instanceof Error ? error.message : String(error), variant: 'destructive' }); }
     finally { saveInFlight.current = false; setSaving(false); setCreatingDiy(false); }
   };
   const [diyTarget, setDiyTarget] = useState<string | null>(null);
@@ -532,14 +535,14 @@ export default function Preset() {
     const isCurrent = captureCurrent();
     const target = deleteTarget;
     const deleted = await executeDeleteAction(async () => {
-      if (loadedEpoch.current !== getVaultEpoch()) throw new Error('资料库已切换，请重新打开后删除');
+      if (loadedEpoch.current !== getVaultEpoch()) throw new Error(tr("资料库已切换，请重新打开后删除"));
       await deletePreset(target.id, options);
       if (!isCurrent()) return;
       if (target.id === currentItemId) setCurrentItemId(null);
       await refreshSaved(isCurrent);
     }, {
-      onSuccess: () => { if (isCurrent()) toast({ title: `已删除预设「${target.title}」` }); },
-      onFailure: () => { if (isCurrent()) toast({ title: '删除预设失败', variant: 'destructive' }); },
+      onSuccess: () => { if (isCurrent()) toast({ title: tr("已删除预设「{{v0}}」", { v0: target.title }) }); },
+      onFailure: () => { if (isCurrent()) toast({ title: tr("删除预设失败"), variant: 'destructive' }); },
     });
     if (deleted && isCurrent()) setDeleteTarget(null);
     return deleted;
@@ -548,16 +551,14 @@ export default function Preset() {
   const actions = preset && (
     <>
       <Button type="button" variant="outline" size="sm" disabled={saving} onClick={() => setTrialOpen(true)}>
-        <FlaskConical className="w-4 h-4 mr-1.5" /> 边改边试
-      </Button>
+        <FlaskConical className="w-4 h-4 mr-1.5" />{tr(" 边改边试")}</Button>
       <Popover>
         <PopoverTrigger asChild>
           <Button type="button" variant="outline" size="sm" disabled={saving}>
-            <History className="w-4 h-4 mr-1.5" /> 切换预设
-          </Button>
+            <History className="w-4 h-4 mr-1.5" />{tr(" 切换预设")}</Button>
         </PopoverTrigger>
         <PopoverContent className="w-80" align="end">
-          <h4 className="text-sm font-medium mb-2">库内预设（{savedItems.length}）</h4>
+          <h4 className="text-sm font-medium mb-2">{tr("库内预设（{{v0}}）", { v0: savedItems.length })}</h4>
           {listReadError && <p role="alert" className="text-xs text-destructive mb-2">{listReadError}</p>}
           <ScrollArea className="max-h-72">
             <div className="space-y-1">
@@ -567,21 +568,21 @@ export default function Preset() {
                   <button type="button" className="flex-1 min-w-0 text-left truncate" title={presetOptionLabel(item)} onClick={() => requestAsset(item.id)}>
                     {presetOptionLabel(item)}
                   </button>
-                  <button type="button" className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>删除</button>
+                  <button type="button" className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>{tr("删除")}</button>
                 </div>
               ))}
-              {savedItems.length === 0 && !listReadError && <p className="text-xs text-muted-foreground text-center py-4">暂无已保存预设</p>}
+              {savedItems.length === 0 && !listReadError && <p className="text-xs text-muted-foreground text-center py-4">{tr("暂无已保存预设")}</p>}
             </div>
           </ScrollArea>
         </PopoverContent>
       </Popover>
       <Button type="button" size="sm" disabled={saving} onClick={() => void handleSaveLocal()}>
-        <Save className="w-4 h-4 mr-1.5" /> {saving ? '保存中…' : currentItemId ? '保存修改' : '保存到预设库'}
+        <Save className="w-4 h-4 mr-1.5" /> {saving ? tr("保存中…") : currentItemId ? tr("保存修改") : tr("保存到预设库")}
       </Button>
-      <Button type="button" variant="outline" size="sm" disabled={saving || !currentItemId} onClick={() => void handleDiy()}><Copy className="w-4 h-4 mr-1.5" />另存为 DIY 副本</Button>
+      <Button type="button" variant="outline" size="sm" disabled={saving || !currentItemId} onClick={() => void handleDiy()}><Copy className="w-4 h-4 mr-1.5" />{tr("另存为 DIY 副本")}</Button>
       <label>
         <Button variant="outline" size="sm" asChild>
-          <span><Download className="w-4 h-4 mr-1.5" /> 导入 JSON</span>
+          <span><Download className="w-4 h-4 mr-1.5" />{tr(" 导入 JSON")}</span>
         </Button>
         <input type="file" accept=".json,application/json" className="hidden" disabled={saving}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadFile(f); e.target.value = ''; }} />
@@ -595,48 +596,44 @@ export default function Preset() {
       <AlertDialog open={!!pendingTarget} onOpenChange={(open) => { if (!open) cancelPending(); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认切换预设？</AlertDialogTitle>
-            <AlertDialogDescription>当前预设有未保存的修改，切换后这些改动将会丢失。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("确认切换预设？")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("当前预设有未保存的修改，切换后这些改动将会丢失。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>继续编辑</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmPending}>放弃并切换</AlertDialogAction>
+            <AlertDialogCancel>{tr("继续编辑")}</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmPending}>{tr("放弃并切换")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <fieldset disabled={creatingDiy} className="contents">
         <div className="container mx-auto px-4 py-6">
-          <Button type="button" variant="ghost" className="mb-3" onClick={() => navigate(searchParams.get('from') === 'detail' && currentItemId ? `/presets/${encodeURIComponent(currentItemId)}` : `/presets${currentItemId ? `?presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />{searchParams.get('from') === 'detail' ? '返回系列详情' : '返回预设库'}</Button>
+          <Button type="button" variant="ghost" className="mb-3" onClick={() => navigate(searchParams.get('from') === 'detail' && currentItemId ? `/presets/${encodeURIComponent(currentItemId)}` : `/presets${currentItemId ? `?presetId=${encodeURIComponent(currentItemId)}` : ''}`)}><ArrowLeft className="w-4 h-4 mr-1" />{searchParams.get('from') === 'detail' ? tr("返回系列详情") : tr("返回预设库")}</Button>
           <div className="flex flex-wrap items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-lg gold-gradient flex items-center justify-center shadow-card shrink-0">
               <SlidersHorizontal className="w-5 h-5 text-primary-foreground" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-display font-semibold">预设 DIY 工坊</h1>
+                <h1 className="text-xl font-display font-semibold">{tr("预设 DIY 工坊")}</h1>
                 {cowCharacterId && cowCharacterName && (
-                  <Badge variant="secondary" title="从角色页进入的处理：保存共享预设时会生成该角色的派生副本，原资产不动">
-                    为「{cowCharacterName}」定制
-                  </Badge>
+                  <Badge variant="secondary" title={tr("从角色页进入的处理：保存共享预设时会生成该角色的派生副本，原资产不动")}>{tr("为「{{v0}}」定制", { v0: cowCharacterName })}</Badge>
                 )}
-                <HelpCard>
-                  自由调整提示词激活顺序、正文、采样参数、开头预填词与内嵌正则／脚本，支持随时打开右上角「边改边试」测试最新文风，保存后完整兼容 SillyTavern。
-                </HelpCard>
+                <HelpCard>{tr("自由调整提示词激活顺序、正文、采样参数、开头预填词与内嵌正则／脚本，支持随时打开右上角「边改边试」测试最新文风，保存后完整兼容 SillyTavern。")}</HelpCard>
               </div>
               {preset ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">预设名称：</span>
+                  <span className="text-xs text-muted-foreground">{tr("预设名称：")}</span>
                   <Input
                     size="sm"
-                    aria-label="预设名称"
+                    aria-label={tr("预设名称")}
                     value={fileName}
                     onChange={(e) => setFileName(e.target.value)}
-                    placeholder="输入预设名称"
+                    placeholder={tr("输入预设名称")}
                     className="max-w-xs text-sm font-medium"
                   />
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">精修提示词顺序、采样温度、开头预填与内嵌正则</p>
+                <p className="text-sm text-muted-foreground">{tr("精修提示词顺序、采样温度、开头预填与内嵌正则")}</p>
               )}
             </div>
           </div>
@@ -653,15 +650,15 @@ export default function Preset() {
                   }`}
                 >
                   <Download className="w-8 h-8 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">拖入或点击选择预设文件（.json）</span>
-                  <span className="text-xs text-muted-foreground/70">支持 SillyTavern 导出的聊天补全预设</span>
+                  <span className="text-sm text-muted-foreground">{tr("拖入或点击选择预设文件（.json）")}</span>
+                  <span className="text-xs text-muted-foreground/70">{tr("支持 SillyTavern 导出的聊天补全预设")}</span>
                   <input type="file" accept=".json,application/json" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) void loadFile(f); e.target.value = ''; }} />
                 </label>
                 {listReadError && <p role="alert" className="mt-3 text-xs text-destructive">{listReadError}</p>}
                 {savedItems.length > 0 && (
                   <div className="mt-4">
-                    <p className="text-xs text-muted-foreground mb-2">或从预设库打开：</p>
+                    <p className="text-xs text-muted-foreground mb-2">{tr("或从预设库打开：")}</p>
                     <div className="space-y-1">
                       {savedItems.slice(0, 8).map((item) => (
                         <button key={item.id} type="button" className="flex items-center gap-2 w-full p-2 rounded-md hover:bg-accent/40 text-sm text-left" onClick={() => requestAsset(item.id)}>
@@ -677,11 +674,11 @@ export default function Preset() {
           ) : (
             <Tabs value={tab} onValueChange={setTab}>
               <TabsList data-tour="preset-tabs" className="max-w-full overflow-x-auto justify-start">
-                <TabsTrigger value="overview">概览与参数</TabsTrigger>
-                <TabsTrigger value="prompts">提示词编排</TabsTrigger>
-                <TabsTrigger value="utility">衔接与包裹格式</TabsTrigger>
-                <TabsTrigger value="regex">正则{preset.regexRules.length > 0 ? `（${preset.regexRules.length}）` : ''}</TabsTrigger>
-                <TabsTrigger value="export" data-tour="preset-export">导出</TabsTrigger>
+                <TabsTrigger value="overview">{tr("概览与参数")}</TabsTrigger>
+                <TabsTrigger value="prompts">{tr("提示词编排")}</TabsTrigger>
+                <TabsTrigger value="utility">{tr("衔接与包裹格式")}</TabsTrigger>
+                <TabsTrigger value="regex">{preset.regexRules.length > 0 ? tr("正则（{{v0}}）", { v0: preset.regexRules.length }) : tr("正则")}</TabsTrigger>
+                <TabsTrigger value="export" data-tour="preset-export">{tr("导出")}</TabsTrigger>
               </TabsList>
               <TabsContent value="overview" className="mt-4">
                 <PresetOverview
@@ -725,16 +722,16 @@ export default function Preset() {
       <Sheet open={trialOpen && !!preset} onOpenChange={setTrialOpen}>
         <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
           <SheetHeader className="mb-4">
-            <SheetTitle>边改边试 · {fileName || '未命名预设'}</SheetTitle>
-            <SheetDescription>直接读取当前尚未保存的提示词与参数草稿进行对话测试，不污染正式聊天记录。</SheetDescription>
+            <SheetTitle>{tr("边改边试 · {{v0}}", { v0: fileName || tr("未命名预设") })}</SheetTitle>
+            <SheetDescription>{tr("直接读取当前尚未保存的提示词与参数草稿进行对话测试，不污染正式聊天记录。")}</SheetDescription>
           </SheetHeader>
           {preset && <PresetPlayground presetId={currentItemId || 'diy-draft'} presetOverride={{ title: fileName, preset }} />}
         </SheetContent>
       </Sheet>
       <DeleteConfirmDialog
         open={!!deleteTarget}
-        title={`删除预设「${deleteTarget?.title ?? ''}」？`}
-        description="条目将从预设库移除。若角色仍挂载该预设，角色页会提示引用失效。"
+        title={tr("删除预设「{{v0}}」？", { v0: deleteTarget?.title ?? '' })}
+        description={tr("条目将从预设库移除。若角色仍挂载该预设，角色页会提示引用失效。")}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         fileTarget={deleteTarget ? { store: 'presets', id: deleteTarget.id } : undefined}
         onConfirm={handleDeleteItem}

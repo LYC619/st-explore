@@ -1,7 +1,9 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
 import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { getBuiltinPrompt, formatBuiltinPrompt } from '@/lib/builtin-prompts';
-import { useState, useRef, useMemo } from 'react';
+import { useMemo, useState, useRef  } from 'react';
 import { Wand2, Loader2, StopCircle, Check, X } from 'lucide-react';
 import { diffChars } from 'diff';
 import { Button } from '@/components/ui/button';
@@ -36,6 +38,7 @@ interface Props {
 
 /** 通用 AI 改写：输入要求 → 喂当前内容+要求 → 左右对照确认后替换。世界书条目 / 预设块等均可复用 */
 export function AIRewriteContent({ content, onResult, compact, systemPrompt, quickPresets, title, builtinPromptId, promptVariables, quickPresetPrefix }: Props) {
+  useI18n();
   const { toast } = useToast();
   const [truncated, setTruncated] = useState(false);
   const [failure, setFailure] = useState('');
@@ -47,7 +50,7 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
   const abortRef = useRef<AbortController | null>(null);
 
   const presets = quickPresets ?? [0, 1, 2, 3].map(i => getBuiltinPrompt(`${quickPresetPrefix ?? 'worldbook.quick'}.${i}`));
-  const popTitle = title ?? 'AI 改写本条内容';
+  const popTitle = title ?? tr("AI 改写本条内容");
 
   // 对照高亮：字符级 diff，左侧标删除、右侧标新增（中文按字比对比按词准）
   const diffParts = useMemo(
@@ -58,15 +61,15 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
   const run = async () => {
     const config = loadAPIConfig();
     if (!isLLMConfigured(config)) {
-      toast({ title: '请先配置接口地址和模型', description: '到「AI 配置」页填写接口地址和模型后再用', variant: 'destructive' });
+      toast({ title: tr("请先配置接口地址和模型"), description: tr("到「AI 配置」页填写接口地址和模型后再用"), variant: 'destructive' });
       return;
     }
     if (!content.trim()) {
-      toast({ title: '当前内容为空', description: '没有可改写的内容', variant: 'destructive' });
+      toast({ title: tr("当前内容为空"), description: tr("没有可改写的内容"), variant: 'destructive' });
       return;
     }
     if (!instruction.trim()) {
-      toast({ title: '请填写改写要求', variant: 'destructive' });
+      toast({ title: tr("请填写改写要求"), variant: 'destructive' });
       return;
     }
     const sysPrompt = systemPrompt ?? formatBuiltinPrompt(builtinPromptId ?? 'worldbook.rewrite', promptVariables ?? {});
@@ -83,13 +86,13 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
       if (result) {
         setPendingResult(result); // 进对照弹窗，由用户决定是否替换
       } else {
-        toast({ title: 'AI 未返回内容', description: '请调整要求后重试', variant: 'destructive' });
+        toast({ title: tr("AI 未返回内容"), description: tr("请调整要求后重试"), variant: 'destructive' });
       }
     } catch (e) {
-      setFailure(isLLMCancelled(e) ? '已停止，保留已收到的部分内容。' : e instanceof Error ? e.message : '改写失败，请检查连接配置。');
+      setFailure(isLLMCancelled(e) ? tr("已停止，保留已收到的部分内容。") : e instanceof Error ? e.message : tr("改写失败，请检查连接配置。"));
       if (acc.trim()) setPendingResult(acc);
-      if (isLLMCancelled(e)) toast({ title: '已停止' });
-      else toast({ title: '改写失败', description: e instanceof Error ? e.message : '请检查 API 配置', variant: 'destructive' });
+      if (isLLMCancelled(e)) toast({ title: tr("已停止") });
+      else toast({ title: tr("改写失败"), description: e instanceof Error ? e.message : tr("请检查 API 配置"), variant: 'destructive' });
     } finally {
       setLoading(false);
       abortRef.current = null;
@@ -99,7 +102,7 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
   const handleApply = () => {
     if (pendingResult == null) return;
     onResult(pendingResult);
-    toast({ title: '已替换内容', description: '可继续编辑或 Ctrl+Z 撤销' });
+    toast({ title: tr("已替换内容"), description: tr("可继续编辑或 Ctrl+Z 撤销") });
     setPendingResult(null);
     setOpen(false);
     setInstruction('');
@@ -114,10 +117,9 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
             variant="ghost"
             size="sm"
             className={compact ? 'px-2 text-xs text-muted-foreground hover:text-foreground' : 'px-2 text-xs'}
-            title="用 AI 改写当前内容"
+            title={tr("用 AI 改写当前内容")}
           >
-            <Wand2 className="w-3.5 h-3.5 mr-1" /> AI 改写
-          </Button>
+            <Wand2 className="w-3.5 h-3.5 mr-1" />{tr(" AI 改写")}</Button>
         </PopoverTrigger>
         <PopoverContent className="w-[min(36rem,calc(100vw-2rem))]" align="end">
           <div className="space-y-2">
@@ -125,7 +127,7 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
             <Textarea
               value={instruction}
               onChange={(e) => setInstruction(e.target.value)}
-              placeholder="填写改写要求，如：优化措辞 / 精简 / 扩写 / 改成第三人称…"
+              placeholder={tr("填写改写要求，如：优化措辞 / 精简 / 扩写 / 改成第三人称…")}
               className="text-sm min-h-32"
             />
             <div className="flex flex-wrap gap-1">
@@ -143,16 +145,14 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
             <div className="flex items-center gap-2">
               {!loading ? (
                 <Button size="sm" className="text-xs gap-1" onClick={run}>
-                  <Wand2 className="w-3.5 h-3.5" /> 生成改写
-                </Button>
+                  <Wand2 className="w-3.5 h-3.5" />{tr(" 生成改写")}</Button>
               ) : (
                 <Button size="sm" variant="destructive" className="text-xs gap-1" onClick={() => abortRef.current?.abort()}>
-                  <StopCircle className="w-3.5 h-3.5" /> 停止
-                </Button>
+                  <StopCircle className="w-3.5 h-3.5" />{tr(" 停止")}</Button>
               )}
               {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
             </div>
-            <p className="text-[11px] text-muted-foreground">生成后先左右对照确认，不会直接替换</p>
+            <p className="text-[11px] text-muted-foreground">{tr("生成后先左右对照确认，不会直接替换")}</p>
           </div>
         </PopoverContent>
       </Popover>
@@ -163,14 +163,12 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
           <CompletionWarning truncated={truncated} />
           {failure && <p role="alert" className="text-xs text-destructive">{failure}</p>}
           <DialogHeader>
-            <DialogTitle>对照确认改写结果</DialogTitle>
-            <DialogDescription>
-              左侧为当前内容（红色为将被删除的部分），右侧为 AI 改写结果（绿色为新增部分）。确认无误再替换。
-            </DialogDescription>
+            <DialogTitle>{tr("对照确认改写结果")}</DialogTitle>
+            <DialogDescription>{tr("左侧为当前内容（红色为将被删除的部分），右侧为 AI 改写结果（绿色为新增部分）。确认无误再替换。")}</DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 flex-1 min-h-0 flex-wrap">
             <div className="flex-1 basis-[240px] min-w-0 flex flex-col min-h-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1">当前内容</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">{tr("当前内容")}</p>
               <div className="flex-1 min-h-0 max-h-[50vh] overflow-y-auto rounded-md border border-border bg-muted/30 p-2.5 text-xs whitespace-pre-wrap leading-relaxed">
                 {diffParts.map((part, i) =>
                   part.added ? null : (
@@ -185,7 +183,7 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
               </div>
             </div>
             <div className="flex-1 basis-[240px] min-w-0 flex flex-col min-h-0">
-              <p className="text-xs font-medium text-muted-foreground mb-1">AI 改写结果</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">{tr("AI 改写结果")}</p>
               <div className="flex-1 min-h-0 max-h-[50vh] overflow-y-auto rounded-md border border-primary/30 bg-primary/5 p-2.5 text-xs whitespace-pre-wrap leading-relaxed">
                 {diffParts.map((part, i) =>
                   part.removed ? null : (
@@ -202,11 +200,9 @@ export function AIRewriteContent({ content, onResult, compact, systemPrompt, qui
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" className="gap-1" onClick={() => setPendingResult(null)}>
-              <X className="w-3.5 h-3.5" /> 放弃（回到要求编辑）
-            </Button>
+              <X className="w-3.5 h-3.5" />{tr(" 放弃（回到要求编辑）")}</Button>
             <Button size="sm" className="gap-1" onClick={handleApply}>
-              <Check className="w-3.5 h-3.5" /> 应用替换
-            </Button>
+              <Check className="w-3.5 h-3.5" />{tr(" 应用替换")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

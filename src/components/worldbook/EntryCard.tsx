@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
@@ -30,14 +32,15 @@ function groupColor(group: string): string {
 }
 
 function strategyInfo(entry: WorldBookEntry) {
-  if (entry.constant) return { dot: 'bg-blue-500', label: '常驻' };
-  if (entry.vectorized) return { dot: 'bg-purple-500', label: '向量' };
-  return { dot: 'bg-green-500', label: '关键词' };
+  if (entry.constant) return { dot: 'bg-blue-500', label: tr("常驻") };
+  if (entry.vectorized) return { dot: 'bg-purple-500', label: tr("向量") };
+  return { dot: 'bg-green-500', label: tr("关键词") };
 }
 
 export function EntryCard({ entry, entryKey, selected, onClick, onToggleEnabled, onDelete, batchMode, batchChecked, onBatchToggle }: Props) {
+  useI18n();
   const strategy = strategyInfo(entry);
-  const posLabel = POSITION_LABELS[entry.position] ?? `位置 ${entry.position}`;
+  const posLabel = POSITION_LABELS[entry.position] ?? tr("位置 {{v0}}", { v0: entry.position });
   const contentPreview = entry.content.split('\n').slice(0, 3).join('\n');
 
   return (
@@ -75,7 +78,7 @@ export function EntryCard({ entry, entryKey, selected, onClick, onToggleEnabled,
             <span className={cn('w-2.5 h-2.5 rounded-full shrink-0', strategy.dot)} />
             <HoverPreview text={entry.comment}>
               <span className="font-semibold text-sm truncate text-foreground">
-                {entry.comment || '(无标题)'}
+                {entry.comment || tr("(无标题)")}
               </span>
             </HoverPreview>
             <span className="text-xs text-muted-foreground shrink-0">{strategy.label}</span>
@@ -90,8 +93,8 @@ export function EntryCard({ entry, entryKey, selected, onClick, onToggleEnabled,
             <button
               onClick={(e) => { e.stopPropagation(); onDelete(); }}
               className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-              aria-label="删除此条目"
-              title="删除此条目"
+              aria-label={tr("删除此条目")}
+              title={tr("删除此条目")}
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -129,7 +132,7 @@ export function EntryCard({ entry, entryKey, selected, onClick, onToggleEnabled,
 
         {/* Footer info */}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span>{posLabel}{entry.position === 6 ? ` · 深度 ${entry.depth}` : ''}</span>
+          <span>{posLabel}{entry.position === 6 ? tr(" · 深度 {{v0}}", { v0: entry.depth }) : ''}</span>
           <span>·</span>
           <span>Order {entry.order}</span>
           {entry.probability < 100 && (
@@ -142,7 +145,7 @@ export function EntryCard({ entry, entryKey, selected, onClick, onToggleEnabled,
             <>
               <span>·</span>
               {/* 短说明也一起换掉：同一张卡上两种提示（原生的小、Radix 的正常大）看着更怪 */}
-              <HoverPreview text="粗略估算，仅供预算参考">
+              <HoverPreview text={tr("粗略估算，仅供预算参考")}>
                 <span>≈{estimateTokens(entry.content)} tok</span>
               </HoverPreview>
             </>

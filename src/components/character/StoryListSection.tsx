@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页故事列表（10.3b，对照 character-detail.html）：
  * 每行 = 名称·N楼·相对时间 / ☆评分（行内 popover 0.5 步进）+ 字数 / 状态 chip（四档可改）
@@ -40,6 +42,7 @@ interface StoryListSectionProps {
 
 /** 状态 chip：点击换四档 */
 function StatusChip({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: Partial<ArchiveStory>) => void }) {
+  useI18n();
   const status = story.status ?? '未开始';
   const tone: Record<StoryStatus, string> = {
     未开始: 'text-muted-foreground',
@@ -50,16 +53,16 @@ function StatusChip({ story, onPatch }: { story: ArchiveStory; onPatch: (patch: 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button onClick={(e) => e.stopPropagation()} title="点击修改故事状态" className="tap-target shrink-0">
+        <button onClick={(e) => e.stopPropagation()} title={tr("点击修改故事状态")} className="tap-target shrink-0">
           <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal cursor-pointer hover:bg-accent', tone[status])}>
-            {status}
+            {tr(status)}
           </Badge>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" onClick={(e) => e.stopPropagation()}>
         {STORY_STATUSES.map((s) => (
           <DropdownMenuItem key={s} className={s === status ? 'bg-primary/10 text-primary' : ''} onClick={() => onPatch({ status: s })}>
-            {s}
+            {tr(s)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -81,6 +84,7 @@ export function StoryListSection({
   onPatchStory,
   onRenameStory,
 }: StoryListSectionProps) {
+  useI18n();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copying, setCopying] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
@@ -90,17 +94,16 @@ export function StoryListSection({
   const exportMenu = (storyId: string, branchId: string | null = null) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className="px-2.5 text-xs" aria-label={branchId ? '导出分支' : '导出故事'}>
-          <Upload className="w-3.5 h-3.5 mr-1" />导出
-        </Button>
+        <Button variant="outline" size="sm" className="px-2.5 text-xs" aria-label={branchId ? tr("导出分支") : tr("导出故事")}>
+          <Upload className="w-3.5 h-3.5 mr-1" />{tr("导出")}</Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {onExportFile && <>
-          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl-slim')}>SillyTavern JSONL（精简）</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl')}>完整 JSONL 备份</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'json')}>完整 JSON 备份</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl-slim')}>{tr("SillyTavern JSONL（精简）")}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'jsonl')}>{tr("完整 JSONL 备份")}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onExportFile(storyId, branchId, 'json')}>{tr("完整 JSON 备份")}</DropdownMenuItem>
         </>}
-        <DropdownMenuItem onClick={() => onExport(storyId)}>更多导出与清理选项…</DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onExport(storyId)}>{tr("更多导出与清理选项…")}</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -128,8 +131,8 @@ export function StoryListSection({
       setEditingId(null);
     } catch (e) {
       toast({
-        title: '重命名失败',
-        description: e instanceof Error ? e.message : '未能写入故事名称',
+        title: tr("重命名失败"),
+        description: e instanceof Error ? e.message : tr("未能写入故事名称"),
         variant: 'destructive',
       });
     }
@@ -175,7 +178,7 @@ export function StoryListSection({
                           }
                         }}
                         className="min-w-0 flex-1 rounded border border-primary/50 bg-background px-1.5 py-0.5 text-sm"
-                        aria-label="故事名称"
+                        aria-label={tr("故事名称")}
                       />
                     ) : (
                       <span className="truncate" title={story.title}>{story.title}</span>
@@ -183,28 +186,23 @@ export function StoryListSection({
                     <StatusChip story={story} onPatch={(p) => onPatchStory(story.id, p)} />
                   </p>
                   <p className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap mt-0.5">
-                    <span>{msgCount} 段聊天</span>
-                    {story.copiedFrom && <span title="这是包含总结、日记和故事树的独立副本；原故事的成果仍然保留">复制自「{story.copiedFrom.title}」</span>}
+                    <span>{tr("{{v0}} 段聊天", { v0: msgCount })}</span>
+                    {story.copiedFrom && <span title={tr("这是包含总结、日记和故事树的独立副本；原故事的成果仍然保留")}>{tr("复制自「{{v0}}」", { v0: story.copiedFrom.title })}</span>}
                     {story.wordCount !== undefined && <span>{formatWordCount(story.wordCount)}</span>}
                     <span title={story.lastViewedAt ? formatFullTime(story.lastViewedAt) : undefined}>
-                      {story.lastViewedAt ? `${formatFullTime(story.lastViewedAt)} 看过` : '未读'}
+                      {story.lastViewedAt ? tr("{{v0}} 看过", { v0: formatFullTime(story.lastViewedAt) }) : tr("未读")}
                     </span>
-                    {story.lastMessageAt != null && <span>游玩于 {formatFullTime(story.lastMessageAt)}</span>}
+                    {story.lastMessageAt != null && <span>{tr("游玩于 ")}{formatFullTime(story.lastMessageAt)}</span>}
                   </p>
                 </div>
                 {/* 三按钮：阅读 · 处理 · 导出（+重命名/删除/复制故事） */}
                 <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                   <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onRead(story.id)}>
-                    <BookOpen className="w-3.5 h-3.5 mr-1" />
-                    阅读
-                  </Button>
-                  <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onProcess(story.id)} title="进入大屏聊天处理工作区">
-                    <Settings2 className="w-3.5 h-3.5 mr-1" />
-                    处理
-                  </Button>
+                    <BookOpen className="w-3.5 h-3.5 mr-1" />{tr("阅读")}</Button>
+                  <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onProcess(story.id)} title={tr("进入大屏聊天处理工作区")}>
+                    <Settings2 className="w-3.5 h-3.5 mr-1" />{tr("处理")}</Button>
                   {onPlay && <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => onPlay(story.id, null)}>
-                    <MessageSquare className="w-3.5 h-3.5 mr-1" />继续聊天
-                  </Button>}
+                    <MessageSquare className="w-3.5 h-3.5 mr-1" />{tr("继续聊天")}</Button>}
                   {exportMenu(story.id)}
                   {onRenameStory && editingId !== story.id && (
                     <Button
@@ -213,8 +211,8 @@ export function StoryListSection({
                       className="shrink-0"
                       disabled={isLiveDetached}
                       onClick={() => beginRename(story)}
-                      aria-label="重命名故事"
-                      title={isLiveDetached ? '当前故事正在独立酒馆窗口对话中，请先结束对话后再改名' : '重命名故事'}
+                      aria-label={tr("重命名故事")}
+                      title={isLiveDetached ? tr("当前故事正在独立酒馆窗口对话中，请先结束对话后再改名") : tr("重命名故事")}
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
@@ -225,17 +223,17 @@ export function StoryListSection({
                     className="hover-reveal text-destructive"
                     disabled={isLiveDetached}
                     onClick={() => onDelete(story)}
-                    aria-label="删除故事"
-                    title={isLiveDetached ? '当前故事正在独立酒馆窗口对话中，请先结束对话后再删除' : '删除故事'}
+                    aria-label={tr("删除故事")}
+                    title={isLiveDetached ? tr("当前故事正在独立酒馆窗口对话中，请先结束对话后再删除") : tr("删除故事")}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </Button>
-                  {onCopy && <Button variant="ghost" size="sm" title="复制正文、分支、总结、日记和故事树，原故事保持不变" disabled={!!copying} onClick={() => {
+                  {onCopy && <Button variant="ghost" size="sm" title={tr("复制正文、分支、总结、日记和故事树，原故事保持不变")} disabled={!!copying} onClick={() => {
                     setCopying(story.id);
                     void Promise.resolve().then(() => onCopy(story.id))
-                      .catch(error => toast({ title: '复制失败', description: String(error), variant: 'destructive' }))
+                      .catch(error => toast({ title: tr("复制失败"), description: String(error), variant: 'destructive' }))
                       .finally(() => setCopying(null));
-                  }}>{copying === story.id ? '正在复制…' : '复制故事'}</Button>}
+                  }}>{copying === story.id ? tr("正在复制…") : tr("复制故事")}</Button>}
                 </div>
               </div>
             </div>
@@ -249,16 +247,16 @@ export function StoryListSection({
                       type="button"
                       className="min-w-0 flex-1 flex items-center gap-2 text-left pl-0 pr-2 py-1 group/branch"
                       onClick={() => onRead(story.id, b.id)}
-                      title={`阅读分支「${b.name}」`}
+                      title={tr("阅读分支「{{v0}}」", { v0: b.name })}
                     >
                       <span className="w-4 border-t border-border/70 shrink-0" />
                       <GitBranch className="w-3 h-3 shrink-0 text-muted-foreground" />
                       <span className="text-xs text-muted-foreground group-hover/branch:text-foreground transition-colors truncate" title={b.name}>
                         {b.name}
                       </span>
-                      <span className="text-[11px] text-muted-foreground/60 shrink-0">{b.session.messages.length} 段</span>
+                      <span className="text-[11px] text-muted-foreground/60 shrink-0">{tr("{{v0}} 段", { v0: b.session.messages.length })}</span>
                     </button>
-                    {onPlay && <Button variant="ghost" size="sm" className="text-xs shrink-0" onClick={() => onPlay(story.id, b.id)}>继续聊天</Button>}
+                    {onPlay && <Button variant="ghost" size="sm" className="text-xs shrink-0" onClick={() => onPlay(story.id, b.id)}>{tr("继续聊天")}</Button>}
                     {exportMenu(story.id, b.id)}
                   </div>
                 ))}

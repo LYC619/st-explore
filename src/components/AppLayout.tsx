@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 全局应用外壳（10.1 改版，0801 实测反馈）：
  * - 客户端使用自定义窗口栏：左侧品牌、全局搜索（Ctrl+F）和右侧窗口控制合为一层；
@@ -14,18 +16,7 @@
  *   （承载二级导航）；状态栏让位给标签栏；页面入场按 tab 索引差决定滑入方向。
  * - 768–1024px：保留桌面侧栏但强制折叠态（64px 窄栏），页面级竖导航改走抽屉。
  */
-import {
-  createContext,
-  forwardRef,
-  Suspense,
-  useCallback,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { useMemo, createContext, forwardRef, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState  } from 'react';
 import { useNavigate, useLocation, useOutlet } from 'react-router-dom';
 import {
   Palette, Wrench, PanelLeftClose, PanelLeftOpen, PanelRight, ChevronDown, Loader2, Menu,
@@ -184,6 +175,7 @@ function PageChromeBridge({ children, titleBarContent, actions, leftActions, mob
 }
 
 function PersistentAppLayout({ children, titleBarContent, actions, leftActions, mobileContextDrawer, mobileDrawer }: AppLayoutProps) {
+  useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const outlet = useOutlet();
@@ -191,8 +183,8 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
   // 状态栏那一行：只有桌面端有本机文件库，另外两档都落在浏览器本地存储上
   const runtime = detectRuntime();
   const runtimeNote = runtime === 'tauri'
-    ? '客户端'
-    : `${RUNTIME_LABEL[runtime]} · 数据保存在浏览器本地`;
+    ? tr("客户端")
+    : tr("{{v0}} · 数据保存在浏览器本地", { v0: RUNTIME_LABEL[runtime] });
   const sidenav = useSidenavState();
   const { isMobile, isCompact, isDesktop } = useViewport();
   const immersive = useImmersive();
@@ -331,14 +323,14 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
             <button
               type="button"
               data-mobile-drawer-trigger
-              aria-label="打开二级导航"
+              aria-label={tr("打开二级导航")}
               aria-expanded={drawerOpen}
               onClick={() => setDrawerOpen(true)}
               className="tap-target flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-[color:var(--sidebar-text)] transition-colors active:bg-[var(--hover-overlay)]"
             >
               <Menu className="h-[18px] w-[18px]" />
               {/* 窄到手机宽度时只留图标，把这一条的空间让给搜索框 */}
-              <span className="hidden max-w-[9rem] truncate sm:inline">{drawerArea?.label ?? '导航'}</span>
+              <span className="hidden max-w-[9rem] truncate sm:inline">{drawerArea?.label ?? tr("导航")}</span>
             </button>
           )}
           {/* 窗口栏里的全局搜索是 hidden md:block，手机上等于没有搜索入口，挪到这条来 */}
@@ -348,7 +340,7 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
             <button
               type="button"
               data-mobile-context-drawer-trigger
-              aria-label={contextSlot.triggerLabel ?? '打开故事上下文'}
+              aria-label={contextSlot.triggerLabel ?? tr("打开故事上下文")}
               aria-expanded={contextDrawerOpen}
               onClick={() => setContextDrawerOpen(true)}
               className="tap-target ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-[color:var(--sidebar-text)] transition-colors active:bg-[var(--hover-overlay)]"
@@ -378,8 +370,8 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
           {isDesktop && (
           <button
             onClick={toggle}
-            title={expanded ? '折叠侧栏' : '展开侧栏'}
-            aria-label={expanded ? '折叠侧栏' : '展开侧栏'}
+            title={expanded ? tr("折叠侧栏") : tr("展开侧栏")}
+            aria-label={expanded ? tr("折叠侧栏") : tr("展开侧栏")}
             className={cn(
               'flex items-center pb-2.5 pt-1 mb-2 border-b border-[color:var(--border-subtle)] text-[color:var(--sidebar-text-muted)] hover:text-[color:var(--sidebar-text)] transition-colors',
               expanded ? 'px-2.5 justify-end' : 'px-0 justify-center',
@@ -411,8 +403,8 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
                       <button
                         type="button"
                         onClick={(event) => { event.stopPropagation(); toggleArea(area.key); }}
-                        title={areaOpen ? `收起${area.label}` : `展开${area.label}`}
-                        aria-label={areaOpen ? `收起${area.label}` : `展开${area.label}`}
+                        title={areaOpen ? tr("收起{{v0}}", { v0: area.label }) : tr("展开{{v0}}", { v0: area.label })}
+                        aria-label={areaOpen ? tr("收起{{v0}}", { v0: area.label }) : tr("展开{{v0}}", { v0: area.label })}
                         aria-expanded={areaOpen}
                         className="absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-[color:var(--sidebar-text-faint)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--sidebar-text)]"
                       >
@@ -451,12 +443,12 @@ function PersistentAppLayout({ children, titleBarContent, actions, leftActions, 
             <ThemeSwitcher
               side="right"
               trigger={
-                <SideItem icon={Palette} label="主题" expanded={expanded} />
+                <SideItem icon={Palette} label={tr("主题")} expanded={expanded} />
               }
             />
             <SideItem
               icon={Wrench}
-              label="设置"
+              label={tr("设置")}
               expanded={expanded}
               active={location.pathname.startsWith('/settings')}
               onClick={() => navigate('/settings')}

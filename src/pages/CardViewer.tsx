@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import type { RemoveOptions } from '@/lib/repo';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -61,6 +63,7 @@ function base64ToAb(b64: string): ArrayBuffer {
 }
 
 export default function CardViewer() {
+  useI18n();
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -116,8 +119,8 @@ export default function CardViewer() {
       setCurrentItemId(item.id);
     } catch (error) {
       toast({
-        title: '打开角色卡未成功',
-        description: error instanceof Error ? error.message : '这张已存卡片的图片或内容已损坏',
+        title: tr("打开角色卡未成功"),
+        description: error instanceof Error ? error.message : tr("这张已存卡片的图片或内容已损坏"),
         variant: 'destructive',
       });
     }
@@ -146,16 +149,16 @@ export default function CardViewer() {
           loadCardItem(item);
         } else if (assetId) {
           toast({
-            title: '没找到这张已存角色卡',
-            description: '它可能已被删除，你可以重新拖入或选择一张角色卡文件',
+            title: tr("没找到这张已存角色卡"),
+            description: tr("它可能已被删除，你可以重新拖入或选择一张角色卡文件"),
             variant: 'destructive',
           });
         }
       }).catch((err) => {
         if (!cancelled) {
           toast({
-            title: assetId ? '读取角色卡失败' : '恢复上次打开的角色卡失败',
-            description: err instanceof Error ? err.message : '请检查文件库连接，或从「已存角色卡」重新选择',
+            title: assetId ? tr("读取角色卡失败") : tr("恢复上次打开的角色卡失败"),
+            description: err instanceof Error ? err.message : tr("请检查文件库连接，或从「已存角色卡」重新选择"),
             variant: 'destructive',
           });
         }
@@ -186,7 +189,7 @@ export default function CardViewer() {
       } else if (lower.endsWith('.json')) {
         raw = parseCharacterCardJson(await file.text());
       } else {
-        toast({ title: '请选择 .png 或 .json 角色卡文件', variant: 'destructive' });
+        toast({ title: tr("请选择 .png 或 .json 角色卡文件"), variant: 'destructive' });
         return;
       }
       const name = file.name.replace(/\.(png|json)$/i, '');
@@ -200,11 +203,11 @@ export default function CardViewer() {
         await refreshSaved();
       })().catch(() => { /* 自动历史失败不阻塞 */ });
       toast({
-        title: parseWarning ? '角色卡已按兼容模式读入' : '角色卡导入成功',
-        description: parseWarning ?? (png ? 'PNG 卡，可编辑并导出 PNG/JSON' : 'JSON 卡，可编辑并导出 JSON'),
+        title: parseWarning ? tr("角色卡已按兼容模式读入") : tr("角色卡导入成功"),
+        description: parseWarning ?? (png ? tr("PNG 卡，可编辑并导出 PNG/JSON") : tr("JSON 卡，可编辑并导出 JSON")),
       });
     } catch (e) {
-      toast({ title: '解析失败', description: e instanceof Error ? e.message : '文件不是有效的角色卡', variant: 'destructive' });
+      toast({ title: tr("解析失败"), description: e instanceof Error ? e.message : tr("文件不是有效的角色卡"), variant: 'destructive' });
     }
   }, [refreshSaved, setCardState, toast]);
 
@@ -227,22 +230,22 @@ export default function CardViewer() {
     if (!card?.characterBook) return;
     const wb = characterBookToWorldBook(card.characterBook);
     if (!wb || Object.keys(wb.entries).length === 0) {
-      toast({ title: '该卡没有可暂存的内嵌世界书', variant: 'destructive' });
+      toast({ title: tr("该卡没有可暂存的内嵌世界书"), variant: 'destructive' });
       return;
     }
     try {
       const now = Date.now();
-      const title = `${edits?.name || fileName || '角色'}的世界书`;
+      const title = tr("{{v0}}的世界书", { v0: edits?.name || fileName || tr("角色") });
       await saveWorldBook({ id: generateWorldBookId(), title, worldbook: wb, createdAt: now, updatedAt: now, autoSaved: true });
       toast({
-        title: '已暂存到世界书',
-        description: `${Object.keys(wb.entries).length} 条 · 可在「世界书」页加载编辑`,
-        action: <ToastAction altText="立即前往" onClick={() => navigate('/worldbook')}>立即前往</ToastAction>,
+        title: tr("已暂存到世界书"),
+        description: tr("{{v0}} 条 · 可在「世界书」页加载编辑", { v0: Object.keys(wb.entries).length }),
+        action: <ToastAction altText={tr("立即前往")} onClick={() => navigate('/worldbook')}>{tr("立即前往")}</ToastAction>,
       });
     } catch {
       toast({
-        title: '暂存到世界书没成功',
-        description: '未能写入本地世界书库，请检查存储空间或前往「设置 → 数据与备份」确认文件库状态后再试。',
+        title: tr("暂存到世界书没成功"),
+        description: tr("未能写入本地世界书库，请检查存储空间或前往「设置 → 数据与备份」确认文件库状态后再试。"),
         variant: 'destructive',
       });
     }
@@ -259,13 +262,13 @@ export default function CardViewer() {
       rules = [];
     }
     if (rules.length === 0) {
-      toast({ title: '该卡没有可暂存的内嵌正则', variant: 'destructive' });
+      toast({ title: tr("该卡没有可暂存的内嵌正则"), variant: 'destructive' });
       return;
     }
-    addRegexPreset(`${edits?.name || fileName || '角色'}的正则`, rules);
+    addRegexPreset(tr("{{v0}}的正则", { v0: edits?.name || fileName || tr("角色") }), rules);
     toast({
-      title: '已存为正则预设',
-      description: `${rules.length} 条 · 到「聊天处理」页『正则 → 预设管理』里加载`,
+      title: tr("已存为正则预设"),
+      description: tr("{{v0}} 条 · 到「聊天处理」页『正则 → 预设管理』里加载", { v0: rules.length }),
     });
   }, [card, edits, fileName, toast]);
 
@@ -288,8 +291,8 @@ export default function CardViewer() {
       download(embedCharaInPngBlob(pngBytesRef.current, edited), `${sanitizeFilename(fileName)}.png`, 'image/png');
     } catch (error) {
       toast({
-        title: '导出 PNG 角色卡未成功',
-        description: error instanceof Error ? error.message : '原图数据可能已损坏，可先导出 JSON 备份人设',
+        title: tr("导出 PNG 角色卡未成功"),
+        description: error instanceof Error ? error.message : tr("原图数据可能已损坏，可先导出 JSON 备份人设"),
         variant: 'destructive',
       });
     }
@@ -311,11 +314,11 @@ export default function CardViewer() {
       });
       setCurrentItemId(id);
       await refreshSaved();
-      toast({ title: '已保存', description: '可在「已存角色卡」中查看；永久留存、纳入完整备份' });
+      toast({ title: tr("已保存"), description: tr("可在「已存角色卡」中查看；永久留存、纳入完整备份") });
     } catch (error) {
       toast({
-        title: '保存角色卡未成功',
-        description: error instanceof Error ? error.message : '请检查存储空间或文件库目录是否可写，也可先点导出留存文件',
+        title: tr("保存角色卡未成功"),
+        description: error instanceof Error ? error.message : tr("请检查存储空间或文件库目录是否可写，也可先点导出留存文件"),
         variant: 'destructive',
       });
     }
@@ -329,8 +332,8 @@ export default function CardViewer() {
       if (target.id === currentItemId) setCurrentItemId(null);
       await refreshSaved();
     }, {
-      onSuccess: () => toast({ title: `已删除角色卡「${target.title}」` }),
-      onFailure: () => toast({ title: '删除角色卡失败', variant: 'destructive' }),
+      onSuccess: () => toast({ title: tr("已删除角色卡「{{v0}}」", { v0: target.title }) }),
+      onFailure: () => toast({ title: tr("删除角色卡失败"), variant: 'destructive' }),
     });
     if (deleted) setDeleteTarget(null);
     return deleted;
@@ -342,14 +345,14 @@ export default function CardViewer() {
     <>
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm"><History className="w-4 h-4 mr-1.5" /> 已存角色卡</Button>
+          <Button variant="outline" size="sm"><History className="w-4 h-4 mr-1.5" />{tr(" 已存角色卡")}</Button>
         </PopoverTrigger>
         <PopoverContent className="w-80" align="end">
-          <h4 className="text-sm font-medium mb-2">已存角色卡（{savedItems.length}）</h4>
+          <h4 className="text-sm font-medium mb-2">{tr("已存角色卡（{{v0}}）", { v0: savedItems.length })}</h4>
           {savedLoadError && (
             <div role="alert" className="mb-2 flex items-center justify-between rounded border border-destructive/40 bg-destructive/10 px-2 py-1 text-xs text-destructive">
-              <span>读取历史卡片未成功</span>
-              <button type="button" className="underline" onClick={() => void refreshSaved()}>重试</button>
+              <span>{tr("读取历史卡片未成功")}</span>
+              <button type="button" className="underline" onClick={() => void refreshSaved()}>{tr("重试")}</button>
             </div>
           )}
           <ScrollArea className="max-h-72">
@@ -358,21 +361,20 @@ export default function CardViewer() {
                 <div key={item.id} className="flex items-center gap-2 p-2 rounded-md hover:bg-accent/40 text-sm">
                   {item.pngBase64 ? <Image className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <FileJson className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                   <button className="flex-1 min-w-0 text-left truncate" title={item.title} onClick={() => loadCardItem(item)}>
-                    {item.title}{item.autoSaved && <span className="text-[11px] text-muted-foreground ml-1">(历史)</span>}
+                    {item.title}{item.autoSaved && <span className="text-[11px] text-muted-foreground ml-1">{tr("(历史)")}</span>}
                   </button>
-                  <button className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>删除</button>
+                  <button className="text-muted-foreground hover:text-destructive text-xs shrink-0" onClick={() => setDeleteTarget(item)}>{tr("删除")}</button>
                 </div>
               ))}
-              {!savedLoadError && savedItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">暂无</p>}
+              {!savedLoadError && savedItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">{tr("暂无")}</p>}
             </div>
           </ScrollArea>
         </PopoverContent>
       </Popover>
-      <Button variant="outline" size="sm" onClick={handleSave}><Save className="w-4 h-4 mr-1.5" /> 保存</Button>
-      <Button data-tour="card-export" variant="outline" size="sm" onClick={handleExportJson}><Upload className="w-4 h-4 mr-1.5" /> 导出 JSON</Button>
-      <Button variant="outline" size="sm" onClick={handleExportPng} disabled={!hasPng} title={hasPng ? '' : 'JSON 导入的卡无原图，无法导出 PNG'}>
-        <Image className="w-4 h-4 mr-1.5" /> 导出 PNG
-      </Button>
+      <Button variant="outline" size="sm" onClick={handleSave}><Save className="w-4 h-4 mr-1.5" />{tr(" 保存")}</Button>
+      <Button data-tour="card-export" variant="outline" size="sm" onClick={handleExportJson}><Upload className="w-4 h-4 mr-1.5" />{tr(" 导出 JSON")}</Button>
+      <Button variant="outline" size="sm" onClick={handleExportPng} disabled={!hasPng} title={hasPng ? '' : tr("JSON 导入的卡无原图，无法导出 PNG")}>
+        <Image className="w-4 h-4 mr-1.5" />{tr(" 导出 PNG")}</Button>
     </>
   );
 
@@ -384,13 +386,9 @@ export default function CardViewer() {
             <IdCard className="w-5 h-5 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-display font-semibold flex items-center gap-2">
-              角色卡编辑
-              <HelpCard>
-                导入 SillyTavern 角色卡（PNG 或 JSON，支持 V1/V2/V3），编辑核心字段（描述、性格、开场白等）后导出归档。PNG 卡可回写图片导出 PNG；JSON 卡导出 JSON。未编辑的字段（内嵌世界书、扩展、立绘资源等）在导出时原样保留。
-              </HelpCard>
+            <h1 className="text-xl font-display font-semibold flex items-center gap-2">{tr("角色卡编辑")}<HelpCard>{tr("导入 SillyTavern 角色卡（PNG 或 JSON，支持 V1/V2/V3），编辑核心字段（描述、性格、开场白等）后导出归档。PNG 卡可回写图片导出 PNG；JSON 卡导出 JSON。未编辑的字段（内嵌世界书、扩展、立绘资源等）在导出时原样保留。")}</HelpCard>
             </h1>
-            <p className="text-sm text-muted-foreground">导入现有卡 → 编辑核心字段 → 导出（PNG 回写 / JSON）</p>
+            <p className="text-sm text-muted-foreground">{tr("导入现有卡 → 编辑核心字段 → 导出（PNG 回写 / JSON）")}</p>
           </div>
         </div>
         <CharacterCardEditor
@@ -405,8 +403,8 @@ export default function CardViewer() {
       </div>
       <DeleteConfirmDialog
         open={!!deleteTarget}
-        title={`删除角色卡「${deleteTarget?.title ?? ''}」？`}
-        description="条目将从列表移除。只会删除角色卡工具中的已存副本，不会删除角色库档案。"
+        title={tr("删除角色卡「{{v0}}」？", { v0: deleteTarget?.title ?? '' })}
+        description={tr("条目将从列表移除。只会删除角色卡工具中的已存副本，不会删除角色库档案。")}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
         fileTarget={deleteTarget ? { store: 'cards', id: deleteTarget.id } : undefined}
             onConfirm={handleDeleteItem}

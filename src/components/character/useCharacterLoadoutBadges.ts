@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useState } from 'react';
 import { Globe, Regex as RegexIcon, SlidersHorizontal } from 'lucide-react';
 import type { NormalizedCharacterCard } from '@/lib/png-parser';
@@ -38,6 +40,7 @@ export function useCharacterLoadoutBadges(
   character: ArchiveCharacter,
   norm: NormalizedCharacterCard,
 ): LoadoutBadgeItem[] {
+  useI18n();
   const [summary, setSummary] = useState<LoadoutSummary>(INITIAL_SUMMARY);
   const [vaultTick, setVaultTick] = useState(0);
 
@@ -125,25 +128,27 @@ export function useCharacterLoadoutBadges(
     badges.push({
       key: 'worldbook',
       icon: Globe,
-      title: '世界书',
-      value: `已关联 ${wbRefCount} 本（暂未读出）`,
-      hint: '点击查看或重新读取角色关联的世界书',
+      title: tr("世界书"),
+      value: tr("已关联 {{v0}} 本（暂未读出）", { v0: wbRefCount }),
+      hint: tr("点击查看或重新读取角色关联的世界书"),
     });
   } else if (summary.worldbooks.length > 0) {
     badges.push({
       key: 'worldbook',
       icon: Globe,
-      title: '世界书',
-      value: summary.worldbooks.length === 1 ? summary.worldbooks[0] : `${summary.worldbooks[0]} 等 ${summary.worldbooks.length} 本`,
-      hint: '点击查看或调整角色关联的世界书',
+      title: tr("世界书"),
+      value: summary.worldbooks.length === 1
+        ? summary.worldbooks[0]
+        : tr("{{v0}} 等 {{v1}} 本", { v0: summary.worldbooks[0], v1: summary.worldbooks.length }),
+      hint: tr("点击查看或调整角色关联的世界书"),
     });
   } else if (embeddedBookEntries > 0) {
     badges.push({
       key: 'worldbook',
       icon: Globe,
-      title: '世界书',
-      value: `卡内自带 ${embeddedBookEntries} 条`,
-      hint: '点击查看或提取卡内自带世界书',
+      title: tr("世界书"),
+      value: tr("卡内自带 {{v0}} 条", { v0: embeddedBookEntries }),
+      hint: tr("点击查看或提取卡内自带世界书"),
     });
   }
 
@@ -151,17 +156,19 @@ export function useCharacterLoadoutBadges(
     badges.push({
       key: 'preset',
       icon: SlidersHorizontal,
-      title: '预设',
-      value: `已关联 ${presetRefCount} 套（暂未读出）`,
-      hint: '点击查看或重新读取角色关联的预设',
+      title: tr("预设"),
+      value: tr("已关联 {{v0}} 套（暂未读出）", { v0: presetRefCount }),
+      hint: tr("点击查看或重新读取角色关联的预设"),
     });
   } else if (summary.presets.length > 0) {
     badges.push({
       key: 'preset',
       icon: SlidersHorizontal,
-      title: '预设',
-      value: summary.presets.length === 1 ? summary.presets[0] : `${summary.presets[0]} 等 ${summary.presets.length} 套`,
-      hint: '点击管理这张角色卡已关联的预设',
+      title: tr("预设"),
+      value: summary.presets.length === 1
+        ? summary.presets[0]
+        : tr("{{v0}} 等 {{v1}} 套", { v0: summary.presets[0], v1: summary.presets.length }),
+      hint: tr("点击管理这张角色卡已关联的预设"),
     });
   }
 
@@ -169,25 +176,27 @@ export function useCharacterLoadoutBadges(
     badges.push({
       key: 'regex',
       icon: RegexIcon,
-      title: '正则与美化',
-      value: `已关联 ${regexRefCount} 套（暂未读出）`,
-      hint: '点击查看或重新读取正则清理规则',
+      title: tr("正则与美化"),
+      value: tr("已关联 {{v0}} 套（暂未读出）", { v0: regexRefCount }),
+      hint: tr("点击查看或重新读取正则清理规则"),
     });
   } else if (summary.regexes.length > 0) {
     badges.push({
       key: 'regex',
       icon: RegexIcon,
-      title: '正则与美化',
-      value: summary.regexes.length === 1 ? summary.regexes[0] : `${summary.regexes.length} 套正则`,
-      hint: '点击查看正则清理规则或状态栏美化脚本',
+      title: tr("正则与美化"),
+      value: summary.regexes.length === 1
+        ? summary.regexes[0]
+        : tr("{{v0}} 套正则", { v0: summary.regexes.length }),
+      hint: tr("点击查看正则清理规则或状态栏美化脚本"),
     });
   } else if (embeddedBeautifyCount > 0) {
     badges.push({
       key: 'regex',
       icon: RegexIcon,
-      title: '正则与美化',
-      value: `卡内自带 ${embeddedBeautifyCount} 项`,
-      hint: '点击查看卡内自带正则规则与美化脚本',
+      title: tr("正则与美化"),
+      value: tr("卡内自带 {{v0}} 项", { v0: embeddedBeautifyCount }),
+      hint: tr("点击查看卡内自带正则规则与美化脚本"),
     });
   }
 

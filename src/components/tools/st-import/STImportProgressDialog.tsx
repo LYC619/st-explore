@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 解压/扫描阶段的进度弹窗。
  *
@@ -19,6 +21,7 @@ interface STImportProgressDialogProps {
 }
 
 export function STImportProgressDialog({ progress, canceling, onCancel }: STImportProgressDialogProps) {
+  useI18n();
   if (!progress) return null;
   const { phase, done, total, label } = progress;
   // 扫描阶段事先不知道总量（要走多少层目录取决于包的内容），这时不画进度条，
@@ -36,7 +39,7 @@ export function STImportProgressDialog({ progress, canceling, onCancel }: STImpo
             {ST_IMPORT_PHASE_LABEL[phase]}
           </DialogTitle>
           <DialogDescription>
-            {determinate ? `${done} / ${total} · ${percent}%` : `已发现 ${done} 个条目`}
+            {determinate ? `${done} / ${total} · ${percent}%` : tr("已发现 {{v0}} 个条目", { v0: done })}
           </DialogDescription>
         </DialogHeader>
 
@@ -44,14 +47,12 @@ export function STImportProgressDialog({ progress, canceling, onCancel }: STImpo
 
         <p className="min-h-5 truncate text-xs text-muted-foreground" title={label}>{label ?? ''}</p>
 
-        <p className="text-xs text-muted-foreground">
-          还没有向库里写入任何东西，现在取消不会留下痕迹。
-        </p>
+        <p className="text-xs text-muted-foreground">{tr("还没有向库里写入任何东西，现在取消不会留下痕迹。")}</p>
 
         <div className="flex justify-end">
           <Button variant="outline" size="sm" onClick={onCancel} disabled={canceling}>
             <X className="mr-1 h-4 w-4" />
-            {canceling ? '正在停止…' : '取消'}
+            {canceling ? tr("正在停止…") : tr("取消")}
           </Button>
         </div>
       </DialogContent>

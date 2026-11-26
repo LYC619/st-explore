@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 右侧滑出抽屉：承载「当前内容的上下文」，与左抽屉的「去哪儿」分工。
  *
@@ -28,6 +30,7 @@ interface MobileContextDrawerProps {
 export function MobileContextDrawer({
   open, onOpenChange, title, description, children,
 }: MobileContextDrawerProps) {
+  useI18n();
   const touchStart = useRef<{ x: number; y: number } | null>(null);
 
   return (
@@ -53,7 +56,7 @@ export function MobileContextDrawer({
         <SheetHeader className="shrink-0 border-b border-[color:var(--border-subtle)] px-4 py-3 text-left">
           <SheetTitle className="truncate text-base" title={title}>{title}</SheetTitle>
           <SheetDescription className="text-xs">
-            {description ?? '当前内容的分支、章节与书签'}
+            {description ?? tr("当前内容的分支、章节与书签")}
           </SheetDescription>
         </SheetHeader>
 

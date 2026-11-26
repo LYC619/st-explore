@@ -1,12 +1,13 @@
+import { tr, getLocale } from '@/lib/i18n';
 import { characterFilterTags, ratingTier } from '@/lib/tag-taxonomy';
 import type { ArchiveCharacter, CharacterType } from '@/types/archive';
 
 export const LIBRARY_GROUP_BY_OPTIONS = [
-  { value: 'none', label: '不分组' },
-  { value: 'type', label: '类型' },
-  { value: 'rating', label: '评分' },
-  { value: 'updated', label: '最后更新' },
-  { value: 'tag', label: '标签' },
+  { value: 'none', get label() { return tr("不分组"); } },
+  { value: 'type', get label() { return tr("类型"); } },
+  { value: 'rating', get label() { return tr("评分"); } },
+  { value: 'updated', get label() { return tr("最后更新"); } },
+  { value: 'tag', get label() { return tr("标签"); } },
 ] as const;
 
 export type LibraryGroupBy = (typeof LIBRARY_GROUP_BY_OPTIONS)[number]['value'];
@@ -62,7 +63,7 @@ function collectByLabels(
   const groups = new Map(labels.map((label) => [label, [] as ArchiveCharacter[]]));
   for (const character of items) groups.get(labelOf(character))?.push(character);
   return labels
-    .map((label) => ({ key: label, label, items: groups.get(label) ?? [] }))
+    .map((label) => ({ key: label, label: tr(label), items: groups.get(label) ?? [] }))
     .filter((group) => group.items.length > 0);
 }
 
@@ -77,6 +78,7 @@ function localDateKey(timestamp: number): string {
 }
 
 function updatedLabel(timestamp: number, now: number): string {
+  if (getLocale() === 'en') return new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(timestamp);
   const key = localDateKey(timestamp);
   if (key === localDateKey(now)) return '今天';
   const today = new Date(now);
@@ -112,7 +114,7 @@ function buildTagGroups(
   items: readonly ArchiveCharacter[],
   category: string | undefined,
 ): LibraryCharacterGroup[] {
-  if (!category) return [{ key: 'tag:unset', label: '未设置', items: [...items] }];
+  if (!category) return [{ key: 'tag:unset', get label() { return tr("未设置"); }, items: [...items] }];
   const prefix = `${category}/`;
   const groups = new Map<string, ArchiveCharacter[]>();
   const unset: ArchiveCharacter[] = [];
@@ -129,8 +131,8 @@ function buildTagGroups(
   }
   const result = [...groups.keys()]
     .sort((a, b) => a.localeCompare(b, 'zh-CN'))
-    .map((label) => ({ key: `tag:${category}:${label}`, label, items: groups.get(label) ?? [] }));
-  if (unset.length > 0) result.push({ key: `tag:${category}:unset`, label: '未设置', items: unset });
+    .map((label) => ({ key: `tag:${category}:${label}`, label: tr(label), items: groups.get(label) ?? [] }));
+  if (unset.length > 0) result.push({ key: `tag:${category}:unset`, get label() { return tr("未设置"); }, items: unset });
   return result;
 }
 
@@ -144,7 +146,7 @@ export function buildLibraryGroups(
   options: LibraryGroupingOptions = {},
 ): LibraryCharacterGroup[] {
   if (groupBy === 'none') {
-    return [{ key: 'all', label: '全部角色', items: [...items] }];
+    return [{ key: 'all', get label() { return tr("全部角色"); }, items: [...items] }];
   }
 
   if (groupBy === 'type') {

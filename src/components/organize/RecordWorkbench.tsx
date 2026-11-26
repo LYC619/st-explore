@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
 import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
@@ -8,16 +11,7 @@ import { formatBuiltinPrompt } from '@/lib/builtin-prompts';
  * 卷号逻辑照旧：默认已有最大卷号+1，可手改；生成时盖章，保存用盖章值。
  * 父组件用 key 重挂来切换记录（key = record.id 或 'new-<kind>'）。
  */
-import {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  useCallback,
-  forwardRef,
-  useImperativeHandle,
-  type ReactNode,
-} from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle, type ReactNode  } from 'react';
 import { Sparkles, Square, Loader2, BookOpen, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DeleteConfirmDialog } from '@/components/DeleteConfirmDialog';
@@ -113,6 +107,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     showApiStatus = true,
     recordsRefreshKey = 0,
   }, ref) {
+  useI18n();
     const { toast } = useToast();
     const [truncated, setTruncated] = useState(initialTruncated);
 
@@ -226,18 +221,18 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     );
 
     // 书签锚点：当前脉络的章节标记 + 收藏楼层
-    const anchors = useMemo(() => {
+    const anchors = useLocalizedMemo(() => {
       const indexById = new Map(session.messages.map((m, i) => [m.id, i]));
       const list: FloorAnchor[] = [];
       line.markers.forEach((mk) => {
         const idx = indexById.get(mk.messageId);
-        if (idx != null) list.push({ floor: idx, label: `章节 · ${mk.title}` });
+        if (idx != null) list.push({ floor: idx, label: tr("章节 · {{v0}}", { v0: mk.title }) });
       });
       (line.favorites ?? []).forEach((id) => {
         const idx = indexById.get(id);
         if (idx != null) {
           const snippet = session.messages[idx].content.replace(/\s+/g, ' ').trim().slice(0, 24);
-          list.push({ floor: idx, label: `收藏 · ${snippet}` });
+          list.push({ floor: idx, label: tr("收藏 · {{v0}}", { v0: snippet }) });
         }
       });
       return list.sort((a, b) => a.floor - b.floor);
@@ -275,7 +270,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
           })
           .catch((error: unknown) => {
             if (!live || current !== seq) return;
-            setAssetLoadError(error instanceof Error ? error.message : '无法读取预设与世界书库');
+            setAssetLoadError(error instanceof Error ? error.message : tr("无法读取预设与世界书库"));
             setAssetsLoaded(true);
           });
       };
@@ -335,7 +330,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     }, [buildEngineInput]);
 
     const handleBatchMerge = (text: string) => {
-      setResultTitle(`${SUMMARY_KIND_LABELS[kind]} · 批量合并 ${new Date().toLocaleDateString()}`);
+      setResultTitle(tr("{{v0}} · 批量合并 {{v1}}", { v0: SUMMARY_KIND_LABELS[kind], v1: new Date().toLocaleDateString(getLocale()) }));
       setResultContent(text);
       setCurrentSummaryId(null);
       setSavedPermanent(false);
@@ -344,7 +339,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setPreview(false);
       setManualDraft(false);
       scrollResultIntoView();
-      toast({ title: '已送入结果编辑器', description: '可继续编辑后保存' });
+      toast({ title: tr("已送入结果编辑器"), description: tr("可继续编辑后保存") });
     };
 
     /** 选中模板的显示名（存进快照，索引里 diy 显示模板名） */
@@ -396,36 +391,36 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
 
     const handleGenerate = async () => {
       if (rangeDetached) {
-        toast({ title: '请先关联目标故事的楼层范围' });
+        toast({ title: tr("请先关联目标故事的楼层范围") });
         return;
       }
       const config = loadAPIConfig();
       if (!isLLMConfigured(config)) {
-        toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+        toast({ title: tr("请先配置接口地址和模型"), description: tr("前往「AI 配置」页配置后回来生成"), variant: 'destructive' });
         return;
       }
       if (assetLoadError && (attach.presetId || attach.worldbookId)) {
-        toast({ title: '挂载设定读取失败', description: `${assetLoadError}；请先清除挂载或重试读取后再生成`, variant: 'destructive' });
+        toast({ title: tr("挂载设定读取失败"), description: tr("{{v0}}；请先清除挂载或重试读取后再生成", { v0: assetLoadError }), variant: 'destructive' });
         return;
       }
       if (!assetsLoaded && (attach.presetId || attach.worldbookId)) {
-        toast({ title: '正在加载挂载的预设与世界书，请稍候一秒再试' });
+        toast({ title: tr("正在加载挂载的预设与世界书，请稍候一秒再试") });
         return;
       }
       if (attach.presetId && !presetMap.has(attach.presetId)) {
-        toast({ title: '所挂载的预设已不存在', description: '请在左侧「挂载设定」重新选择预设或清除挂载', variant: 'destructive' });
+        toast({ title: tr("所挂载的预设已不存在"), description: tr("请在左侧「挂载设定」重新选择预设或清除挂载"), variant: 'destructive' });
         return;
       }
       if (attach.worldbookId && !worldbookMap.has(attach.worldbookId)) {
-        toast({ title: '所挂载的世界书已不存在', description: '请在左侧「挂载设定」重新选择世界书或清除挂载', variant: 'destructive' });
+        toast({ title: tr("所挂载的世界书已不存在"), description: tr("请在左侧「挂载设定」重新选择世界书或清除挂载"), variant: 'destructive' });
         return;
       }
       const { messages, params, warnings } = buildSummaryMessages(buildEngineInput());
       if (messages.length === 0) {
-        toast({ title: '没有可总结的内容', variant: 'destructive' });
+        toast({ title: tr("没有可总结的内容"), variant: 'destructive' });
         return;
       }
-      warnings.forEach((w) => toast({ title: '提示', description: w }));
+      warnings.forEach((w) => toast({ title: tr("提示"), description: w }));
 
       const vol = kind === 'volume' ? effectiveVolume : undefined;
       setResultVolume(vol?.toString() ?? '');
@@ -454,14 +449,14 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
           onWarning: () => { wasTruncated = true; setTruncated(true); },
         });
         const finalText = outputRef.current;
-        const autoTitle = extractTitle(kind, finalText) || `${SUMMARY_KIND_LABELS[kind]} · ${new Date().toLocaleDateString()}`;
+        const autoTitle = extractTitle(kind, finalText) || `${SUMMARY_KIND_LABELS[kind]} · ${new Date().toLocaleDateString(getLocale())}`;
         setResultTitle(autoTitle);
         await autoSave(finalText, autoTitle, vol, wasTruncated);
       } catch (err) {
         if (isLLMCancelled(err)) {
-          toast({ title: '已停止生成' });
+          toast({ title: tr("已停止生成") });
         } else {
-          toast({ title: '生成失败', description: err instanceof Error ? err.message : '未知错误', variant: 'destructive' });
+          toast({ title: tr("生成失败"), description: err instanceof Error ? err.message : tr("未知错误"), variant: 'destructive' });
         }
       } finally {
         setStreaming(false);
@@ -475,7 +470,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
     const handleSave = async () => {
       if (!resultContent) return;
       if (resultCategory !== 'other' && resultVolume && (!/^\d+$/.test(resultVolume) || !Number.isSafeInteger(Number(resultVolume)) || Number(resultVolume) < 1)) {
-        toast({ title: '卷号必须是正整数', variant: 'destructive' });
+        toast({ title: tr("卷号必须是正整数"), variant: 'destructive' });
         return;
       }
       const id = currentSummaryId ?? generateSummaryId();
@@ -488,11 +483,11 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         setVolumeOverride(null);
         reloadVolumes();
         onSaved(item, truncated);
-        toast({ title: '已永久保存', description: resultTitle || SUMMARY_KIND_LABELS[kind] });
+        toast({ title: tr("已永久保存"), description: resultTitle || SUMMARY_KIND_LABELS[kind] });
       } catch (error) {
         toast({
-          title: '保存记录未成功',
-          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          title: tr("保存记录未成功"),
+          description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
           variant: 'destructive',
         });
       }
@@ -521,7 +516,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       setManualDraft(false);
       await reloadVolumes(); // 删掉的可能是某一卷，卷号建议要跟着退回去
       onDiscarded?.(id);
-      toast({ title: '已丢弃', description: '这条记录已从库里删除' });
+      toast({ title: tr("已丢弃"), description: tr("这条记录已从库里删除") });
     };
 
     // 右栏「重新生成」：按记录 genParams 回填挂载，转为生成新条目
@@ -539,7 +534,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         scrollResultIntoView();
       },
       regenerate() {
-        if (rangeDetached) { toast({ title: '请先关联目标故事的楼层范围' }); return; }
+        if (rangeDetached) { toast({ title: tr("请先关联目标故事的楼层范围") }); return; }
         const gp = record?.genParams;
         if (gp) {
           setAttach({
@@ -557,7 +552,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         }
         setSavedPermanent(false);
         setManualDraft(false);
-        toast({ title: '已回填设置', description: '楼层/挂载/模板已按原条目填好，点「生成」即可重做' });
+        toast({ title: tr("已回填设置"), description: tr("楼层/挂载/模板已按原条目填好，点「生成」即可重做") });
       },
       hasUnsavedDraft() {
         return hasDraft;
@@ -571,9 +566,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
       <div className="flex h-full min-h-0 flex-col gap-3">
         {showApiStatus && <ApiStatusLine />}
         {record && currentSummaryId === record.id && <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="text-muted-foreground">{record.provenance ? `原始来源：${record.provenance.bookTitle} · ${record.provenance.branchTitle ?? '主线'} · #${record.provenance.floorStart}–${record.provenance.floorEnd}` : ''}</span>
+          <span className="text-muted-foreground">{record.provenance ? tr("原始来源：{{v0}} · {{v1}} · #{{v2}}–{{v3}}", { v0: record.provenance.bookTitle, v1: record.provenance.branchTitle ?? tr("主线"), v2: record.provenance.floorStart, v3: record.provenance.floorEnd }) : ''}</span>
           <Button variant="outline" size="sm" disabled={hasDraft}
-            title="有未保存修改时，请先保存再移动" onClick={() => setMoveOpen(true)}>移动到其他故事</Button>
+            title={tr("有未保存修改时，请先保存再移动")} onClick={() => setMoveOpen(true)}>{tr("移动到其他故事")}</Button>
         </div>}
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-4 overflow-hidden">
           {/* 布局铁律：flex-wrap + 行内 flex-basis，禁视口断点（同原总结页） */}
@@ -583,17 +578,16 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
             {(story.branches?.length ?? 0) > 0 && (
               <Card>
                 <CardContent className="p-3 flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground shrink-0">来源脉络</Label>
+                  <Label className="text-xs text-muted-foreground shrink-0">{tr("来源脉络")}</Label>
                   <Select value={branchId ?? MAIN} onValueChange={switchBranch}>
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value={MAIN}>主线（{story.session.messages.length} 楼）</SelectItem>
+                      <SelectItem value={MAIN}>{tr("主线（{{v0}} 楼）", { v0: story.session.messages.length })}</SelectItem>
                       {(story.branches ?? []).map((b) => (
                         <SelectItem key={b.id} value={b.id}>
-                          {b.name}（{b.session.messages.length} 楼）
-                        </SelectItem>
+                          {tr("{{v0}}（{{v1}} 楼）", { v0: b.name, v1: b.session.messages.length })}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -610,8 +604,8 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               anchors={anchors}
             />
             {rangeDetached && <div className="rounded-md border p-3 text-xs space-y-2">
-              <p>此记录来自其他故事。原楼层仅用于说明来源；请选择当前故事的楼层，再确认关联。</p>
-              <Button size="sm" variant="outline" disabled={!session.messages.length} onClick={() => { setRangeAttached(true); setSavedPermanent(false); }}>关联所选楼层</Button>
+              <p>{tr("此记录来自其他故事。原楼层仅用于说明来源；请选择当前故事的楼层，再确认关联。")}</p>
+              <Button size="sm" variant="outline" disabled={!session.messages.length} onClick={() => { setRangeAttached(true); setSavedPermanent(false); }}>{tr("关联所选楼层")}</Button>
             </div>}
 
             <AttachPanel value={attach} onChange={setAttach} tokenEstimate={tokenEstimate} />
@@ -628,14 +622,12 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               <CardContent className="p-4 space-y-3">
                 {kind === 'diary' && (
                   <div className="space-y-1">
-                    <Label htmlFor="diary-owner" className="text-xs text-muted-foreground">
-                      生成谁的日记（自动附加到提示词，留空则按模板默认视角）
-                    </Label>
+                    <Label htmlFor="diary-owner" className="text-xs text-muted-foreground">{tr("生成谁的日记（自动附加到提示词，留空则按模板默认视角）")}</Label>
                     <Input
                       id="diary-owner"
                       value={diaryOwner}
                       onChange={(e) => setDiaryOwner(e.target.value)}
-                      placeholder={charName || '角色名'}
+                      placeholder={charName || tr("角色名")}
                     />
                   </div>
                 )}
@@ -652,9 +644,9 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
                   {kind === 'volume' && (
                     <div
                       className="flex items-center gap-1 shrink-0"
-                      title="本次生成的卷号：默认 = 已有最大卷号 + 1，可直接改"
+                      title={tr("本次生成的卷号：默认 = 已有最大卷号 + 1，可直接改")}
                     >
-                      <Label htmlFor="volume-num" className="text-xs text-muted-foreground">第</Label>
+                      <Label htmlFor="volume-num" className="text-xs text-muted-foreground">{getLocale() === 'en' ? tr("卷号") : tr("第")}</Label>
                       <Input size="lg"
                         id="volume-num"
                         type="number"
@@ -666,23 +658,22 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
                         }}
                         className="w-16 text-center"
                       />
-                      <Label htmlFor="volume-num" className="text-xs text-muted-foreground">卷</Label>
+                      {getLocale() !== 'en' && <Label htmlFor="volume-num" className="text-xs text-muted-foreground">{tr("卷")}</Label>}
                     </div>
                   )}
                   {!streaming ? (
                     <Button className="flex-1 gap-2" onClick={handleGenerate} disabled={floorCount === 0 || rangeDetached}>
                       <Sparkles className="w-4 h-4" />
-                      {kind === 'volume' ? `生成第 ${effectiveVolume} 卷（${floorCount} 楼）` : `生成（${floorCount} 楼）`}
+                      {kind === 'volume' ? tr("生成第 {{v0}} 卷（{{v1}} 楼）", { v0: effectiveVolume, v1: floorCount }) : tr("生成（{{v0}} 楼）", { v0: floorCount })}
                     </Button>
                   ) : (
                     <Button variant="destructive" className="flex-1 gap-2" onClick={handleStop}>
-                      <Square className="w-4 h-4" />停止生成
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Square className="w-4 h-4" />{tr("停止生成")}<Loader2 className="w-4 h-4 animate-spin" />
                     </Button>
                   )}
                 </div>
                 {branchName && (
-                  <p className="text-xs text-muted-foreground">读取分支「{branchName}」的楼层，保存的记录也标注该分支。</p>
+                  <p className="text-xs text-muted-foreground">{tr("读取分支「{{v0}}」的楼层，保存的记录也标注该分支。", { v0: branchName })}</p>
                 )}
               </CardContent>
             </Card>
@@ -706,7 +697,7 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" className="gap-1" onClick={() => setPreview((v) => !v)}>
                   {preview ? <Pencil className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
-                  {preview ? '回到编辑' : '排版预览'}
+                  {preview ? tr("回到编辑") : tr("排版预览")}
                 </Button>
               </div>
             )}
@@ -748,16 +739,16 @@ export const RecordWorkbench = forwardRef<RecordWorkbenchHandle, RecordWorkbench
         <DeleteConfirmDialog
           open={discardAsk}
           onOpenChange={setDiscardAsk}
-          title={`丢弃这条${SUMMARY_KIND_LABELS[kind]}？`}
+          title={tr("丢弃这条{{v0}}？", { v0: SUMMARY_KIND_LABELS[kind] })}
           description={savedPermanent
-            ? '这条已永久保存，丢弃会把它从库里删掉，不可撤销。'
-            : '生成结果已自动暂存，丢弃会把它从库里删掉，不可撤销。'}
+            ? tr("这条已永久保存，丢弃会把它从库里删掉，不可撤销。")
+            : tr("生成结果已自动暂存，丢弃会把它从库里删掉，不可撤销。")}
           fileTarget={currentSummaryId ? { store: 'summaries', id: currentSummaryId } : undefined}
           onConfirm={handleDiscard}
-          confirmLabel="丢弃"
+          confirmLabel={tr("丢弃")}
         />
         <MoveRecordDialog open={moveOpen} record={record ?? null} onOpenChange={setMoveOpen}
-          onMoved={moved => { setCurrentSummaryId(null); setResultContent(''); setResultTitle(''); onDiscarded?.(moved.id); toast({ title: '记录已移动', description: moved.bookTitle }); }} />
+          onMoved={moved => { setCurrentSummaryId(null); setResultContent(''); setResultTitle(''); onDiscarded?.(moved.id); toast({ title: tr("记录已移动"), description: moved.bookTitle }); }} />
       </div>
     );
   }

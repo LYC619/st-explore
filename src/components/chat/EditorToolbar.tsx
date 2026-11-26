@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { RefreshCw, BookmarkPlus, Regex, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -57,6 +59,7 @@ export function EditorToolbar({
   onToggleRegex,
   hideChapterMark,
 }: EditorToolbarProps) {
+  useI18n();
   // 重新导入的确认框在窄屏下由菜单项触发。菜单项不能直接当 AlertDialogTrigger：
   // 点击后菜单关闭会把触发器卸载，对话框跟着一起消失。所以把开关提上来，
   // 对话框渲染成两个分支共用的兄弟节点。
@@ -77,19 +80,19 @@ export function EditorToolbar({
   const overflow = [
     ...(hideChapterMark ? [] : [{
       key: 'mark',
-      label: editMode ? '退出章节标记' : '章节标记',
+      label: editMode ? tr("退出章节标记") : tr("章节标记"),
       icon: BookmarkPlus,
       onSelect: onToggleEditMode,
     }]),
     {
       key: 'regex',
-      label: `正则规则（${enabledRegexCount}）`,
+      label: tr("正则规则（{{v0}}）", { v0: enabledRegexCount }),
       icon: Regex,
       onSelect: onToggleRegex,
     },
     ...(onReset ? [{
       key: 'reset',
-      label: '重新导入',
+      label: tr("重新导入"),
       icon: RefreshCw,
       onSelect: () => setResetOpen(true),
     }] : []),
@@ -100,14 +103,12 @@ export function EditorToolbar({
     <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>确认重新导入？</AlertDialogTitle>
-          <AlertDialogDescription>
-            重新导入会清空当前打开的记录。已导入的记录会自动暂存，可从空态页的「未绑定的暂存记录」再次打开。
-          </AlertDialogDescription>
+          <AlertDialogTitle>{tr("确认重新导入？")}</AlertDialogTitle>
+          <AlertDialogDescription>{tr("重新导入会清空当前打开的记录。已导入的记录会自动暂存，可从空态页的「未绑定的暂存记录」再次打开。")}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
-          <AlertDialogAction onClick={onReset}>确认</AlertDialogAction>
+          <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
+          <AlertDialogAction onClick={onReset}>{tr("确认")}</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -121,7 +122,7 @@ export function EditorToolbar({
         {overflow.length > 1 ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" data-editor-toolbar-more aria-label="更多操作">
+              <Button variant="outline" size="sm" data-editor-toolbar-more aria-label={tr("更多操作")}>
                 <MoreHorizontal className="w-4 h-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -172,7 +173,7 @@ export function EditorToolbar({
           data-tour="chapter-mark-btn"
         >
           <BookmarkPlus className="w-4 h-4 mr-1.5" />
-          {editMode ? '退出标记' : '章节标记'}
+          {editMode ? tr("退出标记") : tr("章节标记")}
         </Button>
       )}
       <Button
@@ -182,9 +183,7 @@ export function EditorToolbar({
         className="gap-1.5"
         data-tour="regex-toggle"
       >
-        <Regex className="w-4 h-4" />
-        正则
-        <span className="text-xs text-muted-foreground">({enabledRegexCount})</span>
+        <Regex className="w-4 h-4" />{tr("正则")}<span className="text-xs text-muted-foreground">({enabledRegexCount})</span>
       </Button>
 
       <div className="w-px h-6 bg-border mx-0.5" />
@@ -192,9 +191,7 @@ export function EditorToolbar({
       {/* 输入/输出（高频，集中在右侧）：导入 · 导出(主CTA) */}
       {onReset && (
         <Button variant="outline" size="sm" onClick={() => setResetOpen(true)}>
-          <RefreshCw className="w-4 h-4 mr-1.5" />
-          导入
-        </Button>
+          <RefreshCw className="w-4 h-4 mr-1.5" />{tr("导入")}</Button>
       )}
       <ExportButton session={session} settings={settings} markers={markers} />
       {resetDialog}

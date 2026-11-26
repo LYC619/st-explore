@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /** 聊天处理外的编辑区入口选择页：总结/故事树选故事，世界书选资产；旧预设入口转到独立预设库。 */
 import { useState, useEffect, useCallback } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
@@ -34,32 +37,32 @@ interface ToolEntry {
 }
 
 const TOOLS: ToolEntry[] = [
-  { type: 'chat', label: '聊天处理', path: '/chat' },
-  { type: 'worldbook', label: '世界书', path: '/worldbook' },
-  { type: 'card', label: '角色卡', path: '/card-viewer' },
-  { type: 'preset', label: '预设', path: '/preset' },
-  { type: 'regex', label: '正则', path: '/regex' },
+  { type: 'chat', get label() { return tr("聊天处理"); }, path: '/chat' },
+  { type: 'worldbook', get label() { return tr("世界书"); }, path: '/worldbook' },
+  { type: 'card', get label() { return tr("角色卡"); }, path: '/card-viewer' },
+  { type: 'preset', get label() { return tr("预设"); }, path: '/preset' },
+  { type: 'regex', get label() { return tr("正则"); }, path: '/regex' },
 ];
 
 /** 左侧介绍栏的分工具卖点（0816 反馈：选择页左介绍右选择） */
 const FOCUS_COPY: Record<string, { title: string; description: string; points: string[]; importLabel: string }> = {
   summary: {
-    title: '总结',
-    description: EDITOR_TOOL_COPY.summary,
-    points: ['分卷总结：按楼层范围提炼剧情', '角色日记：以角色视角回顾经历', 'DIY 创作：用自定义提示词自由生成'],
-    importLabel: '导入新聊天',
+    get title() { return tr("总结"); },
+    get description() { return EDITOR_TOOL_COPY.summary; },
+    get points() { return [tr("分卷总结：按楼层范围提炼剧情"), tr("角色日记：以角色视角回顾经历"), tr("DIY 创作：用自定义提示词自由生成")]; },
+    get importLabel() { return tr("导入新聊天"); },
   },
   'story-tree': {
-    title: '故事树',
-    description: EDITOR_TOOL_COPY.storyTree,
-    points: ['把人物、事件和伏笔整理成脉络', '支持 JSON / Markdown 导入导出', '与聊天处理、总结共用当前故事'],
-    importLabel: '导入新聊天',
+    get title() { return tr("故事树"); },
+    get description() { return EDITOR_TOOL_COPY.storyTree; },
+    get points() { return [tr("把人物、事件和伏笔整理成脉络"), tr("支持 JSON / Markdown 导入导出"), tr("与聊天处理、总结共用当前故事")]; },
+    get importLabel() { return tr("导入新聊天"); },
   },
   worldbook: {
-    title: '世界书',
-    description: EDITOR_TOOL_COPY.worldbook,
-    points: ['可从零新建空白世界书编写设定', '编辑条目内容与触发关键词', '支持 ST 世界书 JSON 导入导出'],
-    importLabel: '导入世界书',
+    get title() { return tr("世界书"); },
+    get description() { return EDITOR_TOOL_COPY.worldbook; },
+    get points() { return [tr("可从零新建空白世界书编写设定"), tr("编辑条目内容与触发关键词"), tr("支持 ST 世界书 JSON 导入导出")]; },
+    get importLabel() { return tr("导入世界书"); },
   },
 };
 
@@ -67,7 +70,7 @@ const FOCUS_COPY: Record<string, { title: string; description: string; points: s
 interface AssetPickerItem {
   id: string;
   title: string;
-  meta: string;
+  entryCount: number;
   importedAt: number;
   updatedAt: number;
   sourceModifiedAt?: number;
@@ -75,11 +78,12 @@ interface AssetPickerItem {
 }
 
 function formatStoryDate(value?: number): string {
-  if (!value || !Number.isFinite(value)) return '时间未知';
-  return new Date(value).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  if (!value || !Number.isFinite(value)) return tr("时间未知");
+  return new Date(value).toLocaleDateString(getLocale(), { year: 'numeric', month: '2-digit', day: '2-digit' });
 }
 
 const ToolsContent = () => {
+  useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const focus = searchParams.get('focus');
@@ -105,7 +109,7 @@ const ToolsContent = () => {
         setAssetItems(items.map((item) => ({
           id: item.id,
           title: item.title,
-          meta: `${item.entryCount} 个条目`,
+          entryCount: item.entryCount,
           importedAt: item.createdAt,
           updatedAt: item.updatedAt,
           sourceModifiedAt: item.sourceModifiedAt,
@@ -125,7 +129,7 @@ const ToolsContent = () => {
       setAssetItems([]);
       setStories([]);
       setCharacters([]);
-      setLoadError(error instanceof Error ? error.message : '无法读取归档数据');
+      setLoadError(error instanceof Error ? error.message : tr("无法读取归档数据"));
     } finally {
       setLoading(false);
     }
@@ -219,11 +223,9 @@ const ToolsContent = () => {
                 ))}
               </ul>
               <div className="mt-auto shrink-0 rounded-md bg-chrome p-3">
-                <p className="text-xs font-medium text-[color:var(--text-primary)]">支持导入</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--text-muted)]">
-                  聊天记录 (.jsonl/.json/.txt) · 角色卡 (.png/.json) · 世界书 / 预设 / 正则 (.json)
-                </p>
-                <p className="mt-1 text-[11px] text-[color:var(--text-muted)]">把文件拖进本页任意位置即可开始。</p>
+                <p className="text-xs font-medium text-[color:var(--text-primary)]">{tr("支持导入")}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-[color:var(--text-muted)]">{tr("聊天记录 (.jsonl/.json/.txt) · 角色卡 (.png/.json) · 世界书 / 预设 / 正则 (.json)")}</p>
+                <p className="mt-1 text-[11px] text-[color:var(--text-muted)]">{tr("把文件拖进本页任意位置即可开始。")}</p>
               </div>
             </aside>
 
@@ -235,10 +237,10 @@ const ToolsContent = () => {
               <div className="flex shrink-0 items-start justify-between gap-3">
                 <div>
                   <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">
-                    {assetFocus ? `选择要编辑的${focusCopy.title}` : '选择要处理的故事'}
+                    {assetFocus ? tr("选择要编辑的{{v0}}", { v0: focusCopy.title }) : tr("选择要处理的故事")}
                   </h2>
                   <p className="mt-1 text-xs text-[color:var(--text-muted)]">
-                    {assetFocus ? '按最近更新排序，点击直接进入编辑器。' : '默认显示最近 10 个故事，更早内容可通过搜索找到。'}
+                    {assetFocus ? tr("按最近更新排序，点击直接进入编辑器。") : tr("默认显示最近 10 个故事，更早内容可通过搜索找到。")}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -251,9 +253,7 @@ const ToolsContent = () => {
                         navigate('/worldbook');
                       }}
                     >
-                      <Plus className="mr-1.5 h-4 w-4" />
-                      新建空白世界书
-                    </Button>
+                      <Plus className="mr-1.5 h-4 w-4" />{tr("新建空白世界书")}</Button>
                   )}
                   <Button
                     type="button"
@@ -273,9 +273,9 @@ const ToolsContent = () => {
                   onClick={() => openStory(lastStory.id)}
                   className="mt-3 flex w-full shrink-0 items-center gap-2 rounded-md border border-[color:var(--brand-hairline)] bg-chrome px-3 py-2 text-left transition-colors hover:bg-elevated-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <span className="shrink-0 rounded bg-[var(--brand-active-bg)] px-1.5 py-0.5 text-[11px] text-brand">继续上次</span>
+                  <span className="shrink-0 rounded bg-[var(--brand-active-bg)] px-1.5 py-0.5 text-[11px] text-brand">{tr("继续上次")}</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-[color:var(--text-body)]" title={lastStory.title}>{lastStory.title}</span>
-                  <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">{lastStory.floorCount} 楼</span>
+                  <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">{tr("{{v0}} 楼", { v0: lastStory.floorCount })}</span>
                 </button>
               )}
               {listTotal > 0 && (
@@ -286,15 +286,15 @@ const ToolsContent = () => {
                       type="search"
                       value={query}
                       onChange={(event) => setQuery(event.target.value)}
-                      placeholder={assetFocus ? `搜索${focusCopy.title}标题` : '搜索故事或角色'}
-                      aria-label={assetFocus ? `搜索${focusCopy.title}标题` : '搜索故事或角色'}
+                      placeholder={assetFocus ? tr("搜索{{v0}}标题", { v0: focusCopy.title }) : tr("搜索故事或角色")}
+                      aria-label={assetFocus ? tr("搜索{{v0}}标题", { v0: focusCopy.title }) : tr("搜索故事或角色")}
                       className="w-full rounded-md border border-[color:var(--border-normal)] bg-chrome py-2 pl-9 pr-3 text-xs text-[color:var(--text-body)] outline-none placeholder:text-[color:var(--text-muted)] focus:border-brand focus-visible:ring-2 focus-visible:ring-ring"
                     />
                   </div>
                   <span className="shrink-0 text-[11px] text-[color:var(--text-muted)]">
                     {assetFocus
-                      ? (normalizedQuery ? `${filteredAssetItems.length}/${assetItems.length}` : `共 ${assetItems.length}`) + ` 份${focusCopy.title}`
-                      : (normalizedQuery ? `${storyPickerItems.length}/${stories.length}` : `最近 ${storyPickerItems.length}`) + ' 个故事'}
+                      ? (normalizedQuery ? tr("{{v0}}/{{v1}} 份世界书", { v0: filteredAssetItems.length, v1: assetItems.length }) : tr("共 {{v0}} 份世界书", { v0: assetItems.length }))
+                      : (normalizedQuery ? tr("{{v0}}/{{v1}} 个故事", { v0: storyPickerItems.length, v1: stories.length }) : tr("最近 {{v0}} 个故事", { v0: storyPickerItems.length }))}
                   </span>
                 </div>
               )}
@@ -304,9 +304,9 @@ const ToolsContent = () => {
                   className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg bg-chrome px-4 py-5 text-center"
                   data-tools-load-error
                 >
-                  <p className="text-sm text-destructive">读取失败：{loadError}</p>
-                  <p className="mt-1 text-xs text-[color:var(--text-muted)]">没有把读取失败当成空库，你可以重试。</p>
-                  <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void loadData()}>重试</Button>
+                  <p className="text-sm text-destructive">{tr("读取失败：{{v0}}", { v0: loadError })}</p>
+                  <p className="mt-1 text-xs text-[color:var(--text-muted)]">{tr("没有把读取失败当成空库，你可以重试。")}</p>
+                  <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void loadData()}>{tr("重试")}</Button>
                 </div>
               ) : assetFocus ? (
                 filteredAssetItems.length > 0 ? (
@@ -326,18 +326,18 @@ const ToolsContent = () => {
                         <span className="flex w-full items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-sm font-medium text-[color:var(--text-body)]" title={item.title}>{item.title}</span>
                           {item.autoSaved && (
-                            <span className="shrink-0 rounded bg-chrome px-1.5 py-0.5 text-[11px] text-[color:var(--text-muted)] ring-1 ring-[color:var(--border-normal)]">历史</span>
+                            <span className="shrink-0 rounded bg-chrome px-1.5 py-0.5 text-[11px] text-[color:var(--text-muted)] ring-1 ring-[color:var(--border-normal)]">{tr("历史")}</span>
                           )}
                         </span>
                         <span className="mt-1 flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[color:var(--text-muted)]">
-                          <span>{item.meta}</span>
+                          <span>{tr("{{v0}} 个条目", { v0: item.entryCount })}</span>
                           <span className="flex min-w-0 items-center gap-1 truncate" title={item.title}>
                             <CalendarRange className="h-3 w-3 shrink-0" />
                             <span className="truncate" title={item.title}>
-                              {item.sourceModifiedAt !== undefined ? `源文件 ${formatStoryDate(item.sourceModifiedAt)}` : `STE 更新 ${formatStoryDate(item.updatedAt)}`}
+                              {item.sourceModifiedAt !== undefined ? tr("源文件 {{v0}}", { v0: formatStoryDate(item.sourceModifiedAt) }) : tr("STE 更新 {{v0}}", { v0: formatStoryDate(item.updatedAt) })}
                             </span>
                           </span>
-                          {item.sourceModifiedAt !== undefined && <span>导入 {formatStoryDate(item.importedAt)}</span>}
+                          {item.sourceModifiedAt !== undefined && <span>{tr("导入 {{v0}}", { v0: formatStoryDate(item.importedAt) })}</span>}
                         </span>
                       </button>
                     ))}
@@ -345,9 +345,9 @@ const ToolsContent = () => {
                   </div>
                 ) : (
                   <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg bg-chrome px-4 py-5 text-center">
-                    <p className="text-sm text-[color:var(--text-body)]">{assetItems.length > 0 ? '没有匹配的结果' : `还没有保存的${focusCopy.title}`}</p>
+                    <p className="text-sm text-[color:var(--text-body)]">{assetItems.length > 0 ? tr("没有匹配的结果") : tr("还没有保存的{{v0}}", { v0: focusCopy.title })}</p>
                     <p className="mt-1 text-xs text-[color:var(--text-muted)]">
-                      {assetItems.length > 0 ? '换一个标题关键词试试。' : `点上方「新建空白世界书」或「${focusCopy.importLabel}」，也可把 JSON 文件直接拖进本页。`}
+                      {assetItems.length > 0 ? tr("换一个标题关键词试试。") : tr("点上方「新建空白世界书」或「{{v0}}」，也可把 JSON 文件直接拖进本页。", { v0: focusCopy.importLabel })}
                     </p>
                   </div>
                 )
@@ -363,9 +363,9 @@ const ToolsContent = () => {
                       className="flex min-w-0 flex-col items-start rounded-md border border-transparent bg-chrome px-3 py-2.5 text-left transition-colors hover:border-[color:var(--brand-hairline)] hover:bg-elevated-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="w-full truncate text-sm font-medium text-[color:var(--text-body)]" title={story.title}>{story.title}</span>
-                      <span className="mt-1 w-full truncate text-xs text-[color:var(--text-muted)]" title={characterName}>所属角色：{characterName}</span>
+                      <span className="mt-1 w-full truncate text-xs text-[color:var(--text-muted)]" title={characterName}>{tr("所属角色：{{v0}}", { v0: characterName })}</span>
                       <span className="mt-1 flex w-full items-center gap-3 text-[11px] text-[color:var(--text-muted)]">
-                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{floorCount} 楼</span>
+                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{tr("{{v0}} 楼", { v0: floorCount })}</span>
                         <span className="flex min-w-0 items-center gap-1 truncate" title={`${formatStoryDate(startedAt)} - ${formatStoryDate(endedAt)}`}>
                           <CalendarRange className="h-3 w-3 shrink-0" />
                           <span className="truncate" title={`${formatStoryDate(startedAt)} - ${formatStoryDate(endedAt)}`}>{formatStoryDate(startedAt)} - {formatStoryDate(endedAt)}</span>
@@ -380,13 +380,13 @@ const ToolsContent = () => {
                   data-story-picker-loading
                   className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg bg-chrome px-4 py-5 text-center"
                 >
-                  <p className="text-sm text-[color:var(--text-muted)]">{LOADING_LABEL}</p>
+                  <p className="text-sm text-[color:var(--text-muted)]">{tr(LOADING_LABEL)}</p>
                 </div>
               ) : (
                 <div className="mt-3 flex min-h-0 flex-1 flex-col items-center justify-center rounded-lg bg-chrome px-4 py-5 text-center">
-                  <p className="text-sm text-[color:var(--text-body)]">{stories.length > 0 ? '没有匹配的故事' : '还没有可以处理的故事'}</p>
+                  <p className="text-sm text-[color:var(--text-body)]">{stories.length > 0 ? tr("没有匹配的故事") : tr("还没有可以处理的故事")}</p>
                   <p className="mt-1 text-xs text-[color:var(--text-muted)]">
-                    {stories.length > 0 ? '换一个标题或角色关键词试试。' : '点右上角「导入新聊天」，或把文件直接拖进本页。'}
+                    {stories.length > 0 ? tr("换一个标题或角色关键词试试。") : tr("点右上角「导入新聊天」，或把文件直接拖进本页。")}
                   </p>
                 </div>
               )}
@@ -398,8 +398,8 @@ const ToolsContent = () => {
           <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center border-2 border-dashed border-brand bg-[var(--brand-active-bg)]">
             <div className="rounded-lg bg-elevated px-6 py-4 text-center shadow-lg">
               <DownloadCloud className="mx-auto h-7 w-7 text-brand" />
-              <p className="mt-2 text-sm font-medium text-[color:var(--text-primary)]">松开导入文件</p>
-              <p className="mt-1 text-[11px] text-[color:var(--text-muted)]">聊天记录 · 角色卡 · 世界书 / 预设 / 正则</p>
+              <p className="mt-2 text-sm font-medium text-[color:var(--text-primary)]">{tr("松开导入文件")}</p>
+              <p className="mt-1 text-[11px] text-[color:var(--text-muted)]">{tr("聊天记录 · 角色卡 · 世界书 / 预设 / 正则")}</p>
             </div>
           </div>
         )}
@@ -408,12 +408,12 @@ const ToolsContent = () => {
       <Dialog open={!!pending} onOpenChange={(v) => { if (!v) setPending(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>这是什么文件？</DialogTitle>
+            <DialogTitle>{tr("这是什么文件？")}</DialogTitle>
             <DialogDescription>
               {pending?.file.name}
               {pending?.guess
-                ? ` — 看起来像${TOOL_TYPE_LABELS[pending.guess]}，确认后进入对应工具`
-                : ' — 没认出来，请选择用哪个工具处理'}
+                ? tr(" — 看起来像{{v0}}，确认后进入对应工具", { v0: TOOL_TYPE_LABELS[pending.guess] })
+                : tr(" — 没认出来，请选择用哪个工具处理")}
             </DialogDescription>
           </DialogHeader>
           <RadioGroup value={chosenType} onValueChange={(v) => setChosenType(v as ToolFileType)} className="space-y-2">
@@ -427,15 +427,15 @@ const ToolsContent = () => {
                 <Label htmlFor={`type-${tool.type}`} className="cursor-pointer flex-1">
                   {TOOL_TYPE_LABELS[tool.type]}
                   {pending?.guess === tool.type && (
-                    <span className="ml-2 text-xs text-primary">（猜测）</span>
+                    <span className="ml-2 text-xs text-primary">{tr("（猜测）")}</span>
                   )}
                 </Label>
               </div>
             ))}
           </RadioGroup>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPending(null)}>取消</Button>
-            <Button onClick={handleConfirm}>确认并处理</Button>
+            <Button variant="outline" onClick={() => setPending(null)}>{tr("取消")}</Button>
+            <Button onClick={handleConfirm}>{tr("确认并处理")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

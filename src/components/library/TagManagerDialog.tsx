@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatList, tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useCallback, useEffect, useRef, useState  } from 'react';
 import { GripVertical, Plus, Trash2 } from 'lucide-react';
 import { HelpHint } from '@/components/HelpHint';
 import {
@@ -88,6 +90,7 @@ export function TagManagerDialog({
   onChanged,
   initialCategory = '人物',
 }: TagManagerDialogProps) {
+  useI18n();
   const { toast } = useToast();
   const [activeCategory, setActiveCategory] = useState<TagCategory | '类型'>('人物');
   const [newLabel, setNewLabel] = useState('');
@@ -149,7 +152,7 @@ export function TagManagerDialog({
       if (message) toast({ title: message });
       return true;
     } catch {
-      toast({ title: '标签设置保存失败', variant: 'destructive' });
+      toast({ title: tr("标签设置保存失败"), variant: 'destructive' });
       return false;
     } finally {
       setBusy(false);
@@ -160,9 +163,9 @@ export function TagManagerDialog({
     if (busy || !activeCategory || activeCategory === '类型') return;
     try {
       const next = addCustomTagDefinition(preferences, activeCategory, newLabel);
-      if (await savePreferences(next, `已新增「${newLabel.trim()}」`)) setNewLabel('');
+      if (await savePreferences(next, tr("已新增「{{v0}}」", { v0: newLabel.trim() }))) setNewLabel('');
     } catch (error) {
-      toast({ title: error instanceof Error ? error.message : '无法新增标签', variant: 'destructive' });
+      toast({ title: error instanceof Error ? error.message : tr("无法新增标签"), variant: 'destructive' });
     }
   };
 
@@ -171,12 +174,12 @@ export function TagManagerDialog({
     try {
       const label = newCategory.trim();
       const next = addCustomCategory(preferences, label);
-      if (await savePreferences(next, `已新增标签组「${label}」`)) {
+      if (await savePreferences(next, tr("已新增标签组「{{v0}}」", { v0: label }))) {
         setNewCategory('');
         setActiveCategory(label);
       }
     } catch (error) {
-      toast({ title: error instanceof Error ? error.message : '无法新增标签组', variant: 'destructive' });
+      toast({ title: error instanceof Error ? error.message : tr("无法新增标签组"), variant: 'destructive' });
     }
   };
 
@@ -297,7 +300,7 @@ export function TagManagerDialog({
     }
     const targets = selectedCharacters.filter((character) => !character.tags.includes(assignmentOption.raw));
     if (targets.length === 0) {
-      toast({ title: `所选角色卡都已有「${assignmentOption.label}」` });
+      toast({ title: tr("所选角色卡都已有「{{v0}}」", { v0: assignmentOption.builtIn ? tr(assignmentOption.label) : assignmentOption.label }) });
       return;
     }
     setBusy(true);
@@ -316,14 +319,14 @@ export function TagManagerDialog({
       }
       await onChanged();
       toast({
-        title: `已为 ${targets.length} 张卡添加「${assignmentOption.label}」`,
+        title: tr("已为 {{v0}} 张卡添加「{{v1}}」", { v0: targets.length, v1: assignmentOption.builtIn ? tr(assignmentOption.label) : assignmentOption.label }),
         description: targets.length < selectedCharacters.length
-          ? `${selectedCharacters.length - targets.length} 张卡原本已有该标签，已跳过。`
+          ? tr("{{v0}} 张卡原本已有该标签，已跳过。", { v0: selectedCharacters.length - targets.length })
           : undefined,
       });
     } catch (error) {
       toast({
-        title: '批量添加标签失败',
+        title: tr("批量添加标签失败"),
         description: error instanceof Error ? error.message : undefined,
         variant: 'destructive',
       });
@@ -342,20 +345,20 @@ export function TagManagerDialog({
     try {
       for (const character of targets) {
         try {
-          if (getVaultEpoch() !== epoch) throw new Error('资料库已切换');
+          if (getVaultEpoch() !== epoch) throw new Error(tr("资料库已切换"));
           const saved = await updateCharacter(character.id, (current) => {
-            if (getVaultEpoch() !== epoch) throw new Error('资料库已切换');
+            if (getVaultEpoch() !== epoch) throw new Error(tr("资料库已切换"));
             return { ...applyCharacterTypePatch(current, assignmentType), updatedAt: Date.now() };
           });
-          if (!saved) throw new Error('角色已删除');
+          if (!saved) throw new Error(tr("角色已删除"));
           succeeded++;
-        } catch (error) { failed.push(`${character.name}：${error instanceof Error ? error.message : String(error)}`); }
+        } catch (error) { failed.push(tr("{{v0}}：{{v1}}", { v0: character.name, v1: error instanceof Error ? error.message : String(error) })); }
       }
       if (getVaultEpoch() === epoch) await onChanged();
-      toast({ title: `已为 ${succeeded} 张卡设置类型「${assignmentType}」${failed.length ? `，${failed.length} 张失败` : ''}`,
-        description: failed.length ? failed.join('；') : undefined, variant: failed.length ? 'destructive' : 'default' });
+      toast({ title: failed.length ? tr("已为 {{v0}} 张卡设置类型「{{v1}}」，{{v2}} 张失败", { v0: succeeded, v1: tr(assignmentType), v2: failed.length }) : tr("已为 {{v0}} 张卡设置类型「{{v1}}」", { v0: succeeded, v1: tr(assignmentType) }),
+        description: failed.length ? formatList(failed) : undefined, variant: failed.length ? 'destructive' : 'default' });
     } catch (error) {
-      toast({ title: '刷新类型结果失败', description: String(error), variant: 'destructive' });
+      toast({ title: tr("刷新类型结果失败"), description: String(error), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -364,7 +367,7 @@ export function TagManagerDialog({
   const deleteCustomTag = async (option: ManagedTagOption) => {
     if (busy) return;
     const epoch = getVaultEpoch();
-    const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，删除已停止'); };
+    const check = () => { if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换，删除已停止")); };
     const matches = (tag: string) => normalizeRatingTag(tag) === option.raw;
     setBusy(true);
     try {
@@ -385,10 +388,10 @@ export function TagManagerDialog({
       setPendingDelete(null);
       setAssignmentRaw(null);
       toast({ title: owners.length > 0
-        ? `已删除标签，并从 ${owners.length} 张角色卡上移除`
-        : '已删除标签' });
+        ? tr("已删除标签，并从 {{v0}} 张角色卡上移除", { v0: owners.length })
+        : tr("已删除标签") });
     } catch {
-      toast({ title: '删除标签失败', variant: 'destructive' });
+      toast({ title: tr("删除标签失败"), variant: 'destructive' });
     } finally {
       setBusy(false);
     }
@@ -398,7 +401,7 @@ export function TagManagerDialog({
     if (busy) return;
     const epoch = getVaultEpoch(); setBusy(true);
     const category = categoryDelete;
-    const check = () => { if (epoch !== getVaultEpoch()) throw new Error('资料库已切换，删除已停止'); };
+    const check = () => { if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换，删除已停止")); };
     const matches = (tag: string) => typeDelete ? tag === `类型/${typeDelete}`
       : category === '类型' ? tag.startsWith('类型/') : parseTag(tag, preferences.customCategories).category === category;
     try {
@@ -413,11 +416,11 @@ export function TagManagerDialog({
             ...(clearType ? { type: undefined } : {}), updatedAt: Date.now() };
         });
       }
-      if (epoch !== getVaultEpoch()) throw new Error('资料库已切换');
+      if (epoch !== getVaultEpoch()) throw new Error(tr("资料库已切换"));
       await onPreferencesChange(typeDelete ? removeCustomTagDefinition(preferences, `类型/${typeDelete}`) : removeTagCategory(preferences, category!));
       await onChanged(); setCategoryDelete(null); setTypeDelete(null); setAssignmentType(null); setAssignmentRaw(null);
       if (category) setActiveCategory(categories.find(value => value !== category) ?? (preferences.deletedCategories?.includes('类型') || category === '类型' ? '' : '类型'));
-    } catch (error) { toast({ title: '删除标签失败', description: String(error), variant: 'destructive' }); }
+    } catch (error) { toast({ title: tr("删除标签失败"), description: String(error), variant: 'destructive' }); }
     finally { setBusy(false); }
   };
 
@@ -431,10 +434,8 @@ export function TagManagerDialog({
       <Dialog open={open} onOpenChange={next => { if (!busy) onOpenChange(next); }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] h-[min(48rem,calc(100dvh-2rem))] max-w-4xl overflow-hidden grid-rows-[auto_minmax(0,1fr)]">
           <DialogHeader>
-            <DialogTitle>标签管理</DialogTitle>
-            <DialogDescription>
-              标签定义与显示设置保存在当前库。勾选框控制角色库侧栏；“在聊天中显示”控制聊天列表和酒馆角色筛选，不修改角色卡。
-            </DialogDescription>
+            <DialogTitle>{tr("标签管理")}</DialogTitle>
+            <DialogDescription>{tr("标签定义与显示设置保存在当前库。勾选框控制角色库侧栏；“在聊天中显示”控制聊天列表和酒馆角色筛选，不修改角色卡。")}</DialogDescription>
           </DialogHeader>
 
           <div className="grid min-h-0 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[11rem_minmax(0,1fr)] sm:grid-rows-1 overflow-hidden rounded-xl border border-[color:var(--border-normal)]">
@@ -453,8 +454,8 @@ export function TagManagerDialog({
                     : 'border-[color:var(--hairline-inner)] bg-[var(--bg-elevated)] text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]',
                 )}
               >
-                <span>类型</span>
-                <span className="text-[11px] font-normal opacity-70">互斥</span>
+                <span>{tr("类型")}</span>
+                <span className="text-[11px] font-normal opacity-70">{tr("互斥")}</span>
               </button>}
               {previewCategories.map((category) => {
                 const count = options.filter((option) => option.category === category).length;
@@ -482,7 +483,7 @@ export function TagManagerDialog({
                     {category !== '未分类' && (
                       <span
                         data-tag-category-drag-handle={category}
-                        title="拖拽调整一级标签顺序"
+                        title={tr("拖拽调整一级标签顺序")}
                         draggable={false}
                         onDragStart={(event) => event.preventDefault()}
                         className="ml-1 flex h-8 w-6 shrink-0 touch-none select-none cursor-grab items-center justify-center text-[color:var(--text-faint)] active:cursor-grabbing"
@@ -506,19 +507,19 @@ export function TagManagerDialog({
                         activeCategory === category ? 'text-brand' : 'text-[color:var(--text-body)]',
                       )}
                     >
-                      <span className="min-w-0 truncate">{category}</span>
+                      <span className="min-w-0 truncate">{tr(category)}</span>
                       <span className="text-xs opacity-65">{count}</span>
                     </button>
                     {/* 「?」放在选择按钮外面：嵌在 button 里时悬浮命中外层 button，提示永不出现 */}
-                    <HelpHint label={`标签组 ${category} 说明`} side="right" className="mr-2">
-                      {CATEGORY_HELP[category as keyof typeof CATEGORY_HELP] ?? '自定义标签组'}
+                    <HelpHint label={tr("标签组 {{v0}} 说明", { v0: tr(category) })} side="right" className="mr-2">
+                      {CATEGORY_HELP[category as keyof typeof CATEGORY_HELP] ?? tr("自定义标签组")}
                     </HelpHint>
                   </div>
                 );
               })}
               </div>
               <div className="mt-2 shrink-0 border-t border-[color:var(--border-normal)] pt-2">
-                <p className="mb-1 text-[11px] text-[color:var(--text-muted)]">新建一级标签</p>
+                <p className="mb-1 text-[11px] text-[color:var(--text-muted)]">{tr("新建一级标签")}</p>
                 <div className="flex items-center gap-1">
                   <Input
                     value={newCategory}
@@ -526,14 +527,14 @@ export function TagManagerDialog({
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && newCategory.trim()) void handleAddCategory();
                     }}
-                    placeholder="如：历史"
+                    placeholder={tr("如：历史")}
                     className="min-w-0 text-xs"
                   />
                   <Button
                     type="button"
                     size="icon"
                     className="shrink-0"
-                    aria-label="新增一级标签"
+                    aria-label={tr("新增一级标签")}
                     disabled={busy || !newCategory.trim()}
                     onClick={() => void handleAddCategory()}
                   >
@@ -544,12 +545,10 @@ export function TagManagerDialog({
             </aside>
 
             <section className="flex min-h-0 min-w-0 flex-col bg-[var(--bg-canvas)]">
-              <div className="flex items-center justify-between px-3 py-2 border-b"><h3 className="text-sm font-medium">{activeCategory || '标签分组'}</h3>{activeCategory && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setCategoryDelete(activeCategory)}><Trash2 className="w-3.5 h-3.5 mr-1" />删除一级标签</Button>}</div>
+              <div className="flex items-center justify-between px-3 py-2 border-b"><h3 className="text-sm font-medium">{activeCategory ? tr(activeCategory) : tr("标签分组")}</h3>{activeCategory && <Button size="sm" variant="ghost" disabled={busy} onClick={() => setCategoryDelete(activeCategory)}><Trash2 className="w-3.5 h-3.5 mr-1" />{tr("删除一级标签")}</Button>}</div>
               {activeCategory && activeCategory !== '类型' && (
               <div className="shrink-0 border-b border-[color:var(--border-normal)] p-3">
-                <p className="mb-2 text-xs text-[color:var(--text-muted)]">
-                  新增到“{activeCategory}”分类；新标签创建后可稍后批量分配给角色。
-                </p>
+                <p className="mb-2 text-xs text-[color:var(--text-muted)]">{tr("新增到“{{v0}}”分类；新标签创建后可稍后批量分配给角色。", { v0: tr(activeCategory) })}</p>
                 <div className="flex items-center gap-2">
                   <Input size="lg"
                     value={newLabel}
@@ -557,7 +556,7 @@ export function TagManagerDialog({
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' && newLabel.trim()) void handleAdd();
                     }}
-                    placeholder="输入标签名称"
+                    placeholder={tr("输入标签名称")}
                     className="min-w-0 flex-1"
                   />
                   <Button
@@ -567,9 +566,7 @@ export function TagManagerDialog({
                     disabled={busy || !newLabel.trim()}
                     onClick={() => void handleAdd()}
                   >
-                    <Plus className="mr-1.5 h-4 w-4" />
-                    新增标签
-                  </Button>
+                    <Plus className="mr-1.5 h-4 w-4" />{tr("新增标签")}</Button>
                 </div>
               </div>
               )}
@@ -580,7 +577,7 @@ export function TagManagerDialog({
                     {CHARACTER_TYPES.filter(type => !preferences.deleted?.includes(`类型/${type}`)).map((type) => (
                       <div key={type} className="flex flex-wrap items-center gap-1"><button
                         type="button"
-                        aria-label={`选择类型 ${type}`}
+                        aria-label={tr("选择类型 {{v0}}", { v0: tr(type) })}
                         aria-pressed={assignmentType === type}
                         onClick={() => {
                           setAssignmentType((current) => current === type ? null : type);
@@ -593,11 +590,10 @@ export function TagManagerDialog({
                             : 'border-[color:var(--border-normal)] bg-[var(--bg-elevated)] text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]',
                         )}
                       >
-                        <span className="font-medium">{type}</span>
-                        <span className="text-xs opacity-65">{typeCounts.get(type) ?? 0} 张</span>
-                      </button><Button variant="ghost" size="icon" aria-label={`删除标签 类型/${type}`} disabled={busy} onClick={() => setTypeDelete(type)}><Trash2 className="w-3.5 h-3.5" /></Button>
-                      <label className="flex min-h-11 basis-full items-center justify-between gap-2 px-2 text-xs text-[color:var(--text-muted)]">在聊天中显示
-                        <Switch aria-label={`在聊天中显示 类型/${type}`} checked={chatVisible.has(`类型/${type}`)} disabled={busy}
+                        <span className="font-medium">{tr(type)}</span>
+                        <span className="text-xs opacity-65">{tr("{{v0}} 张", { v0: typeCounts.get(type) ?? 0 })}</span>
+                      </button><Button variant="ghost" size="icon" aria-label={tr("删除标签 类型/{{v0}}", { v0: tr(type) })} disabled={busy} onClick={() => setTypeDelete(type)}><Trash2 className="w-3.5 h-3.5" /></Button>
+                      <label className="flex min-h-11 basis-full items-center justify-between gap-2 px-2 text-xs text-[color:var(--text-muted)]">{tr("在聊天中显示")}<Switch aria-label={tr("在聊天中显示 类型/{{v0}}", { v0: tr(type) })} checked={chatVisible.has(`类型/${type}`)} disabled={busy}
                           onCheckedChange={visible => { void savePreferences(setTagChatVisibility(preferences, `类型/${type}`, visible)); }} />
                       </label></div>
                     ))}
@@ -632,26 +628,24 @@ export function TagManagerDialog({
                 </div>
                 )}
                 {activeCategory !== '类型' && activeOptions.length === 0 && (
-                  <p className="py-12 text-center text-sm text-[color:var(--text-muted)]">{activeCategory ? '这个分类还没有标签' : '请先新建一级标签'}</p>
+                  <p className="py-12 text-center text-sm text-[color:var(--text-muted)]">{activeCategory ? tr("这个分类还没有标签") : tr("请先新建一级标签")}</p>
                 )}
               </div>
               <div className="flex flex-wrap shrink-0 items-center justify-between gap-3 border-t border-[color:var(--border-normal)] bg-[var(--bg-elevated)] px-3 py-2.5">
                 <div className="min-w-0 text-xs text-[color:var(--text-muted)]">
                   {assignmentType ? (
-                    <>
-                      已选类型：<span className="font-medium text-[color:var(--text-body)]">{assignmentType}</span>
+                    <>{tr("已选类型：")}<span className="font-medium text-[color:var(--text-body)]">{tr(assignmentType)}</span>
                       {selectedCharacters.length === 0 && (
-                        <span className="ml-2 text-[color:var(--text-faint)]">请先在角色库开启批量管理并选择角色卡</span>
+                        <span className="ml-2 text-[color:var(--text-faint)]">{tr("请先在角色库开启批量管理并选择角色卡")}</span>
                       )}
                     </>
                   ) : assignmentOption ? (
-                    <>
-                      已选标签：<span className="font-medium text-[color:var(--text-body)]">{assignmentOption.raw}</span>
+                    <>{tr("已选标签：")}<span className="font-medium text-[color:var(--text-body)]">{assignmentOption.category === '未分类' ? (assignmentOption.builtIn ? tr(assignmentOption.label) : assignmentOption.label) : `${tr(assignmentOption.category)}/${assignmentOption.builtIn ? tr(assignmentOption.label) : assignmentOption.label}`}</span>
                       {selectedCharacters.length === 0 && (
-                        <span className="ml-2 text-[color:var(--text-faint)]">请先在角色库开启批量管理并选择角色卡</span>
+                        <span className="ml-2 text-[color:var(--text-faint)]">{tr("请先在角色库开启批量管理并选择角色卡")}</span>
                       )}
                     </>
-                  ) : '点击标签名称选择要批量添加的标签'}
+                  ) : tr("点击标签名称选择要批量添加的标签")}
                 </div>
                 <Button
                   type="button"
@@ -660,7 +654,7 @@ export function TagManagerDialog({
                   disabled={busy || (!assignmentOption && !assignmentType) || selectedCharacters.length === 0}
                   onClick={() => void (assignmentType ? assignSelectedType() : assignSelectedTag())}
                 >
-                  {assignmentType ? `为所选 ${selectedCharacters.length} 张卡设置类型` : `添加到已选 ${selectedCharacters.length} 张卡`}
+                  {assignmentType ? tr("为所选 {{v0}} 张卡设置类型", { v0: selectedCharacters.length }) : tr("添加到已选 {{v0}} 张卡", { v0: selectedCharacters.length })}
                 </Button>
               </div>
             </section>
@@ -668,23 +662,19 @@ export function TagManagerDialog({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!categoryDelete || !!typeDelete} onOpenChange={open => { if (!open && !busy) { setCategoryDelete(null); setTypeDelete(null); } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>删除“{typeDelete || categoryDelete}”？</AlertDialogTitle><AlertDialogDescription>删除所选标签{categoryDelete ? '及其全部二级标签' : ''}，并清除角色上的相应整理标签。数字评分保留；已删除的评价标签不再出现在筛选栏。</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={busy}>取消</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void deleteGroupOrType()}>确认删除</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
+      <AlertDialog open={!!categoryDelete || !!typeDelete} onOpenChange={open => { if (!open && !busy) { setCategoryDelete(null); setTypeDelete(null); } }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{tr("删除「{{v0}}」？", { v0: tr(typeDelete || categoryDelete || '') })}</AlertDialogTitle><AlertDialogDescription>{categoryDelete ? tr("删除所选标签组及其全部二级标签，并清除角色上的相应整理标签。数字评分保留；已删除的评价标签不再出现在筛选栏。") : tr("删除所选标签，并清除角色上的相应整理标签。数字评分保留；已删除的评价标签不再出现在筛选栏。")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={busy}>{tr("取消")}</AlertDialogCancel><Button variant="destructive" disabled={busy} onClick={() => void deleteGroupOrType()}>{tr("确认删除")}</Button></AlertDialogFooter></AlertDialogContent></AlertDialog>
       <AlertDialog open={pendingDelete !== null} onOpenChange={(next) => !next && !busy && setPendingDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除“{pendingDelete?.label}”？</AlertDialogTitle>
-            <AlertDialogDescription>
-              这将从 {pendingDelete?.count ?? 0} 张角色卡上移除该整理标签。数字评分保留；删除的评价标签不再出现在筛选栏。角色卡和故事不会被删除。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tr("删除「{{v0}}」？", { v0: pendingDelete ? (pendingDelete.builtIn ? tr(pendingDelete.label) : pendingDelete.label) : '' })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("这将从 {{v0}} 张角色卡上移除该整理标签。数字评分保留；删除的评价标签不再出现在筛选栏。角色卡和故事不会被删除。", { v0: pendingDelete?.count ?? 0 })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{tr("取消")}</AlertDialogCancel>
             <Button variant="destructive"
               disabled={busy}
               onClick={() => pendingDelete && void deleteCustomTag(pendingDelete)}
-            >
-              确认删除
-            </Button>
+            >{tr("确认删除")}</Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

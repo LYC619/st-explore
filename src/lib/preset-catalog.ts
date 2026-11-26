@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { sha256 } from 'js-sha256';
 import type { PresetCatalog, PresetItem, PresetStatus, NormalizedPreset } from '@/types/preset';
 import { exportPreset } from './preset-parser';
@@ -6,7 +7,7 @@ import { stableJson } from './roleplay/fingerprint';
 import { getPresetTags } from './preset-tag-values';
 
 export const PRESET_STATUS_LABELS: Record<PresetStatus, string> = {
-  unreviewed: '待整理', testing: '待试用', active: '在用', reserve: '备用', retired: '过期',
+  get unreviewed() { return tr("待整理"); }, get testing() { return tr("待试用"); }, get active() { return tr("在用"); }, get reserve() { return tr("备用"); }, get retired() { return tr("过期"); },
 };
 export const PRESET_MODELS = ['Claude', 'Gemini', 'DeepSeek', 'GPT'];
 export const PRESET_PURPOSES = ['游玩', '写卡', '总结', '文风'];

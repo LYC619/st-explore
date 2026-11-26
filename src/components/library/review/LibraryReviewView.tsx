@@ -1,4 +1,6 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState  } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronDown, ExternalLink, RefreshCw } from 'lucide-react';
@@ -33,17 +35,18 @@ interface LibraryReviewViewProps {
   onStoriesChange: () => Promise<void>;
 }
 const tabs: { id: ReviewTab; label: string }[] = [
-  { id: 'overview', label: '总览' },
-  { id: 'notes', label: '备注' },
-  { id: 'stories', label: '故事' },
-  { id: 'volume', label: '总结' },
-  { id: 'diary', label: '日记' },
-  { id: 'tree', label: '故事树' },
+  { id: 'overview', get label() { return tr("总览"); } },
+  { id: 'notes', get label() { return tr("备注"); } },
+  { id: 'stories', get label() { return tr("故事"); } },
+  { id: 'volume', get label() { return tr("总结"); } },
+  { id: 'diary', get label() { return tr("日记"); } },
+  { id: 'tree', get label() { return tr("故事树"); } },
 ];
 
 export interface LibraryReviewHandle { flushPendingSave: () => Promise<void> }
 
 export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewViewProps>(function LibraryReviewView({ characters, storyIndex, onCharacterChange, onStoriesChange }, ref) {
+  useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isCompact } = useViewport();
@@ -100,7 +103,7 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
   const flushPendingSave = useCallback(async () => {
     const epoch = getVaultEpoch();
     await readerRef.current?.flushPendingSave();
-    if (!mounted.current || epoch !== getVaultEpoch()) throw new Error('文件库或页面已切换');
+    if (!mounted.current || epoch !== getVaultEpoch()) throw new Error(tr("文件库或页面已切换"));
     rememberScroll();
   }, [rememberScroll]);
   useImperativeHandle(ref, () => ({ flushPendingSave }), [flushPendingSave]);
@@ -112,14 +115,14 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
       await flushPendingSave();
       if (!mounted.current || epoch !== getVaultEpoch()) return;
       await action();
-    } catch (e) { if (mounted.current && epoch === getVaultEpoch()) setTransitionError(`故事尚未保存，已保留当前内容：${e instanceof Error ? e.message : '请重试'}`); }
+    } catch (e) { if (mounted.current && epoch === getVaultEpoch()) setTransitionError(tr("故事尚未保存，已保留当前内容：{{v0}}", { v0: e instanceof Error ? e.message : tr("请重试") })); }
     finally { transitionLock.current = false; if (mounted.current) setTransitioning(false); }
   }, [flushPendingSave]);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     let cancelled = false; const epoch = getVaultEpoch();
     setLoading(true); setLoadError(null);
-    getAllSummaries().then(records => { if (!cancelled && epoch === getVaultEpoch()) setSummaries(records); }, error => { if (!cancelled && epoch === getVaultEpoch()) setLoadError(error instanceof Error ? error.message : '请稍后重试'); }).finally(() => { if (!cancelled && epoch === getVaultEpoch()) setLoading(false); });
+    getAllSummaries().then(records => { if (!cancelled && epoch === getVaultEpoch()) setSummaries(records); }, error => { if (!cancelled && epoch === getVaultEpoch()) setLoadError(error instanceof Error ? error.message : tr("请稍后重试")); }).finally(() => { if (!cancelled && epoch === getVaultEpoch()) setLoading(false); });
     return () => { cancelled = true; };
   }, [scope, refresh]);
   useEffect(() => {
@@ -194,23 +197,23 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [directory, selectCharacter, selectedId, transitioning]);
-  const renderRow = (character: ArchiveCharacter) => <button type="button" data-review-character={character.id} aria-label={`选择${displayCharacterName(character)}`} aria-pressed={character.id === selectedId} disabled={transitioning} className={cn('tap-target flex h-[76px] w-full items-center gap-3 rounded-lg px-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', character.id === selectedId && 'bg-primary/10 ring-1 ring-inset ring-primary/30')} onClick={() => selectCharacter(character.id)}>
-    <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded bg-muted"><CharacterPortrait character={character} /></span><span className="min-w-0 space-y-1"><span className="block truncate text-sm font-medium">{displayCharacterName(character)}</span><span className="block text-xs text-muted-foreground">{counts.get(character.id) ?? 0} 个故事 · {character.notes?.length ?? 0} 条备注</span></span>
+  const renderRow = (character: ArchiveCharacter) => <button type="button" data-review-character={character.id} aria-label={tr("选择{{v0}}", { v0: displayCharacterName(character) })} aria-pressed={character.id === selectedId} disabled={transitioning} className={cn('tap-target flex h-[76px] w-full items-center gap-3 rounded-lg px-3 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary', character.id === selectedId && 'bg-primary/10 ring-1 ring-inset ring-primary/30')} onClick={() => selectCharacter(character.id)}>
+    <span className="relative h-14 w-10 shrink-0 overflow-hidden rounded bg-muted"><CharacterPortrait character={character} /></span><span className="min-w-0 space-y-1"><span className="block truncate text-sm font-medium">{displayCharacterName(character)}</span><span className="block text-xs text-muted-foreground">{tr("{{v0}} 个故事 · {{v1}} 条备注", { v0: counts.get(character.id) ?? 0, v1: character.notes?.length ?? 0 })}</span></span>
   </button>;
   return <div className={cn('flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-background', isCompact ? 'flex-col' : 'flex-row')} data-library-review>
-    {isCompact && <Button variant="ghost" className="m-2 justify-between" aria-expanded={directoryOpen} onClick={() => setDirectoryOpen(open => !open)}>{selected ? displayCharacterName(selected) : '选择角色'} · {directory.length} 张卡<ChevronDown className="h-4 w-4" /></Button>}
-    {(!isCompact || directoryOpen) && <aside aria-label="回顾角色目录" className={cn('flex shrink-0 flex-col bg-muted/20', isCompact ? 'max-h-[45dvh] border-b border-border' : 'w-64 border-r border-border xl:w-72')}>
-      <div className="flex items-center justify-between gap-2 border-b border-border p-3"><span className="text-xs text-muted-foreground">{directory.length} 张卡</span><label className="tap-target flex min-h-8 cursor-pointer items-center gap-2 text-xs"><input type="checkbox" className="h-4 w-4 cursor-pointer rounded accent-[var(--brand)]" aria-label="仅有故事" checked={onlyWithStories} disabled={transitioning} onChange={e => { const checked = e.target.checked; void transition(() => { session.onlyWithStories = checked; setOnlyWithStories(checked); }); }} />仅有故事</label></div>
+    {isCompact && <Button variant="ghost" className="m-2 justify-between" aria-expanded={directoryOpen} onClick={() => setDirectoryOpen(open => !open)}>{selected ? displayCharacterName(selected) : tr("选择角色")} · {tr("{{v0}} 张卡", { v0: directory.length })}<ChevronDown className="h-4 w-4" /></Button>}
+    {(!isCompact || directoryOpen) && <aside aria-label={tr("回顾角色目录")} className={cn('flex shrink-0 flex-col bg-muted/20', isCompact ? 'max-h-[45dvh] border-b border-border' : 'w-64 border-r border-border xl:w-72')}>
+      <div className="flex items-center justify-between gap-2 border-b border-border p-3"><span className="text-xs text-muted-foreground">{tr("{{v0}} 张卡", { v0: directory.length })}</span><label className="tap-target flex min-h-8 cursor-pointer items-center gap-2 text-xs"><input type="checkbox" className="h-4 w-4 cursor-pointer rounded accent-[var(--brand)]" aria-label={tr("仅有故事")} checked={onlyWithStories} disabled={transitioning} onChange={e => { const checked = e.target.checked; void transition(() => { session.onlyWithStories = checked; setOnlyWithStories(checked); }); }} />{tr("仅有故事")}</label></div>
       <div ref={directoryRef} className="min-h-0 flex-1 overflow-y-auto p-2" onScroll={e => { session.directoryScroll = e.currentTarget.scrollTop; }}>
-        {!directory.length && <p className="px-3 py-8 text-center text-sm text-muted-foreground">没有符合条件的角色</p>}
+        {!directory.length && <p className="px-3 py-8 text-center text-sm text-muted-foreground">{tr("没有符合条件的角色")}</p>}
         {directory.length > 80 ? <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>{virtual.getVirtualItems().map(item => <div key={directory[item.index].id} style={{ position: 'absolute', width: '100%', top: 0, transform: `translateY(${item.start}px)` }}>{renderRow(directory[item.index])}</div>)}</div> : directory.map(character => <div key={character.id}>{renderRow(character)}</div>)}
       </div>
     </aside>}
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label="角色回顾内容">
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col" aria-label={tr("角色回顾内容")}>
       {selected ? <div ref={scrollRef} data-review-scroll className="min-h-0 flex-1 overflow-y-auto overscroll-contain" onScroll={rememberScroll}>
-        <header className="space-y-3 border-b border-border px-4 pb-3 pt-4 sm:px-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words font-display text-xl font-semibold">{displayCharacterName(selected)}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.rating !== undefined ? `${selected.rating} 分` : '未评分'} · {selected.type ?? '未分类'}</p></div><div className="flex flex-wrap gap-2"><ReviewEdits character={selected} notesVisible={false} onCharacterChange={onCharacterChange} /><Button size="sm" variant="outline" disabled={transitioning} onClick={() => void transition(() => navigate(`/character/${selected.id}`))}><ExternalLink className="mr-1 h-3.5 w-3.5" />打开角色详情</Button><Button size="icon" variant="ghost" aria-label="刷新回顾" disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw className="h-4 w-4" /></Button></div></div>
-          <CollapsibleTags count={selected.tags.length}>{selected.tags.map(tag => <span key={tag} title={tag} className="shrink-0 rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tag.includes('/') ? tag.split('/').slice(1).join('/') : tag}</span>)}</CollapsibleTags>
-          <div role="tablist" aria-label="回顾内容" className="flex gap-1 overflow-x-auto">{tabs.map(item => <Button key={item.id} id={`review-tab-${item.id}`} role="tab" aria-controls="review-content" aria-selected={tab === item.id} disabled={transitioning} variant={tab === item.id ? 'secondary' : 'ghost'} size="sm" onClick={() => changeTab(item.id)}>{item.label}</Button>)}</div>
+        <header className="space-y-3 border-b border-border px-4 pb-3 pt-4 sm:px-6"><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="break-words font-display text-xl font-semibold">{displayCharacterName(selected)}</h2><p className="mt-1 text-xs text-muted-foreground">{selected.rating !== undefined ? tr("评分 {{v0}}", { v0: selected.rating }) : tr("未评分")} · {selected.type ? tr(selected.type) : tr("未分类")}</p></div><div className="flex flex-wrap gap-2"><ReviewEdits character={selected} notesVisible={false} onCharacterChange={onCharacterChange} /><Button size="sm" variant="outline" disabled={transitioning} onClick={() => void transition(() => navigate(`/character/${selected.id}`))}><ExternalLink className="mr-1 h-3.5 w-3.5" />{tr("打开角色详情")}</Button><Button size="icon" variant="ghost" aria-label={tr("刷新回顾")} disabled={loading} onClick={() => setRefresh(value => value + 1)}><RefreshCw className="h-4 w-4" /></Button></div></div>
+          <CollapsibleTags count={selected.tags.length}>{selected.tags.map(tag => <span key={tag} title={tag} className="shrink-0 rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tr(tag.includes('/') ? tag.split('/').slice(1).join('/') : tag)}</span>)}</CollapsibleTags>
+          <div role="tablist" aria-label={tr("回顾内容")} className="flex gap-1 overflow-x-auto">{tabs.map(item => <Button key={item.id} id={`review-tab-${item.id}`} role="tab" aria-controls="review-content" aria-selected={tab === item.id} disabled={transitioning} variant={tab === item.id ? 'secondary' : 'ghost'} size="sm" onClick={() => changeTab(item.id)}>{item.label}</Button>)}</div>
         </header>
         {transitionError && <p role="alert" className="border-b border-border px-4 py-2 text-sm text-[color:var(--status-danger)]">{transitionError}</p>}
         <div id="review-content" role="tabpanel" aria-labelledby={`review-tab-${tab}`} className={cn('p-4 sm:p-6', tab === 'stories' && selectedStoryId && 'px-3 py-2 sm:px-4 sm:py-3')}>
@@ -252,7 +255,7 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
                     navigate,
                   });
                 } catch (err) {
-                  toast({ title: '暂时未能进入聊天', description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
+                  toast({ title: tr("暂时未能进入聊天"), description: err instanceof Error ? err.message : String(err), variant: 'destructive' });
                 }
               });
             }}
@@ -261,7 +264,7 @@ export const LibraryReviewView = forwardRef<LibraryReviewHandle, LibraryReviewVi
             restoreFloor={characterSession?.storyScroll === undefined}
           />
         </div>
-      </div> : <p className="m-auto p-8 text-center text-sm text-muted-foreground">没有符合条件的角色</p>}
+      </div> : <p className="m-auto p-8 text-center text-sm text-muted-foreground">{tr("没有符合条件的角色")}</p>}
     </section>
   </div>;
 });

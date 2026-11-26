@@ -1,5 +1,5 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/((?!about/|assets/|sw\\.js$|manifest(?:\\.en)?\\.json$|robots\\.txt$|sitemap\\.xml$).*)", "destination": "/index.html" }
   ]
 }

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { forwardRef, useMemo, useState, useEffect, useLayoutEffect, useRef, useImperativeHandle, useCallback, memo } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { ChatSession, ThemeStyle, RegexRule, ChapterMarker } from '@/types/chat';
@@ -87,6 +89,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
     showModel = true,
     scrollPaddingStart = 0,
   }, ref) => {
+    useI18n();
     const markerMap = useMemo(() => {
       const map = new Map<string, ChapterMarker>();
       markers.forEach((m) => map.set(m.messageId, m));
@@ -361,9 +364,7 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
         <div className={classes.title}>
           {theme === 'elegant' ? (
             <>
-              <div className="text-xs text-muted-foreground tracking-widest uppercase">
-                对话记录
-              </div>
+              <div className="text-xs text-muted-foreground tracking-widest uppercase">{tr("对话记录")}</div>
               <h2 className="font-display text-2xl text-gradient">{session.title}</h2>
               <div className="text-sm text-muted-foreground">
                 {session.character.name} & {session.user.name}
@@ -426,10 +427,8 @@ export const ChatPreview = memo(forwardRef<ChatPreviewHandle, ChatPreviewProps>(
 
         {theme === 'elegant' && (
           <div className="mt-12 pt-6 border-t border-border text-center text-sm text-muted-foreground">
-            <div className="mb-2">— 完 —</div>
-            <div className="text-xs">
-              共 {session.messages.length} 楼
-            </div>
+            <div className="mb-2">{tr("— 完 —")}</div>
+            <div className="text-xs">{tr("共 {{v0}} 楼", { v0: session.messages.length })}</div>
           </div>
         )}
       </div>

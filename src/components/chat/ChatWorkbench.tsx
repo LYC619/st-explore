@@ -1,9 +1,11 @@
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 /**
  * 统一聊天工作台（2.0 阶段2，定稿 5.1 / 第六章）。
  * 聊天处理页（未绑定）与故事工作区（已绑定）共用的同一套阅读与编辑界面：
  * 预览/搜索/每楼编辑/swipe 切换/章节标记/每楼收藏/正则侧栏/隐藏楼与 OOC 开关/标题改名。
  */
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useMemo, useState, useEffect, useLayoutEffect, useRef, useCallback, forwardRef, useImperativeHandle  } from 'react';
 import { Pencil } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { ChatPreview, type ChatPreviewHandle } from '@/components/chat/ChatPreview';
@@ -86,6 +88,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
   },
   ref,
 ) {
+  useI18n();
   const { toast } = useToast();
   const [capture, setCapture] = useState<{ messageId: string; content: string } | null>(null);
   const { isCompact, isMobile } = useViewport();
@@ -275,16 +278,14 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
       prevMessage.role !== synced.role;
     if (!changed) return;
     toast({
-      title: '已修改该楼',
+      title: tr("已修改该楼"),
       action: (
-        <ToastAction altText="撤销修改" onClick={() => {
+        <ToastAction altText={tr("撤销修改")} onClick={() => {
           mutateSession((cur) => ({
             ...cur,
             messages: cur.messages.map((m) => (m.id === prevMessage.id ? prevMessage : m)),
           }));
-        }}>
-          撤销
-        </ToastAction>
+        }}>{tr("撤销")}</ToastAction>
       ),
     });
   };
@@ -295,7 +296,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
       ?? sessionRef.current.messages.find((m) => m.id === messageId);
     if (!current || current.hidden === hidden) return;
     if (isManagedHidden(current)) {
-      toast({ title: '此楼层由系统或记忆插件管理', description: '请在对应记忆设置中处理隐藏。' });
+      toast({ title: tr("此楼层由系统或记忆插件管理"), description: tr("请在对应记忆设置中处理隐藏。") });
       return;
     }
     mutateSession((currentSession) => ({
@@ -304,7 +305,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
         message.id === messageId ? (hidden ? hideMessage(message) : unhideMessage(message)) : message
       )),
     }));
-    toast({ title: hidden ? `已隐藏第 #${messageIndex} 楼` : `已恢复显示第 #${messageIndex} 楼` });
+    toast({ title: hidden ? tr("已隐藏第 #{{v0}} 楼", { v0: messageIndex }) : tr("已恢复显示第 #{{v0}} 楼", { v0: messageIndex }) });
   }, [mutateSession, readerMode, toast]);
 
   const handleUnhideMessage = useCallback((messageId: string, messageIndex: number) => {
@@ -331,10 +332,10 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     mutateFavorites((prev) => prev.filter((id) => id !== delId));
 
     toast({
-      title: '已删除该楼',
-      description: delMarkers.length > 0 ? '连同其章节标记一并删除' : undefined,
+      title: tr("已删除该楼"),
+      description: delMarkers.length > 0 ? tr("连同其章节标记一并删除") : undefined,
       action: (
-        <ToastAction altText="撤销删除" onClick={() => {
+        <ToastAction altText={tr("撤销删除")} onClick={() => {
           mutateSession((c) => {
             if (c.messages.some((m) => m.id === delId)) return c;
             const msgs = [...c.messages];
@@ -347,9 +348,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
           if (wasFavorite) {
             mutateFavorites((prev) => (prev.includes(delId) ? prev : [...prev, delId]));
           }
-        }}>
-          撤销
-        </ToastAction>
+        }}>{tr("撤销")}</ToastAction>
       ),
     });
   };
@@ -399,12 +398,12 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     setFloorCount(floors.length);
   }, []);
 
-  const favoriteItems = useMemo<FavoriteItem[]>(() => {
+  const favoriteItems = useLocalizedMemo<FavoriteItem[]>(() => {
     const byId = new Map(session.messages.map((m, idx) => [m.id, { msg: m, rawFloor: idx }]));
     return favorites
       .map((id) => {
         const hit = byId.get(id);
-        const snippet = (hit?.msg.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || '（空消息）';
+        const snippet = (hit?.msg.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) || tr("（空消息）");
         return { messageId: id, floor: floorMap.get(id) ?? hit?.rawFloor ?? null, snippet };
       })
       .sort((a, b) => (a.floor ?? Infinity) - (b.floor ?? Infinity));
@@ -434,7 +433,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     const next = titleDraft.trim();
     if (!next || next === session.title) return;
     mutateSession((cur) => ({ ...cur, title: next }));
-    toast({ title: '已重命名', description: next });
+    toast({ title: tr("已重命名"), description: next });
   };
 
   const handleSaveMarker = (marker: ChapterMarker) => {
@@ -458,17 +457,15 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     if (delMarkers.length === 0) return;
     mutateMarkers((prev) => prev.filter((m) => m.messageId !== delId));
     toast({
-      title: '已删除章节标记',
+      title: tr("已删除章节标记"),
       action: (
-        <ToastAction altText="撤销删除" onClick={() => {
+        <ToastAction altText={tr("撤销删除")} onClick={() => {
           mutateMarkers((prev) =>
             prev.some((m) => m.messageId === delId)
               ? prev
               : [...prev, ...delMarkers].sort((a, b) => a.messageIndex - b.messageIndex),
           );
-        }}>
-          撤销
-        </ToastAction>
+        }}>{tr("撤销")}</ToastAction>
       ),
     });
   };
@@ -478,7 +475,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
     const cur = sessionRef.current;
     const activeRules = settings.regexRules.filter((r) => !r.disabled);
     if (activeRules.length === 0) {
-      toast({ title: '没有已启用的正则规则', variant: 'destructive' });
+      toast({ title: tr("没有已启用的正则规则"), variant: 'destructive' });
       return;
     }
     const prevMessages = cur.messages;
@@ -491,21 +488,19 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
       return syncEditedMessage({ ...msg, content: next });
     });
     if (changed === 0) {
-      toast({ title: '没有需要修改的楼层', description: '当前启用的规则对原文没有产生改动' });
+      toast({ title: tr("没有需要修改的楼层"), description: tr("当前启用的规则对原文没有产生改动") });
       return;
     }
     mutateSession((c) => ({ ...c, messages: nextMessages }));
     handleGlobalSettingsChange({ ...settings, regexRules: prevRules.map((r) => (r.disabled ? r : { ...r, disabled: true })) });
     toast({
-      title: `已将正则结果写入 ${changed} 个楼层的原文`,
-      description: '用过的规则已自动停用；持久化与导出均使用新文本',
+      title: tr("已将正则结果写入 {{v0}} 个楼层的原文", { v0: changed }),
+      description: tr("用过的规则已自动停用；持久化与导出均使用新文本"),
       action: (
-        <ToastAction altText="撤销应用" onClick={() => {
+        <ToastAction altText={tr("撤销应用")} onClick={() => {
           mutateSession((c) => ({ ...c, messages: prevMessages }));
           handleGlobalSettingsChange({ ...settings, regexRules: prevRules });
-        }}>
-          撤销
-        </ToastAction>
+        }}>{tr("撤销")}</ToastAction>
       ),
     });
   };
@@ -555,7 +550,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                 onShowOOC={setShowOOC}
                 onApply={!readerMode && onSessionChange ? (start, end, hidden) => {
                   mutateSession((current) => setManualHiddenRange(current, start, end, hidden));
-                  toast({ title: hidden ? '已设置范围手动隐藏' : '已取消范围手动隐藏', description: '系统、OOC 和记忆插件管理的隐藏保持不变。' });
+                  toast({ title: hidden ? tr("已设置范围手动隐藏") : tr("已取消范围手动隐藏"), description: tr("系统、OOC 和记忆插件管理的隐藏保持不变。") });
                 } : undefined}
               />
             </div>
@@ -581,7 +576,7 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
             {titleEditing && !readerMode ? (
               <Input
                 autoFocus
-                aria-label="故事名称"
+                aria-label={tr("故事名称")}
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
                 onBlur={commitTitleEdit}
@@ -597,10 +592,10 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
                 className="flex w-full min-w-0 items-center gap-1 text-sm font-medium text-center justify-center"
                 onClick={startTitleEdit}
                 disabled={readerMode}
-                title={session.title || '未命名作品'}
-                aria-label={`故事名称：${session.title || '未命名作品'}`}
+                title={session.title || tr("未命名作品")}
+                aria-label={tr("故事名称：{{v0}}", { v0: session.title || tr("未命名作品") })}
               >
-                <span className="truncate min-w-0 flex-1">{session.title || '未命名作品'}</span>
+                <span className="truncate min-w-0 flex-1">{session.title || tr("未命名作品")}</span>
                 {!readerMode && <Pencil className="w-3 h-3 shrink-0 text-muted-foreground" />}
               </button>
             )}
@@ -617,8 +612,8 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
           beforeSave={recordContext.flush}
           onClose={() => setCapture(null)}
           onSaved={(destination) => toast({
-            title: destination === 'note' ? '已收录到角色备注' : '已收录到当前故事的总结/日记',
-            description: destination === 'note' ? '可从角色详情的「备注」查看。' : '可在编辑区「总结」中查看；已绑定角色的故事也可从角色详情查看。',
+            title: destination === 'note' ? tr("已收录到角色备注") : tr("已收录到当前故事的总结/日记"),
+            description: destination === 'note' ? tr("可从角色详情的「备注」查看。") : tr("可在编辑区「总结」中查看；已绑定角色的故事也可从角色详情查看。"),
           })}
         />
       )}
@@ -630,15 +625,13 @@ export const ChatWorkbench = forwardRef<ChatWorkbenchHandle, ChatWorkbenchProps>
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0 flex-wrap">
                   {titleBadge}
-                  <span className="shrink-0">共 {session.messages.length} 楼</span>
+                  <span className="shrink-0">{tr("共 {{v0}} 楼", { v0: session.messages.length })}</span>
                   {markers.length > 0 && (
-                    <span className="text-primary shrink-0">· {markers.length} 个章节标记</span>
+                    <span className="text-primary shrink-0">· {markers.length}{tr(" 个章节标记")}</span>
                   )}
                 </div>
                 {!readerMode && editMode && (
-                  <div className="text-sm text-primary animate-pulse">
-                    点击任意楼层添加章节标记
-                  </div>
+                  <div className="text-sm text-primary animate-pulse">{tr("点击任意楼层添加章节标记")}</div>
                 )}
               </div>
             )}

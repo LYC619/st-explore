@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { MessageSquare } from 'lucide-react';
 import type { NormalizedCharacterCard } from '@/lib/png-parser';
 import { cn } from '@/lib/utils';
@@ -15,6 +17,7 @@ export function CharacterLoadoutBar({
   norm,
   onSelectTab,
 }: CharacterLoadoutBarProps) {
+  useI18n();
   const badges = useCharacterLoadoutBadges(character, norm);
   const greetingCount = (norm.firstMessage.trim() ? 1 : 0)
     + norm.alternateGreetings.filter((g) => g.trim()).length;
@@ -24,7 +27,7 @@ export function CharacterLoadoutBar({
   return (
     <div
       data-character-loadout-bar
-      aria-label="当前角色挂载装备概览"
+      aria-label={tr("当前角色挂载装备概览")}
       className="flex flex-wrap items-center gap-1.5"
     >
       {badges.map((pill) => {
@@ -49,12 +52,12 @@ export function CharacterLoadoutBar({
       {greetingCount > 0 && (
         <button
           type="button"
-          title="点击进入开场白剧场赏玩或直接选段开聊"
+          title={tr("点击进入开场白剧场赏玩或直接选段开聊")}
           onClick={() => onSelectTab('greetings')}
           className="tap-target inline-flex items-center gap-1 rounded-full border border-[color:var(--border-subtle)] bg-chrome px-2 py-0.5 text-xs text-[color:var(--text-muted)] hover:bg-[var(--hover-overlay)] hover:text-[color:var(--text-body)] transition-colors"
         >
           <MessageSquare className="h-3 w-3 shrink-0 text-brand" />
-          <span className="font-medium">{greetingCount} 段开场白</span>
+          <span className="font-medium">{greetingCount}{tr(" 段开场白")}</span>
         </button>
       )}
     </div>

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 故事工作区（大屏统一落点 `/story/:id`）。
  * 共享同一个故事上下文（角色卡/故事/分支/阅读位置），左侧可收起二级栏切换：
@@ -90,12 +92,12 @@ interface StoryWorkspaceLocationState {
 }
 
 const VIEW_ITEMS: { key: WorkspaceView; label: string; icon: typeof BookOpenText; group?: string }[] = [
-  { key: 'read', label: '阅读与编辑', icon: BookOpenText },
-  { key: 'volume', label: '分卷总结', icon: ScrollText, group: '整理与记录' },
-  { key: 'diary', label: '角色日记', icon: NotebookPen, group: '整理与记录' },
-  { key: 'diy', label: '自定义记录', icon: PenLine, group: '整理与记录' },
-  { key: 'tree', label: '故事树', icon: Network, group: '整理与记录' },
-  { key: 'io', label: '导入与导出', icon: ArrowDownUp },
+  { key: 'read', get label() { return tr("阅读与编辑"); }, icon: BookOpenText },
+  { key: 'volume', get label() { return tr("分卷总结"); }, icon: ScrollText, get group() { return tr("整理与记录"); } },
+  { key: 'diary', get label() { return tr("角色日记"); }, icon: NotebookPen, get group() { return tr("整理与记录"); } },
+  { key: 'diy', get label() { return tr("自定义记录"); }, icon: PenLine, get group() { return tr("整理与记录"); } },
+  { key: 'tree', get label() { return tr("故事树"); }, icon: Network, get group() { return tr("整理与记录"); } },
+  { key: 'io', get label() { return tr("导入与导出"); }, icon: ArrowDownUp },
 ];
 
 function parseQueryFloor(raw: string | null): number | undefined {
@@ -105,6 +107,7 @@ function parseQueryFloor(raw: string | null): number | undefined {
 }
 
 const StoryWorkspace = () => {
+  useI18n();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -202,8 +205,8 @@ const StoryWorkspace = () => {
     const t = setTimeout(() => {
       void saverRef.current.flush().catch((error: unknown) => {
         toastRef.current({
-          title: '保存故事未成功',
-          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          title: tr("保存故事未成功"),
+          description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
           variant: 'destructive',
         });
       });
@@ -213,8 +216,8 @@ const StoryWorkspace = () => {
   useEffect(() => () => {
     void saverRef.current.flush().catch((error: unknown) => {
       toastRef.current({
-        title: '离开页面时保存故事未成功',
-        description: error instanceof Error ? error.message : '请重新打开故事检查最新改动',
+        title: tr("离开页面时保存故事未成功"),
+        description: error instanceof Error ? error.message : tr("请重新打开故事检查最新改动"),
         variant: 'destructive',
       });
     });
@@ -232,7 +235,7 @@ const StoryWorkspace = () => {
           setStory(latest);
         })
         .catch((err) => {
-          console.warn('[StoryWorkspace] 实时同步独立窗口最新楼层未成功:', err);
+          console.warn(tr("[StoryWorkspace] 实时同步独立窗口最新楼层未成功:"), err);
         });
     };
     syncLatest();
@@ -278,7 +281,7 @@ const StoryWorkspace = () => {
           lastViewedBranchId: restoredBranchId ?? undefined,
         });
         loadedSaver = new StoryDraftSaver((storyId, mutation) => {
-          if (epoch !== getVaultEpoch()) return Promise.reject(new Error('文件库已切换，已停止保存原故事'));
+          if (epoch !== getVaultEpoch()) return Promise.reject(new Error(tr("文件库已切换，已停止保存原故事")));
           return updateArchiveStory(storyId, mutation);
         });
         saverRef.current = loadedSaver;
@@ -318,10 +321,10 @@ const StoryWorkspace = () => {
         if (!cancelled && epoch === getVaultEpoch()) {
           storyRef.current = null;
           setStory(null);
-          const msg = error instanceof Error ? error.message : '请检查文件库目录是否可读后重试';
+          const msg = error instanceof Error ? error.message : tr("请检查文件库目录是否可读后重试");
           setLoadError(msg);
           toastRef.current({
-            title: '读取故事失败',
+            title: tr("读取故事失败"),
             description: msg,
             variant: 'destructive',
           });
@@ -334,8 +337,8 @@ const StoryWorkspace = () => {
       cancelled = true;
       void loadedSaver?.flush().catch((error: unknown) => {
         toastRef.current({
-          title: '切换故事时保存改动未成功',
-          description: error instanceof Error ? error.message : '请重新打开原故事检查最新改动',
+          title: tr("切换故事时保存改动未成功"),
+          description: error instanceof Error ? error.message : tr("请重新打开原故事检查最新改动"),
           variant: 'destructive',
         });
       });
@@ -438,8 +441,8 @@ const StoryWorkspace = () => {
       })
       .catch((error) => {
         toastRef.current({
-          title: '保存故事未成功，已取消跳转',
-          description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+          title: tr("保存故事未成功，已取消跳转"),
+          description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
           variant: 'destructive',
         });
       });
@@ -482,7 +485,7 @@ const StoryWorkspace = () => {
       }));
       handleSwitchBranch(lastId);
     }
-    toast({ title: `导入分支：成功 ${ok} 个${fail ? `，失败 ${fail} 个` : ''}` });
+    toast({ title: fail ? tr("导入分支：成功 {{v0}} 个，失败 {{v1}} 个", { v0: ok, v1: fail }) : tr("导入分支：成功 {{v0}} 个", { v0: ok }) });
   };
 
   const handleRenameBranch = (bid: string, name: string) => {
@@ -502,19 +505,19 @@ const StoryWorkspace = () => {
       updatedAt: Date.now(),
     }));
     if (branchId === bid) handleSwitchBranch(null);
-    toast({ title: '分支已删除' });
+    toast({ title: tr("分支已删除") });
   };
 
   const handleBind = (c: ArchiveCharacter) => {
     mutateStory((cur) => ({ ...cur, characterId: c.id, updatedAt: Date.now() }));
     setCharacter(c);
-    toast({ title: `已绑定到「${c.name}」`, description: '故事与已生成的总结/故事树一并归入该角色名下' });
+    toast({ title: tr("已绑定到「{{v0}}」", { v0: c.name }), description: tr("故事与已生成的总结/故事树一并归入该角色名下") });
   };
 
   if (loading) {
     return (
       <AppLayout>
-        <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">{LOADING_LABEL}</div>
+        <div className="flex min-h-[50vh] items-center justify-center text-muted-foreground">{tr(LOADING_LABEL)}</div>
       </AppLayout>
     );
   }
@@ -524,11 +527,11 @@ const StoryWorkspace = () => {
       <AppLayout>
         <div role="alert" className="flex flex-col min-h-[50vh] items-center justify-center gap-3 text-center px-4">
           <BookOpen className="w-12 h-12 text-muted-foreground/50" />
-          <p className="text-sm text-destructive">读取故事失败：{loadError}</p>
-          <p className="text-xs text-muted-foreground">这不是故事被删了，数据仍保存在库里，请重试读取。</p>
+          <p className="text-sm text-destructive">{tr("读取故事失败：{{v0}}", { v0: loadError })}</p>
+          <p className="text-xs text-muted-foreground">{tr("这不是故事被删了，数据仍保存在库里，请重试读取。")}</p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={() => setLoadRetry((v) => v + 1)}>重试读取</Button>
-            <Button variant="ghost" onClick={() => navigate('/library')}>返回角色库</Button>
+            <Button variant="outline" onClick={() => setLoadRetry((v) => v + 1)}>{tr("重试读取")}</Button>
+            <Button variant="ghost" onClick={() => navigate('/library')}>{tr("返回角色库")}</Button>
           </div>
         </div>
       </AppLayout>
@@ -540,8 +543,8 @@ const StoryWorkspace = () => {
       <AppLayout>
         <div className="flex flex-col min-h-[50vh] items-center justify-center gap-4">
           <BookOpen className="w-16 h-16 text-muted-foreground/50" />
-          <p className="text-muted-foreground">找不到该故事</p>
-          <Button onClick={() => navigate('/library')}>返回角色库</Button>
+          <p className="text-muted-foreground">{tr("找不到该故事")}</p>
+          <Button onClick={() => navigate('/library')}>{tr("返回角色库")}</Button>
         </div>
       </AppLayout>
     );
@@ -551,7 +554,7 @@ const StoryWorkspace = () => {
     normalizeAppearanceSettings(story.settings ?? getDefaultExportSettings()),
   );
   const backTarget = story.characterId ? `/character/${story.characterId}` : '/chat';
-  const backLabel = character?.displayMeta?.name || character?.name || (story.characterId ? '角色详情' : '聊天处理');
+  const backLabel = character?.displayMeta?.name || character?.name || (story.characterId ? tr("角色详情") : tr("聊天处理"));
   const organizeView = isOrganizeWorkspaceView(view);
   const showWideRail = !organizeView && !isCompact && !railCollapsed;
   const showContextBar = organizeView || isCompact || railCollapsed;
@@ -639,7 +642,7 @@ const StoryWorkspace = () => {
       });
     } catch (error) {
       toast({
-        title: '保存未完成，暂未进入聊天',
+        title: tr("保存未完成，暂未进入聊天"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -653,22 +656,20 @@ const StoryWorkspace = () => {
     <AppLayout
       mobileDrawer={isCompact ? (
         <div>
-          <p className="px-2 pb-1 text-[11px] text-[color:var(--text-muted)]">当前故事</p>
+          <p className="px-2 pb-1 text-[11px] text-[color:var(--text-muted)]">{tr("当前故事")}</p>
           {viewNav}
           {!story.characterId && (
             <div className="mt-2 border-t border-[color:var(--border-subtle)] px-2 pt-2.5">
-              <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">未绑定</Badge>
+              <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">{tr("未绑定")}</Badge>
               <Button variant="outline" size="sm" className="mt-1.5 w-full text-xs" onClick={() => setBindOpen(true)}>
-                <Link2 className="w-3.5 h-3.5 mr-1" />
-                绑定到角色
-              </Button>
+                <Link2 className="w-3.5 h-3.5 mr-1" />{tr("绑定到角色")}</Button>
             </div>
           )}
         </div>
       ) : undefined}
       mobileContextDrawer={isCompact && storyContext ? {
         title: story.title,
-        description: `${line.session.messages.length} 楼 · 分支、章节与书签`,
+        description: tr("{{v0}} 楼 · 分支、章节与书签", { v0: line.session.messages.length }),
         content: <div className="space-y-4">{storyContext}</div>,
       } : undefined}
     >
@@ -687,8 +688,8 @@ const StoryWorkspace = () => {
                   })
                   .catch((error) => {
                     toast({
-                      title: '当前故事尚未保存成功，已取消跳转',
-                      description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+                      title: tr("当前故事尚未保存成功，已取消跳转"),
+                      description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
                       variant: 'destructive',
                     });
                   });
@@ -707,8 +708,8 @@ const StoryWorkspace = () => {
                   navigate(view === 'read' ? buildStoryReadPath(targetStoryId) : buildEditorStoryPath(targetStoryId, view));
                 } catch (error) {
                   toast({
-                    title: '当前故事尚未保存成功，已取消切换',
-                    description: error instanceof Error ? error.message : '请检查文件库目录是否可写后重试',
+                    title: tr("当前故事尚未保存成功，已取消切换"),
+                    description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写后重试"),
                     variant: 'destructive',
                   });
                 }
@@ -734,8 +735,8 @@ const StoryWorkspace = () => {
                     size="icon"
                     className="shrink-0 text-muted-foreground"
                     onClick={() => toggleRailCollapsed(true)}
-                    aria-label="收起故事目录栏"
-                    title="收起左侧目录栏，让正文铺得更宽"
+                    aria-label={tr("收起故事目录栏")}
+                    title={tr("收起左侧目录栏，让正文铺得更宽")}
                   >
                     <PanelLeftClose className="w-4 h-4" />
                   </Button>
@@ -744,8 +745,7 @@ const StoryWorkspace = () => {
                 <p className="text-xs text-muted-foreground px-1.5 mt-0.5 flex items-center gap-2 flex-wrap">
                   <span className="flex items-center gap-1">
                     <MessageSquare className="w-3 h-3" />
-                    {line.session.messages.length} 楼
-                  </span>
+                    {tr("{{v0}} 楼", { v0: line.session.messages.length })}</span>
                   {story.meta.lastModel && (
                     <span className="flex items-center gap-1 min-w-0">
                       <Cpu className="w-3 h-3 shrink-0" />
@@ -755,11 +755,9 @@ const StoryWorkspace = () => {
                 </p>
                 {!story.characterId && (
                   <div className="px-1.5 mt-2 space-y-1.5">
-                    <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">未绑定</Badge>
+                    <Badge variant="outline" className="h-5 text-[11px] text-muted-foreground">{tr("未绑定")}</Badge>
                     <Button variant="outline" size="sm" className="w-full text-xs" onClick={() => setBindOpen(true)}>
-                      <Link2 className="w-3.5 h-3.5 mr-1" />
-                      绑定到角色
-                    </Button>
+                      <Link2 className="w-3.5 h-3.5 mr-1" />{tr("绑定到角色")}</Button>
                   </div>
                 )}
               </div>
@@ -788,10 +786,9 @@ const StoryWorkspace = () => {
                       data-detached-sync-banner
                       className="flex flex-wrap items-center justify-between gap-2 border-b border-[color:var(--brand-hairline)] bg-[var(--brand-active-bg)] px-4 py-2 text-xs text-[color:var(--text-primary)]"
                     >
-                      <span>当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）</span>
+                      <span>{tr("当前故事正在独立酒馆窗口对话中 · 已开启实时同步回看（暂锁正文编辑以防两边冲突）")}</span>
                       <Button variant="outline" size="sm" className="px-2.5 text-xs" onClick={() => { focusDetachedTavernWindow(); }}>
-                        <ExternalLink className="w-3.5 h-3.5 mr-1" />聚焦酒馆窗口
-                      </Button>
+                        <ExternalLink className="w-3.5 h-3.5 mr-1" />{tr("聚焦酒馆窗口")}</Button>
                     </div>
                   )}
                   <ChatWorkbench
@@ -814,8 +811,7 @@ const StoryWorkspace = () => {
                     initialFloor={line.lastFloor}
                     titleBadge={
                       branchId !== null ? (
-                        <Badge variant="secondary" className="shrink-0">
-                          分支：{story.branches?.find((b) => b.id === branchId)?.name}
+                        <Badge variant="secondary" className="shrink-0">{tr("分支：{{v0}}", { v0: story.branches?.find((b) => b.id === branchId)?.name })}
                         </Badge>
                       ) : undefined
                     }
@@ -826,16 +822,14 @@ const StoryWorkspace = () => {
                             size="sm"
                             disabled={playBusy}
                             onClick={() => { void runContinuePlay(); }}
-                            title="接着当前剧情进入酒馆继续聊"
+                            title={tr("接着当前剧情进入酒馆继续聊")}
                           >
                             <MessageSquare className="w-4 h-4 mr-1.5" />
-                            {isLiveInDetachedTavern ? '聚焦酒馆窗口' : '继续聊天'}
+                            {isLiveInDetachedTavern ? tr("聚焦酒馆窗口") : tr("继续聊天")}
                           </Button>
                         )}
-                        <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+单栏或双页阅读（Esc 退出）">
-                          <BookOpenCheck className="w-4 h-4 mr-1.5" />
-                          小说视图
-                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title={tr("小说视图：拆句重排+用户楼层弱化/隐藏+单栏或双页阅读（Esc 退出）")}>
+                          <BookOpenCheck className="w-4 h-4 mr-1.5" />{tr("小说视图")}</Button>
                       </>
                     }
                   />
@@ -903,7 +897,7 @@ const StoryWorkspace = () => {
               onClick={() => { void runContinuePlay(); }}
             >
               <MessageSquare className="h-3.5 w-3.5" />
-              {isLiveInDetachedTavern ? '聚焦酒馆窗口' : '继续聊天'}
+              {isLiveInDetachedTavern ? tr("聚焦酒馆窗口") : tr("继续聊天")}
             </Button>
           ) : undefined}
         />

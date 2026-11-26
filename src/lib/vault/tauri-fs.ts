@@ -2,6 +2,7 @@
  * VaultFs 的 Tauri 实现 + 客户端环境探测 + 库根/应用配置读写。
  * 仅此文件 import @tauri-apps/*；网页版打包也会带上这些模块但永不调用（isTauri 短路）。
  */
+import { tr } from '@/lib/i18n';
 import { invoke } from '@tauri-apps/api/core';
 import { Channel } from '@tauri-apps/api/core';
 import type { VaultEntry, VaultFs, VaultStat } from './fs';
@@ -157,7 +158,7 @@ async function mutateAppConfig<T>(command: 'config_set' | 'config_repair', args?
   catch (error) {
     if (String(error).includes('STE_CONFIG_LOCK_TIMEOUT:')) {
       const { toast } = await import('@/hooks/use-toast');
-      toast({ title: '配置暂未保存', description: '另一个 STE 窗口正在写配置，请稍后再试', variant: 'destructive' });
+      toast({ title: tr("配置暂未保存"), description: tr("另一个 STE 窗口正在写配置，请稍后再试"), variant: 'destructive' });
     }
     throw error;
   }

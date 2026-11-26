@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色页头部（10.3a，对照 character-detail.html 主列头部）：
  * 衬线大标题 + 铅笔（meta 编辑弹窗：展示名/作者/来源，只改本地展示不写回卡原件；AI 简介入口在弹窗内）
@@ -6,7 +8,7 @@
  * + creator_notes 原文折叠进「⋯」。
  * 标签编辑与评价档位确认逻辑从页面收进本组件。
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useEffect, useRef, useState  } from 'react';
 import { listCharacterIndex } from '@/lib/archive-index';
 import { getVaultEpoch } from '@/lib/vault/active';
 import { CollapsibleTags } from '@/components/CollapsibleTags';
@@ -58,6 +60,7 @@ interface CharacterHeaderProps {
 }
 
 export function CharacterHeader({ character, norm, onPatch, onSelectTab, collapsed, onCollapsedChange }: CharacterHeaderProps) {
+  useI18n();
   const { toast } = useToast();
   const loadoutBadges = useCharacterLoadoutBadges(character, norm);
   const [innerCollapsed, setInnerCollapsed] = useState(false);
@@ -183,7 +186,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
   /** 点评价档位（0801 补充）：未评分时弹确认预填中值；已评分则档位随评分自动 */
   const handleTierTagClick = (tier: RatingTier) => {
     if (character.rating !== undefined) {
-      toast({ title: '已有评分', description: '评价档位随评分自动更新；要改档位请直接改评分。' });
+      toast({ title: tr("已有评分"), description: tr("评价档位随评分自动更新；要改档位请直接改评分。") });
       return;
     }
     setTierConfirm({ tier, value: RATING_TIER_PREFILL[tier] });
@@ -196,16 +199,16 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
         <h1 className="font-serif text-2xl font-semibold tracking-wide text-[color:var(--text-primary)] truncate" title={displayName}>
           {displayName}
         </h1>
-        <Button variant="ghost" size="icon" className="shrink-0" onClick={openMeta} aria-label="编辑展示信息">
+        <Button variant="ghost" size="icon" className="shrink-0" onClick={openMeta} aria-label={tr("编辑展示信息")}>
           <Pencil className="w-3.5 h-3.5" />
         </Button>
         <span className="flex-1" />
         <button
           onClick={() => setCollapsed(!isCollapsed)}
           className="flex items-center gap-1 text-xs text-[color:var(--text-muted)] hover:text-[color:var(--text-body)]"
-          aria-label={isCollapsed ? '展开简介' : '折叠简介'}
+          aria-label={isCollapsed ? tr("展开简介") : tr("折叠简介")}
         >
-          {isCollapsed ? '展开简介' : '折叠简介'}
+          {isCollapsed ? tr("展开简介") : tr("折叠简介")}
           <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '' : 'rotate-180'}`} />
         </button>
       </div>
@@ -230,7 +233,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                 {loadoutBadges.length > 0 && (
                   <div
                     data-header-loadout
-                    aria-label="已挂载的随卡装备"
+                    aria-label={tr("已挂载的随卡装备")}
                     className="flex flex-wrap items-center gap-1.5"
                   >
                     {(creator || source) && (
@@ -257,7 +260,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
               </div>
             )}
             <p className={`text-sm leading-relaxed mt-2 max-w-3xl ${intro ? 'text-[color:var(--text-body)]' : 'text-[color:var(--character-label)]'}`}>
-              {intro ?? '暂无简介 — 点标题旁的铅笔编辑，或在弹窗里用 AI 生成'}
+              {intro ?? tr("暂无简介 — 点标题旁的铅笔编辑，或在弹窗里用 AI 生成")}
             </p>
 
             {/* creator_notes 原文（清洗后不展示的声明类内容折叠在这里） */}
@@ -267,9 +270,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                   onClick={() => setNotesOpen((v) => !v)}
                   className="text-sm text-[color:var(--character-label)] hover:text-[color:var(--text-body)] flex items-center gap-1"
                 >
-                  <MoreHorizontal className="w-3.5 h-3.5" />
-                  创作者备注原文
-                </button>
+                  <MoreHorizontal className="w-3.5 h-3.5" />{tr("创作者备注原文")}</button>
                 {notesOpen && (
                   <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)] whitespace-pre-wrap max-w-3xl border-l-2 border-[color:var(--border-normal)] pl-2.5">
                     {norm.creatorNotes.trim()}
@@ -285,19 +286,17 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                   id="nsfw-switch"
                   checked={!!character.nsfw}
                   onCheckedChange={(on) => { void onPatch({ nsfw: on }).catch(() => {}); }}
-                  aria-label="NSFW 标记"
+                  aria-label={tr("NSFW 标记")}
                 />
                 <Label htmlFor="nsfw-switch" className="text-xs text-[color:var(--text-muted)] cursor-pointer">NSFW</Label>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button type="button" className="cursor-help text-[color:var(--character-label)]" aria-label="NSFW 标记说明">
+                      <button type="button" className="cursor-help text-[color:var(--character-label)]" aria-label={tr("NSFW 标记说明")}>
                         <HelpCircle className="w-3 h-3" />
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">
-                      标记卡面尺度：开启后自动加“卡面/NSFW”标签；配合设置里的“模糊 NSFW 卡面”在列表打码。
-                    </TooltipContent>
+                    <TooltipContent side="top" className="max-w-xs text-xs leading-relaxed">{tr("标记卡面尺度：开启后自动加“卡面/NSFW”标签；配合设置里的“模糊 NSFW 卡面”在列表打码。")}</TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
               </div>
@@ -307,7 +306,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                   {normalizeRatingTag(t)}
                   <button
                     onClick={() => { void setTagChecked(t, false); }}
-                    aria-label={`删除标签 ${normalizeRatingTag(t)}`}
+                    aria-label={tr("删除标签 {{v0}}", { v0: normalizeRatingTag(t) })}
                     className="tap-target inline-flex items-center justify-center"
                   >
                     <X className="w-3 h-3" />
@@ -318,8 +317,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
               <Popover onOpenChange={(open) => { if (open) void refreshTagPreferences(); }}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" size="sm" className="px-1.5 text-xs text-muted-foreground">
-                    <Plus className="w-3 h-3 mr-0.5" />标签
-                  </Button>
+                    <Plus className="w-3 h-3 mr-0.5" />{tr("标签")}</Button>
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
@@ -343,13 +341,11 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                           void addTag(newTag.trim());
                         }
                       }}
-                      placeholder="自建标签：类别/子标签（回车添加）"
-                      aria-label="自建标签"
+                      placeholder={tr("自建标签：类别/子标签（回车添加）")}
+                      aria-label={tr("自建标签")}
                       className="max-w-64 text-base sm:text-xs"
                     />
-                    <Button type="submit" variant="outline" size="sm" disabled={!newTag.trim()} className="text-xs">
-                      添加
-                    </Button>
+                    <Button type="submit" variant="outline" size="sm" disabled={!newTag.trim()} className="text-xs">{tr("添加")}</Button>
                   </form>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                   {quickTagCategories.map((cat) => (
@@ -365,7 +361,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                           <label key={raw} className="flex min-w-0 cursor-pointer items-center gap-2 rounded px-1.5 py-1 text-xs text-[color:var(--text-body)] hover:bg-[var(--hover-overlay)]">
                             <Checkbox
                               checked={has}
-                              aria-label={`${has ? '移除' : '添加'}标签 ${raw}`}
+                              aria-label={has ? tr("移除标签 {{v0}}", { v0: raw }) : tr("添加标签 {{v0}}", { v0: raw })}
                               onCheckedChange={(checked) => {
                                 if (isTier) handleTierTagClick(option.label as RatingTier);
                                 else void setTagChecked(raw, checked === true);
@@ -390,28 +386,28 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
       <Dialog open={metaOpen} onOpenChange={setMetaOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>编辑展示信息</DialogTitle>
-            <DialogDescription>只改 STE 里的本地展示，不写回角色卡文件。</DialogDescription>
+            <DialogTitle>{tr("编辑展示信息")}</DialogTitle>
+            <DialogDescription>{tr("只改 STE 里的本地展示，不写回角色卡文件。")}</DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <Label className="text-xs text-muted-foreground">展示名</Label>
+              <Label className="text-xs text-muted-foreground">{tr("展示名")}</Label>
               <Input value={metaDraft.name} onChange={(e) => setMetaDraft({ ...metaDraft, name: e.target.value })} placeholder={character.name} className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">作者</Label>
-              <Input value={metaDraft.creator} onChange={(e) => setMetaDraft({ ...metaDraft, creator: e.target.value })} placeholder={norm.creator || '未知'} className="mt-1" />
+              <Label className="text-xs text-muted-foreground">{tr("作者")}</Label>
+              <Input value={metaDraft.creator} onChange={(e) => setMetaDraft({ ...metaDraft, creator: e.target.value })} placeholder={norm.creator || tr("未知")} className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">来源</Label>
-              <Input value={metaDraft.source} onChange={(e) => setMetaDraft({ ...metaDraft, source: e.target.value })} placeholder="如 类脑 / Discord" className="mt-1" />
+              <Label className="text-xs text-muted-foreground">{tr("来源")}</Label>
+              <Input value={metaDraft.source} onChange={(e) => setMetaDraft({ ...metaDraft, source: e.target.value })} placeholder={tr("如 类脑 / Discord")} className="mt-1" />
             </div>
           </div>
           {/* 简介编辑与 AI 生成（IntroSection 完整能力：手动编辑/AI 草稿比较/历史/过期提示） */}
           <IntroSection character={character} norm={norm} onPatch={onPatch} />
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMetaOpen(false)}>关闭</Button>
-            <Button onClick={() => void saveMeta()}>保存展示信息</Button>
+            <Button variant="outline" onClick={() => setMetaOpen(false)}>{tr("关闭")}</Button>
+            <Button onClick={() => void saveMeta()}>{tr("保存展示信息")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -420,10 +416,8 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
       <AlertDialog open={!!tierConfirm} onOpenChange={(open) => !open && setTierConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>标记为「{tierConfirm?.tier}」= 打个分</AlertDialogTitle>
-            <AlertDialogDescription>
-              评价档位与评分联动：确认后写入评分（0.5 步进），档位标签随评分自动更新。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tr("标记为「{{v0}}」= 打个分", { v0: tierConfirm?.tier })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("评价档位与评分联动：确认后写入评分（0.5 步进），档位标签随评分自动更新。")}</AlertDialogDescription>
           </AlertDialogHeader>
           {tierConfirm && (
             <div className="flex items-center gap-2">
@@ -435,13 +429,13 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                 value={tierConfirm.value}
                 onChange={(e) => setTierConfirm({ ...tierConfirm, value: Number(e.target.value) })}
                 className="w-24"
-                aria-label="评分"
+                aria-label={tr("评分")}
               />
               <span className="text-sm text-muted-foreground">/ 10</span>
             </div>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (!tierConfirm) return;
@@ -450,9 +444,7 @@ export function CharacterHeader({ character, norm, onPatch, onSelectTab, collaps
                   .then(() => setTierConfirm(null))
                   .catch(() => {});
               }}
-            >
-              确认评分
-            </AlertDialogAction>
+            >{tr("确认评分")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

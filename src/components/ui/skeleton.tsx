@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { cn } from '@/lib/utils';
 
 /**
@@ -38,8 +40,9 @@ export function CharacterGridSkeleton({
 
 /** 故事/聊天列表骨架：立绘缩略图 + 两行文字 */
 export function StoryListSkeleton({ count = 6, className }: { count?: number; className?: string }) {
+  useI18n();
   return (
-    <div className={cn('flex flex-col gap-2', className)} role="status" aria-label="正在加载故事列表" data-story-list-skeleton>
+    <div className={cn('flex flex-col gap-2', className)} role="status" aria-label={tr("正在加载故事列表")} data-story-list-skeleton>
       {Array.from({ length: count }).map((_, i) => (
         <div
           key={i}
@@ -59,11 +62,12 @@ export function StoryListSkeleton({ count = 6, className }: { count?: number; cl
 
 /** 预设库 / 附属库资产卡片网格骨架 */
 export function AssetGridSkeleton({ count = 6, className }: { count?: number; className?: string }) {
+  useI18n();
   return (
     <div
       data-asset-grid-skeleton
       role="status"
-      aria-label="正在加载收藏条目"
+      aria-label={tr("正在加载收藏条目")}
       className={cn(
         'grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr))]',
         className,
@@ -94,11 +98,12 @@ export function AssetGridSkeleton({ count = 6, className }: { count?: number; cl
 
 /** 双栏工作台骨架（用于美化配置、成品前端等面板载入） */
 export function PanelSkeleton({ className }: { className?: string }) {
+  useI18n();
   return (
     <div
       data-panel-skeleton
       role="status"
-      aria-label="正在读取配置"
+      aria-label={tr("正在读取配置")}
       className={cn('grid gap-5 lg:grid-cols-2', className)}
     >
       <div className="space-y-4 rounded-xl border border-[color:var(--border-subtle)] bg-[color:var(--bg-elevated)] p-5">
@@ -119,12 +124,13 @@ export function PanelSkeleton({ className }: { className?: string }) {
 
 /** 顶部刷新指示条 */
 export function RefreshIndicator({ active, className }: { active: boolean; className?: string }) {
+  useI18n();
   if (!active) return null;
   return (
     <div
       data-refresh-indicator
       role="status"
-      aria-label="正在刷新"
+      aria-label={tr("正在刷新")}
       className={cn('sticky top-0 z-20 h-0.5 overflow-hidden bg-elevated-strong', className)}
     >
       <div className="h-full w-1/3 animate-pulse rounded-full bg-brand" />

@@ -9,6 +9,7 @@ export default defineConfig({
   reporter: 'list',
   outputDir: '.cache/roleplay-browser',
   use: {
+    locale: 'zh-CN',
     baseURL: 'http://127.0.0.1:4178',
     viewport: { width: 1360, height: 900 },
     screenshot: 'only-on-failure',

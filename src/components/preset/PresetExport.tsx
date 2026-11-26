@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useState  } from 'react';
 import { diffLines } from 'diff';
 import { Upload, FileText, GitCompare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -31,12 +33,13 @@ interface PresetExportProps {
 }
 
 export function PresetExport({ preset, originalPreset, activeCharacterId, fileName }: PresetExportProps) {
+  useI18n();
   const [mode, setMode] = useState<'full' | 'group' | 'smart'>('full');
   const [showDiff, setShowDiff] = useState(false);
   const [saving, setSaving] = useState(false), [error, setError] = useState('');
   const save = async (text: string, fileName: string, extension: string) => {
     setSaving(true); setError('');
-    try { await saveTextFile({ text, fileName, extension, label: '预设' }); }
+    try { await saveTextFile({ text, fileName, extension, label: tr("预设") }); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setSaving(false); }
   };
@@ -69,21 +72,21 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
     <div className="space-y-4 max-w-3xl">
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <Label className="text-sm">导出模式</Label>
+          <Label className="text-sm">{tr("导出模式")}</Label>
           <Select value={mode} onValueChange={(v) => setMode(v as 'full' | 'group' | 'smart')}>
             <SelectTrigger className="h-8 w-auto text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="full">完整导出（全部分组与条目）</SelectItem>
-              {hasMultiGroups && <SelectItem value="group">分组导出（所选分组全部条目，含禁用）</SelectItem>}
-              <SelectItem value="smart">智能导出（{hasMultiGroups ? '所选分组' : ''}仅启用条目）</SelectItem>
+              <SelectItem value="full">{tr("完整导出（全部分组与条目）")}</SelectItem>
+              {hasMultiGroups && <SelectItem value="group">{tr("分组导出（所选分组全部条目，含禁用）")}</SelectItem>}
+              <SelectItem value="smart">{hasMultiGroups ? tr("智能导出（所选分组仅启用条目）") : tr("智能导出（仅启用条目）")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
         {hasMultiGroups && mode !== 'full' && (
           <div className="flex items-center gap-2">
-            <Label className="text-sm">分组</Label>
+            <Label className="text-sm">{tr("分组")}</Label>
             <Select value={String(safeGroupIndex)} onValueChange={(v) => setGroupIndex(Number(v))}>
               <SelectTrigger className="h-8 w-auto text-sm">
                 <SelectValue />
@@ -91,8 +94,7 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
               <SelectContent>
                 {groups.map((g, i) => (
                   <SelectItem key={i} value={String(i)}>
-                    {g.character_id === 100001 ? '默认主组' : g.character_id === 100000 ? '通用组' : `扩展组 ${i + 1}`}（{g.order.filter((o) => o.enabled).length}/{g.order.length} 启用）
-                  </SelectItem>
+                    {tr("{{v0}}（{{v1}}/{{v2}} 启用）", { v0: g.character_id === 100001 ? tr("默认主组") : g.character_id === 100000 ? tr("通用组") : tr("扩展组 {{v0}}", { v0: i + 1 }), v1: g.order.filter((o) => o.enabled).length, v2: g.order.length })}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -100,38 +102,32 @@ export function PresetExport({ preset, originalPreset, activeCharacterId, fileNa
         )}
       </div>
       {hasMultiGroups && mode !== 'full' && (
-        <p className="text-xs text-muted-foreground">
-          该预设含 {groups.length} 个分组。有的作者用第一个分组做条目库、后面的分组才是完整结构，导出前请确认选对了分组。
-        </p>
+        <p className="text-xs text-muted-foreground">{tr("该预设含 {{v0}} 个分组。有的作者用第一个分组做条目库、后面的分组才是完整结构，导出前请确认选对了分组。", { v0: groups.length })}</p>
       )}
 
       <div className="flex items-center gap-2 flex-wrap">
         <Button disabled={saving} onClick={() => void save(exportedJson, `${base}${suffix}.json`, 'json')}>
-          <Upload className="w-4 h-4 mr-1.5" /> 导出 JSON
-        </Button>
+          <Upload className="w-4 h-4 mr-1.5" />{tr(" 导出 JSON")}</Button>
         <Button variant="outline" disabled={saving} onClick={() => void save(exportPresetMarkdown(preset, fileName), `${base}.md`, 'md')}>
-          <FileText className="w-4 h-4 mr-1.5" /> 导出 Markdown
-        </Button>
+          <FileText className="w-4 h-4 mr-1.5" />{tr(" 导出 Markdown")}</Button>
         {originalPreset && (
           <Button variant="ghost" onClick={() => setShowDiff((s) => !s)}>
-            <GitCompare className="w-4 h-4 mr-1.5" /> {showDiff ? '隐藏' : '查看'}变更对比
-          </Button>
+            <GitCompare className="w-4 h-4 mr-1.5" /> {showDiff ? tr("收起改动对比") : tr("查看改动对比")}</Button>
         )}
       </div>
 
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {showDiff && originalPreset && (
         <div>
-          <h3 className="text-sm font-medium mb-1">变更对比（导入时 ↔ 当前{mode === 'smart' ? '智能' : mode === 'group' ? '分组' : '完整'}导出）</h3>
+          <h3 className="text-sm font-medium mb-1">{mode === 'smart' ? tr("变更对比（导入时 ↔ 当前智能导出）") : mode === 'group' ? tr("变更对比（导入时 ↔ 当前分组导出）") : tr("变更对比（导入时 ↔ 当前完整导出）")}</h3>
           <p className="text-xs text-muted-foreground mb-2">
-            <span className="text-[color:var(--status-ok)]">绿色 = 新增/改后</span>，
-            <span className="text-[color:var(--status-danger)]">红色 = 原值/删除</span>；灰色为未变行
-          </p>
+            <span className="text-[color:var(--status-ok)]">{tr("绿色 = 新增/改后")}</span>{' · '}
+            <span className="text-[color:var(--status-danger)]">{tr("红色 = 原值/删除")}</span>{tr("；灰色为未变行")}</p>
           <ScrollArea className="h-[420px] rounded-md border">
             {diffParts === null ? (
-              <p className="text-xs text-muted-foreground p-3">无法生成对比</p>
+              <p className="text-xs text-muted-foreground p-3">{tr("无法生成对比")}</p>
             ) : diffParts.every((p) => !p.added && !p.removed) ? (
-              <p className="text-xs text-muted-foreground p-3">没有变更</p>
+              <p className="text-xs text-muted-foreground p-3">{tr("没有变更")}</p>
             ) : (
               <pre className="text-xs font-mono leading-relaxed p-2">
                 {diffParts.flatMap((part, i) => {

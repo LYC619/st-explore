@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /**
  * 运行环境判定：同一份前端跑在三个壳里，能力不一样。
  *
@@ -63,7 +64,7 @@ export function hasNativeFs(): boolean {
 
 /** 给用户看的环境名，设置页的「运行环境」那一行用 */
 export const RUNTIME_LABEL: Record<Runtime, string> = {
-  web: '网页版',
-  tauri: '桌面客户端',
-  capacitor: 'Android 客户端',
+  get web() { return tr("网页版"); },
+  get tauri() { return tr("桌面客户端"); },
+  get capacitor() { return tr("Android 客户端"); },
 };

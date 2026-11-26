@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 // APIConfigCard 的状态与操作逻辑（表单草稿 + 增删改切换 + 取模型 + 测试连通）。
 // 拆自原 APIConfigCard.tsx（阶段8.1 codex P2.1）：视图只管渲染，交互全走这个 hook。
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -74,7 +75,7 @@ export function useApiProfiles() {
   const savedActive = profiles.find((p) => p.id === activeId);
   const persist = (ps: ApiProfile[], id: string) => {
     if (persistProfiles(ps, id)) return true;
-    toast({ title: '连接尚未保存', description: getApiConfigSyncState().message || '请先重新读取已保存连接。', variant: 'destructive' });
+    toast({ title: tr("连接尚未保存"), description: getApiConfigSyncState().message || tr("请先重新读取已保存连接。"), variant: 'destructive' });
     return false;
   };
 
@@ -93,7 +94,7 @@ export function useApiProfiles() {
     const { profiles: ps } = loadApiProfiles();
     const fresh: ApiProfile = {
       id: '',
-      name: `提供商 ${ps.length + 1}`,
+      name: tr("提供商 {{v0}}", { v0: ps.length + 1 }),
       apiKey: '',
       apiUrl: DEFAULT_API_URL,
       model: DEFAULT_MODEL,
@@ -108,7 +109,7 @@ export function useApiProfiles() {
   const handleDuplicate = () => {
     const copy: ApiProfile = {
       id: '',
-      name: `${name || '提供商'} 副本`,
+      name: tr("{{v0}} 副本", { v0: name || tr("提供商") }),
       apiKey: apiKey.trim(),
       apiUrl: apiUrl.trim() || DEFAULT_API_URL,
       model: model.trim() || DEFAULT_MODEL,
@@ -126,7 +127,7 @@ export function useApiProfiles() {
     if (rest.length === ps.length) return false;
     if (!persist(rest, aid === activeId ? rest[0]?.id ?? '' : aid)) return false;
     reload();
-    toast({ title: '已删除提供商' });
+    toast({ title: tr("已删除提供商") });
     return true;
   };
 
@@ -135,9 +136,9 @@ export function useApiProfiles() {
     let idx = ps.findIndex((p) => p.id === activeId);
     if (!activeId) {
       idx = ps.length;
-      ps.push({ id: generateProfileId(), name: name.trim() || '提供商', apiKey: '', apiUrl: DEFAULT_API_URL, model: DEFAULT_MODEL });
+      ps.push({ id: generateProfileId(), name: name.trim() || tr("提供商"), apiKey: '', apiUrl: DEFAULT_API_URL, model: DEFAULT_MODEL });
     }
-    if (idx < 0) { toast({ title: '当前服务已不存在，请重新选择', variant: 'destructive' }); return false; }
+    if (idx < 0) { toast({ title: tr("当前服务已不存在，请重新选择"), variant: 'destructive' }); return false; }
     ps[idx] = {
       ...ps[idx],
       name: name.trim() || ps[idx].name,
@@ -153,7 +154,7 @@ export function useApiProfiles() {
     setProfiles(ps);
     setDirty(false);
     setExternalChanged(false);
-    toast({ title: '配置已保存', description: ps[idx].name });
+    toast({ title: tr("配置已保存"), description: ps[idx].name });
     return true;
   };
 
@@ -172,11 +173,11 @@ export function useApiProfiles() {
       setModelList(models);
       // 模型列表随获取即写入该提供商（属元数据，不必等「保存」）
       if (storeProfileModelsIfCurrent({ id: profileId, apiUrl: url, apiKey: key }, models)) setProfiles(loadApiProfiles().profiles);
-      toast({ title: `已获取 ${models.length} 个模型` });
+      toast({ title: tr("已获取 {{v0}} 个模型", { v0: models.length }) });
       return true;
     } catch (e) {
       if (request !== catalogRequest.current || controller.signal.aborted) return false;
-      toast({ title: '获取模型列表失败', description: safeError(e, key), variant: 'destructive' });
+      toast({ title: tr("获取模型列表失败"), description: safeError(e, key), variant: 'destructive' });
       return false;
     } finally {
       if (request === catalogRequest.current) setFetchingModels(false);
@@ -200,7 +201,7 @@ export function useApiProfiles() {
       await callOpenAIMessages(cfg, [{ role: 'user', content: 'Hi' }], { params: { max_tokens: 5 }, signal: controller.signal, purpose: 'probe' });
       if (request !== connectionTest.current || controller.signal.aborted) return;
       const ms = Math.round(performance.now() - t0);
-      setTestResult({ ok: true, text: `连通正常 · ${ms}ms · ${cfg.model}` });
+      setTestResult({ ok: true, text: tr("连通正常 · {{v0}}ms · {{v1}}", { v0: ms, v1: cfg.model }) });
     } catch (e) {
       if (request === connectionTest.current && !controller.signal.aborted) setTestResult({ ok: false, text: safeError(e, cfg.apiKey) });
     } finally {
@@ -226,6 +227,6 @@ export function useApiProfiles() {
 }
 
 function safeError(error: unknown, key: string): string {
-  const message = error instanceof Error ? error.message : '请检查接口地址、密钥和模型';
+  const message = error instanceof Error ? error.message : tr("请检查接口地址、密钥和模型");
   return key ? message.split(key).join('***') : message;
 }

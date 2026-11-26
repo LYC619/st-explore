@@ -58,6 +58,13 @@ scripts/*
 !scripts/smoke/**
 !scripts/tavern/
 !scripts/tavern/**
+!scripts/i18n/
+!scripts/i18n/**
+!scripts/site/
+!scripts/site/**
+!scripts/deploy/
+!scripts/deploy/**
+/site-dist/
 # Generated upstream frontend bundles and Rspack cache; source is pinned in vendor/.
 /.cache/
 /.cache/tavern/

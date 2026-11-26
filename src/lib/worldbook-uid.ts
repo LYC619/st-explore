@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type { WorldBook } from '@/types/worldbook';
 
 /** Keep numeric identities unique, including when an edited UID reaches the safe integer limit. */
@@ -22,11 +23,11 @@ export function availableWorldbookIdentity(book: WorldBook, preferredUid?: numbe
 }
 
 export function changeWorldbookUid(book: WorldBook, key: string, uid: number): WorldBook {
-  if (!Number.isSafeInteger(uid) || uid < 0) throw new Error('UID 必须是非负安全整数');
+  if (!Number.isSafeInteger(uid) || uid < 0) throw new Error(tr("UID 必须是非负安全整数"));
   const entry = book.entries[key];
-  if (!entry) throw new Error('条目不存在');
+  if (!entry) throw new Error(tr("条目不存在"));
   if (Object.entries(book.entries).some(([otherKey, other]) => otherKey !== key && other.uid === uid)) {
-    throw new Error(`UID ${uid} 已被占用`);
+    throw new Error(tr("UID {{v0}} 已被占用", { v0: uid }));
   }
   if (entry.uid === uid) return book;
   // Dictionary keys stay stable while editing; exportWorldBook rebuilds the ST keys from UID.

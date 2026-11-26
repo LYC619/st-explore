@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import { Clock, Globe, Plus, Save, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -41,14 +43,17 @@ interface WorldBookHeaderProps {
   children?: React.ReactNode;
 }
 
-const TabSwitcher = ({ value, onChange, mobile }: { value: WorldBookTab; onChange: (t: WorldBookTab) => void; mobile?: boolean }) => (
-  <Tabs value={value} onValueChange={(v) => onChange(v as WorldBookTab)} className={mobile ? undefined : 'hidden sm:block'}>
-    <TabsList className={mobile ? 'w-full h-8' : 'h-8'}>
-      <TabsTrigger value="edit" className={mobile ? 'text-xs flex-1 h-6' : 'text-xs px-3 h-6'}>编辑模式</TabsTrigger>
-      <TabsTrigger value="quick" className={mobile ? 'text-xs flex-1 h-6' : 'text-xs px-3 h-6'}>快速添加</TabsTrigger>
-    </TabsList>
-  </Tabs>
-);
+const TabSwitcher = ({ value, onChange, mobile }: { value: WorldBookTab; onChange: (t: WorldBookTab) => void; mobile?: boolean }) => {
+  useI18n();
+  return (
+    <Tabs value={value} onValueChange={(v) => onChange(v as WorldBookTab)} className={mobile ? undefined : 'hidden sm:block'}>
+      <TabsList className={mobile ? 'w-full h-8' : 'h-8'}>
+        <TabsTrigger value="edit" className={mobile ? 'text-xs flex-1 h-6' : 'text-xs px-3 h-6'}>{tr("编辑模式")}</TabsTrigger>
+        <TabsTrigger value="quick" className={mobile ? 'text-xs flex-1 h-6' : 'text-xs px-3 h-6'}>{tr("快速添加")}</TabsTrigger>
+      </TabsList>
+    </Tabs>
+  );
+};
 
 /** 世界书页内工具栏：标题重命名 + 计数 + 模式切换 + 新建/导入/AI/最近打开/保存/导出 */
 export function WorldBookHeader({
@@ -58,6 +63,7 @@ export function WorldBookHeader({
   savedItems, stagedDialogOpen, onStagedDialogOpenChange, onRefreshStaged, onLoadStaged, onDeleteStaged,
   onSave, saveStatus, saveError, onBeforeExport, sourceTitle, onRestoreSource, children,
 }: WorldBookHeaderProps) {
+  useI18n();
   const [nameDraft, setNameDraft] = useState(filename);
   const cancelBlur = useRef(false);
   useEffect(() => { setNameDraft(filename); }, [filename]);
@@ -79,7 +85,7 @@ export function WorldBookHeader({
         {worldbook && onRename ? (
           <Input
             size="sm"
-            aria-label="世界书名称"
+            aria-label={tr("世界书名称")}
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
             onBlur={commitName}
@@ -98,12 +104,10 @@ export function WorldBookHeader({
             className="w-40 sm:w-52 font-medium text-sm"
           />
         ) : (
-          <h1 className="font-semibold text-foreground text-lg mr-2 hidden sm:block">世界书编辑器</h1>
+          <h1 className="font-semibold text-foreground text-lg mr-2 hidden sm:block">{tr("世界书编辑器")}</h1>
         )}
         {cowCharacterName && (
-          <Badge variant="secondary" className="shrink-0" title="从角色页进入的处理：保存共享世界书时会生成该角色的派生副本，原资产不动">
-            为「{cowCharacterName}」处理
-          </Badge>
+          <Badge variant="secondary" className="shrink-0" title={tr("从角色页进入的处理：保存共享世界书时会生成该角色的派生副本，原资产不动")}>{tr("为「{{v0}}」处理", { v0: cowCharacterName })}</Badge>
         )}
 
         {/* 条目计数 + token 粗估 */}
@@ -117,14 +121,14 @@ export function WorldBookHeader({
 
         <div className="flex-1" />
         {sourceTitle && <Button type="button" variant="outline" size="sm" onClick={onRestoreSource}
-          title={`来源：${sourceTitle}。将来源内容恢复到当前世界书并自动保存，来源书继续保留。`}>恢复来源内容</Button>}
+          title={tr("来源：{{v0}}。将来源内容恢复到当前世界书并自动保存，来源书继续保留。", { v0: sourceTitle })}>{tr("恢复来源内容")}</Button>}
         {worldbook && saveStatus && <span role="status" title={saveError} className="text-xs shrink-0">
-          {saveStatus === 'saving' ? '保存中…' : saveStatus === 'error' ? '保存失败，请重试' : saveStatus === 'pending' ? '待保存' : '已保存'}
+          {saveStatus === 'saving' ? tr("保存中…") : saveStatus === 'error' ? tr("保存失败，请重试") : saveStatus === 'pending' ? tr("待保存") : tr("已保存")}
         </span>}
 
         {onCreateBlank && (
-          <Button type="button" variant="outline" size="sm" onClick={onCreateBlank} title="从零创建一本空白世界书">
-            <Plus className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">新建空白</span>
+          <Button type="button" variant="outline" size="sm" onClick={onCreateBlank} title={tr("从零创建一本空白世界书")}>
+            <Plus className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">{tr("新建空白")}</span>
           </Button>
         )}
 
@@ -133,24 +137,24 @@ export function WorldBookHeader({
         </div>
 
         {worldbook && (
-          <Button type="button" data-tour="wb-ai" variant="outline" size="sm" onClick={onOpenAiDialog} title="根据聊天记录用 AI 提炼新设定，追加为新条目">
-            <Sparkles className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">AI 追加</span>
+          <Button type="button" data-tour="wb-ai" variant="outline" size="sm" onClick={onOpenAiDialog} title={tr("根据聊天记录用 AI 提炼新设定，追加为新条目")}>
+            <Sparkles className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">{tr("AI 追加")}</span>
           </Button>
         )}
 
         <Dialog open={stagedDialogOpen} onOpenChange={onStagedDialogOpenChange}>
           <DialogTrigger asChild>
-            <Button type="button" variant="outline" size="sm" data-tour="wb-staged" onClick={onRefreshStaged} title="从资产库里换一本世界书来编辑">
-              <Clock className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">最近打开</span>
+            <Button type="button" variant="outline" size="sm" data-tour="wb-staged" onClick={onRefreshStaged} title={tr("从资产库里换一本世界书来编辑")}>
+              <Clock className="w-4 h-4 mr-1" /> <span className="hidden sm:inline">{tr("最近打开")}</span>
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg max-h-[70vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>最近打开的世界书</DialogTitle>
-              <DialogDescription>都存在资产库里，按最近编辑排序。点一本切过去编辑。</DialogDescription>
+              <DialogTitle>{tr("最近打开的世界书")}</DialogTitle>
+              <DialogDescription>{tr("都存在资产库里，按最近编辑排序。点一本切过去编辑。")}</DialogDescription>
             </DialogHeader>
             {savedItems.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">资产库里还没有世界书</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">{tr("资产库里还没有世界书")}</p>
             ) : (
               <StagedWorldBookList items={savedItems} variant="dialog" onSelect={onLoadStaged} onDelete={onDeleteStaged} />
             )}
@@ -162,8 +166,7 @@ export function WorldBookHeader({
         {worldbook && activeTab === 'edit' && (
           <>
             <Button type="button" variant="outline" size="sm" onClick={onSave} className="hidden sm:inline-flex">
-              <Save className="w-4 h-4 mr-1" /> 保存
-            </Button>
+              <Save className="w-4 h-4 mr-1" />{tr(" 保存")}</Button>
             <WorldBookExporter worldbook={worldbook} filename={filename} onBeforeExport={onBeforeExport} draft={saveStatus === 'error'} />
           </>
         )}

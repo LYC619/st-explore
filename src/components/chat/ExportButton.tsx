@@ -1,4 +1,7 @@
-import { useState, useMemo } from 'react';
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useState  } from 'react';
 import { Upload, FileText, FileJson } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,7 +59,7 @@ function sanitizeFilename(name: string): string {
     .trim()
     .replace(/^\.+/, '') // 去掉开头的点，避免隐藏文件
     .slice(0, 100);
-  return cleaned || '未命名作品';
+  return cleaned || tr("未命名作品");
 }
 
 function getMessagesInRange(
@@ -91,6 +94,7 @@ function downloadBlob(name: string, content: string, mime: string): void {
 }
 
 export function ExportButton({ session, settings, markers = [], onExported }: ExportButtonProps & { 'data-tour'?: string }) {
+  useI18n();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 
@@ -159,10 +163,10 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
 
   // 标题去掉导入时残留的「 - <时间戳> imported」后缀；角色/用户名为占位 unused 时省略该行。
   const getCleanTitle = () =>
-    (session.title || '对话记录')
+    (session.title || tr("对话记录"))
       .replace(/\s*-\s*\d{4}-\d{2}-\d{2}@.*?imported\s*$/i, '')
       .replace(/\s+imported\s*$/i, '')
-      .trim() || '对话记录';
+      .trim() || tr("对话记录");
   const isPlaceholder = (n: string) => !n || /^unused$/i.test(n.trim());
 
   const exportAsTxt = () => {
@@ -175,13 +179,13 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
     if (!isPlaceholder(session.character.name) || !isPlaceholder(session.user.name)) {
       headerLines.push(`${session.character.name} & ${session.user.name}`);
     }
-    headerLines.push(`导出于 ${new Date().toLocaleDateString('zh-CN')}`, '', '────────────────────', '');
+    headerLines.push(tr("导出于 {{v0}}", { v0: new Date().toLocaleDateString(getLocale()) }), '', '────────────────────', '');
     const txtContent = headerLines.join('\n') + body;
 
     const txtName = `${sanitizeFilename(cleanTitle)}.txt`;
     downloadBlob(txtName, txtContent, 'text/plain;charset=utf-8');
 
-    toast({ title: '导出成功', description: `已保存为 ${txtName}` });
+    toast({ title: tr("导出成功"), description: tr("已保存为 {{v0}}", { v0: txtName }) });
     onExported?.('txt');
     setOpen(false);
   };
@@ -193,16 +197,16 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
     const cleanTitle = getCleanTitle();
     const headerLines = [`# ${cleanTitle}`, ''];
     if (!isPlaceholder(session.character.name) || !isPlaceholder(session.user.name)) {
-      headerLines.push(`> ${session.character.name} & ${session.user.name} · 导出于 ${new Date().toLocaleDateString('zh-CN')}`, '');
+      headerLines.push(`> ${session.character.name} & ${session.user.name} · ${tr("导出于 {{v0}}", { v0: new Date().toLocaleDateString(getLocale()) })}`, '');
     } else {
-      headerLines.push(`> 导出于 ${new Date().toLocaleDateString('zh-CN')}`, '');
+      headerLines.push(`> ${tr("导出于 {{v0}}", { v0: new Date().toLocaleDateString(getLocale()) })}`, '');
     }
     const mdContent = headerLines.join('\n') + '\n' + body + '\n';
 
     const mdName = `${sanitizeFilename(cleanTitle)}.md`;
     downloadBlob(mdName, mdContent, 'text/markdown;charset=utf-8');
 
-    toast({ title: '导出成功', description: `已保存为 ${mdName}` });
+    toast({ title: tr("导出成功"), description: tr("已保存为 {{v0}}", { v0: mdName }) });
     onExported?.('md');
     setOpen(false);
   };
@@ -213,12 +217,12 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
         exportRange, recentCount, customStart, customEnd });
       const jsonlName = `${sanitizeFilename(session.title)}_cleaned.jsonl`;
       const result = await saveTextFile({ fileName: jsonlName, text: serializeChatJsonl(snapshot),
-        label: slimExport ? 'SillyTavern JSONL（精简）' : 'SillyTavern JSONL', extension: 'jsonl' });
+        label: slimExport ? tr("SillyTavern JSONL（精简）") : 'SillyTavern JSONL', extension: 'jsonl' });
       if (result === 'cancelled') return;
-      toast({ title: result === 'downloaded' ? '已发起下载' : result === 'shared' ? '已分享' : '导出成功', description: jsonlName });
+      toast({ title: result === 'downloaded' ? tr("已发起下载") : result === 'shared' ? tr("已分享") : tr("导出成功"), description: jsonlName });
       onExported?.('jsonl'); setOpen(false);
     } catch (error) {
-      toast({ title: '导出失败', description: String(error), variant: 'destructive' });
+      toast({ title: tr("导出失败"), description: String(error), variant: 'destructive' });
     }
   };
 
@@ -226,33 +230,26 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button className="gold-gradient text-primary-foreground" data-tour="export-button">
-          <Upload className="w-4 h-4 mr-2" />
-          导出
-        </Button>
+          <Upload className="w-4 h-4 mr-2" />{tr("导出")}</Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-1">
-            导出设置
-            <HelpCard>
-              JSONL 可导回 SillyTavern 继续游玩；TXT 适合纯文本阅读，Markdown 带章节标题适合放进笔记软件。JSONL 默认导「精简工作副本」——只留当前选中的那版回复，可用下面的「精简导出」关掉；开启「清理插件缓存」时还会顺带去掉插件留下的临时状态。两项都关也不等同于整库备份。角色卡、世界书、预设和正则资产不会被这次导出改动。
-            </HelpCard>
+          <DialogTitle className="flex items-center gap-1">{tr("导出设置")}<HelpCard>{tr("JSONL 可导回 SillyTavern 继续游玩；TXT 适合纯文本阅读，Markdown 带章节标题适合放进笔记软件。JSONL 默认导「精简工作副本」——只留当前选中的那版回复，可用下面的「精简导出」关掉；开启「清理插件缓存」时还会顺带去掉插件留下的临时状态。两项都关也不等同于整库备份。角色卡、世界书、预设和正则资产不会被这次导出改动。")}</HelpCard>
           </DialogTitle>
-          <DialogDescription>选择导出范围和清理选项</DialogDescription>
+          <DialogDescription>{tr("选择导出范围和清理选项")}</DialogDescription>
         </DialogHeader>
 
         {/* Stats Panel */}
         <div className="rounded-md border border-border bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
           <div className="flex justify-between">
-            <span>总消息数: {stats.totalMessages} 条</span>
-            <span>选中: {stats.selectedCount} 条（用户 {stats.userCount} / 角色 {stats.charCount}）</span>
+            <span>{tr("总消息数: {{v0}} 条", { v0: stats.totalMessages })}</span>
+            <span>{tr("选中: {{v0}} 条（用户 {{v1}} / 角色 {{v2}}）", { v0: stats.selectedCount, v1: stats.userCount, v2: stats.charCount })}</span>
           </div>
           <div className="flex justify-between">
-            <span>原始大小: {formatSize(stats.originalSize)}</span>
-            <span>
-              预估导出: {formatSize(stats.estimatedSize)}
+            <span>{tr("原始大小: ")}{formatSize(stats.originalSize)}</span>
+            <span>{tr("预估导出: ")}{formatSize(stats.estimatedSize)}
               {stats.savings > 0 && (
-                <span className="text-primary ml-1">（节省 {stats.savings}%）</span>
+                <span className="text-primary ml-1">{tr("（节省 {{v0}}%）", { v0: stats.savings })}</span>
               )}
             </span>
           </div>
@@ -260,15 +257,15 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
 
         {/* Range Selection */}
         <div className="space-y-3">
-          <Label className="text-sm font-medium">消息范围</Label>
+          <Label className="text-sm font-medium">{tr("消息范围")}</Label>
           <RadioGroup value={exportRange} onValueChange={(v) => setExportRange(v as 'all' | 'recent' | 'custom')} className="space-y-2">
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="all" id="range-all" />
-              <Label htmlFor="range-all" className="font-normal cursor-pointer">全部导出</Label>
+              <Label htmlFor="range-all" className="font-normal cursor-pointer">{tr("全部导出")}</Label>
             </div>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="recent" id="range-recent" />
-              <Label htmlFor="range-recent" className="font-normal cursor-pointer">最近</Label>
+              <Label htmlFor="range-recent" className="font-normal cursor-pointer">{tr("最近")}</Label>
               <Input size="sm"
                 type="number"
                 min={1}
@@ -278,11 +275,11 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
                 className="w-20 text-xs"
                 disabled={exportRange !== 'recent'}
               />
-              <span className="text-xs text-muted-foreground">条</span>
+              <span className="text-xs text-muted-foreground">{tr("条")}</span>
             </div>
             <div className="flex items-center space-x-2">
               <RadioGroupItem value="custom" id="range-custom" />
-              <Label htmlFor="range-custom" className="font-normal cursor-pointer">自定义</Label>
+              <Label htmlFor="range-custom" className="font-normal cursor-pointer">{tr("自定义")}</Label>
               <Input size="sm"
                 type="number"
                 min={0}
@@ -302,7 +299,7 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
                 className="w-16 text-xs"
                 disabled={exportRange !== 'custom'}
               />
-              <span className="text-xs text-muted-foreground">楼</span>
+              <span className="text-xs text-muted-foreground">{tr("楼")}</span>
             </div>
           </RadioGroup>
         </div>
@@ -312,23 +309,23 @@ export function ExportButton({ session, settings, markers = [], onExported }: Ex
           <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
             <div className="space-y-0.5">
               <div className="flex items-center gap-1">
-                <Label className="text-sm">精简导出</Label>
+                <Label className="text-sm">{tr("精简导出")}</Label>
                 <HelpCard>
                   <div className="space-y-2">
-                    <p>SillyTavern 的聊天记录里，每楼 AI 回复会把所有重Roll候选版本一起存着。常重新生成的话，一楼可能攒了十几个版本，文件体积就是这么涨起来的。</p>
-                    <p>精简导出只保留当前正在看的那版回复，收起其余重Roll候选。消息正文全部原样保留——说话人、发送时间、生成模型与对话归属都在；完整对话流、角色人设、世界书绑定、预设、正则也都在。移除的只有没被选中的候选回复，以及（开启「清理插件缓存」时）部分插件留下的临时状态。</p>
-                    <p>导回 SillyTavern 后可以照常接着聊，发给模型的上下文和精简前一致；唯一的区别是翻不回之前滑掉的旧候选了。</p>
+                    <p>{tr("SillyTavern 的聊天记录里，每楼 AI 回复会把所有重Roll候选版本一起存着。常重新生成的话，一楼可能攒了十几个版本，文件体积就是这么涨起来的。")}</p>
+                    <p>{tr("精简导出只保留当前正在看的那版回复，收起其余重Roll候选。消息正文全部原样保留——说话人、发送时间、生成模型与对话归属都在；完整对话流、角色人设、世界书绑定、预设、正则也都在。移除的只有没被选中的候选回复，以及（开启「清理插件缓存」时）部分插件留下的临时状态。")}</p>
+                    <p>{tr("导回 SillyTavern 后可以照常接着聊，发给模型的上下文和精简前一致；唯一的区别是翻不回之前滑掉的旧候选了。")}</p>
                   </div>
                 </HelpCard>
               </div>
-              <p className="text-xs text-muted-foreground">只留当前选中的那版回复，体积通常能减半；关掉则所有重Roll候选原样带走</p>
+              <p className="text-xs text-muted-foreground">{tr("只留当前选中的那版回复，体积通常能减半；关掉则所有重Roll候选原样带走")}</p>
             </div>
             <Switch checked={slimExport} onCheckedChange={setSlimExport} />
           </div>
           <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
             <div className="space-y-0.5">
-              <Label className="text-sm">清理插件缓存</Label>
-              <p className="text-xs text-muted-foreground">移除部分插件留下的临时状态；不会改动角色卡、世界书、预设或正则资产</p>
+              <Label className="text-sm">{tr("清理插件缓存")}</Label>
+              <p className="text-xs text-muted-foreground">{tr("移除部分插件留下的临时状态；不会改动角色卡、世界书、预设或正则资产")}</p>
             </div>
             <Switch checked={cleanPluginCache} onCheckedChange={setCleanPluginCache} />
           </div>

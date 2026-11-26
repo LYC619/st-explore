@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { isLLMConfigured, isLLMCancelled } from '@/lib/llm';
 import { LLMError } from '@/lib/llm';
 import { CompletionWarning } from '@/components/ai-tools/CompletionWarning';
@@ -53,6 +55,7 @@ interface SegmentResult {
 
 /** 批量分段生成：把所选楼层范围按每段 N 楼拆开并行调用，适合超长范围的分段总结。 */
 export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, buildFullMessages, onMergeToEditor }: BatchProcessorProps) {
+  useI18n();
   const { toast } = useToast();
   const [segmentSize, setSegmentSize] = useState(10);
   const [concurrency, setConcurrency] = useState(3);
@@ -94,15 +97,15 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
   const handleStart = async () => {
     const config = loadAPIConfig(); // 生成时即时读取（配置在「AI 配置」页维护）
     if (!isLLMConfigured(config)) {
-      toast({ title: '请先配置接口地址和模型', description: '前往「AI 配置」页配置后回来生成', variant: 'destructive' });
+      toast({ title: tr("请先配置接口地址和模型"), description: tr("前往「AI 配置」页配置后回来生成"), variant: 'destructive' });
       return;
     }
     if (floorCount === 0) {
-      toast({ title: '请先选择楼层范围', variant: 'destructive' });
+      toast({ title: tr("请先选择楼层范围"), variant: 'destructive' });
       return;
     }
     if (!systemPrompt.trim()) {
-      toast({ title: '请先选择或编辑提示词模板', variant: 'destructive' });
+      toast({ title: tr("请先选择或编辑提示词模板"), variant: 'destructive' });
       return;
     }
 
@@ -157,12 +160,12 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
           consecutiveServiceFailures = serviceFailure ? consecutiveServiceFailures + 1 : 0;
           if (consecutiveServiceFailures >= 3) {
             stopped = true;
-            setStopReason('连续 3 段遇到限流或服务故障，已停止领取新任务；已完成的结果保留。');
+            setStopReason(tr("连续 3 段遇到限流或服务故障，已停止领取新任务；已完成的结果保留。"));
           }
           resultArr[i] = {
             ...resultArr[i],
             content: e instanceof LLMError ? e.partialText : '',
-            error: isLLMCancelled(e) ? '已取消' : e instanceof Error ? e.message : '生成失败，请检查连接配置。',
+            error: isLLMCancelled(e) ? tr("已取消") : e instanceof Error ? e.message : tr("生成失败，请检查连接配置。"),
             done: true,
           };
         }
@@ -180,13 +183,13 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
     setProcessing(false);
     abortRef.current = null;
     if (controller.signal.aborted) {
-      setStopReason('已取消，已完成的结果保留。');
-      toast({ title: `已取消，已完成 ${completed}/${segments.length} 段` });
+      setStopReason(tr("已取消，已完成的结果保留。"));
+      toast({ title: tr("已取消，已完成 {{v0}}/{{v1}} 段", { v0: completed, v1: segments.length }) });
     } else if (stopped) {
-      toast({ title: '批量生成已停止', description: '连续限流或服务故障，请稍后再试。' });
+      toast({ title: tr("批量生成已停止"), description: tr("连续限流或服务故障，请稍后再试。") });
     } else {
       const succeeded = resultArr.filter(r => r.done && !r.error).length;
-      toast({ title: `批量生成结束，成功 ${succeeded}/${segments.length} 段` });
+      toast({ title: tr("批量生成结束，成功 {{v0}}/{{v1}} 段", { v0: succeeded, v1: segments.length }) });
     }
   };
 
@@ -202,7 +205,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
     await navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    toast({ title: '已复制到剪贴板' });
+    toast({ title: tr("已复制到剪贴板") });
   };
 
   const canMerge = !processing && results.some(r => r.done && !r.error && r.content.trim());
@@ -213,21 +216,17 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer hover:bg-accent/50 transition-colors py-4">
             <CardTitle className="text-base flex items-center gap-2">
-              <Layers className="w-4 h-4" />
-              批量分段生成
-              <ChevronDown className="w-4 h-4 ml-auto text-muted-foreground" />
+              <Layers className="w-4 h-4" />{tr("批量分段生成")}<ChevronDown className="w-4 h-4 ml-auto text-muted-foreground" />
             </CardTitle>
           </CardHeader>
         </CollapsibleTrigger>
         <CollapsibleContent>
           <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              楼层很多时，把上方所选范围按每段 N 楼拆开并行生成。默认<strong>轻量直调</strong>：每段只发送「当前提示词模板 + 该段楼层文本」；勾选「挂载左栏设定」后每段按完整引擎组装（预设/世界书与左栏一致；前情分卷与卷号不参与，避免逐段重复）。
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("楼层很多时，把上方所选范围按每段 N 楼拆开并行生成。默认")}<strong>{tr("轻量直调")}</strong>{tr("：每段只发送「当前提示词模板 + 该段楼层文本」；勾选「挂载左栏设定」后每段按完整引擎组装（预设/世界书与左栏一致；前情分卷与卷号不参与，避免逐段重复）。")}</p>
 
             <div className="flex flex-wrap gap-4 items-end">
               <div className="space-y-1">
-                <Label className="text-xs">每段楼数</Label>
+                <Label className="text-xs">{tr("每段楼数")}</Label>
                 <Input
                   type="number"
                   min={5}
@@ -238,7 +237,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">并发数</Label>
+                <Label className="text-xs">{tr("并发数")}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -254,29 +253,26 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                   checked={attachContext}
                   onCheckedChange={(v) => setAttachContext(v === true)}
                 />
-                <Label htmlFor="batch-attach" className="text-xs cursor-pointer">
-                  挂载左栏设定（预设/世界书）
-                </Label>
+                <Label htmlFor="batch-attach" className="text-xs cursor-pointer">{tr("挂载左栏设定（预设/世界书）")}</Label>
               </div>
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
               <Button onClick={handleStart} disabled={processing || floorCount === 0}>
                 {processing ? (
-                  <><Loader2 className="w-4 h-4 animate-spin mr-1" />生成中...</>
+                  <><Loader2 className="w-4 h-4 animate-spin mr-1" />{tr("生成中...")}</>
                 ) : (
-                  <><Play className="w-4 h-4 mr-1" />开始批量生成</>
+                  <><Play className="w-4 h-4 mr-1" />{tr("开始批量生成")}</>
                 )}
               </Button>
               <span className="text-xs text-muted-foreground">
-                {floorCount} 楼，约 {Math.ceil(floorCount / segmentSize)} 段
-              </span>
+                {tr("{{v0}} 楼，约 {{v1}} 段", { v0: floorCount, v1: Math.ceil(floorCount / segmentSize) })}</span>
             </div>
 
             {processing && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
-                  <span>处理进度</span>
+                  <span>{tr("处理进度")}</span>
                   <div className="flex items-center gap-2">
                     <span>{progress}%</span>
                     <Button
@@ -285,9 +281,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                       className="px-2"
                       onClick={() => abortRef.current?.abort()}
                     >
-                      <Square className="w-3 h-3 mr-1" />
-                      取消
-                    </Button>
+                      <Square className="w-3 h-3 mr-1" />{tr("取消")}</Button>
                   </div>
                 </div>
                 <Progress value={progress} className="h-2" />
@@ -297,13 +291,12 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
             {stopReason && <p role="status" className="text-sm text-[color:var(--status-warn)]">{stopReason}</p>}
             {results.length > 0 && (
               <div className="space-y-3">
-                <Label>分段结果</Label>
+                <Label>{tr("分段结果")}</Label>
                 <div className="space-y-2 max-h-80 overflow-auto">
                   {results.map((r) => (
                     <div key={r.index} className="border rounded-md p-3 text-sm">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-xs">
-                          第 {r.index + 1}/{r.total} 段 {r.error ? '⚠' : r.done ? '✓' : processing ? '⏳' : '未处理'}
+                        <span className="font-medium text-xs">{tr("第 {{v0}}/{{v1}} 段 ", { v0: r.index + 1, v1: r.total })}{r.error ? '⚠' : r.done ? '✓' : processing ? '⏳' : tr("未处理")}
                         </span>
                         {r.done && r.content && (
                           <Button variant="ghost" size="sm" className="px-2" onClick={() => handleCopy(r.content)}>
@@ -318,7 +311,7 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
                           {r.content.slice(0, 500)}{r.content.length > 500 ? '...' : ''}
                         </div>
                       ) : (
-                        <div className="text-muted-foreground text-xs">{processing ? '等待或处理中...' : '未处理'}</div>
+                        <div className="text-muted-foreground text-xs">{processing ? tr("等待或处理中...") : tr("未处理")}</div>
                       )}
                     </div>
                   ))}
@@ -326,23 +319,20 @@ export function BatchProcessor({ session, floorStart, floorEnd, systemPrompt, bu
 
                 {canMerge && !merged && (
                   <Button variant="outline" onClick={handleMerge}>
-                    <Merge className="w-4 h-4 mr-1" />
-                    合并成功结果
-                  </Button>
+                    <Merge className="w-4 h-4 mr-1" />{tr("合并成功结果")}</Button>
                 )}
 
                 {merged && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>合并结果</Label>
+                      <Label>{tr("合并结果")}</Label>
                       <div className="flex items-center gap-1">
                         <Button variant="ghost" size="sm" onClick={() => handleCopy(merged)}>
                           {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         </Button>
                         {onMergeToEditor && (
                           <Button size="sm" className="gap-1" onClick={() => onMergeToEditor(merged)}>
-                            <FileInput className="w-3.5 h-3.5" />送入结果编辑器
-                          </Button>
+                            <FileInput className="w-3.5 h-3.5" />{tr("送入结果编辑器")}</Button>
                         )}
                       </div>
                     </div>

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 「ST 配置」查看对话框（2.0 阶段9.9 余项，仅客户端）：
  * 首页「其他资产」入口。读已接入的 ST 目录里的 settings.json，
@@ -26,6 +28,7 @@ type LoadState =
   | { kind: 'ok'; rows: STAIConfigRow[]; path: string };
 
 export function STAIConfigDialog({ open, onOpenChange }: STAIConfigDialogProps) {
+  useI18n();
   const navigate = useNavigate();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
 
@@ -71,42 +74,31 @@ export function STAIConfigDialog({ open, onOpenChange }: STAIConfigDialogProps) 
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <KeyRound className="w-4 h-4 text-primary" />
-            ST 里的 AI 配置
-          </DialogTitle>
-          <DialogDescription>
-            你在 SillyTavern 使用的连接概况（只读快照，随看随取，不保存、不读取密钥）。
-            本应用自己的 AI 配置在「设置」页。
-          </DialogDescription>
+            <KeyRound className="w-4 h-4 text-primary" />{tr("ST 里的 AI 配置")}</DialogTitle>
+          <DialogDescription>{tr("你在 SillyTavern 使用的连接概况（只读快照，随看随取，不保存、不读取密钥）。 本应用自己的 AI 配置在「设置」页。")}</DialogDescription>
         </DialogHeader>
 
         {state.kind === 'loading' && (
-          <p className="py-6 text-center text-sm text-muted-foreground">{LOADING_LABEL}</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{tr(LOADING_LABEL)}</p>
         )}
         {state.kind === 'no-root' && (
           <div className="py-4 text-center space-y-3">
-            <p className="text-sm text-muted-foreground">还没有接入 SillyTavern 目录</p>
+            <p className="text-sm text-muted-foreground">{tr("还没有接入 SillyTavern 目录")}</p>
             <Button size="sm" onClick={openDirectorySettings}>
-              <FolderSearch className="w-4 h-4 mr-1.5" />
-              去设置接入 ST
-            </Button>
+              <FolderSearch className="w-4 h-4 mr-1.5" />{tr("去设置接入 ST")}</Button>
           </div>
         )}
         {state.kind === 'no-settings' && (
           <div className="space-y-3 py-4 text-center">
-            <p className="text-sm text-muted-foreground">
-              读不到 ST 的 settings.json（目录可能移动过），请重新选择 ST 目录。
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("读不到 ST 的 settings.json（目录可能移动过），请重新选择 ST 目录。")}</p>
             <Button size="sm" variant="outline" onClick={openDirectorySettings}>
-              <FolderSearch className="mr-1.5 h-4 w-4" />
-              去设置重新选择
-            </Button>
+              <FolderSearch className="mr-1.5 h-4 w-4" />{tr("去设置重新选择")}</Button>
           </div>
         )}
         {state.kind === 'ok' && (
           <div className="space-y-1.5">
             {state.rows.length === 0 ? (
-              <p className="py-4 text-center text-sm text-muted-foreground">settings.json 里没有可识别的 AI 连接配置</p>
+              <p className="py-4 text-center text-sm text-muted-foreground">{tr("settings.json 里没有可识别的 AI 连接配置")}</p>
             ) : (
               state.rows.map((r) => (
                 <div key={r.label} className="flex items-start gap-3 rounded-md bg-muted/50 px-3 py-1.5 text-sm">
@@ -115,7 +107,7 @@ export function STAIConfigDialog({ open, onOpenChange }: STAIConfigDialogProps) 
                 </div>
               ))
             )}
-            <p className="text-[11px] text-muted-foreground/70 break-all pt-1">来源：{state.path}</p>
+            <p className="text-[11px] text-muted-foreground/70 break-all pt-1">{tr("来源：")}{state.path}</p>
           </div>
         )}
       </DialogContent>

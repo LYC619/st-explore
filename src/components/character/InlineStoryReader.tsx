@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 就地阅读（10.3b，对照 character-detail.html）：在角色页故事 tab 内打开正文。
  * - 顶部：返回故事列表 + 故事名下拉切换（含分支）+ 状态 chip + 「继续聊天 / 从当前楼开支线 / 在编辑器中打开」
@@ -63,7 +65,7 @@ export interface InlineStoryReaderHandle { flushPendingSave: () => Promise<void>
 function createReaderSaver() {
   const epoch = getVaultEpoch();
   return new StoryDraftSaver((id, mutation) => {
-    if (epoch !== getVaultEpoch()) return Promise.reject(new Error('文件库已切换，已停止保存原故事'));
+    if (epoch !== getVaultEpoch()) return Promise.reject(new Error(tr("文件库已切换，已停止保存原故事")));
     return updateArchiveStory(id, mutation);
   });
 }
@@ -73,7 +75,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   stories,
   onSwitchStory,
   onBack,
-  backLabel = '故事列表',
+  backLabel = tr("故事列表"),
   onOpenEditor,
   onOpenChat,
   initialBranchId,
@@ -81,6 +83,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   onReadyChange,
   restoreFloor = true,
 }, ref) {
+  useI18n();
   const { toast } = useToast();
   const toastRef = useRef(toast);
   toastRef.current = toast;
@@ -148,8 +151,8 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
     const t = setTimeout(() => {
       void saverRef.current.flush().catch((error: unknown) => {
         toastRef.current({
-          title: '保存故事失败',
-          description: error instanceof Error ? error.message : '请检查库目录是否可写',
+          title: tr("保存故事失败"),
+          description: error instanceof Error ? error.message : tr("请检查库目录是否可写"),
           variant: 'destructive',
         });
       });
@@ -159,8 +162,8 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   useEffect(() => () => {
     void saverRef.current.flush().catch((error: unknown) => {
       toastRef.current({
-        title: '离开阅读器时保存进度未成功',
-        description: error instanceof Error ? error.message : '请检查文件库目录是否可写',
+        title: tr("离开阅读器时保存进度未成功"),
+        description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写"),
         variant: 'destructive',
       });
     });
@@ -201,10 +204,10 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         setStory(withView);
       } catch (error) {
         if (isCurrent()) {
-          setLoadError(error instanceof Error ? error.message : '请稍后重试');
+          setLoadError(error instanceof Error ? error.message : tr("请稍后重试"));
           toastRef.current({
-            title: '读取故事失败',
-            description: error instanceof Error ? error.message : '请稍后重试',
+            title: tr("读取故事失败"),
+            description: error instanceof Error ? error.message : tr("请稍后重试"),
             variant: 'destructive',
           });
         }
@@ -216,8 +219,8 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
       cancelled = true;
       void loadedSaver?.flush().catch((error: unknown) => {
         toastRef.current({
-          title: '切换故事时保存改动未成功',
-          description: error instanceof Error ? error.message : '请检查文件库目录是否可写',
+          title: tr("切换故事时保存改动未成功"),
+          description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写"),
           variant: 'destructive',
         });
       });
@@ -257,8 +260,8 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
       await flushBeforeStoryTransition(saverRef.current, transition);
     } catch (error) {
       toast({
-        title: '故事尚未保存，已取消离开',
-        description: error instanceof Error ? error.message : '请检查库目录是否可写后重试',
+        title: tr("故事尚未保存，已取消离开"),
+        description: error instanceof Error ? error.message : tr("请检查库目录是否可写后重试"),
         variant: 'destructive',
       });
     }
@@ -294,18 +297,18 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
   }, [mutateStory]);
 
   if (loading) {
-    return <div className="py-16 text-center text-sm text-muted-foreground">{LOADING_LABEL}</div>;
+    return <div className="py-16 text-center text-sm text-muted-foreground">{tr(LOADING_LABEL)}</div>;
   }
   if (loadError) {
     return <div role="alert" className="space-y-3 py-12 text-center text-sm">
-      <p>读取故事失败：{loadError}。故事仍保留在库中。</p>
-      <Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试读取故事</Button>
+      <p>{tr("读取故事失败：")}{loadError}{tr("。故事仍保留在库中。")}</p>
+      <Button variant="outline" onClick={() => setRetry(value => value + 1)}>{tr("重试读取故事")}</Button>
     </div>;
   }
   if (!story || !line) {
     return (
       <div className="py-16 flex flex-col items-center gap-3">
-        <p className="text-sm text-muted-foreground">找不到该故事</p>
+        <p className="text-sm text-muted-foreground">{tr("找不到该故事")}</p>
         <Button variant="outline" size="sm" onClick={onBack}>{backLabel}</Button>
       </div>
     );
@@ -331,13 +334,13 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           size="sm"
           className="px-1.5 shrink-0 text-muted-foreground"
           onClick={() => void transitionAfterFlush(onBack)}
-          aria-label="返回故事列表"
-          title={`返回${backLabel}`}
+          aria-label={tr("返回故事列表")}
+          title={tr("返回{{v0}}", { v0: backLabel })}
         >
           <ArrowLeft className={cn('w-4 h-4', !isCompact && 'mr-1')} />
-          {backLabel !== '故事列表' ? (!isCompact && backLabel) : null}
-          {backLabel === '故事列表' && <>
-            {!isCompact && '故事列表'}
+          {backLabel !== tr("故事列表") ? (!isCompact && backLabel) : null}
+          {backLabel === tr("故事列表") && <>
+            {!isCompact && tr("故事列表")}
           </>}
         </Button>
         <DropdownMenu>
@@ -354,7 +357,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto min-w-56">
-            <DropdownMenuLabel className="text-xs text-muted-foreground">切换故事与支线</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">{tr("切换故事与支线")}</DropdownMenuLabel>
             {stories.map((s) => (
               <div key={s.id}>
                 <DropdownMenuItem
@@ -383,7 +386,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
         </DropdownMenu>
         {!isCompact && (
           <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
-            {story.status ?? '未开始'}
+            {story.status ?? tr("未开始")}
           </Badge>
         )}
         {!isCompact && <div className="flex-1" />}
@@ -392,22 +395,22 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           size="sm"
           className="shrink-0"
           onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
-          title="接着当前剧情进入酒馆继续聊"
-          aria-label="继续聊天"
+          title={tr("接着当前剧情进入酒馆继续聊")}
+          aria-label={tr("继续聊天")}
         >
           <MessageSquare className={cn('w-4 h-4', !isCompact && 'mr-1.5')} />
-          {!isCompact && '继续聊天'}
+          {!isCompact && tr("继续聊天")}
         </Button>}
         <Button
           variant="outline"
           size="sm"
           className="shrink-0"
           onClick={() => void transitionAfterFlush(() => onOpenEditor(story.id))}
-          title="进入完整大屏故事工作区：更宽视野、分支管理、总结整理与导入导出"
-          aria-label="在编辑器中打开"
+          title={tr("进入完整大屏故事工作区：更宽视野、分支管理、总结整理与导入导出")}
+          aria-label={tr("在编辑器中打开")}
         >
           <ExternalLink className={cn('w-4 h-4', !isCompact && 'mr-1.5')} />
-          {!isCompact && '在编辑器中打开'}
+          {!isCompact && tr("在编辑器中打开")}
         </Button>
       </div>
 
@@ -433,9 +436,7 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
               className="gap-1 text-xs"
               onClick={() => void transitionAfterFlush(() => onOpenChat(story.id, branchId))}
             >
-              <MessageSquare className="h-3.5 w-3.5" />
-              继续聊
-            </Button>
+              <MessageSquare className="h-3.5 w-3.5" />{tr("继续聊")}</Button>
           ) : undefined}
         />
       ) : (
@@ -455,10 +456,8 @@ export const InlineStoryReader = forwardRef<InlineStoryReaderHandle, InlineStory
           readerMode
           readerStickyTop={readerHeaderHeight}
           toolbarExtras={
-            <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title="小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）">
-              <BookOpenCheck className="w-4 h-4 mr-1.5" />
-              小说视图
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setNovelOpen(true)} title={tr("小说视图：拆句重排+用户楼层弱化/隐藏+场景分隔（Esc 退出）")}>
+              <BookOpenCheck className="w-4 h-4 mr-1.5" />{tr("小说视图")}</Button>
           }
         />
       )}

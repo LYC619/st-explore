@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 /** 首页首屏的空间约束，集中维护，避免 JSX 中散落难以复验的魔法数字。 */
 import type { ArchiveStory } from '@/types/archive';
 import type { StoryIndexEntry } from '@/lib/archive-index';
@@ -60,8 +61,8 @@ export function buildEditorStoryPickerItems(
       return {
         story,
         characterName: story.characterId
-          ? (characterNames.get(story.characterId) ?? '未知角色')
-          : '未绑定角色',
+          ? (characterNames.get(story.characterId) ?? tr("未知角色"))
+          : tr("未绑定角色"),
         floorCount: 'session' in story ? story.session.messages.length : story.floorCount,
         startedAt: timeRange.startedAt ?? story.createdAt,
         endedAt: timeRange.endedAt ?? story.lastMessageAt ?? story.updatedAt,
@@ -95,11 +96,11 @@ export function pickRecentEditorStories<T extends { lastViewedAt?: number; updat
 }
 
 export const EDITOR_TOOL_COPY = {
-  chat: '处理你的聊天文件，支持正则处理、txt 转换、瘦身导出',
-  summary: '按楼层范围生成分卷总结、日记或自定义记录',
-  storyTree: '把人物、事件和伏笔整理成可编辑的故事树',
-  summaryAndTree: '生成分卷总结、日记，并把人物、事件和伏笔整理成故事树',
-  worldbook: '编辑世界设定条目，并检查角色关联关系',
-  card: '查看角色卡字段、内嵌资产与导入结果',
-  preset: '调整提示词块、顺序和生成参数',
+  get chat() { return tr("处理你的聊天文件，支持正则处理、txt 转换、瘦身导出"); },
+  get summary() { return tr("按楼层范围生成分卷总结、日记或自定义记录"); },
+  get storyTree() { return tr("把人物、事件和伏笔整理成可编辑的故事树"); },
+  get summaryAndTree() { return tr("生成分卷总结、日记，并把人物、事件和伏笔整理成故事树"); },
+  get worldbook() { return tr("编辑世界设定条目，并检查角色关联关系"); },
+  get card() { return tr("查看角色卡字段、内嵌资产与导入结果"); },
+  get preset() { return tr("调整提示词块、顺序和生成参数"); },
 } as const;

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 首页（10.1-A5/A6 重排，0801 实测反馈）：
  * - 窗口栏：仅首页显示紧凑问候与归档故事数，不再占内容区一整行
@@ -76,10 +78,10 @@ subscribeActiveVault(() => {
 
 function greeting(): string {
   const h = new Date().getHours();
-  if (h < 6) return '夜深了';
-  if (h < 12) return '早上好';
-  if (h < 18) return '下午好';
-  return '晚上好';
+  if (h < 6) return tr("夜深了");
+  if (h < 12) return tr("早上好");
+  if (h < 18) return tr("下午好");
+  return tr("晚上好");
 }
 
 /** 辅助入口按钮化（0801 反馈：pill 样式，视觉权重不再是灰色小字） */
@@ -101,14 +103,15 @@ function PillLink({ label, onClick }: { label: string; onClick: () => void }) {
  * （`docs/ui-conventions.md` 三）。
  */
 const EDIT_TOOLS = [
-  { label: '聊天处理', description: EDITOR_TOOL_COPY.chat, icon: MessagesSquare, path: '/chat' },
-  { label: '总结', description: EDITOR_TOOL_COPY.summaryAndTree, icon: BookOpenText, path: '/tools?focus=summary' },
-  { label: '世界书', description: EDITOR_TOOL_COPY.worldbook, icon: BookOpen, path: '/tools?focus=worldbook' },
-  { label: '角色卡', description: EDITOR_TOOL_COPY.card, icon: IdCard, path: '/card-viewer' },
-  { label: '预设', description: EDITOR_TOOL_COPY.preset, icon: SlidersHorizontal, path: '/presets?mode=select' },
+  { get label() { return tr("聊天处理"); }, get description() { return EDITOR_TOOL_COPY.chat; }, icon: MessagesSquare, path: '/chat' },
+  { get label() { return tr("总结"); }, get description() { return EDITOR_TOOL_COPY.summaryAndTree; }, icon: BookOpenText, path: '/tools?focus=summary' },
+  { get label() { return tr("世界书"); }, get description() { return EDITOR_TOOL_COPY.worldbook; }, icon: BookOpen, path: '/tools?focus=worldbook' },
+  { get label() { return tr("角色卡"); }, get description() { return EDITOR_TOOL_COPY.card; }, icon: IdCard, path: '/card-viewer' },
+  { get label() { return tr("预设"); }, get description() { return EDITOR_TOOL_COPY.preset; }, icon: SlidersHorizontal, path: '/presets?mode=select' },
 ];
 
 const Home = () => {
+  useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [scopeEpoch] = useState(getVaultEpoch);
@@ -255,7 +258,7 @@ const Home = () => {
       });
     } catch (err) {
       toast({
-        title: '暂时未能进入聊天',
+        title: tr("暂时未能进入聊天"),
         description: err instanceof Error ? err.message : String(err),
         variant: 'destructive',
       });
@@ -301,20 +304,20 @@ const Home = () => {
 
   const ASSET_CELLS = [
     {
-      label: '世界书',
-      description: '整理世界设定条目与角色关联',
+      label: tr("世界书"),
+      description: tr("整理世界设定条目与角色关联"),
       count: loadFailed || failedAssets.worldbooks ? '—' : assetCounts.worldbooks,
       onClick: () => navigate('/assets?tab=worldbook'),
     },
     {
-      label: '预设',
-      description: '复用提示词、顺序和生成参数',
+      label: tr("预设"),
+      description: tr("复用提示词、顺序和生成参数"),
       count: loadFailed || failedAssets.presets ? '—' : assetCounts.presets,
       onClick: () => navigate('/presets'),
     },
     {
-      label: '正则',
-      description: '管理聊天清理与替换规则',
+      label: tr("正则"),
+      description: tr("管理聊天清理与替换规则"),
       count: loadFailed || failedAssets.regexes ? '—' : assetCounts.regexes,
       onClick: () => navigate('/assets?tab=regex'),
     },
@@ -323,9 +326,9 @@ const Home = () => {
   return (
     <AppLayout
       titleBarContent={(
-        <div className="flex min-w-0 items-baseline gap-2 truncate" data-home-title-summary title={`您已经归档了 ${stories.length} 个故事`}>
+        <div className="flex min-w-0 items-baseline gap-2 truncate" data-home-title-summary title={tr("您已经归档了 {{v0}} 个故事", { v0: stories.length })}>
           <span className="shrink-0 font-serif text-sm font-semibold text-[color:var(--text-primary)]">{greeting()}</span>
-          <span className="truncate text-[11px] text-[color:var(--text-muted)]" title={`您已经归档了 ${stories.length} 个故事`}>您已经归档了 {stories.length} 个故事</span>
+          <span className="truncate text-[11px] text-[color:var(--text-muted)]" title={tr("您已经归档了 {{v0}} 个故事", { v0: stories.length })}>{tr("您已经归档了 {{v0}} 个故事", { v0: stories.length })}</span>
         </div>
       )}
     >
@@ -344,16 +347,14 @@ const Home = () => {
             className="shrink-0 flex items-center justify-between gap-3 rounded-lg border border-[color:var(--border-normal)] bg-chrome px-3.5 py-2.5"
           >
             <div className="min-w-0">
-              <p className="text-sm text-[color:var(--text-body)]">读取归档失败</p>
-              <p className="text-xs text-[color:var(--text-muted)]">下面显示的不是空档案，是这次没读出来。数据仍在库里。</p>
+              <p className="text-sm text-[color:var(--text-body)]">{tr("读取归档失败")}</p>
+              <p className="text-xs text-[color:var(--text-muted)]">{tr("下面显示的不是空档案，是这次没读出来。数据仍在库里。")}</p>
             </div>
             <button
               type="button"
               onClick={() => void loadData()}
               className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs border border-[color:var(--border-normal)] text-[color:var(--text-body)] hover:border-[color:var(--brand-hairline)] hover:text-brand transition-colors shrink-0"
-            >
-              重试
-            </button>
+            >{tr("重试")}</button>
           </div>
         )}
 
@@ -389,13 +390,9 @@ const Home = () => {
               data-home-character-wheel-surface
             >
               <div className="flex items-center justify-between mb-2.5 gap-2">
-                <h2 className="font-serif text-xl font-semibold tracking-wide text-[color:var(--text-primary)]">
-                  最近查看的角色
-                  <span className="text-sm text-[color:var(--text-muted)] font-sans font-normal tracking-normal ml-2">
-                    共 {characters.length} 张
-                  </span>
+                <h2 className="font-serif text-xl font-semibold tracking-wide text-[color:var(--text-primary)]">{tr("最近查看的角色")}<span className="text-sm text-[color:var(--text-muted)] font-sans font-normal tracking-normal ml-2">{tr("共 {{v0}} 张", { v0: characters.length })}</span>
                 </h2>
-                <PillLink label="进入角色库" onClick={() => navigate('/library')} />
+                <PillLink label={tr("进入角色库")} onClick={() => navigate('/library')} />
               </div>
               {loading ? (
                 /* 首屏骨架照着横滑卡排摆：不能直接落到「还没有角色卡」，
@@ -413,14 +410,14 @@ const Home = () => {
                 </div>
               ) : loadFailed && recentCharacters.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-chrome p-6 flex flex-col items-center justify-center gap-1.5 text-center">
-                  <p className="text-sm text-muted-foreground">暂时无法显示角色列表</p>
-                  <p className="text-xs text-muted-foreground/70">请点上方「重试」重新读取你的收藏</p>
+                  <p className="text-sm text-muted-foreground">{tr("暂时无法显示角色列表")}</p>
+                  <p className="text-xs text-muted-foreground/70">{tr("请点上方「重试」重新读取你的收藏")}</p>
                 </div>
               ) : recentCharacters.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-chrome p-6 flex flex-col items-center justify-center gap-1.5 text-center">
                   <Users className="w-8 h-8 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">还没有角色卡</p>
-                  <p className="text-xs text-muted-foreground/70">去角色库导入 PNG/JSON 角色卡，开始你的收藏</p>
+                  <p className="text-sm text-muted-foreground">{tr("还没有角色卡")}</p>
+                  <p className="text-xs text-muted-foreground/70">{tr("去角色库导入 PNG/JSON 角色卡，开始你的收藏")}</p>
                 </div>
               ) : (
                 <div
@@ -470,19 +467,19 @@ const Home = () => {
               data-tour="home-recent"
             >
               <div className="shrink-0 mb-2.5 flex items-end justify-between gap-3" data-home-story-heading>
-                <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">最近在看的故事</h2>
-                {!isMobile && <span className="pb-0.5 text-xs text-[color:var(--text-muted)]">滚动查看更多故事。</span>}
+                <h2 className="font-serif text-base font-semibold text-[color:var(--text-primary)]">{tr("最近在看的故事")}</h2>
+                {!isMobile && <span className="pb-0.5 text-xs text-[color:var(--text-muted)]">{tr("滚动查看更多故事。")}</span>}
               </div>
               {loading ? (
                 <StoryListSkeleton className={cn(!isMobile && 'flex-1 min-h-0')} count={isMobile ? 3 : 4} />
               ) : loadFailed && recentStories.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-elevated-strong p-5 text-center flex flex-col items-center justify-center">
-                  <p className="text-sm text-muted-foreground">暂时无法显示最近故事</p>
+                  <p className="text-sm text-muted-foreground">{tr("暂时无法显示最近故事")}</p>
                 </div>
               ) : recentStories.length === 0 ? (
                 <div className="flex-1 min-h-0 rounded-xl bg-elevated-strong p-5 text-center flex flex-col items-center justify-center">
                   <BookOpenText className="mx-auto mb-2 h-7 w-7 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">还没有看过的故事</p>
+                  <p className="text-sm text-muted-foreground">{tr("还没有看过的故事")}</p>
                 </div>
               ) : (
                 <div
@@ -497,10 +494,10 @@ const Home = () => {
                 >
                   {(isMobile && !showAllMobileStories ? recentStories.slice(0, 4) : recentStories).map((s) => {
                     const char = s.characterId ? characterById[s.characterId] : undefined;
-                    const charLabel = char?.displayMeta?.name || char?.name || s.chatIndex?.characterName || '未绑定角色';
+                    const charLabel = char?.displayMeta?.name || char?.name || s.chatIndex?.characterName || tr("未绑定角色");
                     const progressLabel = typeof s.lastFloor === 'number' && s.lastFloor > 0 && s.floorCount > 0
-                      ? `读至 #${Math.min(s.lastFloor, Math.max(0, s.floorCount - 1))} / 共 ${s.floorCount} 楼`
-                      : `共 ${s.floorCount} 楼`;
+                      ? tr("读至 #{{v0}} / 共 {{v1}} 楼", { v0: Math.min(s.lastFloor, Math.max(0, s.floorCount - 1)), v1: s.floorCount })
+                      : tr("共 {{v0}} 楼", { v0: s.floorCount });
                     return (
                       <div
                         key={s.id}
@@ -538,9 +535,9 @@ const Home = () => {
                               void continueStoryFromHome(s.id);
                             }}
                             className="hover-reveal tap-target shrink-0 rounded-full border border-[color:var(--border-normal)] px-2 py-0.5 text-[11px] text-[color:var(--text-muted)] hover:border-[color:var(--brand-hairline)] hover:text-brand transition-colors"
-                            title="接着当前剧情进入酒馆继续聊"
+                            title={tr("接着当前剧情进入酒馆继续聊")}
                           >
-                            {startingStoryId === s.id ? '打开中…' : '续聊'}
+                            {startingStoryId === s.id ? tr("打开中…") : tr("续聊")}
                           </button>
                         )}
                       </div>
@@ -554,7 +551,7 @@ const Home = () => {
                   onClick={() => setShowAllMobileStories((v) => !v)}
                   className="mt-2 self-center rounded-full px-3 py-1 text-xs text-brand hover:bg-[var(--brand-active-bg)]"
                 >
-                  {showAllMobileStories ? '收起故事列表' : `展开其余 ${recentStories.length - 4} 篇故事`}
+                  {showAllMobileStories ? tr("收起故事列表") : tr("展开其余 {{v0}} 篇故事", { v0: recentStories.length - 4 })}
                 </button>
               )}
             </section>
@@ -572,12 +569,10 @@ const Home = () => {
             >
               <div className="shrink-0 flex items-start justify-between mb-3 gap-3">
                 <div className="min-w-0">
-                  <h2 className="font-serif text-[17px] font-semibold text-[color:var(--text-primary)]">编辑处理区</h2>
-                  <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">
-                    从聊天、总结到角色资产，集中完成清理、整理和导出。
-                  </p>
+                  <h2 className="font-serif text-[17px] font-semibold text-[color:var(--text-primary)]">{tr("编辑处理区")}</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">{tr("从聊天、总结到角色资产，集中完成清理、整理和导出。")}</p>
                 </div>
-                <PillLink label="进入编辑区" onClick={() => navigate('/chat')} />
+                <PillLink label={tr("进入编辑区")} onClick={() => navigate('/chat')} />
               </div>
               <div
                 className={cn('grid grid-cols-1 gap-2', isMobile ? 'auto-rows-auto' : 'flex-1 min-h-0 grid-rows-5')}
@@ -617,10 +612,10 @@ const Home = () => {
             >
               <div className="shrink-0 mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <h2 className="font-serif text-[17px] font-semibold text-[color:var(--text-primary)]">共享资产</h2>
-                  <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">世界书、预设和正则是可复用的共享资源。</p>
+                  <h2 className="font-serif text-[17px] font-semibold text-[color:var(--text-primary)]">{tr("共享资产")}</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-[color:var(--text-muted)]">{tr("世界书、预设和正则是可复用的共享资源。")}</p>
                 </div>
-                <PillLink label="打开附属库" onClick={() => navigate('/assets')} />
+                <PillLink label={tr("打开附属库")} onClick={() => navigate('/assets')} />
               </div>
               <div className={cn('grid grid-cols-2 gap-2', isMobile ? 'auto-rows-auto' : 'flex-1 min-h-0 auto-rows-fr')}>
                 {ASSET_CELLS.map((cell) => (
@@ -644,8 +639,8 @@ const Home = () => {
                     className="min-h-0 flex items-start justify-between gap-2 rounded-lg bg-chrome px-3 py-3 text-left transition-colors hover:bg-elevated-strong"
                   >
                     <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 text-sm font-medium text-[color:var(--text-body)]"><KeyRound className="h-3.5 w-3.5 text-[color:var(--text-muted)]" />ST 配置</span>
-                      <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-[color:var(--text-muted)]" title="连接 SillyTavern 目录与接口">连接 SillyTavern 目录与接口</span>
+                      <span className="flex items-center gap-1.5 text-sm font-medium text-[color:var(--text-body)]"><KeyRound className="h-3.5 w-3.5 text-[color:var(--text-muted)]" />{tr("ST 配置")}</span>
+                      <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-[color:var(--text-muted)]" title={tr("连接 SillyTavern 目录与接口")}>{tr("连接 SillyTavern 目录与接口")}</span>
                     </span>
                     <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--text-faint)]" />
                   </button>

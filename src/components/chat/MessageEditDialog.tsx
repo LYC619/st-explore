@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -25,6 +27,7 @@ export const MessageEditDialog = ({
   onSave,
   onDelete,
 }: MessageEditDialogProps) => {
+  useI18n();
   const [content, setContent] = useState('');
   const [name, setName] = useState('');
   const [role, setRole] = useState<'user' | 'assistant'>('assistant');
@@ -54,8 +57,8 @@ export const MessageEditDialog = ({
   if (!message) return null;
 
   const titleLabel = typeof floorNumber === 'number'
-    ? `编辑第 #${floorNumber} 楼`
-    : '编辑本楼内容';
+    ? tr("编辑第 #{{v0}} 楼", { v0: floorNumber })
+    : tr("编辑本楼内容");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,36 +70,36 @@ export const MessageEditDialog = ({
         <div className="flex-1 overflow-auto space-y-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="name">说话人名称</Label>
+              <Label htmlFor="name">{tr("说话人名称")}</Label>
               <Input
                 id="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="留空则跟随当前角色或玩家默认名"
+                placeholder={tr("留空则跟随当前角色或玩家默认名")}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="role">发言归属</Label>
+              <Label htmlFor="role">{tr("发言归属")}</Label>
               <Select value={role} onValueChange={(v) => setRole(v as 'user' | 'assistant')}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="user">玩家发言</SelectItem>
-                  <SelectItem value="assistant">角色回复</SelectItem>
+                  <SelectItem value="user">{tr("玩家发言")}</SelectItem>
+                  <SelectItem value="assistant">{tr("角色回复")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="content">楼层正文</Label>
+            <Label htmlFor="content">{tr("楼层正文")}</Label>
             <Textarea
               id="content"
               value={content}
               onChange={(e) => setContent(e.target.value)}
               className="min-h-[300px] text-sm leading-relaxed"
-              placeholder="输入这一楼的正文内容…"
+              placeholder={tr("输入这一楼的正文内容…")}
             />
           </div>
         </div>
@@ -109,21 +112,17 @@ export const MessageEditDialog = ({
                 className="text-destructive hover:text-destructive"
                 onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 className="w-4 h-4 mr-2" />
-                删除本楼
-              </Button>
+                <Trash2 className="w-4 h-4 mr-2" />{tr("删除本楼")}</Button>
             )}
             {onDelete && confirmDelete && (
               <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-xs">
-                <span className="text-destructive">确认删除这一楼？</span>
+                <span className="text-destructive">{tr("确认删除这一楼？")}</span>
                 <Button
                   size="sm"
                   variant="outline"
                   autoFocus
                   onClick={() => setConfirmDelete(false)}
-                >
-                  取消
-                </Button>
+                >{tr("取消")}</Button>
                 <Button
                   size="sm"
                   variant="destructive"
@@ -132,19 +131,13 @@ export const MessageEditDialog = ({
                     onDelete();
                     onOpenChange(false);
                   }}
-                >
-                  确认删除
-                </Button>
+                >{tr("确认删除")}</Button>
               </div>
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)}>
-              取消
-            </Button>
-            <Button onClick={handleSave} disabled={!content.trim()}>
-              保存修改
-            </Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
+            <Button onClick={handleSave} disabled={!content.trim()}>{tr("保存修改")}</Button>
           </div>
         </DialogFooter>
       </DialogContent>

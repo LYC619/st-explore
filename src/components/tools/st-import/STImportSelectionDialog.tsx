@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
+import { useEffect, useState } from 'react';
 import {
   Archive,
   BookOpen,
@@ -95,29 +97,30 @@ export function STImportSelectionDialog({
   onCancel,
   onImport,
 }: STImportSelectionDialogProps) {
-  const sections = useMemo<SectionDefinition[]>(() => {
+  useI18n();
+  const sections = useLocalizedMemo<SectionDefinition[]>(() => {
     const rows: Array<SectionDefinition | false> = [
       scan.characters.length > 0 && {
-        id: 'characters', label: '角色', found: scan.characters.length, selected: picks.chars.size, icon: Users,
+        id: 'characters', label: tr("角色"), found: scan.characters.length, selected: picks.chars.size, icon: Users,
       },
       scan.strayChats.length > 0 && {
-        id: 'chats', label: '散聊天', found: scan.strayChats.length, selected: picks.strays.size, icon: MessageSquareText,
+        id: 'chats', label: tr("散聊天"), found: scan.strayChats.length, selected: picks.strays.size, icon: MessageSquareText,
       },
       scan.worldbooks.length > 0 && {
-        id: 'worldbooks', label: '世界书', found: scan.worldbooks.length, selected: picks.wbs.size, icon: BookOpen,
+        id: 'worldbooks', label: tr("世界书"), found: scan.worldbooks.length, selected: picks.wbs.size, icon: BookOpen,
       },
       scan.presets.length > 0 && {
-        id: 'presets', label: '预设', found: scan.presets.length, selected: picks.presets.size, icon: SlidersHorizontal,
+        id: 'presets', label: tr("预设"), found: scan.presets.length, selected: picks.presets.size, icon: SlidersHorizontal,
       },
       scan.archives.length > 0 && {
-        id: 'archives', label: '其他资产', found: scan.archives.length, selected: picks.archives.size, icon: Archive,
+        id: 'archives', label: tr("其他资产"), found: scan.archives.length, selected: picks.archives.size, icon: Archive,
       },
       scan.regex !== null && {
-        id: 'regex', label: '正则', found: 1, selected: picks.regex ? 1 : 0, icon: Braces,
+        id: 'regex', label: tr("正则"), found: 1, selected: picks.regex ? 1 : 0, icon: Braces,
       },
       scan.relationships.status !== 'missing' && {
         id: 'relationships',
-        label: '关联',
+        label: tr("关联"),
         found: scan.relationships.status === 'parsed' ? 1 : 0,
         selected: picks.settingsRelations ? 1 : 0,
         icon: Link2,
@@ -135,34 +138,32 @@ export function STImportSelectionDialog({
   const availableCount = countImportPicks(createAllImportPicks(scan));
   const characterChatCount = scan.characters.reduce((sum, character) => sum + character.chats.length, 0);
   const foundSummary = [
-    `${scan.characters.length} 个角色`,
-    `${characterChatCount + scan.strayChats.length} 场聊天`,
-    `${scan.worldbooks.length} 本世界书`,
-    `${scan.presets.length} 个预设`,
+    tr("{{v0}} 个角色", { v0: scan.characters.length }),
+    tr("{{v0}} 场聊天", { v0: characterChatCount + scan.strayChats.length }),
+    tr("{{v0}} 本世界书", { v0: scan.worldbooks.length }),
+    tr("{{v0}} 个预设", { v0: scan.presets.length }),
   ].join(' · ');
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !canceling) onCancel(); }}>
       <DialogContent className="grid max-h-[calc(100vh-2rem)] max-w-3xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0">
         <DialogHeader className="px-6 pb-4 pt-6 pr-12">
-          <DialogTitle>选择要导入的内容</DialogTitle>
+          <DialogTitle>{tr("选择要导入的内容")}</DialogTitle>
           <DialogDescription className="space-y-1">
-            <span className="block">扫描到 {foundSummary}</span>
+            <span className="block">{tr("扫描到 ")}{foundSummary}</span>
             <span className="block truncate" title={root}>
-              {root}{scan.userDir ? ` · 已定位到 ${scan.userDir}` : ''}
+              {root}{scan.userDir ? tr(" · 已定位到 {{v0}}", { v0: scan.userDir }) : ''}
             </span>
           </DialogDescription>
           <div className="mt-3 rounded-md border border-border bg-muted/30 px-3 py-2">
             <p className="text-xs leading-5 text-muted-foreground">
-              <span className="font-medium text-foreground">重复导入规则：</span>{IMPORT_POLICY_SUMMARY}
+              <span className="font-medium text-foreground">{tr("重复导入规则：")}</span>{tr(IMPORT_POLICY_SUMMARY)}
             </p>
           </div>
           {skippedSecrets > 0 && (
             <div className="mt-2 rounded-md border border-border bg-muted/30 px-3 py-2">
               <p className="text-xs leading-5 text-muted-foreground">
-                <span className="font-medium text-foreground">已跳过 secrets.json：</span>
-                包里的 API 密钥文件没有被解压，本应用也不需要它。其余内容照常导入。
-              </p>
+                <span className="font-medium text-foreground">{tr("已跳过 secrets.json：")}</span>{tr("包里的 API 密钥文件没有被解压，本应用也不需要它。其余内容照常导入。")}</p>
             </div>
           )}
         </DialogHeader>
@@ -170,16 +171,12 @@ export function STImportSelectionDialog({
         <div className="min-h-0 border-y border-border">
           <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3">
             <div>
-              <p className="text-sm font-medium">已选 {pickedCount} / {availableCount} 个项目组</p>
-              <p className="text-xs text-muted-foreground">切换类别不会清除已经勾选的内容</p>
+              <p className="text-sm font-medium">{tr("已选 ")}{pickedCount} / {availableCount}{tr(" 个项目组")}</p>
+              <p className="text-xs text-muted-foreground">{tr("切换类别不会清除已经勾选的内容")}</p>
             </div>
             <div className="flex items-center gap-1">
-              <Button type="button" variant="ghost" size="sm" onClick={() => onPicksChange(createAllImportPicks(scan))}>
-                全选
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => onPicksChange(createEmptyImportPicks())}>
-                清空
-              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onPicksChange(createAllImportPicks(scan))}>{tr("全选")}</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onPicksChange(createEmptyImportPicks())}>{tr("清空")}</Button>
             </div>
           </div>
 
@@ -201,15 +198,15 @@ export function STImportSelectionDialog({
 
             <div className="min-h-0 overflow-y-auto px-6 py-3">
               <TabsContent value="characters" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">角色卡进入角色库，名下聊天一并进入对应角色的故事。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("角色卡进入角色库，名下聊天一并进入对应角色的故事。")}</p>
                 {scan.characters.map((character) => (
                   <PickRow
                     key={character.pngPath}
                     checked={picks.chars.has(character.pngPath)}
                     title={character.name}
                     description={character.chats.length
-                      ? `${character.chats.length} 场聊天 · ${formatBytes(character.chatBytes)}`
-                      : `仅角色卡 · ${formatBytes(character.pngSize)}`}
+                      ? tr("{{v0}} 场聊天 · {{v1}}", { v0: character.chats.length, v1: formatBytes(character.chatBytes) })
+                      : tr("仅角色卡 · {{v0}}", { v0: formatBytes(character.pngSize) })}
                     onCheckedChange={(checked) => onPicksChange({
                       ...picks,
                       chars: toggleImportPick(picks.chars, character.pngPath, checked),
@@ -219,13 +216,13 @@ export function STImportSelectionDialog({
               </TabsContent>
 
               <TabsContent value="chats" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">没有匹配角色卡的聊天会进入临时故事，内容不会丢弃。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("没有匹配角色卡的聊天会进入临时故事，内容不会丢弃。")}</p>
                 {scan.strayChats.map((chat) => (
                   <PickRow
                     key={chat.path}
                     checked={picks.strays.has(chat.path)}
                     title={`${chat.characterDir} / ${chat.name}`}
-                    description={`${formatBytes(chat.size)} · 导入为未绑定故事`}
+                    description={tr("{{v0}} · 导入为未绑定故事", { v0: formatBytes(chat.size) })}
                     onCheckedChange={(checked) => onPicksChange({
                       ...picks,
                       strays: toggleImportPick(picks.strays, chat.path, checked),
@@ -235,7 +232,7 @@ export function STImportSelectionDialog({
               </TabsContent>
 
               <TabsContent value="worldbooks" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">世界书进入附属库，并用于恢复角色、全局和聊天关联。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("世界书进入附属库，并用于恢复角色、全局和聊天关联。")}</p>
                 {scan.worldbooks.map((worldbook) => (
                   <PickRow
                     key={worldbook.path}
@@ -251,13 +248,13 @@ export function STImportSelectionDialog({
               </TabsContent>
 
               <TabsContent value="presets" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">聊天补全预设进入附属库，可继续查看和编辑。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("聊天补全预设进入附属库，可继续查看和编辑。")}</p>
                 {scan.presets.map((preset) => (
                   <PickRow
                     key={preset.path}
                     checked={picks.presets.has(preset.path)}
                     title={preset.name}
-                    description={`${formatBytes(preset.size)} · OpenAI Settings 预设`}
+                    description={tr("{{v0}} · OpenAI Settings 预设", { v0: formatBytes(preset.size) })}
                     onCheckedChange={(checked) => onPicksChange({
                       ...picks,
                       presets: toggleImportPick(picks.presets, preset.path, checked),
@@ -267,16 +264,14 @@ export function STImportSelectionDialog({
               </TabsContent>
 
               <TabsContent value="archives" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  扩展代码不会执行；其他文件保持原目录结构，用户人设只提取相关设置，统一归档到“资产/其他/SillyTavern”。
-                </p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("扩展代码不会执行；其他文件保持原目录结构，用户人设只提取相关设置，统一归档到“资产/其他/SillyTavern”。")}</p>
                 {scan.archives.map((group) => (
                   <PickRow
                     key={group.kind}
                     icon={Archive}
                     checked={picks.archives.has(group.kind)}
                     title={group.label}
-                    description={`${group.description} · 识别 ${group.itemCount} 项 · 共 ${group.files.length + (group.generatedFiles?.length ?? 0)} 个归档文件 · ${formatBytes(group.bytes)}`}
+                    description={tr("{{v0}} · 识别 {{v1}} 项 · 共 {{v2}} 个归档文件 · {{v3}}", { v0: group.description, v1: group.itemCount, v2: group.files.length + (group.generatedFiles?.length ?? 0), v3: formatBytes(group.bytes) })}
                     onCheckedChange={(checked) => onPicksChange({
                       ...picks,
                       archives: toggleImportPick(picks.archives, group.kind, checked),
@@ -286,30 +281,30 @@ export function STImportSelectionDialog({
               </TabsContent>
 
               <TabsContent value="regex" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">settings.json 中的全局正则整组进入附属库。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("settings.json 中的全局正则整组进入附属库。")}</p>
                 {scan.regex && (
                   <PickRow
                     checked={picks.regex}
-                    title="ST 全局正则"
-                    description={`${scan.regex.count} 条脚本 · 导入为一套规则集`}
+                    title={tr("ST 全局正则")}
+                    description={tr("{{v0}} 条脚本 · 导入为一套规则集", { v0: scan.regex.count })}
                     onCheckedChange={(checked) => onPicksChange({ ...picks, regex: checked })}
                   />
                 )}
               </TabsContent>
 
               <TabsContent value="relationships" className="m-0">
-                <p className="mb-2 text-xs text-muted-foreground">主绑定和对话级关系随角色与聊天恢复；这里控制 settings 中的全局和额外链接。</p>
+                <p className="mb-2 text-xs text-muted-foreground">{tr("主绑定和对话级关系随角色与聊天恢复；这里控制 settings 中的全局和额外链接。")}</p>
                 {scan.relationships.status === 'parsed' ? (
                   <PickRow
                     checked={picks.settingsRelations}
-                    title="settings.json 世界书关系"
-                    description={`全局 ${scan.relationships.globalWorldbooks.length} 个 · 角色额外链接 ${scan.relationships.characterWorldbooks.reduce((sum, row) => sum + row.worldbooks.length, 0)} 个`}
+                    title={tr("settings.json 世界书关系")}
+                    description={tr("全局 {{v0}} 个 · 角色额外链接 {{v1}} 个", { v0: scan.relationships.globalWorldbooks.length, v1: scan.relationships.characterWorldbooks.reduce((sum, row) => sum + row.worldbooks.length, 0) })}
                     onCheckedChange={(checked) => onPicksChange({ ...picks, settingsRelations: checked })}
                   />
                 ) : (
                   <div className="flex items-start gap-2 rounded border border-border bg-muted/30 p-3 text-sm">
                     <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                    <p><span className="font-medium">settings.json 无法解析。</span><br /><span className="text-xs text-muted-foreground">本次不会改动已有的全局或额外世界书链接。</span></p>
+                    <p><span className="font-medium">{tr("settings.json 无法解析。")}</span><br /><span className="text-xs text-muted-foreground">{tr("本次不会改动已有的全局或额外世界书链接。")}</span></p>
                   </div>
                 )}
               </TabsContent>
@@ -319,15 +314,13 @@ export function STImportSelectionDialog({
 
         <div className="px-6 py-4">
           {!!scan.warnings.length && !importing && (
-            <p className="mb-3 text-xs text-muted-foreground">
-              已安全跳过 {scan.warnings.length} 个符号链接、非法路径名或过深目录；路径会写入本次清单。
-            </p>
+            <p className="mb-3 text-xs text-muted-foreground">{tr("已安全跳过 ")}{scan.warnings.length}{tr(" 个符号链接、非法路径名或过深目录；路径会写入本次清单。")}</p>
           )}
           {importing && progress && (
             <div className="mb-3 space-y-1.5">
               <div className="flex items-baseline justify-between gap-3 text-xs">
                 <span className="text-muted-foreground">
-                  {progress.total ? `写入中 ${progress.done} / ${progress.total}` : `写入中 ${progress.done}`}
+                  {progress.total ? tr("写入中 {{v0}} / {{v1}}", { v0: progress.done, v1: progress.total }) : tr("写入中 {{v0}}", { v0: progress.done })}
                 </span>
                 <span className="min-w-0 truncate text-muted-foreground" title={progress.label}>
                   {progress.label ?? ''}
@@ -338,19 +331,15 @@ export function STImportSelectionDialog({
                 className="h-2"
               />
               {/* 入库和前两个阶段不一样：写进去的东西撤不回来，取消前必须说清楚 */}
-              <p className="text-xs text-muted-foreground">
-                取消会停在当前条目，已经写入的内容会保留。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr("取消会停在当前条目，已经写入的内容会保留。")}</p>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={onCancel} disabled={canceling}>
-              {importing ? (canceling ? '正在停止…' : '取消导入') : '取消'}
+              {importing ? (canceling ? tr("正在停止…") : tr("取消导入")) : tr("取消")}
             </Button>
             <Button onClick={onImport} disabled={importing || pickedCount === 0}>
-              {importing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}
-              导入 {pickedCount} 个项目组
-            </Button>
+              {importing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Download className="mr-1 h-4 w-4" />}{tr("导入 ")}{pickedCount}{tr(" 个项目组")}</Button>
           </DialogFooter>
         </div>
       </DialogContent>

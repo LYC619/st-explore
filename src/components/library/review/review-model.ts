@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import type { StoryIndexEntry } from '@/lib/archive-index';
 import type { SummaryItem } from '@/types/summary';
 
@@ -35,7 +36,7 @@ export function groupReviewRecords(stories: StoryIndexEntry[], records: SummaryI
     const ordered = [null, ...known.map(b => b.id), ...ids.filter(id => id !== null && !known.some(b => b.id === id)).sort()];
     return [{ story, branches: ordered.filter(id => ids.includes(id)).map(id => ({
       id,
-      name: id === null ? '主线' : known.find(b => b.id === id)?.name ?? `已删除分支 · ${id}`,
+      name: id === null ? tr("主线") : known.find(b => b.id === id)?.name ?? tr("已删除分支 · {{v0}}", { v0: id }),
       deleted: id !== null && !known.some(b => b.id === id),
       records: items.filter(item => (item.branchId || null) === id).sort((a, b) => {
         if (kind === 'volume') {

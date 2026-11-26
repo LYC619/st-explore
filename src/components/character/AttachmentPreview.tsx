@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 关联文件的只读预览（0830 反馈条目 6），嵌在关联资产抽屉里。
  *
@@ -27,6 +29,7 @@ interface Loaded {
 }
 
 export function AttachmentPreview({ file }: { file: AttachmentView }) {
+  useI18n();
   const [content, setContent] = useState<Loaded>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -70,10 +73,7 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
 
   if (file.missing) {
     return (
-      <Notice tone="warn" icon={AlertTriangle} title="文件不在库里了">
-        记录还留着。文件可能被挪走或改名了，放回 <span className="font-mono break-all">{file.resolvedPath ?? file.path}</span> 就会恢复；
-        也可以直接移除这条记录。
-      </Notice>
+      <Notice tone="warn" icon={AlertTriangle} title={tr("文件不在库里了")}>{tr("记录还留着。文件可能被挪走或改名了，放回 ")}<span className="font-mono break-all">{file.resolvedPath ?? file.path}</span>{tr(" 就会恢复； 也可以直接移除这条记录。")}</Notice>
     );
   }
 
@@ -83,10 +83,8 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
       <div className="flex min-h-48 flex-col items-center justify-center gap-3 rounded-lg border border-border bg-card px-4 py-8 text-center">
         {media ? <FileVideo className="h-9 w-9 text-muted-foreground opacity-60" /> : <File className="h-9 w-9 text-muted-foreground opacity-60" />}
         <div>
-          <p className="text-sm">{media ? '音视频交给系统播放器' : '这个格式不在客户端内预览'}</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            文件已在库里（{formatArchiveBytes(file.actualSize)}），用下面的「用外部程序打开」交给系统默认程序。
-          </p>
+          <p className="text-sm">{media ? tr("音视频交给系统播放器") : tr("这个格式不在客户端内预览")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tr("文件已在库里（")}{formatArchiveBytes(file.actualSize)}{tr("），用下面的「用外部程序打开」交给系统默认程序。")}</p>
         </div>
       </div>
     );
@@ -95,13 +93,13 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
   if (loading) {
     return (
       <div className="flex min-h-40 items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />{LOADING_LABEL}
+        <Loader2 className="h-4 w-4 animate-spin" />{tr(LOADING_LABEL)}
       </div>
     );
   }
 
   if (error) {
-    return <Notice tone="danger" icon={AlertTriangle} title="读不出这个文件">{error}</Notice>;
+    return <Notice tone="danger" icon={AlertTriangle} title={tr("读不出这个文件")}>{error}</Notice>;
   }
 
   if (content.imageUrl) {
@@ -116,7 +114,7 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
     return (
       <div className="space-y-2">
         {content.jsonInvalid && (
-          <Notice tone="warn" icon={AlertTriangle} title="JSON 格式异常">以下按原始文本显示。</Notice>
+          <Notice tone="warn" icon={AlertTriangle} title={tr("JSON 格式异常")}>{tr("以下按原始文本显示。")}</Notice>
         )}
         {/* html 也走这里：看的是源码，不渲染（见文件头注释） */}
         <pre className="whitespace-pre-wrap break-words rounded-lg border border-border bg-card p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -128,9 +126,7 @@ export function AttachmentPreview({ file }: { file: AttachmentView }) {
 
   // 客户端之外（网页版/未激活库）读不到字节，effect 直接没跑；说明清楚而不是空白
   return (
-    <Notice tone="warn" icon={AlertTriangle} title="这里读不到文件">
-      关联文件存在客户端文件库里，网页版打不开。
-    </Notice>
+    <Notice tone="warn" icon={AlertTriangle} title={tr("这里读不到文件")}>{tr("关联文件存在客户端文件库里，网页版打不开。")}</Notice>
   );
 }
 

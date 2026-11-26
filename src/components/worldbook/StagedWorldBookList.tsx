@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { Clock, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -5,7 +8,7 @@ import type { WorldBookItem } from '@/types/worldbook';
 
 /** 列表上的时间：有源文件修改时间就显示源文件的，否则回退到 STE 更新时间 */
 function stagedTime(item: WorldBookItem): string {
-  return new Date(item.sourceModifiedAt ?? item.updatedAt).toLocaleString();
+  return new Date(item.sourceModifiedAt ?? item.updatedAt).toLocaleString(getLocale());
 }
 
 interface StagedWorldBookListProps {
@@ -21,6 +24,7 @@ interface StagedWorldBookListProps {
  * 标题 / 条目数 / 时间 / 删除四处逻辑共用，避免改一处漏另一处。
  */
 export function StagedWorldBookList({ items, onSelect, onDelete, variant }: StagedWorldBookListProps) {
+  useI18n();
   if (variant === 'dialog') {
     return (
       <div className="space-y-2">
@@ -29,7 +33,7 @@ export function StagedWorldBookList({ items, onSelect, onDelete, variant }: Stag
             <button className="flex-1 text-left" onClick={() => onSelect(item)}>
               <div className="font-medium text-sm text-foreground">{item.title}</div>
               <div className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-                <span>{Object.keys(item.worldbook.entries).length} 条目</span>
+                <span>{tr("{{v0}} 条目", { v0: Object.keys(item.worldbook.entries).length })}</span>
                 <span>·</span>
                 <span>{stagedTime(item)}</span>
               </div>
@@ -39,7 +43,7 @@ export function StagedWorldBookList({ items, onSelect, onDelete, variant }: Stag
               size="icon"
               className="text-muted-foreground hover:text-destructive"
               onClick={(e) => { e.stopPropagation(); onDelete(item); }}
-              aria-label="从资产库删除"
+              aria-label={tr("从资产库删除")}
             >
               <Trash2 className="w-3.5 h-3.5" />
             </Button>
@@ -61,8 +65,7 @@ export function StagedWorldBookList({ items, onSelect, onDelete, variant }: Stag
             <div className="min-w-0">
               <p className="font-medium text-sm truncate text-foreground" title={item.title}>{item.title}</p>
               <p className="text-xs text-muted-foreground">
-                {Object.keys(item.worldbook.entries).length} 个条目
-                <span className="mx-1">·</span>
+                {tr("{{v0}} 个条目", { v0: Object.keys(item.worldbook.entries).length })}<span className="mx-1">·</span>
                 <Clock className="w-3 h-3 inline -mt-0.5" />
                 {' '}{stagedTime(item)}
               </p>
@@ -71,7 +74,7 @@ export function StagedWorldBookList({ items, onSelect, onDelete, variant }: Stag
               variant="ghost"
               size="icon"
               className="shrink-0"
-              aria-label="删除"
+              aria-label={tr("删除")}
               onClick={(e) => { e.stopPropagation(); onDelete(item); }}
             >
               <Trash2 className="w-3.5 h-3.5" />

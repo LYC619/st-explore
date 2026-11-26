@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, type ReactNode } from 'react';
 import { Copy, Check, Save, Bookmark, Pencil, BookOpen, Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -36,6 +38,7 @@ export function SummaryResultEditor({
   kind, title, onTitleChange, content, onContentChange,
   streaming, onSave, saving, savedPermanent, onDiscard, charName, metadataFields,
 }: SummaryResultEditorProps) {
+  useI18n();
   const { toast } = useToast();
   const [diaryView, setDiaryView] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -44,7 +47,7 @@ export function SummaryResultEditor({
     await navigator.clipboard.writeText(content);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    toast({ title: '已复制到剪贴板' });
+    toast({ title: tr("已复制到剪贴板") });
   };
 
   const handleDownload = () => {
@@ -64,7 +67,7 @@ export function SummaryResultEditor({
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
-          <CardTitle className="text-base">生成结果</CardTitle>
+          <CardTitle className="text-base">{tr("生成结果")}</CardTitle>
           {/* 窄栏（整理与记录中栏）下按钮行必须可换行，否则溢出卡片压到右栏 */}
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {!streaming && content && (
@@ -72,19 +75,16 @@ export function SummaryResultEditor({
                 content={content}
                 onResult={onContentChange}
                 compact
-                title="AI 微调本篇总结"
+                title={tr("AI 微调本篇总结")}
                 builtinPromptId="summary.rewrite"
                 promptVariables={{ kind: SUMMARY_KIND_LABELS[kind] }}
                 quickPresetPrefix="summary.quick"
               />
             )}
             <Button variant="ghost" size="sm" className="gap-1" onClick={handleCopy} disabled={!content}>
-              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-              复制
-            </Button>
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}{tr("复制")}</Button>
             <Button variant="ghost" size="sm" className="gap-1" onClick={handleDownload} disabled={!content}>
-              <Upload className="w-3.5 h-3.5" />导出 .md
-            </Button>
+              <Upload className="w-3.5 h-3.5" />{tr("导出 .md")}</Button>
             {onDiscard && (
               <Button
                 variant="ghost"
@@ -93,12 +93,11 @@ export function SummaryResultEditor({
                 onClick={onDiscard}
                 disabled={!content || streaming || saving}
               >
-                <Trash2 className="w-3.5 h-3.5" />不要了
-              </Button>
+                <Trash2 className="w-3.5 h-3.5" />{tr("不要了")}</Button>
             )}
             <Button size="sm" className="gap-1" onClick={onSave} disabled={!content || saving}>
               {savedPermanent ? <Bookmark className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
-              {savedPermanent ? '已保存' : '保存'}
+              {savedPermanent ? tr("已保存") : tr("保存")}
             </Button>
           </div>
         </div>
@@ -106,12 +105,12 @@ export function SummaryResultEditor({
       <CardContent className="space-y-3">
         {metadataFields}
         <div className="space-y-1">
-          <Label htmlFor="sum-title" className="text-xs text-muted-foreground">标题</Label>
+          <Label htmlFor="sum-title" className="text-xs text-muted-foreground">{tr("标题")}</Label>
           <Input
             id="sum-title"
             value={title}
             onChange={(e) => onTitleChange(e.target.value)}
-            placeholder="总结标题（生成后可自动提取，也可手改）"
+            placeholder={tr("总结标题（生成后可自动提取，也可手改）")}
           />
         </div>
         {kind === 'diary' && !streaming && content && (
@@ -122,16 +121,14 @@ export function SummaryResultEditor({
               className="gap-1"
               onClick={() => setDiaryView(false)}
             >
-              <Pencil className="w-3.5 h-3.5" />编辑
-            </Button>
+              <Pencil className="w-3.5 h-3.5" />{tr("编辑")}</Button>
             <Button
               variant={diaryView ? 'default' : 'ghost'}
               size="sm"
               className="gap-1"
               onClick={() => setDiaryView(true)}
             >
-              <BookOpen className="w-3.5 h-3.5" />日记本
-            </Button>
+              <BookOpen className="w-3.5 h-3.5" />{tr("日记本")}</Button>
           </div>
         )}
         {kind === 'diary' && diaryView && !streaming && content ? (
@@ -141,12 +138,10 @@ export function SummaryResultEditor({
             value={content}
             onChange={(e) => onContentChange(e.target.value)}
             className="min-h-[40vh] font-mono text-xs leading-relaxed"
-            placeholder={streaming ? '生成中…' : '生成的总结将显示在这里，可自由编辑。'}
+            placeholder={streaming ? tr("生成中…") : tr("生成的总结将显示在这里，可自由编辑。")}
           />
         )}
-        <p className="text-xs text-muted-foreground">
-          生成后已自动暂存，「保存」将其转为永久保留（不受自动清理影响）
-          {onDiscard ? '；不满意点「不要了」直接删掉，不用等自动清理。' : '。'}
+        <p className="text-xs text-muted-foreground">{onDiscard ? tr("生成后已自动暂存，「保存」将其转为永久保留（不受自动清理影响）；不满意点「不要了」直接删掉，不用等自动清理。") : tr("生成后已自动暂存，「保存」将其转为永久保留（不受自动清理影响）。")}
         </p>
       </CardContent>
     </Card>

@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useState  } from 'react';
 import { GripVertical, Trash2, ChevronDown, ChevronRight, Plus, Search, Undo2, Redo2, X, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,6 +54,7 @@ export function PromptEditor({
   preset, activeCharacterId, onCharacterIdChange,
   onOrderChange, onBlockContentChange, onBlockNameChange, onBlockRoleChange, onAddBlock, onDeleteBlock, onBlockInjectionChange, onUndo, onRedo, canUndo, canRedo,
 }: PromptEditorProps) {
+  useI18n();
   const { toast } = useToast();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [librarySearch, setLibrarySearch] = useState('');
@@ -101,8 +104,8 @@ export function PromptEditor({
   const removeFromOrder = (identifier: string) => {
     onOrderChange(order.filter((o) => o.identifier !== identifier));
     toast({
-      title: '已移回提示词备用库',
-      action: <ToastAction altText="撤销" onClick={onUndo}>撤销</ToastAction>,
+      title: tr("已移回提示词备用库"),
+      action: <ToastAction altText={tr("撤销")} onClick={onUndo}>{tr("撤销")}</ToastAction>,
     });
   };
 
@@ -143,18 +146,18 @@ export function PromptEditor({
               <SelectContent>
                 {preset.promptOrder.map((g, gi) => (
                   <SelectItem key={g.character_id} value={String(g.character_id)} className="text-xs">
-                    {g.character_id === 100001 ? '默认主组' : g.character_id === 100000 ? '通用组' : `扩展组 ${gi + 1}`}
-                    {` · ${g.order.length} 项`}
+                    {g.character_id === 100001 ? tr("默认主组") : g.character_id === 100000 ? tr("通用组") : tr("扩展组 {{v0}}", { v0: gi + 1 })}
+                    {tr(" · {{v0}} 项", { v0: g.order.length })}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
           <div className="ml-auto flex items-center gap-1">
-            <Button type="button" variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} aria-label="撤销" title="撤销上一步修改">
+            <Button type="button" variant="ghost" size="icon" onClick={onUndo} disabled={!canUndo} aria-label={tr("撤销")} title={tr("撤销上一步修改")}>
               <Undo2 className="w-4 h-4" />
             </Button>
-            <Button type="button" variant="ghost" size="icon" onClick={onRedo} disabled={!canRedo} aria-label="重做" title="重做修改">
+            <Button type="button" variant="ghost" size="icon" onClick={onRedo} disabled={!canRedo} aria-label={tr("重做")} title={tr("重做修改")}>
               <Redo2 className="w-4 h-4" />
             </Button>
           </div>
@@ -163,32 +166,27 @@ export function PromptEditor({
         {/* 激活顺序 */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-medium">激活顺序（{order.length}）</h3>
+            <h3 className="text-sm font-medium">{tr("激活顺序（{{v0}}）", { v0: order.length })}</h3>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button type="button" variant="ghost" size="sm" className="px-2 text-xs">
-                  <Plus className="w-3.5 h-3.5 mr-1" /> 新建块
-                </Button>
+                  <Plus className="w-3.5 h-3.5 mr-1" />{tr(" 新建块")}</Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   className="text-xs"
                   onSelect={() => {
-                    const id = onAddBlock('新提示词块', 'relative');
+                    const id = onAddBlock(tr("新提示词块"), 'relative');
                     setExpandedId(id);
                   }}
-                >
-                  普通块（按激活顺序就地）
-                </DropdownMenuItem>
+                >{tr("普通块（按激活顺序就地）")}</DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-xs"
                   onSelect={() => {
-                    const id = onAddBlock('新注入块', 'injection');
+                    const id = onAddBlock(tr("新注入块"), 'injection');
                     setExpandedId(id);
                   }}
-                >
-                  注入块（@深度插入聊天楼层）
-                </DropdownMenuItem>
+                >{tr("注入块（@深度插入聊天楼层）")}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -216,7 +214,7 @@ export function PromptEditor({
                         type="button"
                         className="shrink-0 text-muted-foreground hover:text-foreground"
                         onClick={() => setExpandedId(expanded ? null : entry.identifier)}
-                        aria-label={expanded ? '收起' : '展开'}
+                        aria-label={expanded ? tr("收起") : tr("展开")}
                       >
                         {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </button>
@@ -224,40 +222,40 @@ export function PromptEditor({
                       {block?.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block?.injection_depth as number | undefined} /> : <RoleBadge role={block?.role} />}
                       {empty && <EmptyBadge />}
                       <Switch checked={entry.enabled} onCheckedChange={() => toggleEnabled(entry.identifier)} className="scale-90" />
-                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === 0} onClick={() => moveInOrder(index, -1)} aria-label="上移提示词" title="上移一位">
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === 0} onClick={() => moveInOrder(index, -1)} aria-label={tr("上移提示词")} title={tr("上移一位")}>
                         <ArrowUp className="w-3.5 h-3.5" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === order.length - 1} onClick={() => moveInOrder(index, 1)} aria-label="下移提示词" title="下移一位">
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0 text-muted-foreground" disabled={index === order.length - 1} onClick={() => moveInOrder(index, 1)} aria-label={tr("下移提示词")} title={tr("下移一位")}>
                         <ArrowDown className="w-3.5 h-3.5" />
                       </Button>
-                      <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeFromOrder(entry.identifier)} aria-label="移回备用库" title="从当前激活链移回下方备用库">
+                      <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeFromOrder(entry.identifier)} aria-label={tr("移回备用库")} title={tr("从当前激活链移回下方备用库")}>
                         <X className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                     {expanded && (
                       <div className="px-2 pb-2 pt-1 border-t border-border/50">
                         {block?.marker ? (
-                          <p className="text-xs text-muted-foreground py-1">系统动态插槽，对话时由酒馆自动填入对应人设、世界书或聊天历史，无需手动编辑文本。</p>
+                          <p className="text-xs text-muted-foreground py-1">{tr("系统动态插槽，对话时由酒馆自动填入对应人设、世界书或聊天历史，无需手动编辑文本。")}</p>
                         ) : (
                           <div className="space-y-1">
                             <div className="flex items-center gap-1.5">
                               <Input size="sm"
                                 value={block?.name ?? ''}
                                 onChange={(e) => onBlockNameChange(entry.identifier, e.target.value)}
-                                placeholder="块名称"
+                                placeholder={tr("块名称")}
                                 className="text-base sm:text-xs flex-1"
                               />
                               <Select
                                 value={block?.role ?? 'system'}
                                 onValueChange={(v) => onBlockRoleChange(entry.identifier, v as 'system' | 'user' | 'assistant')}
                               >
-                                <SelectTrigger className="h-7 w-[88px] text-xs" aria-label="角色类型">
+                                <SelectTrigger className="h-7 w-[88px] text-xs" aria-label={tr("角色类型")}>
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="system" className="text-xs">系统</SelectItem>
-                                  <SelectItem value="user" className="text-xs">用户</SelectItem>
-                                  <SelectItem value="assistant" className="text-xs">助手</SelectItem>
+                                  <SelectItem value="system" className="text-xs">{tr("系统")}</SelectItem>
+                                  <SelectItem value="user" className="text-xs">{tr("用户")}</SelectItem>
+                                  <SelectItem value="assistant" className="text-xs">{tr("助手")}</SelectItem>
                                 </SelectContent>
                               </Select>
                               <AIRewriteContent
@@ -265,35 +263,35 @@ export function PromptEditor({
                                 onResult={(text) => onBlockContentChange(entry.identifier, text)}
                                 builtinPromptId="preset.rewrite"
                                 quickPresetPrefix="preset.quick"
-                                title="AI 改写本提示词块"
+                                title={tr("AI 改写本提示词块")}
                                 compact
                               />
                             </div>
                             {isInjectionBlock(block) && (
                               <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <span className="shrink-0">注入深度</span>
+                                <span className="shrink-0">{tr("注入深度")}</span>
                                 <Input size="sm"
                                   type="number"
                                   value={String(block?.injection_depth ?? 4)}
                                   onChange={(e) => onBlockInjectionChange(entry.identifier, 'injection_depth', Number(e.target.value) || 0)}
                                   className="text-xs w-16"
-                                  aria-label="注入深度"
+                                  aria-label={tr("注入深度")}
                                 />
-                                <span className="shrink-0">顺序</span>
+                                <span className="shrink-0">{tr("顺序")}</span>
                                 <Input size="sm"
                                   type="number"
                                   value={String(block?.injection_order ?? 100)}
                                   onChange={(e) => onBlockInjectionChange(entry.identifier, 'injection_order', Number(e.target.value) || 0)}
                                   className="text-xs w-16"
-                                  aria-label="注入顺序"
+                                  aria-label={tr("注入顺序")}
                                 />
-                                <span className="text-[11px]">@深度=插入聊天倒数第几层；顺序=同深度排序权重</span>
+                                <span className="text-[11px]">{tr("@深度=插入聊天倒数第几层；顺序=同深度排序权重")}</span>
                               </div>
                             )}
                             <Textarea
                               value={block?.content ?? ''}
                               onChange={(e) => onBlockContentChange(entry.identifier, e.target.value)}
-                              placeholder="提示词内容"
+                              placeholder={tr("提示词内容")}
                               className="text-base sm:text-xs min-h-[80px] font-mono"
                             />
                           </div>
@@ -304,7 +302,7 @@ export function PromptEditor({
                 );
               })}
               {order.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-8">当前分组没有激活条目</p>
+                <p className="text-xs text-muted-foreground text-center py-8">{tr("当前分组没有激活条目")}</p>
               )}
             </div>
           </ScrollArea>
@@ -313,10 +311,10 @@ export function PromptEditor({
         {/* 提示词备用库 */}
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <h3 className="text-sm font-medium">备用提示词库（{libraryBlocks.length}）</h3>
+            <h3 className="text-sm font-medium">{tr("备用提示词库（{{v0}}）", { v0: libraryBlocks.length })}</h3>
             <div className="ml-auto relative">
               <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input size="sm" value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder="搜索备用块" className="pl-7 text-base sm:text-xs w-36" />
+              <Input size="sm" value={librarySearch} onChange={(e) => setLibrarySearch(e.target.value)} placeholder={tr("搜索备用块")} className="pl-7 text-base sm:text-xs w-36" />
             </div>
           </div>
           <ScrollArea className="h-[160px] pr-2">
@@ -326,7 +324,7 @@ export function PromptEditor({
                   <span className="text-sm truncate flex-1 min-w-0" title={blockDisplayName(block)}>{blockDisplayName(block)}</span>
                   {block.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block.injection_depth as number | undefined} /> : <RoleBadge role={block.role} />}
                   {isUnreferenced(block, referenced) && <UnreferencedBadge />}
-                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => addToOrder(block.identifier)} aria-label="加入激活顺序" title="加入上方激活顺序">
+                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => addToOrder(block.identifier)} aria-label={tr("加入激活顺序")} title={tr("加入上方激活顺序")}>
                     <Plus className="w-3.5 h-3.5" />
                   </Button>
                   {!block.marker && onDeleteBlock && (
@@ -338,12 +336,12 @@ export function PromptEditor({
                       onClick={() => {
                         onDeleteBlock(block.identifier);
                         toast({
-                          title: `已彻底删除提示词块「${blockDisplayName(block)}」`,
-                          action: <ToastAction altText="撤销" onClick={onUndo}>撤销</ToastAction>,
+                          title: tr("已彻底删除提示词块「{{v0}}」", { v0: blockDisplayName(block) }),
+                          action: <ToastAction altText={tr("撤销")} onClick={onUndo}>{tr("撤销")}</ToastAction>,
                         });
                       }}
-                      aria-label={`彻底删除提示词块 ${blockDisplayName(block)}`}
-                      title="彻底从预设中移除该废块（可撤销）"
+                      aria-label={tr("彻底删除提示词块 {{v0}}", { v0: blockDisplayName(block) })}
+                      title={tr("彻底从预设中移除该废块（可撤销）")}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
@@ -351,7 +349,7 @@ export function PromptEditor({
                 </div>
               ))}
               {libraryBlocks.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-6">没有未挂载的备用提示词</p>
+                <p className="text-xs text-muted-foreground text-center py-6">{tr("没有未挂载的备用提示词")}</p>
               )}
             </div>
           </ScrollArea>
@@ -361,12 +359,12 @@ export function PromptEditor({
       {/* 右：实时预览 */}
       <div>
         <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <h3 className="text-sm font-medium">实时预览</h3>
+          <h3 className="text-sm font-medium">{tr("实时预览")}</h3>
           <span className="text-xs text-muted-foreground">~{totalTokens} tokens</span>
           <div className="ml-auto flex items-center gap-1">
-            <Label className="text-xs text-muted-foreground">角色名</Label>
+            <Label className="text-xs text-muted-foreground">{tr("角色名")}</Label>
             <Input size="sm" value={charName} onChange={(e) => setCharName(e.target.value)} className="text-xs w-24" />
-            <Label className="text-xs text-muted-foreground">用户名</Label>
+            <Label className="text-xs text-muted-foreground">{tr("用户名")}</Label>
             <Input size="sm" value={userName} onChange={(e) => setUserName(e.target.value)} className="text-xs w-24" />
           </div>
         </div>
@@ -379,16 +377,16 @@ export function PromptEditor({
                   {block.marker ? <MarkerBadge /> : isInjectionBlock(block) ? <InjectionBadge depth={block.injection_depth as number | undefined} /> : <RoleBadge role={block.role} />}
                 </div>
                 {block.marker ? (
-                  <p className="text-xs text-muted-foreground italic">[ {blockDisplayName(block)} —— 对话时自动填充此处内容 ]</p>
+                  <p className="text-xs text-muted-foreground italic">{tr("[ {{v0}} —— 对话时自动填充此处内容 ]", { v0: blockDisplayName(block) })}</p>
                 ) : (
                   <p className="text-xs whitespace-pre-wrap leading-relaxed text-foreground/90">
-                    {substituteVars(block.content ?? '', charName, userName) || <span className="text-muted-foreground italic">（空）</span>}
+                    {substituteVars(block.content ?? '', charName, userName) || <span className="text-muted-foreground italic">{tr("（空）")}</span>}
                   </p>
                 )}
               </div>
             ))}
             {previewBlocks.length === 0 && (
-              <p className="text-xs text-muted-foreground text-center py-8">无启用的条目可预览</p>
+              <p className="text-xs text-muted-foreground text-center py-8">{tr("无启用的条目可预览")}</p>
             )}
           </div>
         </ScrollArea>

@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -15,6 +17,7 @@ interface Props {
 }
 
 export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props) {
+  useI18n();
   const epoch = useSyncExternalStore(subscribeActiveVault, getVaultEpoch, getVaultEpoch);
   const [stories, setStories] = useState<StoryIndexEntry[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -57,28 +60,26 @@ export function MoveRecordDialog({ open, record, onOpenChange, onMoved }: Props)
   return <Dialog open={open} onOpenChange={value => { if (!pendingRef.current) onOpenChange(value); }}>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>移动到其他故事</DialogTitle>
-        <DialogDescription>移动“{record?.title}”。正文和原始来源会保留；移动后可重新指定目标故事的楼层范围。</DialogDescription>
+        <DialogTitle>{tr("移动到其他故事")}</DialogTitle>
+        <DialogDescription>{tr("移动“")}{record?.title}{tr("”。正文和原始来源会保留；移动后可重新指定目标故事的楼层范围。")}</DialogDescription>
       </DialogHeader>
-      <Input aria-label="搜索目标故事" placeholder="搜索故事或角色" value={search} disabled={pending || stale} onChange={event => setSearch(event.target.value)} />
-      <label className="space-y-1 text-sm">目标故事
-        <select aria-label="目标故事" className="ste-select h-9 w-full text-sm" value={target} disabled={pending || loading || stale}
+      <Input aria-label={tr("搜索目标故事")} placeholder={tr("搜索故事或角色")} value={search} disabled={pending || stale} onChange={event => setSearch(event.target.value)} />
+      <label className="space-y-1 text-sm">{tr("目标故事")}<select aria-label={tr("目标故事")} className="ste-select h-9 w-full text-sm" value={target} disabled={pending || loading || stale}
           onChange={event => { setTarget(event.target.value); setBranch(''); }}>
-          <option value="">{loading ? '正在加载…' : '请选择故事'}</option>
-          {filtered.map(story => <option key={story.id} value={story.id}>{names[story.characterId ?? ''] ?? '未绑定'} · {story.title}</option>)}
+          <option value="">{loading ? tr("正在加载…") : tr("请选择故事")}</option>
+          {filtered.map(story => <option key={story.id} value={story.id}>{names[story.characterId ?? ''] ?? tr("未绑定")} · {story.title}</option>)}
         </select>
       </label>
-      {selected && <label className="space-y-1 text-sm">目标脉络
-        <select aria-label="目标脉络" className="ste-select h-9 w-full text-sm" value={branch} disabled={pending || stale} onChange={event => setBranch(event.target.value)}>
-          <option value="">主线</option>
+      {selected && <label className="space-y-1 text-sm">{tr("目标脉络")}<select aria-label={tr("目标脉络")} className="ste-select h-9 w-full text-sm" value={branch} disabled={pending || stale} onChange={event => setBranch(event.target.value)}>
+          <option value="">{tr("主线")}</option>
           {(selected.branchIndex ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </label>}
-      {!loading && !stories.length && !error && <p className="text-sm text-muted-foreground">还没有其他故事。</p>}
-      {(error || stale) && <p role="alert" className="text-sm text-destructive">{stale ? '文件库已切换，请关闭后重新打开。' : error}</p>}
+      {!loading && !stories.length && !error && <p className="text-sm text-muted-foreground">{tr("还没有其他故事。")}</p>}
+      {(error || stale) && <p role="alert" className="text-sm text-destructive">{stale ? tr("文件库已切换，请关闭后重新打开。") : error}</p>}
       <DialogFooter>
-        <Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>取消</Button>
-        <Button disabled={!selected || loading || pending || stale} onClick={() => void move()}>{pending ? '正在移动…' : '移动'}</Button>
+        <Button variant="outline" disabled={pending} onClick={() => onOpenChange(false)}>{tr("取消")}</Button>
+        <Button disabled={!selected || loading || pending || stale} onClick={() => void move()}>{pending ? tr("正在移动…") : tr("移动")}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

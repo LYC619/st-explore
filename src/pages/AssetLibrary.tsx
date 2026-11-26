@@ -1,3 +1,6 @@
+import { getLocale } from '@/lib/i18n';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 import type { RemoveOptions } from '@/lib/repo';
 /**
  * 附属库：世界书 / 正则结构化资产，以及 SillyTavern 其他资产的只读归档浏览器。
@@ -12,7 +15,7 @@ import type { RemoveOptions } from '@/lib/repo';
  * 点卡 → 对应工具页 `?assetId=` 打开编辑。删除有确认。
  * 不设"快照"类别（2026-07-29 拍板：设计稿误解，待对接 ST 用户目录后再扩类别）。
  */
-import { useState, useEffect, useMemo, useCallback, useRef, useSyncExternalStore, type ChangeEvent } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, useSyncExternalStore, type ChangeEvent  } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { getVaultEpoch, subscribeActiveVault } from '@/lib/vault/active';
 import {
@@ -62,17 +65,17 @@ import { presetLibraryRedirect } from '@/lib/navigation-model';
 type AssetTab = 'worldbook' | 'regex';
 
 const TAB_META: Record<AssetTab, { label: string; icon: typeof Globe; toolPath: string; toolLabel: string; unit: string }> = {
-  worldbook: { label: '世界书', icon: Globe, toolPath: '/worldbook', toolLabel: '世界书工具', unit: '条目' },
-  regex: { label: '正则', icon: RegexIcon, toolPath: '/regex', toolLabel: '正则工具', unit: '规则' },
+  worldbook: { get label() { return tr("世界书"); }, icon: Globe, toolPath: '/worldbook', get toolLabel() { return tr("世界书工具"); }, get unit() { return tr("条目"); } },
+  regex: { get label() { return tr("正则"); }, icon: RegexIcon, toolPath: '/regex', get toolLabel() { return tr("正则工具"); }, get unit() { return tr("规则"); } },
 };
 
 type RefFilter = 'all' | 'referenced' | 'unreferenced';
 type SourceFilter = 'all' | AssetSource;
 const SOURCE_LABELS: Record<Exclude<SourceFilter, 'all'>, string> = {
-  fromST: '来自 ST',
-  manual: '工具入库',
-  derived: '派生副本',
-  autoSaved: '自动保留',
+  get fromST() { return tr("来自 ST"); },
+  get manual() { return tr("工具入库"); },
+  get derived() { return tr("派生副本"); },
+  get autoSaved() { return tr("自动保留"); },
 };
 
 /**
@@ -147,6 +150,7 @@ function FilterChip({
 }
 
 const AssetLibrary = () => {
+  useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { isCompact, isMobile } = useViewport();
@@ -210,7 +214,7 @@ const AssetLibrary = () => {
       setWorldbooks([]);
       setRegexes([]);
       setRefNames({});
-      setLoadError(error instanceof Error ? error.message : '无法读取资产库');
+      setLoadError(error instanceof Error ? error.message : tr("无法读取资产库"));
     } finally {
       setLoading(false);
     }
@@ -233,8 +237,8 @@ const AssetLibrary = () => {
       else await deleteRegexCollection(target.id, options);
       await load();
     }, {
-      onSuccess: () => toast({ title: `已删除「${target.title}」` }),
-      onFailure: () => toast({ title: '删除失败', variant: 'destructive' }),
+      onSuccess: () => toast({ title: tr("已删除「{{v0}}」", { v0: target.title }) }),
+      onFailure: () => toast({ title: tr("删除失败"), variant: 'destructive' }),
     });
     if (deleted) setToDelete(null);
     return deleted;
@@ -252,13 +256,13 @@ const AssetLibrary = () => {
       await saveWorldBook(item);
       await load();
       toast({
-        title: '世界书导入成功',
-        description: `「${item.title}」，共 ${Object.keys(item.worldbook.entries).length} 个条目`,
+        title: tr("世界书导入成功"),
+        description: tr("「{{v0}}」，共 {{v1}} 个条目", { v0: item.title, v1: Object.keys(item.worldbook.entries).length }),
       });
     } catch (error) {
       toast({
-        title: '世界书导入失败',
-        description: error instanceof Error ? error.message : '无法解析该文件',
+        title: tr("世界书导入失败"),
+        description: error instanceof Error ? error.message : tr("无法解析该文件"),
         variant: 'destructive',
       });
     }
@@ -273,19 +277,19 @@ const AssetLibrary = () => {
     try {
       const parsed = JSON.parse(await file.text());
       const rules = parseSTRegexImport(parsed);
-      if (rules.length === 0) throw new Error('文件中没有有效的正则规则');
-      const title = file.name.replace(/\.json$/i, '').trim() || '导入正则规则集';
+      if (rules.length === 0) throw new Error(tr("文件中没有有效的正则规则"));
+      const title = file.name.replace(/\.json$/i, '').trim() || tr("导入正则规则集");
       const item = buildRegexCollection(title, rules);
       await saveRegexCollection(item);
       await load();
       toast({
-        title: '正则导入成功',
-        description: `「${item.title}」，共 ${rules.length} 条规则`,
+        title: tr("正则导入成功"),
+        description: tr("「{{v0}}」，共 {{v1}} 条规则", { v0: item.title, v1: rules.length }),
       });
     } catch (error) {
       toast({
-        title: '正则导入失败',
-        description: error instanceof Error ? error.message : '请确认文件是有效的 SillyTavern 正则 JSON',
+        title: tr("正则导入失败"),
+        description: error instanceof Error ? error.message : tr("请确认文件是有效的 SillyTavern 正则 JSON"),
         variant: 'destructive',
       });
     }
@@ -331,7 +335,7 @@ const AssetLibrary = () => {
     referenced: tabList.filter((a) => (refNames[a.id]?.length ?? 0) > 0).length,
     unreferenced: tabList.filter((a) => (refNames[a.id]?.length ?? 0) === 0).length,
   }), [tabList, refNames]);
-  const sourceCounts = useMemo(() => Object.fromEntries(
+  const sourceCounts = useLocalizedMemo(() => Object.fromEntries(
     (Object.keys(SOURCE_LABELS) as Exclude<SourceFilter, 'all'>[]).map((f) => [f, tabList.filter((a) => matchSource(a, f)).length]),
   ) as Record<Exclude<SourceFilter, 'all'>, number>, [tabList, matchSource]);
 
@@ -348,10 +352,10 @@ const AssetLibrary = () => {
         />
       ))}
       <RailItem
-        label="其他资产"
+        label={tr("其他资产")}
         icon={Layers}
         active={tab === null}
-        title="从 SillyTavern 归档过来的扩展、快速回复、人设和媒体（只读）"
+        title={tr("从 SillyTavern 归档过来的扩展、快速回复、人设和媒体（只读）")}
         onClick={() => selectSection('overview')}
       />
       {tab === null && (
@@ -376,23 +380,20 @@ const AssetLibrary = () => {
     <AppLayout mobileDrawer={isCompact ? <div className="py-1">{railContent}</div> : undefined}>
       <div className="h-full flex flex-col overflow-hidden">
         <div className={cn('shrink-0 flex items-center gap-2.5 pt-4 pb-1 flex-wrap', isMobile ? 'px-3' : 'px-6')}>
-          <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">附属库</h1>
+          <h1 className="font-serif text-[22px] font-semibold tracking-wide text-[color:var(--text-primary)]">{tr("附属库")}</h1>
           {showCounts && (
-            <span className="text-[11px] text-[color:var(--text-muted)]">
-              世界书 {counts.worldbook} · 正则 {counts.regex}
+            <span className="text-[11px] text-[color:var(--text-muted)]">{tr("世界书 {{v0}} · 正则 {{v1}}", { v0: counts.worldbook, v1: counts.regex })}
             </span>
           )}
-          <HelpCard>
-            世界书、正则规则集的收藏馆。这里入库的资产可以在角色页「关联资产」里被引用；对共享资产的修改会生成派生副本，不影响别的角色。点卡片进入对应工具编辑。「其他资产」是从 SillyTavern 归档过来的扩展、快速回复、人设和媒体，只读。预设通过主导航的「预设库」管理。
-          </HelpCard>
+          <HelpCard>{tr("世界书、正则规则集的收藏馆。这里入库的资产可以在角色页「关联资产」里被引用；对共享资产的修改会生成派生副本，不影响别的角色。点卡片进入对应工具编辑。「其他资产」是从 SillyTavern 归档过来的扩展、快速回复、人设和媒体，只读。预设通过主导航的「预设库」管理。")}</HelpCard>
           {tab !== null && (
             <div className="relative w-44 sm:w-56">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <Input
                 ref={searchInputRef}
                 size="sm"
-                aria-label={`搜索${meta.label}`}
-                placeholder={`搜索${meta.label}或关联角色…`}
+                aria-label={tr("搜索{{v0}}", { v0: meta.label })}
+                placeholder={tr("搜索{{v0}}或关联角色…", { v0: meta.label })}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => {
@@ -407,7 +408,7 @@ const AssetLibrary = () => {
               {searchQuery && (
                 <button
                   type="button"
-                  aria-label="清空搜索"
+                  aria-label={tr("清空搜索")}
                   onClick={() => setSearchQuery('')}
                   className="tap-target absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground"
                 >
@@ -435,12 +436,10 @@ const AssetLibrary = () => {
                     variant="outline"
                     size="sm"
                     className="self-center"
-                    aria-label="导入世界书"
+                    aria-label={tr("导入世界书")}
                     onClick={() => worldBookInputRef.current?.click()}
                   >
-                    <Download className="w-4 h-4 mr-1.5" />
-                    导入世界书
-                  </Button>
+                    <Download className="w-4 h-4 mr-1.5" />{tr("导入世界书")}</Button>
                 </>
               )}
               {tab === 'regex' && (
@@ -457,17 +456,14 @@ const AssetLibrary = () => {
                     variant="outline"
                     size="sm"
                     className="self-center"
-                    aria-label="导入正则"
+                    aria-label={tr("导入正则")}
                     onClick={() => regexInputRef.current?.click()}
                   >
-                    <Download className="w-4 h-4 mr-1.5" />
-                    导入正则
-                  </Button>
+                    <Download className="w-4 h-4 mr-1.5" />{tr("导入正则")}</Button>
                 </>
               )}
               <Button size="sm" className="self-center" onClick={() => navigate(meta.toolPath)}>
-                <Plus className="w-4 h-4 mr-1.5" />
-                打开{meta.toolLabel}
+                <Plus className="w-4 h-4 mr-1.5" />{tab === 'worldbook' ? tr("打开世界书工具") : tr("打开正则工具")}
               </Button>
             </>
           )}
@@ -475,11 +471,11 @@ const AssetLibrary = () => {
 
         {isCompact && (
           <div className={cn('shrink-0 flex items-center gap-1.5 overflow-x-auto py-2 border-b border-[color:var(--hairline-inner)] scrollbar-thin', isMobile ? 'px-3' : 'px-6')}>
-            <FilterChip label="世界书" count={showCounts ? counts.worldbook : undefined} active={tab === 'worldbook'} onClick={() => selectTab('worldbook')} />
-            <FilterChip label="正则" count={showCounts ? counts.regex : undefined} active={tab === 'regex'} onClick={() => selectTab('regex')} />
-            <FilterChip label="其他资产" active={tab === null && section === 'overview'} onClick={() => selectSection('overview')} />
+            <FilterChip label={tr("世界书")} count={showCounts ? counts.worldbook : undefined} active={tab === 'worldbook'} onClick={() => selectTab('worldbook')} />
+            <FilterChip label={tr("正则")} count={showCounts ? counts.regex : undefined} active={tab === 'regex'} onClick={() => selectTab('regex')} />
+            <FilterChip label={tr("其他资产")} active={tab === null && section === 'overview'} onClick={() => selectSection('overview')} />
             {tab === null && section !== 'overview' && (
-              <FilterChip label="← 返回其他资产概览" active onClick={() => selectSection('overview')} />
+              <FilterChip label={tr("← 返回其他资产概览")} active onClick={() => selectSection('overview')} />
             )}
           </div>
         )}
@@ -489,7 +485,7 @@ const AssetLibrary = () => {
           {!isCompact && (
             <aside
               className="w-[var(--filter-side-width)] shrink-0 overflow-y-auto scrollbar-thin py-3 pl-6 pr-2.5 border-r border-[color:var(--hairline-inner)]"
-              aria-label="资产类别"
+              aria-label={tr("资产类别")}
             >
               {railContent}
             </aside>
@@ -503,12 +499,12 @@ const AssetLibrary = () => {
           <div className={cn('flex-1 min-w-0 overflow-y-auto scrollbar-thin py-3', isMobile ? 'px-3' : 'px-6')}>
             {/* 筛选首行：状态 + 来源。原来在左栏，现在和类别导航分开。 */}
             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 mb-3.5 pb-3 border-b border-[color:var(--border-normal)]">
-              <span className="text-[11px] tracking-[1.5px] text-[color:var(--text-muted)] mr-0.5">状态</span>
-              <FilterChip label="全部" count={tabList.length} active={refFilter === 'all'} onClick={() => setRefFilter('all')} />
-              <FilterChip label="已被引用" count={refCounts.referenced} active={refFilter === 'referenced'} onClick={() => setRefFilter(refFilter === 'referenced' ? 'all' : 'referenced')} />
-              <FilterChip label="未被引用" count={refCounts.unreferenced} active={refFilter === 'unreferenced'} onClick={() => setRefFilter(refFilter === 'unreferenced' ? 'all' : 'unreferenced')} />
+              <span className="text-[11px] tracking-[1.5px] text-[color:var(--text-muted)] mr-0.5">{tr("状态")}</span>
+              <FilterChip label={tr("全部")} count={tabList.length} active={refFilter === 'all'} onClick={() => setRefFilter('all')} />
+              <FilterChip label={tr("已被引用")} count={refCounts.referenced} active={refFilter === 'referenced'} onClick={() => setRefFilter(refFilter === 'referenced' ? 'all' : 'referenced')} />
+              <FilterChip label={tr("未被引用")} count={refCounts.unreferenced} active={refFilter === 'unreferenced'} onClick={() => setRefFilter(refFilter === 'unreferenced' ? 'all' : 'unreferenced')} />
               <span className="mx-1.5 h-4 w-px bg-[var(--hairline-inner)]" />
-              <span className="text-[11px] tracking-[1.5px] text-[color:var(--text-muted)] mr-0.5">来源</span>
+              <span className="text-[11px] tracking-[1.5px] text-[color:var(--text-muted)] mr-0.5">{tr("来源")}</span>
               {(Object.keys(SOURCE_LABELS) as Exclude<SourceFilter, 'all'>[]).map((f) => (
                 <FilterChip
                   key={f}
@@ -522,32 +518,29 @@ const AssetLibrary = () => {
 
             {!loading && !loadError && refLoadFailed && (
               <div role="status" className="mb-3 flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                <span>角色引用关系暂时没能读取出来，「已被引用 / 未被引用」筛选可能不完整。</span>
-                <Button size="sm" variant="outline" onClick={() => void load()}>重新读取</Button>
+                <span>{tr("角色引用关系暂时没能读取出来，「已被引用 / 未被引用」筛选可能不完整。")}</span>
+                <Button size="sm" variant="outline" onClick={() => void load()}>{tr("重新读取")}</Button>
               </div>
             )}
             {loading ? (
               <AssetGridSkeleton count={isMobile ? 3 : 6} />
             ) : loadError ? (
               <div className="flex flex-col items-center justify-center py-20 text-center gap-3" data-asset-library-load-error>
-                <p className="text-sm text-destructive">读取资产库失败：{loadError}</p>
-                <p className="text-xs text-muted-foreground">没有把读取失败当成空库，你可以重试。</p>
-                <Button size="sm" variant="outline" onClick={() => void load()}>重试</Button>
+                <p className="text-sm text-destructive">{tr("读取资产库失败：{{v0}}", { v0: loadError })}</p>
+                <p className="text-xs text-muted-foreground">{tr("没有把读取失败当成空库，你可以重试。")}</p>
+                <Button size="sm" variant="outline" onClick={() => void load()}>{tr("重试")}</Button>
               </div>
             ) : tabList.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
                 <meta.icon className="w-12 h-12 text-muted-foreground/40" />
-                <p className="text-sm text-muted-foreground">还没有入库的{meta.label}</p>
-                <p className="text-xs text-muted-foreground/70">
-                  在{meta.toolLabel}里导入并保存，或从编辑区拖文件进来；客户端也可以「接入 SillyTavern」批量导入
-                </p>
-                <Button size="sm" onClick={() => navigate(meta.toolPath)}>
-                  打开{meta.toolLabel}
+                <p className="text-sm text-muted-foreground">{tab === 'worldbook' ? tr("还没有入库的世界书") : tr("还没有入库的正则")}</p>
+                <p className="text-xs text-muted-foreground/70">{tab === 'worldbook' ? tr("在世界书工具里导入并保存，或从编辑区拖文件进来；客户端也可以「接入 SillyTavern」批量导入") : tr("在正则工具里导入并保存，或从编辑区拖文件进来；客户端也可以「接入 SillyTavern」批量导入")}</p>
+                <Button size="sm" onClick={() => navigate(meta.toolPath)}>{tab === 'worldbook' ? tr("打开世界书工具") : tr("打开正则工具")}
                 </Button>
               </div>
             ) : filtered.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center gap-3 text-center">
-                <p className="text-sm text-muted-foreground">没有符合当前筛选的{meta.label}</p>
+                <p className="text-sm text-muted-foreground">{tab === 'worldbook' ? tr("没有符合当前筛选的世界书") : tr("没有符合当前筛选的正则")}</p>
                 <Button
                   size="sm"
                   variant="outline"
@@ -556,9 +549,7 @@ const AssetLibrary = () => {
                     setSourceFilter('all');
                     setSearchQuery('');
                   }}
-                >
-                  清除筛选
-                </Button>
+                >{tr("清除筛选")}</Button>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 content-start">
@@ -589,36 +580,32 @@ const AssetLibrary = () => {
                             {a.title}
                           </span>
                           {a.derived && (
-                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--hover-overlay)] text-[color:var(--text-muted)]">派生副本</span>
+                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--hover-overlay)] text-[color:var(--text-muted)]">{tr("派生副本")}</span>
                           )}
                           {a.autoSaved && (
-                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--hover-overlay)] text-[color:var(--text-muted)]">自动保留</span>
+                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--hover-overlay)] text-[color:var(--text-muted)]">{tr("自动保留")}</span>
                           )}
                           {a.fromST && (
-                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--status-ok-bg)] text-[color:var(--status-ok)]">来自 ST</span>
+                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--status-ok-bg)] text-[color:var(--status-ok)]">{tr("来自 ST")}</span>
                           )}
                           {a.stGlobal && (
-                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--brand-active-bg)] text-brand">ST 全局</span>
+                            <span className="text-[11px] px-1.5 py-px rounded-full bg-[var(--brand-active-bg)] text-brand">{tr("ST 全局")}</span>
                           )}
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                            <Button variant="ghost" size="sm" className="w-7 p-0 shrink-0" aria-label="更多操作">
+                            <Button variant="ghost" size="sm" className="w-7 p-0 shrink-0" aria-label={tr("更多操作")}>
                               <MoreVertical className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                             <DropdownMenuItem onClick={() => openAsset(a.id)}>
-                              <PenSquare className="w-3.5 h-3.5 mr-2" />
-                              打开编辑
-                            </DropdownMenuItem>
+                              <PenSquare className="w-3.5 h-3.5 mr-2" />{tr("打开编辑")}</DropdownMenuItem>
                             <DropdownMenuItem
                               className="text-destructive focus:text-destructive"
                               onClick={() => setToDelete(a)}
                             >
-                              <Trash2 className="w-3.5 h-3.5 mr-2" />
-                              删除
-                            </DropdownMenuItem>
+                              <Trash2 className="w-3.5 h-3.5 mr-2" />{tr("删除")}</DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
@@ -629,26 +616,25 @@ const AssetLibrary = () => {
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{a.itemCount}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">引用角色</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">{tr("引用角色")}</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">{refLoadFailed ? '—' : refs.length}</span>
                         </div>
                         <div className="flex-1 flex flex-col gap-0.5">
-                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">STE 最后修改</span>
+                          <span className="text-[11px] tracking-wide text-[color:var(--text-muted)]">{tr("STE 最后修改")}</span>
                           <span className="font-serif font-semibold text-sm text-[color:var(--text-primary)]">
-                            {new Date(a.updatedAt).toLocaleDateString('zh-CN')}
+                            {new Date(a.updatedAt).toLocaleDateString(getLocale())}
                           </span>
                         </div>
                       </div>
                       {a.sourceModifiedAt !== undefined && (
-                        <p className="text-[11px] text-[color:var(--text-muted)]">
-                          源文件最后修改：{new Date(a.sourceModifiedAt).toLocaleString('zh-CN')}
+                        <p className="text-[11px] text-[color:var(--text-muted)]">{tr("源文件最后修改：{{v0}}", { v0: new Date(a.sourceModifiedAt).toLocaleString(getLocale()) })}
                         </p>
                       )}
                       {/* 绑定关系（demo .a-bindings） */}
                       <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-[color:var(--text-muted)] min-h-5">
                         <Link2 className="w-3 h-3 shrink-0" />
                         {refs.length === 0 ? (
-                          <span>{refLoadFailed ? '引用状态暂未读出' : '未被角色引用'}</span>
+                          <span>{refLoadFailed ? tr("引用状态暂未读出") : tr("未被角色引用")}</span>
                         ) : (
                           <>
                             {refs.slice(0, 2).map((n) => (
@@ -658,8 +644,7 @@ const AssetLibrary = () => {
                             ))}
                             {refs.length > 2 && (
                               <span className="px-1.5 py-px rounded bg-[var(--hover-overlay)] text-[color:var(--text-body)] text-[11px] font-medium">
-                                +{refs.length - 2} 卡
-                              </span>
+                                {tr("+{{v0}} 卡", { v0: refs.length - 2 })}</span>
                             )}
                           </>
                         )}
@@ -676,12 +661,12 @@ const AssetLibrary = () => {
 
       <DeleteConfirmDialog
         open={!!toDelete}
-        title={`删除「${toDelete?.title ?? ''}」？`}
-        description={`条目将从列表移除。${(toDelete && (refNames[toDelete.id]?.length ?? 0) > 0)
-          ? `该资产被 ${refNames[toDelete.id].length} 张角色卡引用，删除后角色页会显示“引用已失效”并可一键移除。`
+        title={tr("删除「{{v0}}」？", { v0: toDelete?.title ?? '' })}
+        description={(toDelete && (refNames[toDelete.id]?.length ?? 0) > 0)
+          ? tr("条目将从列表移除。该资产被 {{v0}} 张角色卡引用，删除后角色页会显示“引用已失效”并可一键移除。", { v0: refNames[toDelete.id].length })
           : refLoadFailed
-            ? '角色引用信息暂时未知。删除后若有角色引用，角色页会显示失效引用。'
-            : '该资产当前没有角色引用。'}`}
+            ? tr("条目将从列表移除。角色引用信息暂时未知。删除后若有角色引用，角色页会显示失效引用。")
+            : tr("条目将从列表移除。该资产当前没有角色引用。")}
         onOpenChange={(open) => !open && setToDelete(null)}
         fileTarget={toDelete ? { store: tab === 'worldbook' ? 'worldbooks' : 'regexes', id: toDelete.id } : undefined}
         onConfirm={handleDelete}

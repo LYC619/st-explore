@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import { Input } from '@/components/ui/input';
 
@@ -6,6 +8,7 @@ export function DepthNumberInput({ value, min, nullable = false, label, disabled
   value: number | null; min: number; nullable?: boolean; label: string; disabled?: boolean;
   onChange: (value: number | null) => void;
 }) {
+  useI18n();
   const [draft, setDraft] = useState(value === null ? '' : String(value));
   const composing = useRef(false);
   useEffect(() => setDraft(value === null ? '' : String(value)), [value]);
@@ -23,7 +26,7 @@ export function DepthNumberInput({ value, min, nullable = false, label, disabled
       setDraft(value === null ? '' : String(value));
     }
   };
-  return <Input aria-label={label} inputMode="numeric" placeholder={nullable ? '不限' : undefined} value={draft} disabled={disabled}
+  return <Input aria-label={label} inputMode="numeric" placeholder={nullable ? tr("不限") : undefined} value={draft} disabled={disabled}
     onCompositionStart={() => { composing.current = true; }}
     onCompositionEnd={event => { composing.current = false; commit(event.currentTarget.value); }}
     onChange={event => { setDraft(event.target.value); commit(event.target.value); }} onBlur={finish}

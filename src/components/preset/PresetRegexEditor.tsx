@@ -1,4 +1,6 @@
-import { useState, useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
+import { useState } from 'react';
 import { ChevronDown, ChevronRight, FlaskConical } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +18,7 @@ interface PresetRegexEditorProps {
 }
 
 export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorProps) {
+  useI18n();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
   const [testInput, setTestInput] = useState('');
@@ -41,16 +44,16 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
     updateRule(id, { placement: next });
   };
 
-  const testResult = useMemo(() => {
+  const testResult = useLocalizedMemo(() => {
     if (!testId || !testInput) return testInput;
     const rule = rules.find((r) => r.id === testId);
     if (!rule) return testInput;
     const preview = previewRegexRules(testInput, [rule], testAsUser, testDepth === '' ? undefined : Number(testDepth));
-    return preview.effects[0].invalid ? '[正则无效]' : preview.final;
+    return preview.effects[0].invalid ? tr("[正则无效]") : preview.final;
   }, [testId, testInput, rules, testDepth, testAsUser]);
 
   if (rules.length === 0) {
-    return <p className="text-sm text-muted-foreground text-center py-8">这份预设没有随附内嵌正则规则</p>;
+    return <p className="text-sm text-muted-foreground text-center py-8">{tr("这份预设没有随附内嵌正则规则")}</p>;
   }
 
   return (
@@ -70,7 +73,7 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
                   <button
                     className={`shrink-0 ${testId === rule.id ? 'text-primary' : 'text-muted-foreground'} hover:text-foreground`}
                     onClick={() => setTestId(testId === rule.id ? null : rule.id)}
-                    aria-label="测试此规则"
+                    aria-label={tr("测试此规则")}
                   >
                     <FlaskConical className="w-4 h-4" />
                   </button>
@@ -79,27 +82,27 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
                 {expanded && (
                   <div className="space-y-3 px-2 pb-2 pt-1 border-t border-border/50">
                     <div className="space-y-1.5">
-                      <Label className="text-xs">规则名称</Label>
+                      <Label className="text-xs">{tr("规则名称")}</Label>
                       <Input value={rule.name} onChange={(e) => updateRule(rule.id, { name: e.target.value })} className="text-sm" />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">匹配正则</Label>
+                      <Label className="text-xs">{tr("匹配正则")}</Label>
                       <Textarea value={rule.findRegex} onChange={(e) => updateRule(rule.id, { findRegex: e.target.value })}
-                        placeholder="/pattern/flags 或纯 pattern" className="text-xs font-mono min-h-[60px]" />
+                        placeholder={tr("/pattern/flags 或纯 pattern")} className="text-xs font-mono min-h-[60px]" />
                     </div>
                     <div className="space-y-1.5">
-                      <Label className="text-xs">替换为</Label>
+                      <Label className="text-xs">{tr("替换为")}</Label>
                       <Input value={rule.replaceString} onChange={(e) => updateRule(rule.id, { replaceString: e.target.value })}
-                        placeholder="留空表示删除" className="text-sm" />
+                        placeholder={tr("留空表示删除")} className="text-sm" />
                     </div>
                     <RegexDepthEditor rule={rule} onChange={patch => updateRule(rule.id, patch)} />
                     <div className="space-y-1.5">
-                      <Label className="text-xs">应用于</Label>
+                      <Label className="text-xs">{tr("应用于")}</Label>
                       <div className="flex items-center gap-3 flex-wrap">
                         {(['all', 'user', 'assistant'] as const).map((k) => (
                           <label key={k} className="flex items-center gap-1.5 text-xs">
                             <Checkbox checked={rule.placement.includes(k)} onCheckedChange={(c) => handlePlacement(rule.id, k, !!c)} />
-                            {k === 'all' ? '全部' : k === 'user' ? '用户' : 'AI'}
+                            {k === 'all' ? tr("全部") : k === 'user' ? tr("用户") : 'AI'}
                           </label>
                         ))}
                       </div>
@@ -114,18 +117,17 @@ export function PresetRegexEditor({ rules, onRulesChange }: PresetRegexEditorPro
 
       {/* 实时测试区 */}
       <div>
-        <h3 className="text-sm font-medium mb-2">
-          实时测试{testId ? `：${rules.find((r) => r.id === testId)?.name ?? ''}` : '（点规则旁的烧瓶图标选中）'}
+        <h3 className="text-sm font-medium mb-2">{testId ? tr("实时测试：{{v0}}", { v0: rules.find((r) => r.id === testId)?.name ?? '' }) : tr("实时测试（点规则旁的烧瓶图标选中）")}
         </h3>
         <div className="space-y-2">
-          <label className="flex items-center gap-2 text-xs"><span>样例深度（末楼为 0）</span><Input aria-label="样例深度" type="number" min={0} step={1} value={testDepth} onChange={event => setTestDepth(event.target.value)} className="w-24" /></label>
-          <label className="flex items-center gap-2 text-xs"><Checkbox checked={testAsUser} onCheckedChange={checked => setTestAsUser(!!checked)} />按用户楼测试（默认 AI 楼）</label>
+          <label className="flex items-center gap-2 text-xs"><span>{tr("样例深度（末楼为 0）")}</span><Input aria-label={tr("样例深度")} type="number" min={0} step={1} value={testDepth} onChange={event => setTestDepth(event.target.value)} className="w-24" /></label>
+          <label className="flex items-center gap-2 text-xs"><Checkbox checked={testAsUser} onCheckedChange={checked => setTestAsUser(!!checked)} />{tr("按用户楼测试（默认 AI 楼）")}</label>
           <div className="space-y-1.5">
-            <Label className="text-xs">输入样例</Label>
-            <Textarea value={testInput} onChange={(e) => setTestInput(e.target.value)} placeholder="粘贴一段文本，查看选中规则的替换效果" className="text-xs min-h-[180px]" />
+            <Label className="text-xs">{tr("输入样例")}</Label>
+            <Textarea value={testInput} onChange={(e) => setTestInput(e.target.value)} placeholder={tr("粘贴一段文本，查看选中规则的替换效果")} className="text-xs min-h-[180px]" />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">替换结果</Label>
+            <Label className="text-xs">{tr("替换结果")}</Label>
             <pre className="text-xs whitespace-pre-wrap rounded-md border border-border bg-secondary/30 p-3 min-h-[180px]">{testResult}</pre>
           </div>
         </div>

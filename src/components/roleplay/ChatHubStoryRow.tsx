@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
@@ -58,6 +60,7 @@ export function ChatHubStoryRow({
   onRenameStory,
   onRequestDelete,
 }: ChatHubStoryRowProps) {
+  useI18n();
   const [renaming, setRenaming] = useState(false);
   const [draftTitle, setDraftTitle] = useState(story.title);
   const [busyPreset, setBusyPreset] = useState(false);
@@ -84,8 +87,8 @@ export function ChatHubStoryRow({
   const presetBadgeText = storyPresetItem
     ? presetOptionLabel(storyPresetItem)
     : charPresetItem
-      ? `随角色 · ${presetOptionLabel(charPresetItem)}`
-      : '默认预设';
+      ? tr("随角色 · {{v0}}", { v0: presetOptionLabel(charPresetItem) })
+      : tr("默认预设");
 
   const beginRename = () => {
     if (isLiveDetached) return;
@@ -140,7 +143,7 @@ export function ChatHubStoryRow({
     <>
       <DropdownMenuItem onSelect={() => { void selectPreset(null); }}>
         <Check className={`mr-2 h-3.5 w-3.5 ${!storyPresetRef ? 'opacity-100 text-brand' : 'opacity-0'}`} />
-        <span className="truncate">{charPresetItem ? `跟随角色预设（${presetOptionLabel(charPresetItem)}）` : '不单设（使用角色或默认预设）'}</span>
+        <span className="truncate">{charPresetItem ? tr("跟随角色预设（{{v0}}）", { v0: presetOptionLabel(charPresetItem) }) : tr("不单设（使用角色或默认预设）")}</span>
       </DropdownMenuItem>
       {activePresets.map((p) => {
         const selected = storyPresetRef?.assetId === p.id;
@@ -171,7 +174,7 @@ export function ChatHubStoryRow({
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <Input
               ref={renameInputRef}
-              aria-label="对话名称"
+              aria-label={tr("对话名称")}
               disabled={savingTitle}
               value={draftTitle}
               onChange={(e) => setDraftTitle(e.target.value)}
@@ -194,7 +197,7 @@ export function ChatHubStoryRow({
       ) : (
         <button
           type="button"
-          aria-label={'继续 ' + story.title}
+          aria-label={tr("继续 ") + story.title}
           className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand rounded-md"
           onClick={() => onOpenChat(story.id)}
         >
@@ -213,19 +216,17 @@ export function ChatHubStoryRow({
                 {story.title}
               </span>
               {isLiveDetached && (
-                <Badge variant="secondary" className="shrink-0 text-[11px] font-normal text-brand">
-                  独立窗口中
-                </Badge>
+                <Badge variant="secondary" className="shrink-0 text-[11px] font-normal text-brand">{tr("独立窗口中")}</Badge>
               )}
             </span>
             <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-[color:var(--text-muted)]">
               <span className="truncate max-w-36 sm:max-w-44">{charName}</span>
               <span>·</span>
-              <span>{story.floorCount} 楼</span>
+              <span>{story.floorCount}{tr(" 楼")}</span>
               {branchCount > 0 && (
                 <>
                   <span>·</span>
-                  <span className="text-brand">{branchCount} 条支线</span>
+                  <span className="text-brand">{branchCount}{tr(" 条支线")}</span>
                 </>
               )}
               <span className="sm:hidden">· {formatListTime(story.updatedAt)}</span>
@@ -244,11 +245,11 @@ export function ChatHubStoryRow({
                 size="sm"
                 disabled={busyPreset || isLiveDetached}
                 className="hidden md:inline-flex max-w-40 px-2 text-[11px] text-[color:var(--text-muted)] hover:text-foreground"
-                aria-label={`选择 ${story.title} 的预设`}
+                aria-label={tr("选择 {{v0}} 的预设", { v0: story.title })}
                 title={
                   isLiveDetached
-                    ? `正在独立窗口对话中（当前：${presetBadgeText}），请直接在酒馆窗口内切换预设`
-                    : `当前预设：${presetBadgeText}（点击切换本场对话预设）`
+                    ? tr("正在独立窗口对话中（当前：{{v0}}），请直接在酒馆窗口内切换预设", { v0: presetBadgeText })
+                    : tr("当前预设：{{v0}}（点击切换本场对话预设）", { v0: presetBadgeText })
                 }
               >
                 <SlidersHorizontal className="mr-1 h-3 w-3 shrink-0" />
@@ -256,7 +257,7 @@ export function ChatHubStoryRow({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-60 max-h-72 overflow-y-auto">
-              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">切换本场对话挂载预设</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">{tr("切换本场对话挂载预设")}</DropdownMenuLabel>
               <DropdownMenuSeparator />
               {presetMenuItems}
             </DropdownMenuContent>
@@ -275,13 +276,11 @@ export function ChatHubStoryRow({
           variant="ghost"
           size="sm"
           className="hidden sm:inline-flex px-2 text-xs text-[color:var(--text-muted)] hover:text-foreground"
-          aria-label={`去阅读整理 ${story.title}`}
-          title="前往大屏阅读与整理工作台"
+          aria-label={tr("去阅读整理 {{v0}}", { v0: story.title })}
+          title={tr("前往大屏阅读与整理工作台")}
           onClick={() => onOpenReader(story.id)}
         >
-          <BookOpen className="mr-1 h-3.5 w-3.5" />
-          阅读整理
-        </Button>
+          <BookOpen className="mr-1 h-3.5 w-3.5" />{tr("阅读整理")}</Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -290,8 +289,8 @@ export function ChatHubStoryRow({
               variant="ghost"
               size="icon"
               className="tap-target shrink-0 text-[color:var(--text-muted)] hover:text-foreground"
-              aria-label={`${story.title} 更多操作`}
-              title="更多操作"
+              aria-label={tr("{{v0}} 更多操作", { v0: story.title })}
+              title={tr("更多操作")}
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -311,20 +310,16 @@ export function ChatHubStoryRow({
             }}
           >
             <DropdownMenuItem onSelect={() => onOpenReader(story.id)}>
-              <BookOpen className="mr-2 h-3.5 w-3.5" />
-              去阅读整理
-            </DropdownMenuItem>
+              <BookOpen className="mr-2 h-3.5 w-3.5" />{tr("去阅读整理")}</DropdownMenuItem>
             {!isMobile && (
               <DropdownMenuItem onSelect={() => onOpenDetached(story.id)}>
-                <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                独立窗口分屏续聊
-              </DropdownMenuItem>
+                <ExternalLink className="mr-2 h-3.5 w-3.5" />{tr("独立窗口分屏续聊")}</DropdownMenuItem>
             )}
             {isMobile && !isLiveDetached && (
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <SlidersHorizontal className="mr-2 h-3.5 w-3.5" />
-                  <span className="truncate">预设：{presetBadgeText}</span>
+                  <span className="truncate">{tr("预设：")}{presetBadgeText}</span>
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56 max-h-64 overflow-y-auto">
                   {presetMenuItems}
@@ -333,16 +328,14 @@ export function ChatHubStoryRow({
             )}
             <DropdownMenuItem disabled={isLiveDetached} onSelect={beginRename}>
               <Pencil className="mr-2 h-3.5 w-3.5" />
-              {isLiveDetached ? '重命名（对话中暂锁）' : '重命名对话'}
+              {isLiveDetached ? tr("重命名（对话中暂锁）") : tr("重命名对话")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
               onSelect={() => onRequestDelete(story)}
             >
-              <Trash2 className="mr-2 h-3.5 w-3.5" />
-              删除对话
-            </DropdownMenuItem>
+              <Trash2 className="mr-2 h-3.5 w-3.5" />{tr("删除对话")}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

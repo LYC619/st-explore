@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 「ST 有更新」角落提示（2.0 阶段7.4，仅客户端）。
  * 开故事时读一次 sourcePath 轻量比楼层数；ST 端多楼 → 右下角提示，
@@ -19,6 +21,7 @@ interface Props {
 }
 
 export function STUpdateHint({ story, onStoryUpdate }: Props) {
+  useI18n();
   const { toast } = useToast();
   const [status, setStatus] = useState<STUpdateStatus | null>(null);
   const [dismissed, setDismissed] = useState(false);
@@ -56,10 +59,10 @@ export function STUpdateHint({ story, onStoryUpdate }: Props) {
           return merged.result.changed ? merged.story : cur;
         });
       }
-      toast({ title: '已导入 ST 更新', description: result.summary });
+      toast({ title: tr("已导入 ST 更新"), description: result.summary });
       setStatus(null);
     } catch {
-      toast({ title: '导入失败', description: '无法读取来源文件，可到「导入与导出」手动重导', variant: 'destructive' });
+      toast({ title: tr("导入失败"), description: tr("无法读取来源文件，可到「导入与导出」手动重导"), variant: 'destructive' });
     } finally {
       setMerging(false);
     }
@@ -69,13 +72,12 @@ export function STUpdateHint({ story, onStoryUpdate }: Props) {
     // 同批量栏：桌面档 var 为 0px，等于原来的 bottom-6
     <Card className="fixed bottom-[calc(1.5rem+var(--mobile-tab-bar-h,0px)+env(safe-area-inset-bottom))] right-6 z-50 flex items-center gap-3 border-primary/40 p-3 shadow-lg">
       <DownloadCloud className="h-4 w-4 shrink-0 text-primary" />
-      <span className="text-sm">
-        ST 端有更新：多 {status.extraFloors} 楼（{status.steFloors} → {status.stFloors}）
+      <span className="text-sm">{tr("ST 端有更新：多 {{v0}} 楼（{{v1}} → {{v2}}）", { v0: status.extraFloors, v1: status.steFloors, v2: status.stFloors })}
       </span>
       <Button size="sm" onClick={handleApply} disabled={merging}>
-        {merging ? '导入中…' : '导入更新'}
+        {merging ? tr("导入中…") : tr("导入更新")}
       </Button>
-      <Button size="icon" variant="ghost" onClick={() => setDismissed(true)} aria-label="忽略本次更新提示">
+      <Button size="icon" variant="ghost" onClick={() => setDismissed(true)} aria-label={tr("忽略本次更新提示")}>
         <X className="h-4 w-4" />
       </Button>
     </Card>

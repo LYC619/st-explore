@@ -1,6 +1,9 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { libraryListColumns } from './library-list-columns';
 
 export function LibraryListHeader({ batchMode }: { batchMode: boolean }) {
+  useI18n();
   return (
     <div
       role="row"
@@ -9,16 +12,16 @@ export function LibraryListHeader({ batchMode }: { batchMode: boolean }) {
       style={{ gridTemplateColumns: libraryListColumns(batchMode) }}
     >
       {batchMode && (
-        <span role="columnheader" aria-label="选择" className="text-center">
-          <span className="sr-only">选择</span>
+        <span role="columnheader" aria-label={tr("选择")} className="text-center">
+          <span className="sr-only">{tr("选择")}</span>
           ✓
         </span>
       )}
-      <span role="columnheader" className="col-span-2">角色卡</span>
-      <span role="columnheader" className="text-right">评分</span>
-      <span role="columnheader" className="text-right">故事数</span>
-      <span role="columnheader" className="text-right">最近活动</span>
-      <span role="columnheader" className="text-right">操作</span>
+      <span role="columnheader" className="col-span-2">{tr("角色卡")}</span>
+      <span role="columnheader" className="text-right">{tr("评分")}</span>
+      <span role="columnheader" className="text-right">{tr("故事数")}</span>
+      <span role="columnheader" className="text-right">{tr("最近活动")}</span>
+      <span role="columnheader" className="text-right">{tr("操作")}</span>
     </div>
   );
 }

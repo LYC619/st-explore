@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
@@ -33,6 +35,7 @@ export function BatchOperations({
   onBatchPrefix, onBatchDelete, onBatchPosition, onBatchStrategy, onBatchEnable,
   copyTargets, onBatchCopyTo,
 }: BatchOperationsProps) {
+  useI18n();
   const isMobile = useIsMobile();
   const count = selectedKeys.size;
 
@@ -79,33 +82,26 @@ export function BatchOperations({
     <>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => setPrefixOpen(true)}>
-        <TextCursorInput className="w-3.5 h-3.5 mr-1" /> 加前缀
-      </Button>
+        <TextCursorInput className="w-3.5 h-3.5 mr-1" />{tr(" 加前缀")}</Button>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => setPositionOpen(true)}>
-        <MapPin className="w-3.5 h-3.5 mr-1" /> 改位置
-      </Button>
+        <MapPin className="w-3.5 h-3.5 mr-1" />{tr(" 改位置")}</Button>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => setStrategyOpen(true)}>
-        <Zap className="w-3.5 h-3.5 mr-1" /> 改策略
-      </Button>
+        <Zap className="w-3.5 h-3.5 mr-1" />{tr(" 改策略")}</Button>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => onBatchEnable(true)}>
-        <ToggleRight className="w-3.5 h-3.5 mr-1" /> 全部启用
-      </Button>
+        <ToggleRight className="w-3.5 h-3.5 mr-1" />{tr(" 全部启用")}</Button>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => onBatchEnable(false)}>
-        <ToggleLeft className="w-3.5 h-3.5 mr-1" /> 全部停用
-      </Button>
+        <ToggleLeft className="w-3.5 h-3.5 mr-1" />{tr(" 全部停用")}</Button>
       <Button variant="outline" size="sm" className="text-xs" disabled={count === 0 || copyTargets.length === 0}
-        title={copyTargets.length === 0 ? '资产库里没有其他世界书可作为目标' : '把选中条目复制或转移到另一本已入库的世界书'}
+        title={copyTargets.length === 0 ? tr("资产库里没有其他世界书可作为目标") : tr("把选中条目复制或转移到另一本已入库的世界书")}
         onClick={() => setCopyOpen(true)}>
-        <FolderInput className="w-3.5 h-3.5 mr-1" /> 复制/转移
-      </Button>
+        <FolderInput className="w-3.5 h-3.5 mr-1" />{tr(" 复制/转移")}</Button>
       <Button variant="destructive" size="sm" className="text-xs" disabled={count === 0}
         onClick={() => setDeleteOpen(true)}>
-        <Trash2 className="w-3.5 h-3.5 mr-1" /> 删除
-      </Button>
+        <Trash2 className="w-3.5 h-3.5 mr-1" />{tr(" 删除")}</Button>
     </>
   );
 
@@ -113,18 +109,13 @@ export function BatchOperations({
     <>
       <div className="flex flex-wrap gap-1.5 items-center">
         {/* Left: count + select controls */}
-        <span className="text-sm font-medium text-foreground mr-1">
-          已选 {count} 项
-        </span>
-        <span className="text-xs text-muted-foreground mr-1 hidden md:inline">
-          （按住 Shift 点选可连选一段）
-        </span>
+        <span className="text-sm font-medium text-foreground mr-1">{tr("已选 {{v0}} 项", { v0: count })}</span>
+        <span className="text-xs text-muted-foreground mr-1 hidden md:inline">{tr("（按住 Shift 点选可连选一段）")}</span>
         <Button variant="ghost" size="sm" className="text-xs" onClick={onSelectAll}>
-          <CheckCheck className="w-3.5 h-3.5 mr-1" /> 全选({totalFiltered})
+          <CheckCheck className="w-3.5 h-3.5 mr-1" />{tr("全选({{v0}})", { v0: totalFiltered })}
         </Button>
         <Button variant="ghost" size="sm" className="text-xs" onClick={onDeselectAll} disabled={count === 0}>
-          <XCircle className="w-3.5 h-3.5 mr-1" /> 取消全选
-        </Button>
+          <XCircle className="w-3.5 h-3.5 mr-1" />{tr(" 取消全选")}</Button>
 
         <div className="w-px h-5 bg-border" />
 
@@ -133,31 +124,23 @@ export function BatchOperations({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="text-xs" disabled={count === 0}>
-                <MoreHorizontal className="w-3.5 h-3.5 mr-1" /> 操作
-              </Button>
+                <MoreHorizontal className="w-3.5 h-3.5 mr-1" />{tr(" 操作")}</Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={() => setPrefixOpen(true)}>
-                <TextCursorInput className="w-4 h-4 mr-2" /> 批量加前缀
-              </DropdownMenuItem>
+                <TextCursorInput className="w-4 h-4 mr-2" />{tr(" 批量加前缀")}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setPositionOpen(true)}>
-                <MapPin className="w-4 h-4 mr-2" /> 批量改位置
-              </DropdownMenuItem>
+                <MapPin className="w-4 h-4 mr-2" />{tr(" 批量改位置")}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setStrategyOpen(true)}>
-                <Zap className="w-4 h-4 mr-2" /> 批量改策略
-              </DropdownMenuItem>
+                <Zap className="w-4 h-4 mr-2" />{tr(" 批量改策略")}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBatchEnable(true)}>
-                <ToggleRight className="w-4 h-4 mr-2" /> 全部启用
-              </DropdownMenuItem>
+                <ToggleRight className="w-4 h-4 mr-2" />{tr(" 全部启用")}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => onBatchEnable(false)}>
-                <ToggleLeft className="w-4 h-4 mr-2" /> 全部停用
-              </DropdownMenuItem>
+                <ToggleLeft className="w-4 h-4 mr-2" />{tr(" 全部停用")}</DropdownMenuItem>
               <DropdownMenuItem disabled={copyTargets.length === 0} onClick={() => setCopyOpen(true)}>
-                <FolderInput className="w-4 h-4 mr-2" /> 复制/转移到其他书
-              </DropdownMenuItem>
+                <FolderInput className="w-4 h-4 mr-2" />{tr(" 复制/转移到其他书")}</DropdownMenuItem>
               <DropdownMenuItem className="text-destructive" onClick={() => setDeleteOpen(true)}>
-                <Trash2 className="w-4 h-4 mr-2" /> 批量删除
-              </DropdownMenuItem>
+                <Trash2 className="w-4 h-4 mr-2" />{tr(" 批量删除")}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ) : (
@@ -166,29 +149,28 @@ export function BatchOperations({
 
         <div className="flex-1" />
         <Button variant="ghost" size="sm" className="text-xs" onClick={onExitBatch}>
-          <X className="w-3.5 h-3.5 mr-1" /> 完成
-        </Button>
+          <X className="w-3.5 h-3.5 mr-1" />{tr(" 完成")}</Button>
       </div>
 
       {/* Prefix dialog */}
       <Dialog open={prefixOpen} onOpenChange={setPrefixOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>批量加前缀</DialogTitle>
+            <DialogTitle>{tr("批量加前缀")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">为 {count} 个条目的标题添加前缀</p>
+            <p className="text-sm text-muted-foreground">{tr("为 {{v0}} 个条目的标题添加前缀", { v0: count })}</p>
             <Input
               value={prefixText}
               onChange={(e) => setPrefixText(e.target.value)}
-              placeholder="例如：角色--"
+              placeholder={tr("例如：角色--")}
               autoFocus
               onKeyDown={(e) => e.key === 'Enter' && handlePrefixApply()}
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPrefixOpen(false)}>取消</Button>
-            <Button onClick={handlePrefixApply} disabled={!prefixText.trim()}>应用</Button>
+            <Button variant="outline" onClick={() => setPrefixOpen(false)}>{tr("取消")}</Button>
+            <Button onClick={handlePrefixApply} disabled={!prefixText.trim()}>{tr("应用")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -197,15 +179,13 @@ export function BatchOperations({
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确定删除 {count} 个条目？</AlertDialogTitle>
-            <AlertDialogDescription>此操作不可撤销，选中的条目将被永久删除。</AlertDialogDescription>
+            <AlertDialogTitle>{tr("确定删除 {{v0}} 个条目？", { v0: count })}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("此操作不可撤销，选中的条目将被永久删除。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogCancel>{tr("取消")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => { onBatchDelete(); setDeleteOpen(false); }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              删除
-            </AlertDialogAction>
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{tr("删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -214,10 +194,10 @@ export function BatchOperations({
       <Dialog open={positionOpen} onOpenChange={setPositionOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>批量修改位置</DialogTitle>
+            <DialogTitle>{tr("批量修改位置")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">为 {count} 个条目统一设置插入位置</p>
+            <p className="text-sm text-muted-foreground">{tr("为 {{v0}} 个条目统一设置插入位置", { v0: count })}</p>
             <Select value={posValue} onValueChange={setPosValue}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -229,12 +209,12 @@ export function BatchOperations({
             {posValue === '6' && (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Label className="w-12 text-sm">深度</Label>
+                  <Label className="w-12 text-sm">{tr("深度")}</Label>
                   <Input type="number" value={posDepth} onChange={(e) => setPosDepth(Number(e.target.value))}
                     className="w-20" min={0} />
                 </div>
                 <div>
-                  <Label className="text-sm mb-1 block">角色</Label>
+                  <Label className="text-sm mb-1 block">{tr("角色")}</Label>
                   <Select value={String(posRole)} onValueChange={(v) => setPosRole(Number(v))}>
                     <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -248,8 +228,8 @@ export function BatchOperations({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPositionOpen(false)}>取消</Button>
-            <Button onClick={handlePositionApply}>应用</Button>
+            <Button variant="outline" onClick={() => setPositionOpen(false)}>{tr("取消")}</Button>
+            <Button onClick={handlePositionApply}>{tr("应用")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -258,28 +238,28 @@ export function BatchOperations({
       <Dialog open={strategyOpen} onOpenChange={setStrategyOpen}>
         <DialogContent className="sm:max-w-xs">
           <DialogHeader>
-            <DialogTitle>批量修改策略</DialogTitle>
+            <DialogTitle>{tr("批量修改策略")}</DialogTitle>
           </DialogHeader>
           <div className="py-2">
-            <p className="text-sm text-muted-foreground mb-3">为 {count} 个条目统一设置触发策略</p>
+            <p className="text-sm text-muted-foreground mb-3">{tr("为 {{v0}} 个条目统一设置触发策略", { v0: count })}</p>
             <RadioGroup value={strategyValue} onValueChange={(v) => setStrategyValue(v as typeof strategyValue)}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="keyword" id="s-kw" />
-                <Label htmlFor="s-kw">🟢 关键词</Label>
+                <Label htmlFor="s-kw">{tr("🟢 关键词")}</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="constant" id="s-ct" />
-                <Label htmlFor="s-ct">🔵 常驻</Label>
+                <Label htmlFor="s-ct">{tr("🔵 常驻")}</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="vectorized" id="s-vc" />
-                <Label htmlFor="s-vc">🔗 向量</Label>
+                <Label htmlFor="s-vc">{tr("🔗 向量")}</Label>
               </div>
             </RadioGroup>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStrategyOpen(false)}>取消</Button>
-            <Button onClick={handleStrategyApply}>应用</Button>
+            <Button variant="outline" onClick={() => setStrategyOpen(false)}>{tr("取消")}</Button>
+            <Button onClick={handleStrategyApply}>{tr("应用")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -288,14 +268,12 @@ export function BatchOperations({
       <Dialog open={copyOpen} onOpenChange={setCopyOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>复制/转移到其他世界书</DialogTitle>
+            <DialogTitle>{tr("复制/转移到其他世界书")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <p className="text-sm text-muted-foreground">
-              把选中的 {count} 个条目放进另一本已入库的世界书（uid 自动顺延，不会撞号）
-            </p>
+            <p className="text-sm text-muted-foreground">{tr("把选中的 {{v0}} 个条目放进另一本已入库的世界书（uid 自动顺延，不会撞号）", { v0: count })}</p>
             <Select value={copyTargetId} onValueChange={setCopyTargetId}>
-              <SelectTrigger><SelectValue placeholder="选择目标世界书" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={tr("选择目标世界书")} /></SelectTrigger>
               <SelectContent>
                 {copyTargets.map((t) => (
                   <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
@@ -305,21 +283,19 @@ export function BatchOperations({
             <RadioGroup value={copyMove} onValueChange={(v) => setCopyMove(v as 'copy' | 'move')}>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="copy" id="cp-copy" />
-                <Label htmlFor="cp-copy">复制（当前书保留原条目）</Label>
+                <Label htmlFor="cp-copy">{tr("复制（当前书保留原条目）")}</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="move" id="cp-move" />
-                <Label htmlFor="cp-move">转移（从当前书移除）</Label>
+                <Label htmlFor="cp-move">{tr("转移（从当前书移除）")}</Label>
               </div>
             </RadioGroup>
-            <p className="text-xs text-muted-foreground">
-              目标世界书直接落库；转移后当前书的改动仍需手动保存。
-            </p>
+            <p className="text-xs text-muted-foreground">{tr("目标世界书直接落库；转移后当前书的改动仍需手动保存。")}</p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCopyOpen(false)}>取消</Button>
+            <Button variant="outline" onClick={() => setCopyOpen(false)}>{tr("取消")}</Button>
             <Button onClick={handleCopyApply} disabled={!copyTargetId}>
-              {copyMove === 'move' ? '转移' : '复制'}
+              {copyMove === 'move' ? tr("转移") : tr("复制")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useEffect, useState  } from 'react';
 import { listAssetIndex } from '@/lib/asset-index';
 import type { AssetIndexEntry } from '@/lib/asset-index-entry';
 import { presetOptionLabel } from '@/lib/preset-catalog';
@@ -11,6 +13,7 @@ import { catalogSelectClass } from './PresetCatalogFields';
 
 /** The selected ID stays visible when filters change, including retired/missing presets. */
 export function PresetSelect({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
+  useI18n();
   const [items, setItems] = useState<AssetIndexEntry[]>([]), [query, setQuery] = useState(''), [model, setModel] = useState('');
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [retry, setRetry] = useState(0);
   const [showRetired, setShowRetired] = useState(false);
@@ -32,16 +35,16 @@ export function PresetSelect({ value, onChange }: { value: string | null; onChan
   const models = useMemo(() => [...new Set(items.flatMap(item => getPresetPresentation(item).models))].sort(), [items]);
   const visible = items.filter(item => item.id === value || ((showRetired || item.catalog?.status !== 'retired') && (!model || getPresetPresentation(item).models.includes(model)) && [presetOptionLabel(item), item.title, item.catalog?.series, ...(item.catalog?.tags ?? [])].join(' ').toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())));
   return <div className="space-y-2">
-    <div className="flex gap-2"><Input aria-label="查找挂载预设" placeholder="搜索作者、版本或模型" value={query} onChange={e => setQuery(e.target.value)} />
-      <select aria-label="按适配模型筛选预设" className={`${catalogSelectClass} max-w-36`} value={model} onChange={e => setModel(e.target.value)}><option value="">全部模型</option>{models.map(model => <option key={model}>{model}</option>)}</select></div>
+    <div className="flex gap-2"><Input aria-label={tr("查找挂载预设")} placeholder={tr("搜索作者、版本或模型")} value={query} onChange={e => setQuery(e.target.value)} />
+      <select aria-label={tr("按适配模型筛选预设")} className={`${catalogSelectClass} max-w-36`} value={model} onChange={e => setModel(e.target.value)}><option value="">{tr("全部模型")}</option>{models.map(model => <option key={model}>{model}</option>)}</select></div>
     <Select value={value ?? '__none__'} onValueChange={id => onChange(id === '__none__' ? null : id)}>
-      <SelectTrigger aria-label="挂载预设"><SelectValue placeholder={loading ? '正在读取预设…' : '不挂预设（用内置骨架）'} /></SelectTrigger>
-      <SelectContent><SelectItem value="__none__">不挂预设（用内置骨架）</SelectItem>
-        {value && !items.some(item => item.id === value) && <SelectItem value={value} disabled>{loading ? '正在读取所选预设…' : error ? '所选预设读取失败' : '所选预设已不存在'}</SelectItem>}
+      <SelectTrigger aria-label={tr("挂载预设")}><SelectValue placeholder={loading ? tr("正在读取预设…") : tr("不挂预设（用内置骨架）")} /></SelectTrigger>
+      <SelectContent><SelectItem value="__none__">{tr("不挂预设（用内置骨架）")}</SelectItem>
+        {value && !items.some(item => item.id === value) && <SelectItem value={value} disabled>{loading ? tr("正在读取所选预设…") : error ? tr("所选预设读取失败") : tr("所选预设已不存在")}</SelectItem>}
         {visible.map(item => <SelectItem key={item.id} value={item.id}>{presetOptionLabel(item)}</SelectItem>)}
       </SelectContent>
     </Select>
-    {items.some(item => item.catalog?.status === 'retired') && <label className="flex items-center gap-2 text-xs min-h-8"><input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} />包含已停用（{items.filter(item => item.catalog?.status === 'retired').length}）</label>}
-    {error && <p role="alert" className="text-xs text-destructive">预设列表读取失败 <button type="button" className="underline min-h-8" onClick={() => setRetry(n => n + 1)}>重试</button></p>}
+    {items.some(item => item.catalog?.status === 'retired') && <label className="flex items-center gap-2 text-xs min-h-8"><input type="checkbox" checked={showRetired} onChange={e => setShowRetired(e.target.checked)} />{tr("包含已停用（{{v0}}）", { v0: items.filter(item => item.catalog?.status === 'retired').length })}</label>}
+    {error && <p role="alert" className="text-xs text-destructive">{tr("预设列表读取失败 ")}<button type="button" className="underline min-h-8" onClick={() => setRetry(n => n + 1)}>{tr("重试")}</button></p>}
   </div>;
 }

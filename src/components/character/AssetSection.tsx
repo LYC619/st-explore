@@ -1,9 +1,11 @@
+import { tr, formatList } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色卡主页 · 关联资产 tab：
  * 三类资产（世界书/预设/正则，引用制）+ 引用摘录（quotes）+ 关联文件（attachments）。
  * 右侧预览抽屉与删除确认弹窗拆至 AssetPreviewSheet。
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef  } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Globe,
@@ -57,18 +59,18 @@ import { AssetPreviewSheet, type AssetView } from './AssetPreviewSheet';
 const PREVIEW_LIMIT = 8;
 
 const RELATION_LABELS: Record<STAssetRelation, string> = {
-  embedded: '卡内嵌',
-  primary: '主绑定',
-  extra: '额外链接',
-  chat: '对话级',
+  get embedded() { return tr("卡内嵌"); },
+  get primary() { return tr("主绑定"); },
+  get extra() { return tr("额外链接"); },
+  get chat() { return tr("对话级"); },
 };
 
 const KIND_META: Record<AssetView['kind'], { label: string; icon: typeof Globe; toolPath: string; unit: string }> = {
-  worldbook: { label: '世界书', icon: Globe, toolPath: '/worldbook', unit: '条目' },
-  preset: { label: '预设', icon: SlidersHorizontal, toolPath: '/preset', unit: '提示词块' },
-  regex: { label: '正则', icon: RegexIcon, toolPath: '/regex', unit: '规则' },
-  quote: { label: '引用', icon: QuoteIcon, toolPath: '', unit: '段' },
-  file: { label: '文件', icon: Paperclip, toolPath: '', unit: '' },
+  worldbook: { get label() { return tr("世界书"); }, icon: Globe, toolPath: '/worldbook', get unit() { return tr("条目"); } },
+  preset: { get label() { return tr("预设"); }, icon: SlidersHorizontal, toolPath: '/preset', get unit() { return tr("提示词块"); } },
+  regex: { get label() { return tr("正则"); }, icon: RegexIcon, toolPath: '/regex', get unit() { return tr("规则"); } },
+  quote: { get label() { return tr("引用"); }, icon: QuoteIcon, toolPath: '', get unit() { return tr("段"); } },
+  file: { get label() { return tr("文件"); }, icon: Paperclip, toolPath: '', unit: '' },
 };
 
 function isLibraryAsset(kind: AssetView['kind']): kind is AssetKind {
@@ -92,6 +94,7 @@ export function AssetSection({
   onReadEmbedded,
   onOpenImport,
 }: AssetSectionProps) {
+  useI18n();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [library, setLibrary] = useState<AssetView[]>([]);
@@ -137,7 +140,7 @@ export function AssetSection({
         return {
           kind: 'worldbook', id: w.id, title: w.title, updatedAt: w.updatedAt, derived: w.derived,
           entries: entries.slice(0, PREVIEW_LIMIT).map((e) => ({
-            title: e.comment || `条目 ${e.uid}`,
+            title: e.comment || tr("条目 {{v0}}", { v0: e.uid }),
             keys: e.key.join(', ') || undefined,
             body: e.content,
           })),
@@ -148,7 +151,7 @@ export function AssetSection({
         kind: 'preset', id: p.id, title: presetOptionLabel(p), updatedAt: p.updatedAt, derived: p.derived,
         entries: p.preset.prompts.slice(0, PREVIEW_LIMIT).map((b) => ({
           title: b.name || b.identifier,
-          body: b.marker ? '（系统插槽，运行时动态填充）' : b.content,
+          body: b.marker ? tr("（系统插槽，运行时动态填充）") : b.content,
         })),
         count: p.preset.prompts.length,
       })),
@@ -157,7 +160,7 @@ export function AssetSection({
         entries: r.rules.slice(0, PREVIEW_LIMIT).map((x) => ({
           title: x.name,
           keys: x.findRegex,
-          body: x.replaceString ? `→ ${x.replaceString}` : '→（删除匹配内容）',
+          body: x.replaceString ? `→ ${x.replaceString}` : tr("→（删除匹配内容）"),
         })),
         count: r.rules.length,
       })),
@@ -244,7 +247,7 @@ export function AssetSection({
     try {
       await onAssetsChange(addAssetRef(refs, a.kind as AssetKind, a.id));
       setAddOpen(false);
-      toast({ title: `已关联${KIND_META[a.kind].label}「${a.title}」`, description: '只记引用，不复制内容' });
+      toast({ title: tr("已关联{{v0}}「{{v1}}」", { v0: KIND_META[a.kind].label, v1: a.title }), description: tr("只记引用，不复制内容") });
     } catch {
       // 父层已提示失败；保留选择面板。
     }
@@ -253,7 +256,7 @@ export function AssetSection({
   const handleRemove = async (kind: AssetKind, assetId: string, title?: string) => {
     try {
       await onAssetsChange(removeAssetRef(refs, kind, assetId));
-      toast({ title: `已移除引用${title ? `「${title}」` : ''}`, description: '资产本体仍在资产库中' });
+      toast({ title: title ? tr("已移除引用「{{v0}}」", { v0: title }) : tr("已移除引用"), description: tr("资产本体仍在资产库中") });
     } catch {
       // 父层已提示失败。
     }
@@ -277,7 +280,7 @@ export function AssetSection({
       await openAttachmentExternally(file.characterId, file.id, reveal);
     } catch (error) {
       toast({
-        title: reveal ? '在文件管理器中显示失败' : '调用外部程序失败',
+        title: reveal ? tr("在文件管理器中显示失败") : tr("调用外部程序失败"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -292,12 +295,12 @@ export function AssetSection({
       setFileToDelete(null);
       if (preview?.kind === 'file' && preview.file?.id === file.id) setPreview(null);
       toast({
-        title: `已移除关联文件「${file.title}」`,
-        description: deleteFile ? (getActiveVault()?.fs.trashFile ? '文件已放进系统回收站' : '文件已删除') : '已移除记录，文件未删除',
+        title: tr("已移除关联文件「{{v0}}」", { v0: file.title }),
+        description: deleteFile ? (getActiveVault()?.fs.trashFile ? tr("文件已放进系统回收站") : tr("文件已删除")) : tr("已移除记录，文件未删除"),
       });
     } catch (error) {
       toast({
-        title: '移除关联文件失败',
+        title: tr("移除关联文件失败"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -314,41 +317,31 @@ export function AssetSection({
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-xs text-muted-foreground mr-auto">世界书 / 预设 / 正则（引用制）+ 引用摘录 + 关联文件</span>
-        <Button variant="outline" size="sm" title="重新扫描卡内嵌的世界书/正则并入库挂关联" onClick={() => void handleReadEmbedded()}>
-          <PackageOpen className="w-3.5 h-3.5 mr-1" />
-          读取内置资源
-        </Button>
+        <span className="text-xs text-muted-foreground mr-auto">{tr("世界书 / 预设 / 正则（引用制）+ 引用摘录 + 关联文件")}</span>
+        <Button variant="outline" size="sm" title={tr("重新扫描卡内嵌的世界书/正则并入库挂关联")} onClick={() => void handleReadEmbedded()}>
+          <PackageOpen className="w-3.5 h-3.5 mr-1" />{tr("读取内置资源")}</Button>
         <Button variant="outline" size="sm" onClick={onOpenImport}>
-          <Download className="w-3.5 h-3.5 mr-1" />
-          导入资产
-        </Button>
+          <Download className="w-3.5 h-3.5 mr-1" />{tr("导入资产")}</Button>
         <Popover open={addOpen} onOpenChange={(v) => { setAddOpen(v); if (v) setAddQuery(''); }}>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm">
-              <Plus className="w-3.5 h-3.5 mr-1" />
-              添加引用
-            </Button>
+              <Plus className="w-3.5 h-3.5 mr-1" />{tr("添加引用")}</Button>
           </PopoverTrigger>
           <PopoverContent className="w-[26rem] p-3" align="end">
-            <p className="text-sm font-medium mb-2">从资产库选择</p>
+            <p className="text-sm font-medium mb-2">{tr("从资产库选择")}</p>
             {!libraryLoaded ? (
-              <p className="text-xs text-muted-foreground">正在读取资产库…</p>
+              <p className="text-xs text-muted-foreground">{tr("正在读取资产库…")}</p>
             ) : linkable.length === 0 && failedKinds.size > 0 ? (
               <div className="space-y-2 text-xs text-muted-foreground">
-                <p>部分资产目录（{[...failedKinds].map((k) => KIND_META[k].label).join('、')}）暂时没能读取出来。</p>
-                <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>重新读取</Button>
+                <p>{tr("部分资产目录（{{v0}}）暂时没能读取出来。", { v0: formatList([...failedKinds].map((k) => KIND_META[k].label)) })}</p>
+                <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>{tr("重新读取")}</Button>
               </div>
             ) : linkable.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                资产库里没有可关联的条目。先在处理区的世界书/预设/正则工具里保存资产。
-              </p>
+              <p className="text-xs text-muted-foreground">{tr("资产库里没有可关联的条目。先在处理区的世界书/预设/正则工具里保存资产。")}</p>
             ) : (
               <div className="space-y-2">
                 {failedKinds.size > 0 && (
-                  <p className="text-[11px] text-[color:var(--status-warn)]">
-                    注：{[...failedKinds].map((k) => KIND_META[k].label).join('、')}暂未读取成功，仅列出已读出的资产。
-                  </p>
+                  <p className="text-[11px] text-[color:var(--status-warn)]">{tr("注：{{v0}}暂未读取成功，仅列出已读出的资产。", { v0: formatList([...failedKinds].map((k) => KIND_META[k].label)) })}</p>
                 )}
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
@@ -356,14 +349,14 @@ export function AssetSection({
                     size="sm"
                     value={addQuery}
                     onChange={(e) => setAddQuery(e.target.value)}
-                    placeholder={`搜索 ${linkable.length} 个可关联资产`}
+                    placeholder={tr("搜索 {{v0}} 个可关联资产", { v0: linkable.length })}
                     className="pl-7"
                     autoFocus
                   />
                 </div>
                 <ScrollArea className="h-72 -mx-1 px-1">
                   {addGroups.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-muted-foreground">没有匹配「{addQuery}」的资产</p>
+                    <p className="py-6 text-center text-xs text-muted-foreground">{tr("没有匹配「{{v0}}」的资产", { v0: addQuery })}</p>
                   ) : (
                     <div className="space-y-2">
                       {addGroups.map(({ kind, assets }) => (
@@ -382,7 +375,7 @@ export function AssetSection({
                               >
                                 <Icon className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                                 <span className="flex-1 min-w-0 truncate" title={a.title}>{a.title}</span>
-                                {a.derived && <Badge variant="outline" className="h-4 px-1 text-[11px] shrink-0">派生</Badge>}
+                                {a.derived && <Badge variant="outline" className="h-4 px-1 text-[11px] shrink-0">{tr("派生")}</Badge>}
                                 <span className="text-[11px] text-muted-foreground shrink-0">
                                   {a.count} {KIND_META[a.kind].unit}
                                 </span>
@@ -402,16 +395,14 @@ export function AssetSection({
 
       {failedKinds.size > 0 && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-[color:var(--text-body)]">
-          <span>
-            部分资产目录（{[...failedKinds].map((k) => KIND_META[k].label).join('、')}）暂时没能读取出来，对应关联不会误标为失效。
-          </span>
-          <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>重新读取</Button>
+          <span>{tr("部分资产目录（{{v0}}）暂时没能读取出来，对应关联不会误标为失效。", { v0: formatList([...failedKinds].map((k) => KIND_META[k].label)) })}</span>
+          <Button variant="outline" size="sm" onClick={() => void loadLibrary()}>{tr("重新读取")}</Button>
         </div>
       )}
       {attachmentLoadFailed && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-[color:var(--text-body)]">
-          <span>关联文件状态暂时没能读取出来，原文件仍保存在库里。</span>
-          <Button variant="outline" size="sm" onClick={() => void reloadAttachments()}>重新读取</Button>
+          <span>{tr("关联文件状态暂时没能读取出来，原文件仍保存在库里。")}</span>
+          <Button variant="outline" size="sm" onClick={() => void reloadAttachments()}>{tr("重新读取")}</Button>
         </div>
       )}
 
@@ -421,38 +412,27 @@ export function AssetSection({
           className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-brand/25 bg-[var(--brand-active-bg)] px-3.5 py-2.5 text-xs text-[color:var(--text-body)]"
         >
           <div className="space-y-0.5">
-            <p className="font-medium text-[color:var(--text-primary)]">
-              卡内自带装备：
-              {[
-                embeddedSummary.bookEntries > 0 ? `世界书 ${embeddedSummary.bookEntries} 条` : null,
-                embeddedSummary.regexCount > 0 ? `正则 ${embeddedSummary.regexCount} 条` : null,
-                embeddedSummary.scriptCount > 0 ? `状态栏/助手脚本 ${embeddedSummary.scriptCount} 项` : null,
+            <p className="font-medium text-[color:var(--text-primary)]">{tr("卡内自带装备：")}{[
+                embeddedSummary.bookEntries > 0 ? tr("世界书 {{v0}} 条", { v0: embeddedSummary.bookEntries }) : null,
+                embeddedSummary.regexCount > 0 ? tr("正则 {{v0}} 条", { v0: embeddedSummary.regexCount }) : null,
+                embeddedSummary.scriptCount > 0 ? tr("状态栏/助手脚本 {{v0}} 项", { v0: embeddedSummary.scriptCount }) : null,
               ].filter(Boolean).join(' · ')}
             </p>
-            <p className="text-[color:var(--text-muted)]">
-              进入酒馆对话时会自动随卡生效；世界书与正则也可提取为独立资产方便查阅与精修。
-            </p>
+            <p className="text-[color:var(--text-muted)]">{tr("进入酒馆对话时会自动随卡生效；世界书与正则也可提取为独立资产方便查阅与精修。")}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {(embeddedSummary.bookEntries > 0 || embeddedSummary.regexCount > 0) && (
-              <Button variant="outline" size="sm" className="text-xs" onClick={() => void handleReadEmbedded()}>
-                提取到资产库
-              </Button>
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => void handleReadEmbedded()}>{tr("提取到资产库")}</Button>
             )}
             {embeddedSummary.scriptCount > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs text-brand" onClick={() => navigate('/beautify')}>
-                前往美化页
-              </Button>
+              <Button variant="ghost" size="sm" className="text-xs text-brand" onClick={() => navigate('/beautify')}>{tr("前往美化页")}</Button>
             )}
           </div>
         </div>
       )}
 
       {items.length === 0 && broken.length === 0 && unresolved.length === 0 && failedKinds.size === 0 && !attachmentLoadFailed ? (
-        <p className="text-xs text-muted-foreground">
-          还没有关联资产。角色用到的世界书/预设/正则可以在这里挂引用；在角色上下文里修改共享资产时，
-          会自动生成「资产名_{character.name}」的派生副本，不影响其他角色。摘录、语料片段可从「导入资产」进来
-          {canAttach ? '；发布页存的 html、同人视频这类文件也可以从「关联文件」一栏挂上来。' : '。'}
+        <p className="text-xs text-muted-foreground">{canAttach ? tr("还没有关联资产。角色用到的世界书/预设/正则可以在这里挂引用；在角色上下文里修改共享资产时，会自动生成「资产名_{{v0}}」的派生副本，不影响其他角色。摘录、语料片段可从「导入资产」进来；发布页存的 html、同人视频这类文件也可以从「关联文件」一栏挂上来。", { v0: character.name }) : tr("还没有关联资产。角色用到的世界书/预设/正则可以在这里挂引用；在角色上下文里修改共享资产时，会自动生成「资产名_{{v0}}」的派生副本，不影响其他角色。摘录、语料片段可从「导入资产」进来。", { v0: character.name })}
         </p>
       ) : (
         <div className="space-y-1.5">
@@ -474,23 +454,20 @@ export function AssetSection({
                     setPreview(a);
                   }
                 }}
-                title="点击查看条目预览"
+                title={tr("点击查看条目预览")}
               >
                 <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
                 <span className="min-w-0 truncate font-medium" title={a.title}>{a.title}</span>
                 <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground shrink-0">{meta.label}</Badge>
                 {a.file?.missing && (
-                  <Badge variant="outline" className="h-4 px-1 text-[11px] text-[color:var(--status-warn)] shrink-0" title={`文件不在库里了：${a.file.path}`}>
-                    文件缺失
-                  </Badge>
+                  <Badge variant="outline" className="h-4 px-1 text-[11px] text-[color:var(--status-warn)] shrink-0" title={tr("文件不在库里了：{{v0}}", { v0: a.file.path })}>{tr("文件缺失")}</Badge>
                 )}
                 {isLibraryAsset(a.kind) && (
                   a.derived ? (
-                    <Badge variant="secondary" className="h-4 px-1 text-[11px] shrink-0" title={isOwnDerived ? '本角色的派生副本' : '其他角色的派生副本'}>
-                      派生{isOwnDerived ? '' : '(他人)'}
+                    <Badge variant="secondary" className="h-4 px-1 text-[11px] shrink-0" title={isOwnDerived ? tr("本角色的派生副本") : tr("其他角色的派生副本")}>{isOwnDerived ? tr("派生") : tr("派生（他人）")}
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground shrink-0">共享</Badge>
+                    <Badge variant="outline" className="h-4 px-1 text-[11px] text-muted-foreground shrink-0">{tr("共享")}</Badge>
                   )
                 )}
                 {a.relations?.map((relation) => (
@@ -511,21 +488,17 @@ export function AssetSection({
                     className="shrink-0"
                     onClick={(e) => { e.stopPropagation(); openEditor(a); }}
                   >
-                    <Wrench className="w-3.5 h-3.5 mr-1" />
-                    处理
-                  </Button>
+                    <Wrench className="w-3.5 h-3.5 mr-1" />{tr("处理")}</Button>
                 )}
                 {a.file && !a.file.missing && canOpenExternally && (
                   <Button
                     variant="outline"
                     size="sm"
                     className="shrink-0"
-                    title="用系统默认程序打开这个文件"
+                    title={tr("用系统默认程序打开这个文件")}
                     onClick={(e) => { e.stopPropagation(); void handleOpenExternally(a.file!, false); }}
                   >
-                    <ExternalLink className="w-3.5 h-3.5 mr-1" />
-                    打开
-                  </Button>
+                    <ExternalLink className="w-3.5 h-3.5 mr-1" />{tr("打开")}</Button>
                 )}
                 <Button
                   variant="ghost"
@@ -537,7 +510,7 @@ export function AssetSection({
                     else if (a.kind === 'file') setFileToDelete(a.file!);
                     else setQuoteToDelete(quotes.find((q) => q.id === a.id) ?? null);
                   }}
-                  aria-label={a.kind === 'file' ? '移除关联文件' : a.kind === 'quote' ? '删除引用' : '移除引用'}
+                  aria-label={a.kind === 'file' ? tr("移除关联文件") : a.kind === 'quote' ? tr("删除引用") : tr("移除引用")}
                 >
                   <X className="w-3.5 h-3.5" />
                 </Button>
@@ -546,21 +519,19 @@ export function AssetSection({
           })}
           {broken.map((ref) => (
             <div key={`${ref.kind}-${ref.assetId}`} className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-              <span className="min-w-0 truncate" title={`引用的${KIND_META[ref.kind].label}已被删除`}>引用的{KIND_META[ref.kind].label}已被删除</span>
+              <span className="min-w-0 truncate" title={tr("引用的{{v0}}已被删除", { v0: KIND_META[ref.kind].label })}>{tr("引用的{{v0}}已被删除", { v0: KIND_META[ref.kind].label })}</span>
               <Button
                 variant="ghost"
                 size="sm"
                 className="ml-auto"
                 onClick={() => void handleRemove(ref.kind, ref.assetId)}
-              >
-                移除失效引用
-              </Button>
+              >{tr("移除失效引用")}</Button>
             </div>
           ))}
           {unresolved.map((ref) => (
             <div key={`${ref.kind}-${ref.relation}-${ref.name}`} className="flex items-center gap-2.5 rounded-lg border border-dashed border-[var(--status-warn-bg)] px-3 py-2 text-sm">
               <Globe className="w-4 h-4 text-[color:var(--status-warn)] shrink-0" />
-              <span className="min-w-0 truncate" title={`未找到世界书「${ref.name}」`}>未找到世界书「{ref.name}」</span>
+              <span className="min-w-0 truncate" title={tr("未找到世界书「{{v0}}」", { v0: ref.name })}>{tr("未找到世界书「{{v0}}」", { v0: ref.name })}</span>
               <Badge variant="outline" className="ml-auto h-4 px-1 text-[11px] text-[color:var(--status-warn)] shrink-0">
                 {RELATION_LABELS[ref.relation]}
               </Badge>
@@ -582,7 +553,7 @@ export function AssetSection({
           void onQuotesChange(quotes.filter((q) => q.id !== target.id))
             .then(() => {
               setQuoteToDelete(null);
-              toast({ title: `已删除引用「${target.title}」` });
+              toast({ title: tr("已删除引用「{{v0}}」", { v0: target.title }) });
             })
             .catch(() => {});
         }}

@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState, type Ref } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
+import { useEffect, useState, type Ref } from 'react';
 import { LocateFixed } from 'lucide-react';
 import type { ArchiveCharacter } from '@/types/archive';
 import type { StoryIndexEntry } from '@/lib/archive-index';
@@ -64,8 +66,9 @@ export function ReviewCharacterContent({
   onReaderReady: (ready: boolean) => void;
   restoreFloor: boolean;
 }) {
-  const volumes = useMemo(() => groupReviewRecords(stories, summaries, 'volume'), [stories, summaries]);
-  const diaries = useMemo(() => groupReviewRecords(stories, summaries, 'diary'), [stories, summaries]);
+  useI18n();
+  const volumes = useLocalizedMemo(() => groupReviewRecords(stories, summaries, 'volume'), [stories, summaries]);
+  const diaries = useLocalizedMemo(() => groupReviewRecords(stories, summaries, 'diary'), [stories, summaries]);
 
   const [trees, setTrees] = useState<StoryTree[] | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
@@ -82,7 +85,7 @@ export function ReviewCharacterContent({
       })
       .catch((err) => {
         if (!cancelled && epoch === getVaultEpoch()) {
-          setTreeError(err instanceof Error ? err.message : '读取故事树失败');
+          setTreeError(err instanceof Error ? err.message : tr("读取故事树失败"));
         }
       });
     return () => {
@@ -107,21 +110,21 @@ export function ReviewCharacterContent({
     if (treeError) {
       return (
         <div role="alert" className="space-y-3 py-8 text-sm">
-          <p>读取故事树失败：{treeError}。记录仍保留在库中。</p>
-          <Button variant="outline" onClick={() => setTreeReload((n) => n + 1)}>重试读取</Button>
+          <p>{tr("读取故事树失败：{{v0}}。记录仍保留在库中。", { v0: treeError })}</p>
+          <Button variant="outline" onClick={() => setTreeReload((n) => n + 1)}>{tr("重试读取")}</Button>
         </div>
       );
     }
     if (trees === null) {
-      return <p role="status" className="py-12 text-center text-sm text-muted-foreground">{LOADING_LABEL}</p>;
+      return <p role="status" className="py-12 text-center text-sm text-muted-foreground">{tr(LOADING_LABEL)}</p>;
     }
     const storyIds = new Set(stories.map((s) => s.id));
     const charTrees = trees.filter((t) => t.bookId && storyIds.has(t.bookId));
     if (!charTrees.length) {
       return (
         <div className="space-y-3 py-12 text-center text-sm text-muted-foreground">
-          <p>还没有故事树</p>
-          <Button variant="outline" onClick={() => onTabChange('stories')}>查看故事</Button>
+          <p>{tr("还没有故事树")}</p>
+          <Button variant="outline" onClick={() => onTabChange('stories')}>{tr("查看故事")}</Button>
         </div>
       );
     }
@@ -136,7 +139,7 @@ export function ReviewCharacterContent({
                   <h3 className="font-serif text-base font-semibold">{tree.title}</h3>
                   {matchedStory && <p className="text-xs text-muted-foreground">{matchedStory.title}</p>}
                 </div>
-                <span className="text-xs text-muted-foreground">{tree.nodes.length} 个节点</span>
+                <span className="text-xs text-muted-foreground">{tr("{{v0}} 个节点", { v0: tree.nodes.length })}</span>
               </div>
               <StoryTreePreview
                 tree={tree}
@@ -158,12 +161,12 @@ export function ReviewCharacterContent({
   if (tab === 'stories') {
     if (storyId && stories.some((story) => story.id === storyId)) {
       const returnLabelMap: Partial<Record<ReviewTab, string>> = {
-        volume: '返回总结',
-        diary: '返回日记',
-        tree: '返回故事树',
-        overview: '返回总览',
+        volume: tr("返回总结"),
+        diary: tr("返回日记"),
+        tree: tr("返回故事树"),
+        overview: tr("返回总览"),
       };
-      const backLabel = (returnFromJumpTab && returnLabelMap[returnFromJumpTab]) || '故事列表';
+      const backLabel = (returnFromJumpTab && returnLabelMap[returnFromJumpTab]) || tr("故事列表");
       return (
         <InlineStoryReader
           key={storyId}
@@ -216,15 +219,15 @@ export function ReviewCharacterContent({
     <div className="space-y-8">
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">最近备注</h3>
-          <Button variant="ghost" onClick={() => onTabChange('notes')}>全部备注</Button>
+          <h3 className="font-medium">{tr("最近备注")}</h3>
+          <Button variant="ghost" onClick={() => onTabChange('notes')}>{tr("全部备注")}</Button>
         </div>
         {notes.length ? (
           notes.map((note) => (
             <article key={note.id} className="rounded-lg border border-border bg-card p-4">
               <div
                 role="region"
-                aria-label="最近备注正文"
+                aria-label={tr("最近备注正文")}
                 tabIndex={0}
                 data-review-excerpt
                 className="max-h-64 overflow-y-auto overscroll-contain rounded-sm pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -234,14 +237,14 @@ export function ReviewCharacterContent({
             </article>
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">还没有备注</p>
+          <p className="text-sm text-muted-foreground">{tr("还没有备注")}</p>
         )}
       </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">故事 · {stories.length}</h3>
-          <Button variant="ghost" onClick={() => onTabChange('stories')}>查看故事</Button>
+          <h3 className="font-medium">{tr("故事 · {{v0}}", { v0: stories.length })}</h3>
+          <Button variant="ghost" onClick={() => onTabChange('stories')}>{tr("查看故事")}</Button>
         </div>
         {stories.slice(0, 4).map((story) => (
           <button
@@ -254,23 +257,23 @@ export function ReviewCharacterContent({
             className="flex w-full justify-between gap-3 rounded-md bg-muted/50 px-3 py-2 text-left text-sm transition-colors hover:bg-muted"
           >
             <span className="truncate">{story.title}</span>
-            <span className="shrink-0 text-xs text-muted-foreground">{story.status ?? '未开始'}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{story.status ? tr(story.status) : tr("未开始")}</span>
           </button>
         ))}
-        {!stories.length && <p className="text-sm text-muted-foreground">还没有故事</p>}
+        {!stories.length && <p className="text-sm text-muted-foreground">{tr("还没有故事")}</p>}
       </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium">总结片段</h3>
-          <Button variant="ghost" onClick={() => onTabChange('volume')}>阅读全部总结</Button>
+          <h3 className="font-medium">{tr("总结片段")}</h3>
+          <Button variant="ghost" onClick={() => onTabChange('volume')}>{tr("阅读全部总结")}</Button>
         </div>
         {loading ? (
-          <p role="status" className="text-sm text-muted-foreground">{LOADING_LABEL}</p>
+          <p role="status" className="text-sm text-muted-foreground">{tr(LOADING_LABEL)}</p>
         ) : error ? (
           <div role="alert" className="space-y-2 text-sm">
-            <p>读取总结和日记失败：{error}。记录仍保留在库中。</p>
-            <Button variant="outline" onClick={onRetry}>重试读取</Button>
+            <p>{tr("读取总结和日记失败：{{v0}}。记录仍保留在库中。", { v0: error })}</p>
+            <Button variant="outline" onClick={onRetry}>{tr("重试读取")}</Button>
           </div>
         ) : excerpts.length ? (
           excerpts.map(({ record, storyId: sid, story, branchId: bid, branch }) => (
@@ -285,13 +288,12 @@ export function ReviewCharacterContent({
                     onClick={() => onJumpToRecordFloor(sid, bid, record.floorStart)}
                   >
                     <LocateFixed className="h-3 w-3" />
-                    #{record.floorStart} 楼
-                  </Button>
+                    {tr("#{{v0}} 楼", { v0: record.floorStart })}</Button>
                 )}
               </div>
               <div
                 role="region"
-                aria-label={`${record.title || '总结'}正文`}
+                aria-label={tr("{{v0}}正文", { v0: record.title || tr("总结") })}
                 tabIndex={0}
                 data-review-excerpt
                 className="max-h-64 overflow-y-auto overscroll-contain rounded-sm pr-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -301,7 +303,7 @@ export function ReviewCharacterContent({
             </article>
           ))
         ) : (
-          <p className="text-sm text-muted-foreground">还没有总结，可在故事编辑器中整理已有内容。</p>
+          <p className="text-sm text-muted-foreground">{tr("还没有总结，可在故事编辑器中整理已有内容。")}</p>
         )}
       </section>
     </div>

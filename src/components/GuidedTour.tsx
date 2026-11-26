@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { X, ChevronRight, PartyPopper } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -114,6 +116,7 @@ function ensureNoOverlap(
 const TOUR_PAD = 8;
 
 export function GuidedTour({ steps, module, onComplete, onSkip }: GuidedTourProps) {
+  useI18n();
   const [currentStep, setCurrentStep] = useState(0);
   const [targetRect, setTargetRect] = useState<Rect | null>(null);
   const [showCompletion, setShowCompletion] = useState(false);
@@ -201,15 +204,13 @@ export function GuidedTour({ steps, module, onComplete, onSkip }: GuidedTourProp
           <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
             <PartyPopper className="w-8 h-8 text-primary" />
           </div>
-          <h3 className="font-display text-xl font-semibold mb-2">恭喜！引导完成 🎉</h3>
+          <h3 className="font-display text-xl font-semibold mb-2">{tr("恭喜！引导完成 🎉")}</h3>
           <p className="text-sm text-muted-foreground mb-6">
             {module === 'home'
-              ? '您已掌握聊天记录处理的核心流程。可以继续探索总结、故事树、世界书编辑器和书架。'
-              : '您已了解此模块的基本功能。'}
+              ? tr("您已掌握聊天记录处理的核心流程。可以继续探索总结、故事树、世界书编辑器和书架。")
+              : tr("您已了解此模块的基本功能。")}
           </p>
-          <Button onClick={onComplete} className="gap-2">
-            开始使用
-            <ChevronRight className="w-4 h-4" />
+          <Button onClick={onComplete} className="gap-2">{tr("开始使用")}<ChevronRight className="w-4 h-4" />
           </Button>
         </div>
       </div>
@@ -236,19 +237,17 @@ export function GuidedTour({ steps, module, onComplete, onSkip }: GuidedTourProp
           </div>
           <p className="text-sm text-foreground leading-relaxed pr-4">{step.content}</p>
           <div className="mt-3 flex justify-end">
-            <Button size="sm" onClick={advance} className="gap-1">
-              下一步
-              <ChevronRight className="w-3 h-3" />
+            <Button size="sm" onClick={advance} className="gap-1">{tr("下一步")}<ChevronRight className="w-3 h-3" />
             </Button>
           </div>
         </div>
         {showSkipConfirm && (
           <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40 pointer-events-auto">
             <div className="bg-card rounded-xl p-6 max-w-sm mx-4 shadow-2xl border border-border">
-              <p className="text-sm mb-4">确定要跳过新手引导吗？您可以在设置中随时重新开启。</p>
+              <p className="text-sm mb-4">{tr("确定要跳过新手引导吗？您可以在设置中随时重新开启。")}</p>
               <div className="flex gap-2 justify-end">
-                <Button variant="outline" size="sm" onClick={() => setShowSkipConfirm(false)}>继续引导</Button>
-                <Button size="sm" onClick={onSkip}>跳过</Button>
+                <Button variant="outline" size="sm" onClick={() => setShowSkipConfirm(false)}>{tr("继续引导")}</Button>
+                <Button size="sm" onClick={onSkip}>{tr("跳过")}</Button>
               </div>
             </div>
           </div>
@@ -334,20 +333,16 @@ export function GuidedTour({ steps, module, onComplete, onSkip }: GuidedTourProp
           <button
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
             onClick={handleSkipRequest}
-          >
-            跳过引导
-          </button>
+          >{tr("跳过引导")}</button>
           {step.action === 'next' && (
-            <Button size="sm" onClick={advance} className="gap-1">
-              下一步
-              <ChevronRight className="w-3 h-3" />
+            <Button size="sm" onClick={advance} className="gap-1">{tr("下一步")}<ChevronRight className="w-3 h-3" />
             </Button>
           )}
           {step.action === 'click' && (
-            <span className="text-xs text-primary animate-pulse">👆 请点击高亮区域</span>
+            <span className="text-xs text-primary animate-pulse">{tr("👆 请点击高亮区域")}</span>
           )}
           {step.action === 'interact' && (
-            <span className="text-xs text-primary animate-pulse">✏️ 请操作后继续</span>
+            <span className="text-xs text-primary animate-pulse">{tr("✏️ 请操作后继续")}</span>
           )}
         </div>
       </div>
@@ -356,14 +351,10 @@ export function GuidedTour({ steps, module, onComplete, onSkip }: GuidedTourProp
       {showSkipConfirm && (
         <div className="fixed inset-0 z-[10002] flex items-center justify-center bg-black/40 pointer-events-auto">
           <div className="bg-card rounded-xl p-6 max-w-sm mx-4 shadow-2xl border border-border">
-            <p className="text-sm mb-4">确定要跳过新手引导吗？您可以在设置中随时重新开启。</p>
+            <p className="text-sm mb-4">{tr("确定要跳过新手引导吗？您可以在设置中随时重新开启。")}</p>
             <div className="flex gap-2 justify-end">
-              <Button variant="outline" size="sm" onClick={() => setShowSkipConfirm(false)}>
-                继续引导
-              </Button>
-              <Button size="sm" onClick={onSkip}>
-                跳过
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => setShowSkipConfirm(false)}>{tr("继续引导")}</Button>
+              <Button size="sm" onClick={onSkip}>{tr("跳过")}</Button>
             </div>
           </div>
         </div>

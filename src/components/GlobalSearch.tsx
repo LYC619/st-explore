@@ -1,9 +1,11 @@
+import { tr } from '@/lib/i18n';
+import { useI18n, useLocalizedMemo } from '@/lib/i18n/react';
 /**
  * 标题栏全局搜索：角色名/故事名/资产标题与预设管理资料匹配 → 下拉分组结果跳转。
  * - Ctrl+F 覆盖 WebView2 页内查找并聚焦；↑↓ 选择、Enter 跳转、Esc 关闭
  * - 首次聚焦才拉数据（角色/故事走 archive-index 轻量列表，不读卡面与正文；焦点期内不重复拉）
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useCallback, useEffect, useRef, useState  } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import {
@@ -15,17 +17,24 @@ import { listAssetIndex } from '@/lib/asset-index';
 import { cn } from '@/lib/utils';
 import { LOADING_LABEL } from '@/lib/ui-copy';
 
+type RawSearchData = Parameters<typeof buildSearchEntries>[0];
+
 /**
  * compact：窄屏用法。默认那套 `hidden md:block w-72` 是给窗口栏的，
  * 在手机上等于整个应用没有搜索入口；窄屏时它挂在抽屉入口那一条里占满宽度。
  */
 export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
+  useI18n();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
-  const [entries, setEntries] = useState<SearchEntry[] | null>(null);
+  const [rawData, setRawData] = useState<RawSearchData | null>(null);
+  const entries = useLocalizedMemo(
+    () => (rawData ? buildSearchEntries(rawData) : null),
+    [rawData],
+  );
   const loadingRef = useRef(false);
 
   const loadEntries = useCallback(async () => {
@@ -39,7 +48,7 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
         listAssetIndex('presets').catch(() => []),
         listAssetIndex('regexes').catch(() => []),
       ]);
-      setEntries(buildSearchEntries({
+      setRawData({
         characters: characters.map((c) => ({
           id: c.id,
           name: c.name,
@@ -47,7 +56,7 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
         })),
         stories: stories.map((s) => ({ id: s.id, title: s.title, characterId: s.characterId })),
         worldbooks, presets, regexes,
-      }));
+      });
     } finally {
       loadingRef.current = false;
     }
@@ -128,13 +137,13 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
           onFocus={() => { setOpen(true); void loadEntries(); }}
           onBlur={() => setOpen(false)}
           onKeyDown={onKeyDown}
-          placeholder={compact ? '搜索角色、故事、资产…' : '搜索角色、故事、世界书、预设、正则…'}
+          placeholder={compact ? tr("搜索角色、故事、资产…") : tr("搜索角色、故事、世界书、预设、正则…")}
           // iOS 16px 以下会自动放大页面，窄屏输入框按约定给 text-base
           className={cn(
             'flex-1 min-w-0 bg-transparent outline-none text-[color:var(--text-body)] placeholder:text-[color:var(--text-faint)]',
             compact && 'text-base',
           )}
-          aria-label="全局搜索"
+          aria-label={tr("全局搜索")}
         />
         {/* 手机没有 Ctrl 键 */}
         {!compact && (
@@ -145,9 +154,9 @@ export function GlobalSearch({ compact = false }: { compact?: boolean } = {}) {
       {showDrop && (
         <div className="absolute left-0 right-0 top-full mt-1.5 z-50 rounded-lg border border-[color:var(--border-normal)] bg-elevated shadow-[var(--shadow-popover)] py-1.5 max-h-[60vh] overflow-y-auto">
           {entries === null ? (
-            <p className="px-3.5 py-2 text-xs text-[color:var(--text-faint)]">{LOADING_LABEL}</p>
+            <p className="px-3.5 py-2 text-xs text-[color:var(--text-faint)]">{tr(LOADING_LABEL)}</p>
           ) : results.length === 0 ? (
-            <p className="px-3.5 py-2 text-xs text-[color:var(--text-faint)]">没有匹配「{query.trim()}」的内容</p>
+            <p className="px-3.5 py-2 text-xs text-[color:var(--text-faint)]">{tr("没有匹配「{{v0}}」的内容", { v0: query.trim() })}</p>
           ) : (
             groups.map((g) => (
               <div key={g.kind}>

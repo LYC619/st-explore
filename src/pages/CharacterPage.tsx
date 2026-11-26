@@ -1,3 +1,5 @@
+import { formatList, tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 角色卡主页（10.3a 骨架重构，对照 _reference/0801.实测/角色卡界面设计/character-detail.html）：
  * - 左信息栏 272px（CharacterInfoRail）：立绘 3:4+lightbox / 信息行 / 操作抽屉
@@ -5,7 +7,7 @@
  *   + tab 导航（故事/备注/关联资产/立绘）+ tab 行右侧统一导入钮（10.3c，按当前 tab 预选类型）
  * - patchCharacter：评分→评价档位标签单向联动（10.0）+ 标签变化同步 nsfw 字段
  */
-import { useState, useEffect, useMemo, useCallback, useLayoutEffect, useRef, useContext } from 'react';
+import { useMemo, useState, useEffect, useCallback, useLayoutEffect, useRef, useContext  } from 'react';
 import { useParams, useNavigate, useSearchParams, UNSAFE_DataRouterContext, useBlocker } from 'react-router-dom';
 import { ArrowLeft, ChevronLeft, ChevronRight, BookOpen, Download, Package, MessageSquare } from 'lucide-react';
 import { AppLayout } from '@/components/AppLayout';
@@ -102,10 +104,10 @@ import { LOADING_LABEL } from '@/lib/ui-copy';
 type StorySubView = 'list' | RecordViewKind;
 
 const STORY_SUB_VIEWS: { key: RecordViewKind; label: string }[] = [
-  { key: 'volume', label: '总结' },
-  { key: 'diary', label: '日记' },
-  { key: 'diy', label: '自定义记录' },
-  { key: 'tree', label: '故事树' },
+  { key: 'volume', get label() { return tr("总结"); } },
+  { key: 'diary', get label() { return tr("日记"); } },
+  { key: 'diy', get label() { return tr("自定义记录"); } },
+  { key: 'tree', get label() { return tr("故事树"); } },
 ];
 
 /** tab → 导入弹窗预选类型 */
@@ -127,6 +129,7 @@ function CharacterRouteBlocker({
   flush: () => Promise<boolean>;
   onDiscard: () => void;
 }) {
+  useI18n();
   const blocker = useBlocker(({ currentLocation, nextLocation }) => (
     dirty && currentLocation.pathname !== nextLocation.pathname
   ));
@@ -147,15 +150,11 @@ function CharacterRouteBlocker({
     <AlertDialog open onOpenChange={(open) => { if (!open && !saving) blocker.reset(); }}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>角色卡设定还未保存</AlertDialogTitle>
-          <AlertDialogDescription>
-            你刚修改了人设、展示名或开场白，离开当前页面会丢失未保存的改动。
-          </AlertDialogDescription>
+          <AlertDialogTitle>{tr("角色卡设定还未保存")}</AlertDialogTitle>
+          <AlertDialogDescription>{tr("你刚修改了人设、展示名或开场白，离开当前页面会丢失未保存的改动。")}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel autoFocus disabled={saving} onClick={() => blocker.reset()}>
-            继续编辑
-          </AlertDialogCancel>
+          <AlertDialogCancel autoFocus disabled={saving} onClick={() => blocker.reset()}>{tr("继续编辑")}</AlertDialogCancel>
           <Button
             type="button"
             variant="outline"
@@ -164,9 +163,7 @@ function CharacterRouteBlocker({
               onDiscard();
               blocker.proceed();
             }}
-          >
-            放弃修改并离开
-          </Button>
+          >{tr("放弃修改并离开")}</Button>
           <AlertDialogAction
             disabled={saving}
             onClick={(event) => {
@@ -176,7 +173,7 @@ function CharacterRouteBlocker({
               });
             }}
           >
-            {saving ? '保存中…' : '保存并离开'}
+            {saving ? tr("保存中…") : tr("保存并离开")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -195,6 +192,7 @@ function SafeCharacterRouteBlocker(props: {
 }
 
 const CharacterPage = () => {
+  useI18n();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -227,7 +225,7 @@ const CharacterPage = () => {
   const [exportChoice, setExportChoice] = useState<{ format: 'json' | 'file'; choices: { id: string; title: string }[] } | null>(null);
   const [cardEdits, setCardEdits] = useState<CardEdits | null>(null);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
-  const [tavernUserName, setTavernUserName] = useState('你');
+  const [tavernUserName, setTavernUserName] = useState(tr("你"));
   const [cardSaving, setCardSaving] = useState(false);
   const [startingPlay, setStartingPlay] = useState(false);
   const [startingGreetingIdx, setStartingGreetingIdx] = useState<number | null>(null);
@@ -295,7 +293,7 @@ const CharacterPage = () => {
       if (seq !== loadSeqRef.current || epoch !== getVaultEpoch()) return;
       setCharacter(null);
       setStories([]);
-      setLoadError(error instanceof Error ? error.message : '读取角色档案失败，请检查文件库连接后重试');
+      setLoadError(error instanceof Error ? error.message : tr("读取角色档案失败，请检查文件库连接后重试"));
     } finally {
       if (seq === loadSeqRef.current && epoch === getVaultEpoch()) {
         setLoading(false);
@@ -342,7 +340,7 @@ const CharacterPage = () => {
    * 评分变化时联动评价档位标签（10.0，单向：评分→标签）；
    * 标签变化时同步 nsfw 字段（'卡面/NSFW' 在场即 true）。 */
   const patchCharacter = useCallback(async (patch: CharacterPatch): Promise<ArchiveCharacter> => {
-    if (!id) throw new Error('角色档案不存在');
+    if (!id) throw new Error(tr("角色档案不存在"));
     try {
       return await commitCharacterPatch(
         id,
@@ -363,12 +361,12 @@ const CharacterPage = () => {
         },
         updateCharacter,
         setCharacter,
-        { onWarning: (report) => toast({ title: '立绘清理需要稍后重试', description: report.warnings.join('；'), variant: 'destructive' }) },
+        { onWarning: (report) => toast({ title: tr("立绘清理需要稍后重试"), description: formatList(report.warnings), variant: 'destructive' }) },
       );
     } catch (error) {
       toast({
-        title: '保存角色档案失败',
-        description: error instanceof Error ? error.message : '请检查库目录是否可写',
+        title: tr("保存角色档案失败"),
+        description: error instanceof Error ? error.message : tr("请检查库目录是否可写"),
         variant: 'destructive',
       });
       throw error;
@@ -389,10 +387,10 @@ const CharacterPage = () => {
       const next = applyCharacterPageCardEdits(character, cardEdits);
       const saved = await patchCharacter({ name: next.name, subtitle: next.subtitle, card: next.card, pngBase64: next.pngBase64 });
       setCardEdits(editsFromNormalized(normalizeCharacterCard(saved.card)));
-      toast({ title: '角色卡已保存', description: '实际名、核心字段和开场白已更新。' });
+      toast({ title: tr("角色卡已保存"), description: tr("实际名、核心字段和开场白已更新。") });
       return saved;
     } catch (error) {
-      toast({ title: '角色卡保存失败', description: error instanceof Error ? error.message : '请检查内容后重试', variant: 'destructive' });
+      toast({ title: tr("角色卡保存失败"), description: error instanceof Error ? error.message : tr("请检查内容后重试"), variant: 'destructive' });
       return null;
     } finally {
       setCardSaving(false);
@@ -406,35 +404,35 @@ const CharacterPage = () => {
     try {
       const next = applyCharacterPageDisplayMeta(character, { name: displayNameDraft });
       const saved = await patchCharacter({ displayMeta: next.displayMeta });
-      toast({ title: '展示名已保存' });
+      toast({ title: tr("展示名已保存") });
       return saved;
     } catch (error) {
-      toast({ title: '展示名保存失败', description: error instanceof Error ? error.message : '请重试', variant: 'destructive' });
+      toast({ title: tr("展示名保存失败"), description: error instanceof Error ? error.message : tr("请重试"), variant: 'destructive' });
       return null;
     }
   }, [character, displayNameDraft, id, patchCharacter, toast]);
 
   /** 统一导入完成（10.3c）：patch 落库；故事导入后刷列表；弹窗保持打开可继续导 */
   const handleImport = async (kind: CharacterImportKind, files: File[]) => {
-    if (!id) throw new Error('角色档案不存在');
+    if (!id) throw new Error(tr("角色档案不存在"));
     let result: CharacterImportResult | undefined;
     try {
       const saved = await updateCharacter(id, async (current) => {
         result = await importFilesForCharacter(current, kind, files);
         return result.patch ? { ...result.patch, updatedAt: Date.now() } : undefined;
       });
-      if (!saved || !result) throw new Error('角色档案不存在');
+      if (!saved || !result) throw new Error(tr("角色档案不存在"));
       setCharacter(saved);
       if (kind === 'story' && result.ok > 0) await load();
       const label = IMPORT_KINDS.find((k) => k.kind === kind)?.label ?? '';
       toast({
-        title: `${label}导入完成：成功 ${result.ok}${result.fail ? `，失败 ${result.fail}` : ''}`,
+        title: result.fail ? tr("{{v0}}导入完成：成功 {{v1}}，失败 {{v2}}", { v0: label, v1: result.ok, v2: result.fail }) : tr("{{v0}}导入完成：成功 {{v1}}", { v0: label, v1: result.ok }),
         variant: result.ok === 0 && result.fail > 0 ? 'destructive' : undefined,
       });
     } catch (error) {
       toast({
-        title: '导入失败',
-        description: error instanceof Error ? error.message : '请检查库目录是否可写',
+        title: tr("导入失败"),
+        description: error instanceof Error ? error.message : tr("请检查库目录是否可写"),
         variant: 'destructive',
       });
       throw error;
@@ -448,7 +446,7 @@ const CharacterPage = () => {
         { id: crypto.randomUUID(), title, body, addedAt: Date.now() },
       ],
     }));
-    toast({ title: `已添加引用「${title}」` });
+    toast({ title: tr("已添加引用「{{v0}}」", { v0: title }) });
   };
 
   const handleConfirmDeleteStory = async (options: RemoveOptions) => {
@@ -457,8 +455,8 @@ const CharacterPage = () => {
     if (activeSession.openChat?.id === storyToDelete.id) {
       if (activeSession.generating) {
         toast({
-          title: '无法删除正在生成的故事',
-          description: '请先在酒馆窗口停止本轮生成或关闭该对话后再删除。',
+          title: tr("无法删除正在生成的故事"),
+          description: tr("请先在酒馆窗口停止本轮生成或关闭该对话后再删除。"),
           variant: 'destructive',
         });
         return;
@@ -469,7 +467,7 @@ const CharacterPage = () => {
     await deleteArchiveStory(storyToDelete.id, options);
     setStoryToDelete(null);
     await load();
-    toast({ title: '故事已删除' });
+    toast({ title: tr("故事已删除") });
   };
 
   const ensureLatestSavedCharacter = useCallback(async (): Promise<ArchiveCharacter | null> => {
@@ -499,8 +497,8 @@ const CharacterPage = () => {
       return true;
     } catch (error) {
       toast({
-        title: '阅读进度尚未保存，已取消跳转',
-        description: error instanceof Error ? error.message : '请检查文件库是否可写',
+        title: tr("阅读进度尚未保存，已取消跳转"),
+        description: error instanceof Error ? error.message : tr("请检查文件库是否可写"),
         variant: 'destructive',
       });
       return false;
@@ -537,16 +535,16 @@ const CharacterPage = () => {
       });
       if (added > 0) {
         toast({
-          title: `已读取内置资源：新挂 ${added} 个关联`,
-          description: duplicates > 0 ? `${duplicates} 个相同内容已导入过，已跳过重复创建。` : undefined,
+          title: tr("已读取内置资源：新挂 {{v0}} 个关联", { v0: added }),
+          description: duplicates > 0 ? tr("{{v0}} 个相同内容已导入过，已跳过重复创建。", { v0: duplicates }) : undefined,
         });
       } else if (duplicates > 0) {
-        toast({ title: '内置资源已导入过', description: `${duplicates} 个相同内容已跳过。` });
+        toast({ title: tr("内置资源已导入过"), description: tr("{{v0}} 个相同内容已跳过。", { v0: duplicates }) });
       } else {
-        toast({ title: '没有新的内置资源', description: '卡内嵌的世界书/正则已在关联列表里。' });
+        toast({ title: tr("没有新的内置资源"), description: tr("卡内嵌的世界书/正则已在关联列表里。") });
       }
     } catch {
-      toast({ title: '读取内置资源失败', variant: 'destructive' });
+      toast({ title: tr("读取内置资源失败"), variant: 'destructive' });
     }
   };
 
@@ -555,11 +553,11 @@ const CharacterPage = () => {
     if (!character) return;
     try {
       await deleteCharacter(character.id, options);
-      toast({ title: `已删除「${character.name}」（名下故事与记录已一并移除）` });
+      toast({ title: tr("已删除「{{v0}}」（名下故事与记录已一并移除）", { v0: character.name }) });
       navigate('/library');
     } catch (e) {
       toast({
-        title: '删除失败',
+        title: tr("删除失败"),
         description: e instanceof Error ? e.message : String(e),
         variant: 'destructive',
       });
@@ -613,8 +611,8 @@ const CharacterPage = () => {
       await load();
     } catch (error) {
       toast({
-        title: '保存故事状态失败',
-        description: error instanceof Error ? error.message : '请检查文件库是否可写后重试',
+        title: tr("保存故事状态失败"),
+        description: error instanceof Error ? error.message : tr("请检查文件库是否可写后重试"),
         variant: 'destructive',
       });
     }
@@ -637,10 +635,10 @@ const CharacterPage = () => {
     if (!target) return;
     try {
       const result = await downloadCharacterJson(target, worldbookId);
-      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡 JSON', description: `${characterExportName(target)}.json` });
+      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? tr("已发起角色卡下载") : result === 'shared' ? tr("已分享角色卡") : tr("已导出角色卡 JSON"), description: `${characterExportName(target)}.json` });
     } catch (error) {
       if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'json', choices: error.choices });
-      else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
+      else toast({ title: tr("导出失败"), description: (error as Error).message, variant: 'destructive' });
     }
   };
 
@@ -650,11 +648,11 @@ const CharacterPage = () => {
     if (!target) return;
     try {
       const result = await downloadCharacterFile(target, worldbookId);
-      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? '已发起角色卡下载' : result === 'shared' ? '已分享角色卡' : '已导出角色卡',
+      if (result !== 'cancelled') toast({ title: result === 'downloaded' ? tr("已发起角色卡下载") : result === 'shared' ? tr("已分享角色卡") : tr("已导出角色卡"),
         description: `${characterExportName(target)}.${target.pngBase64 ? 'png' : 'json'}` });
     } catch (error) {
       if (error instanceof CharacterWorldbookChoiceRequired) setExportChoice({ format: 'file', choices: error.choices });
-      else toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' });
+      else toast({ title: tr("导出失败"), description: (error as Error).message, variant: 'destructive' });
     }
   };
 
@@ -663,11 +661,11 @@ const CharacterPage = () => {
     try {
       await readerRef.current?.flushPendingSave();
       const current = await getArchiveStory(storyId);
-      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
-      if (!current) throw new Error('故事不存在');
+      if (epoch !== getVaultEpoch()) throw new Error(tr("文件库已切换，请重新打开故事"));
+      if (!current) throw new Error(tr("故事不存在"));
       const result = await saveTextFile(buildStoryFileExport(current, branchId, format));
-      if (result !== 'cancelled') toast({ title: '导出成功', description: branchId ? '已导出所选分支' : '已导出故事主线' });
-    } catch (error) { toast({ title: '导出失败', description: (error as Error).message, variant: 'destructive' }); }
+      if (result !== 'cancelled') toast({ title: tr("导出成功"), description: branchId ? tr("已导出所选分支") : tr("已导出故事主线") });
+    } catch (error) { toast({ title: tr("导出失败"), description: (error as Error).message, variant: 'destructive' }); }
   };
 
   const playStory = async (storyId: string, branchId: string | null) => {
@@ -681,7 +679,7 @@ const CharacterPage = () => {
         reservation?.cancelIfUnused();
         return;
       }
-      if (epoch !== getVaultEpoch()) throw new Error('文件库已切换，请重新打开故事');
+      if (epoch !== getVaultEpoch()) throw new Error(tr("文件库已切换，请重新打开故事"));
       const [target] = await Promise.all([prepareStoryPlay(storyId, branchId), preloadRoleplayPage()]);
       if (epoch !== getVaultEpoch()) {
         reservation?.cancelIfUnused();
@@ -695,7 +693,7 @@ const CharacterPage = () => {
       });
     } catch (error) {
       reservation?.cancelIfUnused();
-      toast({ title: '无法进入聊天', description: (error as Error).message, variant: 'destructive' });
+      toast({ title: tr("无法进入聊天"), description: (error as Error).message, variant: 'destructive' });
     } finally {
       playPendingRef.current = false;
     }
@@ -725,7 +723,7 @@ const CharacterPage = () => {
     } catch (error) {
       reservation?.cancelIfUnused();
       toast({
-        title: '无法开启新对话',
+        title: tr("无法开启新对话"),
         description: error instanceof Error ? error.message : String(error),
         variant: 'destructive',
       });
@@ -743,7 +741,7 @@ const CharacterPage = () => {
         <div
           className={cn('character-page h-full overflow-hidden', isMobile ? 'flex flex-col' : 'flex')}
           aria-busy="true"
-          aria-label={LOADING_LABEL}
+          aria-label={tr(LOADING_LABEL)}
           data-character-skeleton
         >
           {isMobile ? (
@@ -779,11 +777,11 @@ const CharacterPage = () => {
       <AppLayout>
         <div role="alert" className="flex flex-col min-h-[50vh] items-center justify-center gap-3 px-4 text-center">
           <BookOpen className="w-12 h-12 text-muted-foreground/50" />
-          <p className="font-medium text-foreground">角色档案暂时没能读出来，库里的原文件未受影响</p>
+          <p className="font-medium text-foreground">{tr("角色档案暂时没能读出来，库里的原文件未受影响")}</p>
           <p className="max-w-md break-words text-sm text-muted-foreground">{loadError}</p>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => navigate('/library')}>返回角色库</Button>
-            <Button onClick={() => void load(true)}>重新读取</Button>
+            <Button variant="outline" onClick={() => navigate('/library')}>{tr("返回角色库")}</Button>
+            <Button onClick={() => void load(true)}>{tr("重新读取")}</Button>
           </div>
         </div>
       </AppLayout>
@@ -795,8 +793,8 @@ const CharacterPage = () => {
       <AppLayout>
         <div className="flex flex-col min-h-[50vh] items-center justify-center gap-4">
           <BookOpen className="w-16 h-16 text-muted-foreground/50" />
-          <p className="text-muted-foreground">找不到该角色</p>
-          <Button onClick={() => navigate('/library')}>返回角色库</Button>
+          <p className="text-muted-foreground">{tr("找不到该角色")}</p>
+          <Button onClick={() => navigate('/library')}>{tr("返回角色库")}</Button>
         </div>
       </AppLayout>
     );
@@ -816,9 +814,7 @@ const CharacterPage = () => {
       leftActions={
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={() => { void navigateWithGuard('/library'); }}>
-            <ArrowLeft className="w-4 h-4 mr-1" />
-            角色库
-          </Button>
+            <ArrowLeft className="w-4 h-4 mr-1" />{tr("角色库")}</Button>
           {(neighbors.prev || neighbors.next) && !readingStoryId && (
             <div className="hidden sm:flex items-center gap-0.5 border-l border-[color:var(--hairline-inner)] pl-1.5 text-xs text-muted-foreground">
               <Button
@@ -826,8 +822,8 @@ const CharacterPage = () => {
                 size="icon"
                 disabled={!neighbors.prev}
                 onClick={() => neighbors.prev && void navigateWithGuard(`/character/${neighbors.prev.id}`)}
-                aria-label={neighbors.prev ? `上一张角色卡：${neighbors.prev.name}` : '已是第一张角色卡'}
-                title={neighbors.prev ? `上一张：${neighbors.prev.name}（快捷键 [ ）` : '已是第一张'}
+                aria-label={neighbors.prev ? tr("上一张角色卡：{{v0}}", { v0: neighbors.prev.name }) : tr("已是第一张角色卡")}
+                title={neighbors.prev ? tr("上一张：{{v0}}（快捷键 [ ）", { v0: neighbors.prev.name }) : tr("已是第一张")}
               >
                 <ChevronLeft className="w-4 h-4" />
               </Button>
@@ -839,8 +835,8 @@ const CharacterPage = () => {
                 size="icon"
                 disabled={!neighbors.next}
                 onClick={() => neighbors.next && void navigateWithGuard(`/character/${neighbors.next.id}`)}
-                aria-label={neighbors.next ? `下一张角色卡：${neighbors.next.name}` : '已是最后一张角色卡'}
-                title={neighbors.next ? `下一张：${neighbors.next.name}（快捷键 ] ）` : '已是最后一张'}
+                aria-label={neighbors.next ? tr("下一张角色卡：{{v0}}", { v0: neighbors.next.name }) : tr("已是最后一张角色卡")}
+                title={neighbors.next ? tr("下一张：{{v0}}（快捷键 ] ）", { v0: neighbors.next.name }) : tr("已是最后一张")}
               >
                 <ChevronRight className="w-4 h-4" />
               </Button>
@@ -897,12 +893,12 @@ const CharacterPage = () => {
             {/* TabsList 用 flex（布局铁律：防插件包裹破坏 grid）；行右侧=统一导入钮（关联资产与立绘自带导入栏不重复渲染） */}
             <div className="flex flex-wrap items-center gap-2">
                <TabsList className="flex w-fit flex-wrap gap-1">
-                 <TabsTrigger value="stories">故事 {stories.length > 0 && <span className="ml-1 text-[11px] opacity-70">{stories.length}</span>}</TabsTrigger>
-                 <TabsTrigger value="notes">备注 {(character.notes?.length ?? 0) > 0 && <span className="ml-1 text-[11px] opacity-70">{character.notes!.length}</span>}</TabsTrigger>
-                 <TabsTrigger value="assets">关联资产 {assetCount > 0 && <span className="ml-1 text-[11px] opacity-70">{assetCount}</span>}</TabsTrigger>
-                 <TabsTrigger value="portraits">立绘 {portraitCount > 0 && <span className="ml-1 text-[11px] opacity-70">{portraitCount}</span>}</TabsTrigger>
-                 <TabsTrigger value="card-edit">角色卡编辑</TabsTrigger>
-                 <TabsTrigger value="greetings">开场白 {greetingCount > 0 && <span className="ml-1 text-[11px] opacity-70">{greetingCount}</span>}</TabsTrigger>
+                 <TabsTrigger value="stories">{tr("故事 ")}{stories.length > 0 && <span className="ml-1 text-[11px] opacity-70">{stories.length}</span>}</TabsTrigger>
+                 <TabsTrigger value="notes">{tr("备注 ")}{(character.notes?.length ?? 0) > 0 && <span className="ml-1 text-[11px] opacity-70">{character.notes!.length}</span>}</TabsTrigger>
+                 <TabsTrigger value="assets">{tr("关联资产 ")}{assetCount > 0 && <span className="ml-1 text-[11px] opacity-70">{assetCount}</span>}</TabsTrigger>
+                 <TabsTrigger value="portraits">{tr("立绘 ")}{portraitCount > 0 && <span className="ml-1 text-[11px] opacity-70">{portraitCount}</span>}</TabsTrigger>
+                 <TabsTrigger value="card-edit">{tr("角色卡编辑")}</TabsTrigger>
+                 <TabsTrigger value="greetings">{tr("开场白 ")}{greetingCount > 0 && <span className="ml-1 text-[11px] opacity-70">{greetingCount}</span>}</TabsTrigger>
                </TabsList>
                {activeTab === 'stories' && <Button size="sm" disabled={startingPlay} onClick={() => {
                  if (playStartLock.current || character.id !== id) return;
@@ -928,10 +924,10 @@ const CharacterPage = () => {
                    })
                    .catch(error => {
                      reservation?.cancelIfUnused();
-                     toast({ title: '无法开始新聊天', description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
+                     toast({ title: tr("无法开始新聊天"), description: error instanceof Error ? error.message : String(error), variant: 'destructive' });
                    })
                    .finally(() => { playStartLock.current = false; setStartingPlay(false); });
-               }}><MessageSquare className="mr-1 h-3.5 w-3.5" />{startingPlay ? '正在打开…' : '新开聊天'}</Button>}
+               }}><MessageSquare className="mr-1 h-3.5 w-3.5" />{startingPlay ? tr("正在打开…") : tr("新开聊天")}</Button>}
                {/* 导出阅读包：只在故事 tab 且有故事时给——包的主体就是故事正文，
                    空卡导出一个只有卡面的包没有意义 */}
                {activeTab === 'stories' && stories.length > 0 && (
@@ -940,10 +936,10 @@ const CharacterPage = () => {
                    size="sm"
                    className="ml-auto"
                    onClick={() => setPackExportOpen(true)}
-                   title="打包这张卡和选中的故事，在手机上导入阅读"
+                   title={tr("打包这张卡和选中的故事，在手机上导入阅读")}
                  >
                    <Package className="w-3.5 h-3.5 mr-1" />
-                   {isCompact ? '阅读包' : '导出阅读包'}
+                   {isCompact ? tr("阅读包") : tr("导出阅读包")}
                  </Button>
                )}
                {showTopImport && TAB_IMPORT_KIND[activeTab] && (
@@ -953,9 +949,7 @@ const CharacterPage = () => {
                    className={activeTab === 'stories' && stories.length > 0 ? '' : 'ml-auto'}
                    onClick={() => setImportOpen(true)}
                  >
-                   <Download className="w-3.5 h-3.5 mr-1" />
-                   导入
-                 </Button>
+                   <Download className="w-3.5 h-3.5 mr-1" />{tr("导入")}</Button>
                )}
             </div>
 
@@ -970,14 +964,14 @@ const CharacterPage = () => {
                   jumpRequest={readingJumpRequest}
                   backLabel={
                     readingReturnSubView === 'volume'
-                      ? '返回总结'
+                      ? tr("返回总结")
                       : readingReturnSubView === 'diary'
-                        ? '返回日记'
+                        ? tr("返回日记")
                         : readingReturnSubView === 'diy'
-                          ? '返回自定义记录'
+                          ? tr("返回自定义记录")
                           : readingReturnSubView === 'tree'
-                            ? '返回故事树'
-                            : '故事列表'
+                            ? tr("返回故事树")
+                            : tr("故事列表")
                   }
                   onSwitchStory={(sid) => openReader(sid, undefined, undefined, null)}
                   onBack={closeReader}
@@ -995,9 +989,7 @@ const CharacterPage = () => {
                         storySubView === 'list' ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                       )}
                       onClick={() => setStorySubView('list')}
-                    >
-                      故事列表
-                    </button>
+                    >{tr("故事列表")}</button>
                     <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50" />
                     {STORY_SUB_VIEWS.map((v) => (
                       <button
@@ -1027,9 +1019,7 @@ const CharacterPage = () => {
                     />
                   ) : stories.length === 0 ? (
                     <Card>
-                      <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                        还没有故事。点右上角「导入」，把 ST 聊天记录（JSONL）挂到这张卡下，或直接点「新开聊天」开启第一段对话。
-                      </CardContent>
+                      <CardContent className="py-10 text-center text-sm text-muted-foreground">{tr("还没有故事。点右上角「导入」，把 ST 聊天记录（JSONL）挂到这张卡下，或直接点「新开聊天」开启第一段对话。")}</CardContent>
                     </Card>
                   ) : (
                     <StoryListSection
@@ -1045,7 +1035,7 @@ const CharacterPage = () => {
                       onCopy={async (sid) => {
                         const copy = await duplicateArchiveStory(sid);
                         await load();
-                        toast({ title: '已复制故事', description: copy.title });
+                        toast({ title: tr("已复制故事"), description: copy.title });
                       }}
                       onPatchStory={(sid, patch) => void patchStory(sid, patch)}
                       onRenameStory={async (sid, title) => {
@@ -1145,9 +1135,7 @@ const CharacterPage = () => {
               className="w-full"
               onClick={() => { setActiveTab('stories'); openReader(latestStory.id); }}
             >
-              <BookOpen className="mr-1.5 h-4 w-4" />
-              开始阅读
-              <span className="ml-1.5 min-w-0 truncate text-xs opacity-75">{latestStory.title}</span>
+              <BookOpen className="mr-1.5 h-4 w-4" />{tr("开始阅读")}<span className="ml-1.5 min-w-0 truncate text-xs opacity-75">{latestStory.title}</span>
             </Button>
           </div>
         )}
@@ -1162,8 +1150,8 @@ const CharacterPage = () => {
       />
 
       <Dialog open={!!exportChoice} onOpenChange={open => { if (!open) setExportChoice(null); }}>
-        <DialogContent><DialogHeader><DialogTitle>选择本次导出的世界书</DialogTitle>
-          <DialogDescription>当前角色有多个同级绑定。仅将所选世界书装入这次角色卡，不改变库内关联。</DialogDescription></DialogHeader>
+        <DialogContent><DialogHeader><DialogTitle>{tr("选择本次导出的世界书")}</DialogTitle>
+          <DialogDescription>{tr("当前角色有多个同级绑定。仅将所选世界书装入这次角色卡，不改变库内关联。")}</DialogDescription></DialogHeader>
           {exportChoice?.choices.map(choice => <Button key={choice.id} variant="outline" onClick={() => {
             const format = exportChoice.format; setExportChoice(null);
             void (format === 'json' ? exportJsonCard(choice.id) : exportCardFile(choice.id));
@@ -1179,8 +1167,8 @@ const CharacterPage = () => {
       />
 
       <DeleteConfirmDialog open={!!storyToDelete} onOpenChange={open => !open && setStoryToDelete(null)}
-        title={`删除故事「${storyToDelete?.title}」？`}
-        description="日记、总结和故事树会保留为未绑定记录。"
+        title={tr("删除故事「{{v0}}」？", { v0: storyToDelete?.title })}
+        description={tr("日记、总结和故事树会保留为未绑定记录。")}
         fileTarget={storyToDelete ? { store: 'archiveStories', id: storyToDelete.id } : undefined}
         onConfirm={handleConfirmDeleteStory} />
 
@@ -1191,8 +1179,8 @@ const CharacterPage = () => {
         onDiscard={discardCardEdits}
       />
       <DeleteConfirmDialog open={charDeleteOpen} onOpenChange={setCharDeleteOpen}
-        title={`删除「${character.name}」？`}
-        description="名下故事、总结、日记与角色附件会一并删除；共享资产保留。"
+        title={tr("删除「{{v0}}」？", { v0: character.name })}
+        description={tr("名下故事、总结、日记与角色附件会一并删除；共享资产保留。")}
         fileTarget={{ store: 'characters', id: character.id }}
         onConfirm={handleConfirmDeleteChar} />
     </AppLayout>

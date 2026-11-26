@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo,   } from 'react';
 import { CalendarClock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -38,6 +40,7 @@ function plainEventContent(content: string): string {
 
 /** 时间轴视图：纵向时间线展示事件类节点。卡片自含全文，无需右侧详情即可读完 */
 export function StoryTimeline({ nodes, selectedId, hitIds, onSelect }: StoryTimelineProps) {
+  useI18n();
   const events = useMemo(
     () => flattenEvents(nodes).filter((n) => !hitIds || hitIds.has(n.id)),
     [nodes, hitIds]
@@ -47,8 +50,8 @@ export function StoryTimeline({ nodes, selectedId, hitIds, onSelect }: StoryTime
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
         <CalendarClock className="w-8 h-8 opacity-40" />
-        <p>还没有「事件」类型的节点</p>
-        <p className="text-xs">在编辑器里把节点类型设为「事件」，或让 AI 生成时标注类型</p>
+        <p>{tr("还没有「事件」类型的节点")}</p>
+        <p className="text-xs">{tr("在编辑器里把节点类型设为「事件」，或让 AI 生成时标注类型")}</p>
       </div>
     );
   }
@@ -76,7 +79,7 @@ export function StoryTimeline({ nodes, selectedId, hitIds, onSelect }: StoryTime
               <span className="font-mono text-[11px] text-rose-500/80 shrink-0 font-semibold">
                 {String(i + 1).padStart(2, '0')}
               </span>
-              <span className="text-sm font-semibold truncate" title={event.title || '(未命名)'}>{event.title || '(未命名)'}</span>
+              <span className="text-sm font-semibold truncate" title={event.title || tr("(未命名)")}>{event.title || tr("(未命名)")}</span>
               {event.hint && <span className="text-xs text-muted-foreground truncate" title={event.hint}>{event.hint}</span>}
             </span>
             {event.content && (

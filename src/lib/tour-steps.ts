@@ -1,30 +1,31 @@
+import { tr } from '@/lib/i18n';
 import type { TourStep } from '@/components/GuidedTour';
 import { scopedGet, scopedRemove, scopedSet } from '@/lib/vault/vault-scope';
 
 export const HOME_TOUR_STEPS: TourStep[] = [
   {
     targetSelector: '[data-tour="chat-preview"]',
-    content: '这是您的聊天记录预览，示例数据已自动加载。支持导入 SillyTavern JSON、JSONL、TXT 格式。',
+    get content() { return tr("这是您的聊天记录预览，示例数据已自动加载。支持导入 SillyTavern JSON、JSONL、TXT 格式。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="msg-edit-pencil"]',
-    content: '每楼右上角的铅笔图标，点击即可直接编辑该楼的内容与说话人——所见即点，无需先切换模式。',
+    get content() { return tr("每楼右上角的铅笔图标，点击即可直接编辑该楼的内容与说话人——所见即点，无需先切换模式。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="regex-toggle"]',
-    content: '正则工具可以批量清理格式（去除 OOC、清理 HTML 标签等）。点击打开侧边栏。',
+    get content() { return tr("正则工具可以批量清理格式（去除 OOC、清理 HTML 标签等）。点击打开侧边栏。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="chapter-mark-btn"]',
-    content: '章节标记可以为长对话划分章节，导出 TXT 与沉浸阅读的目录都会用到；也可以用书签收藏重要楼层。',
+    get content() { return tr("章节标记可以为长对话划分章节，导出 TXT 与沉浸阅读的目录都会用到；也可以用书签收藏重要楼层。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="export-button"]',
-    content: '点击这里导出为 JSONL 或 TXT 文件，支持选择导出范围和清理选项。',
+    get content() { return tr("点击这里导出为 JSONL 或 TXT 文件，支持选择导出范围和清理选项。"); },
     action: 'next',
   },
 ];
@@ -34,32 +35,32 @@ export const HOME_TOUR_STEPS: TourStep[] = [
 export const WORLDBOOK_TOUR_STEPS: TourStep[] = [
   {
     targetSelector: '[data-tour="wb-import"]',
-    content: '导入 SillyTavern 世界书 JSON 文件，即可开始编辑。',
+    get content() { return tr("导入 SillyTavern 世界书 JSON 文件，即可开始编辑。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="wb-staged"]',
-    content: '导入过的世界书都收在资产库里，从这里可以换一本继续编辑。',
+    get content() { return tr("导入过的世界书都收在资产库里，从这里可以换一本继续编辑。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="wb-view-toggle"]',
-    content: '支持卡片视图和列表视图，适应不同编辑习惯。',
+    get content() { return tr("支持卡片视图和列表视图，适应不同编辑习惯。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="wb-batch"]',
-    content: '批量模式可以一次选中多个条目进行前缀添加、删除、修改属性等操作。',
+    get content() { return tr("批量模式可以一次选中多个条目进行前缀添加、删除、修改属性等操作。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="wb-prefix"]',
-    content: '前缀归类可以为未分类条目分配标签，并自动整理排序。',
+    get content() { return tr("前缀归类可以为未分类条目分配标签，并自动整理排序。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="wb-ai"]',
-    content: 'AI 辅助：「AI 追加」可按当前聊天记录提炼新设定、追加为新条目（提示词可编辑）；编辑某条目时还能用「AI 改写」精修这一条内容。需先在「AI 配置」页配置 API。',
+    get content() { return tr("AI 辅助：「AI 追加」可按当前聊天记录提炼新设定、追加为新条目（提示词可编辑）；编辑某条目时还能用「AI 改写」精修这一条内容。需先在「AI 配置」页配置 API。"); },
     action: 'next',
   },
 ];
@@ -67,17 +68,17 @@ export const WORLDBOOK_TOUR_STEPS: TourStep[] = [
 export const CARDVIEWER_TOUR_STEPS: TourStep[] = [
   {
     targetSelector: '[data-tour="card-import"]',
-    content: '拖入或选择 SillyTavern 角色卡（PNG / JSON，支持 V1/V2/V3），即可解析并编辑。',
+    get content() { return tr("拖入或选择 SillyTavern 角色卡（PNG / JSON，支持 V1/V2/V3），即可解析并编辑。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="card-fields"]',
-    content: '可编辑角色的核心字段：名称、描述、性格、场景、开场白、标签等；未编辑的字段（内嵌世界书、立绘资源等）会原样保留。',
+    get content() { return tr("可编辑角色的核心字段：名称、描述、性格、场景、开场白、标签等；未编辑的字段（内嵌世界书、立绘资源等）会原样保留。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="card-export"]',
-    content: '编辑完点这里导出：PNG 卡可回写图片（保留立绘）导出 PNG，也可导出 JSON，均能导回 SillyTavern。「保存」可留存到「已存角色卡」。',
+    get content() { return tr("编辑完点这里导出：PNG 卡可回写图片（保留立绘）导出 PNG，也可导出 JSON，均能导回 SillyTavern。「保存」可留存到「已存角色卡」。"); },
     action: 'next',
   },
 ];
@@ -85,17 +86,17 @@ export const CARDVIEWER_TOUR_STEPS: TourStep[] = [
 export const PRESET_TOUR_STEPS: TourStep[] = [
   {
     targetSelector: '[data-tour="preset-import"]',
-    content: '导入 SillyTavern 的 Chat Completion 预设 `.json`，即可可视化查看与编辑。',
+    get content() { return tr("导入 SillyTavern 的 Chat Completion 预设 `.json`，即可可视化查看与编辑。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="preset-tabs"]',
-    content: '五个标签页：概览、提示词（拖拽排序 / 启用禁用 / 新建块 / AI 改写）、格式与杂项、正则、导出。',
+    get content() { return tr("五个标签页：概览、提示词（拖拽排序 / 启用禁用 / 新建块 / AI 改写）、格式与杂项、正则、导出。"); },
     action: 'next',
   },
   {
     targetSelector: '[data-tour="preset-export"]',
-    content: '编辑完可完整 / 智能 / Markdown 导出，保留未识别字段无损还原；「保存」留存到「已存预设」。',
+    get content() { return tr("编辑完可完整 / 智能 / Markdown 导出，保留未识别字段无损还原；「保存」留存到「已存预设」。"); },
     action: 'next',
   },
 ];

@@ -1,8 +1,10 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * 故事树工作台：树/导图/卡片/时间轴视图、节点编辑、拖拽移动、撤销/重做、AI 生成。
  * 未选中节点时自动收起右侧空白面板，让故事树画布铺满视野；选中节点后展开详情栏。
  */
-import { useState, useEffect, useMemo, useCallback, useRef, type ReactNode } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef, type ReactNode  } from 'react';
 import {
   Plus, ChevronsDownUp, ChevronsUpDown, Archive, Sparkles, Undo2, Redo2, Search, X,
 } from 'lucide-react';
@@ -40,6 +42,7 @@ interface TreeWorkbenchProps {
 }
 
 export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderHeader }: TreeWorkbenchProps) {
+  useI18n();
   const [nodes, setNodes] = useState<StoryNode[]>(tree.nodes);
   const [treeTitle, setTreeTitle] = useState(tree.title);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -64,7 +67,7 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
 
   const buildItem = useCallback((nextNodes: StoryNode[], nextTitle: string): StoryTreeT => ({
     ...tree,
-    title: nextTitle || '未命名故事树',
+    title: nextTitle || tr("未命名故事树"),
     nodes: nextNodes,
     updatedAt: Date.now(),
   }), [tree]);
@@ -80,8 +83,8 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
       } catch (error) {
         latestRef.current.dirty = true;
         toast({
-          title: '故事树自动保存未成功',
-          description: error instanceof Error ? error.message : '请检查文件库目录是否可写，稍后继续编辑会自动重试',
+          title: tr("故事树自动保存未成功"),
+          description: error instanceof Error ? error.message : tr("请检查文件库目录是否可写，稍后继续编辑会自动重试"),
           variant: 'destructive',
         });
       }
@@ -96,8 +99,8 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
         .then(onChanged)
         .catch((error: unknown) => {
           toast({
-            title: '离开页面时故事树保存未成功',
-            description: error instanceof Error ? error.message : '请重新打开故事树检查最新改动',
+            title: tr("离开页面时故事树保存未成功"),
+            description: error instanceof Error ? error.message : tr("请重新打开故事树检查最新改动"),
             variant: 'destructive',
           });
         });
@@ -116,13 +119,13 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
   };
 
   const handleAddRoot = () => {
-    const { nodes: next, node } = addNode(nodes, null, { title: '新节点' });
+    const { nodes: next, node } = addNode(nodes, null, { title: tr("新节点") });
     pushHistory(nodes);
     applyNodes(next);
     setSelectedId(node.id);
   };
   const handleAddChild = (parentId: string) => {
-    const { nodes: next, node } = addNode(nodes, parentId, { title: '新节点' });
+    const { nodes: next, node } = addNode(nodes, parentId, { title: tr("新节点") });
     pushHistory(nodes);
     applyNodes(next);
     setCollapsed((c) => { const n = new Set(c); n.delete(parentId); return n; });
@@ -227,7 +230,7 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
         <Input
           value={treeTitle}
           onChange={(e) => handleTitleChange(e.target.value)}
-          placeholder="故事树名称"
+          placeholder={tr("故事树名称")}
         />
       )}
 
@@ -236,44 +239,40 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
           <CardContent className="p-3 space-y-2 min-h-[60vh]">
             <div className="flex items-center gap-1 flex-wrap">
               <Button variant="outline" size="sm" className="gap-1" onClick={handleAddRoot}>
-                <Plus className="w-3.5 h-3.5" />根节点
-              </Button>
+                <Plus className="w-3.5 h-3.5" />{tr("根节点")}</Button>
               {session && (
                 <Button variant="outline" size="sm" className="gap-1" onClick={() => setAiFillOpen(true)}>
-                  <Sparkles className="w-3.5 h-3.5" />AI 生成
-                </Button>
+                  <Sparkles className="w-3.5 h-3.5" />{tr("AI 生成")}</Button>
               )}
-              <Button variant="ghost" size="icon" aria-label="撤销" title="撤销 (Ctrl+Z)" onClick={undo} disabled={!canUndo}>
+              <Button variant="ghost" size="icon" aria-label={tr("撤销")} title={tr("撤销 (Ctrl+Z)")} onClick={undo} disabled={!canUndo}>
                 <Undo2 className="w-4 h-4" />
               </Button>
-              <Button variant="ghost" size="icon" aria-label="重做" title="重做 (Ctrl+Shift+Z)" onClick={redo} disabled={!canRedo}>
+              <Button variant="ghost" size="icon" aria-label={tr("重做")} title={tr("重做 (Ctrl+Shift+Z)")} onClick={redo} disabled={!canRedo}>
                 <Redo2 className="w-4 h-4" />
               </Button>
               <Select value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
-                <SelectTrigger aria-label="切换故事树视图" className="h-7 w-[92px] text-xs" title="切换视图">
+                <SelectTrigger aria-label={tr("切换故事树视图")} className="h-7 w-[92px] text-xs" title={tr("切换视图")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="tree">树视图</SelectItem>
-                  <SelectItem value="mindmap">导图</SelectItem>
-                  <SelectItem value="cards">卡片</SelectItem>
-                  <SelectItem value="timeline">时间轴</SelectItem>
+                  <SelectItem value="tree">{tr("树视图")}</SelectItem>
+                  <SelectItem value="mindmap">{tr("导图")}</SelectItem>
+                  <SelectItem value="cards">{tr("卡片")}</SelectItem>
+                  <SelectItem value="timeline">{tr("时间轴")}</SelectItem>
                 </SelectContent>
               </Select>
               {viewMode === 'tree' && (
                 <>
-                  <Button variant="ghost" size="icon" aria-label="全部展开" title="全部展开" onClick={expandAll}>
+                  <Button variant="ghost" size="icon" aria-label={tr("全部展开")} title={tr("全部展开")} onClick={expandAll}>
                     <ChevronsUpDown className="w-4 h-4" />
                   </Button>
-                  <Button variant="ghost" size="icon" aria-label="全部折叠" title="全部折叠" onClick={collapseAll}>
+                  <Button variant="ghost" size="icon" aria-label={tr("全部折叠")} title={tr("全部折叠")} onClick={collapseAll}>
                     <ChevronsDownUp className="w-4 h-4" />
                   </Button>
                 </>
               )}
               {!selectedNode && nodes.length > 0 && (
-                <span className="ml-2 text-xs text-muted-foreground hidden sm:inline">
-                  点击任意节点可在右侧展开编辑
-                </span>
+                <span className="ml-2 text-xs text-muted-foreground hidden sm:inline">{tr("点击任意节点可在右侧展开编辑")}</span>
               )}
               {archivedCount > 0 && (
                 <Button
@@ -282,7 +281,7 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
                   className="gap-1 ml-auto"
                   onClick={() => setShowArchived((s) => !s)}
                 >
-                  <Archive className="w-3.5 h-3.5" />归档 {archivedCount}
+                  <Archive className="w-3.5 h-3.5" />{tr("归档 ")}{archivedCount}
                 </Button>
               )}
             </div>
@@ -294,14 +293,14 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
                   size="sm"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="搜索标题 / 提示 / 正文 / 标签"
+                  placeholder={tr("搜索标题 / 提示 / 正文 / 标签")}
                   className="pl-7 pr-7 text-xs"
                 />
                 {query && (
                   <button
                     type="button"
-                    aria-label="清空搜索"
-                    title="清空搜索"
+                    aria-label={tr("清空搜索")}
+                    title={tr("清空搜索")}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     onClick={() => setQuery('')}
                   >
@@ -311,13 +310,11 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
               </div>
             )}
             {searchResult && (
-              <p className="text-xs text-muted-foreground">命中 {searchResult.hitIds.size} 个节点</p>
+              <p className="text-xs text-muted-foreground">{tr("命中 ")}{searchResult.hitIds.size}{tr(" 个节点")}</p>
             )}
 
             {nodes.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-8 text-center">
-                空树。点「根节点」手动添加，或用「AI 生成」从聊天楼层提炼事实。
-              </p>
+              <p className="text-sm text-muted-foreground py-8 text-center">{tr("空树。点「根节点」手动添加，或用「AI 生成」从聊天楼层提炼事实。")}</p>
             ) : viewMode === 'mindmap' ? (
               <StoryMindmap forest={forest} selectedId={selectedId} onSelect={setSelectedId} title={treeTitle} />
             ) : viewMode === 'cards' ? (
@@ -376,20 +373,14 @@ export function TreeWorkbench({ tree, session, onChanged, onJumpToFloor, renderH
       <AlertDialog open={deleteNodeOpen} onOpenChange={setDeleteNodeOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>删除这个节点？</AlertDialogTitle>
-            <AlertDialogDescription>
-              将永久删除该节点{deleteTargetCount > 1 ? `及其 ${deleteTargetCount - 1} 个子节点` : ''}。
-              建议改用「归档」——软删除、随时可在归档区恢复。
-            </AlertDialogDescription>
+            <AlertDialogTitle>{tr("删除这个节点？")}</AlertDialogTitle>
+            <AlertDialogDescription>{tr("将永久删除该节点")}{deleteTargetCount > 1 ? tr("及其 {{v0}} 个子节点", { v0: deleteTargetCount - 1 }) : ''}{tr("。 建议改用「归档」——软删除、随时可在归档区恢复。")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel autoFocus>取消</AlertDialogCancel>
+            <AlertDialogCancel autoFocus>{tr("取消")}</AlertDialogCancel>
             <Button variant="outline" onClick={handleArchiveInstead}>
-              <Archive className="w-4 h-4 mr-1.5" />改为归档
-            </Button>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleDeleteNode}>
-              确认删除
-            </AlertDialogAction>
+              <Archive className="w-4 h-4 mr-1.5" />{tr("改为归档")}</Button>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={handleDeleteNode}>{tr("确认删除")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

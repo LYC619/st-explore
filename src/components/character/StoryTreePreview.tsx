@@ -1,3 +1,5 @@
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 import { useState } from 'react';
 import { LocateFixed } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,6 +27,7 @@ export function StoryTreePreview({
   tree: StoryTree;
   onJumpToFloor?: (floor: number) => void;
 }) {
+  useI18n();
   const [mode, setMode] = useState<'cards' | 'timeline' | 'tree'>('cards');
   const [selected, setSelected] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -34,7 +37,7 @@ export function StoryTreePreview({
   return (
     <div className="space-y-2">
       <div className="flex gap-2">
-        {([['cards', '卡片'], ['timeline', '时间线'], ['tree', '大纲']] as const).map(([key, label]) => (
+        {([['cards', tr("卡片")], ['timeline', tr("时间线")], ['tree', tr("大纲")]] as const).map(([key, label]) => (
           <Button
             key={key}
             variant={mode === key ? 'default' : 'outline'}
@@ -81,9 +84,7 @@ export function StoryTreePreview({
                 className="text-xs gap-1"
                 onClick={() => onJumpToFloor(floorHint)}
               >
-                <LocateFixed className="h-3 w-3" />
-                跳到 #{floorHint} 楼
-              </Button>
+                <LocateFixed className="h-3 w-3" />{tr("跳到 #{{v0}} 楼", { v0: floorHint })}</Button>
             )}
           </div>
           <MarkdownLite text={node.content} />

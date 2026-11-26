@@ -10,6 +10,7 @@
  * - 元数据（JSONL 首行）以导入文件为准刷新。
  * - 完成后给一句摘要：「新增 20 楼，2 楼有改动已存为 swipe」。
  */
+import { getLocale, tr } from '@/lib/i18n';
 import type { ChatMessage, ChatSession, STMetadata, STRawMessage } from '@/types/chat';
 
 /** 标在 swipe_info[i].extra 上的旗标，UI 据此显示「STE 编辑版」徽标 */
@@ -60,7 +61,7 @@ function mergeConflictFloor(cur: ChatMessage, imp: ChatMessage): { msg: ChatMess
   swipes.push(steText);
   info.push({
     send_date: cur.rawData?.send_date,
-    extra: { [STE_EDIT_SWIPE_FLAG]: true, title: 'STE 编辑版' },
+    extra: { [STE_EDIT_SWIPE_FLAG]: true, title: tr("STE 编辑版") },
   });
   raw.swipes = swipes;
   raw.swipe_info = info;
@@ -106,12 +107,12 @@ export function mergeReimport(
   const changed = added > 0 || conflicted > 0 || metadataChanged;
 
   const parts: string[] = [];
-  if (added > 0) parts.push(`新增 ${added} 楼`);
-  if (swipesAdded > 0) parts.push(`${swipesAdded} 楼有改动已存为 swipe`);
+  if (added > 0) parts.push(tr("新增 {{v0}} 楼", { v0: added }));
+  if (swipesAdded > 0) parts.push(tr("{{v0}} 楼有改动已存为 swipe", { v0: swipesAdded }));
   const selectionKept = conflicted - swipesAdded;
-  if (selectionKept > 0) parts.push(`${selectionKept} 楼候选池已更新`);
-  if (keptExtra > 0) parts.push(`STE 独有 ${keptExtra} 楼已保留`);
-  if (parts.length === 0) parts.push(metadataChanged ? '楼层一致，已刷新元数据' : '与导入文件一致，没有变化');
+  if (selectionKept > 0) parts.push(tr("{{v0}} 楼候选池已更新", { v0: selectionKept }));
+  if (keptExtra > 0) parts.push(tr("STE 独有 {{v0}} 楼已保留", { v0: keptExtra }));
+  if (parts.length === 0) parts.push(metadataChanged ? tr("楼层一致，已刷新元数据") : tr("与导入文件一致，没有变化"));
 
   const session: ChatSession = changed
     ? {
@@ -121,5 +122,5 @@ export function mergeReimport(
       }
     : current;
 
-  return { session, added, conflicted, swipesAdded, keptExtra, changed, summary: parts.join('，') };
+  return { session, added, conflicted, swipesAdded, keptExtra, changed, summary: parts.join(getLocale() === 'en' ? ', ' : '，') };
 }

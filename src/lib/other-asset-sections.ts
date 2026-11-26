@@ -16,6 +16,7 @@ import {
   Palette,
   UserRound,
 } from 'lucide-react';
+import { tr } from '@/lib/i18n';
 import { OTHER_ASSET_CATEGORIES, type OtherAssetCategoryId } from '@/lib/vault/other-assets';
 
 /** 概览 + 归档七类。`?section=` 的取值范围就是这些。 */
@@ -34,7 +35,7 @@ export const SECTION_ICONS: Record<BrowserSection, typeof Archive> = {
 
 /** 侧栏里「其他资产」下挂的子分类（概览 + 归档七类） */
 export const OTHER_ASSET_SECTIONS: readonly { id: BrowserSection; label: string; description: string }[] = [
-  { id: 'overview', label: '概览', description: '查看全部归档分类' },
+  { id: 'overview', get label() { return tr("概览"); }, get description() { return tr("查看全部归档分类"); } },
   ...OTHER_ASSET_CATEGORIES,
 ];
 

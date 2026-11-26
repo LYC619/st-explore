@@ -1,3 +1,4 @@
+import { tr } from '@/lib/i18n';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getVaultEpoch } from '@/lib/vault/active';
 
@@ -35,10 +36,10 @@ export function useWorldbookAutosave<T>(options: Options<T>) {
         if (mounted.current) { setStatus('saving'); setError(null); }
         let next = start;
         while (true) {
-          if (getVaultEpoch() !== capturedEpoch) throw new Error('文件库已切换，请重新打开世界书；草稿已保留');
+          if (getVaultEpoch() !== capturedEpoch) throw new Error(tr("文件库已切换，请重新打开世界书；草稿已保留"));
           await next.save(next.value);
           acknowledged.current = { value: next.value, scope: next.scope };
-          if (getVaultEpoch() !== capturedEpoch) throw new Error('文件库已切换，请重新打开世界书；草稿已保留');
+          if (getVaultEpoch() !== capturedEpoch) throw new Error(tr("文件库已切换，请重新打开世界书；草稿已保留"));
           const current = latest.current;
           if (current.scope !== start.scope || current.value === next.value || !current.dirty) break;
           next = current;

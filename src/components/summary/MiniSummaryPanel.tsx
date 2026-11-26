@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { tr } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
+import { useMemo, useState, useEffect  } from 'react';
 import { Copy, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +25,7 @@ interface MiniSummaryPanelProps {
  * 无 Card 外壳——作为 SavedSummaryList「小总结」视图内嵌。
  */
 export function MiniSummaryPanel({ session }: MiniSummaryPanelProps) {
+  useI18n();
   const { toast } = useToast();
   const [regex, setRegex] = useState(DEFAULT_REGEX);
 
@@ -43,50 +46,44 @@ export function MiniSummaryPanel({ session }: MiniSummaryPanelProps) {
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(miniSummariesToText(pairs));
-    toast({ title: '已复制配对文本' });
+    toast({ title: tr("已复制配对文本") });
   };
 
   const handleExport = async () => {
-    const result = await downloadMarkdown(`${session.title} 小结`, miniSummariesToText(pairs));
+    const result = await downloadMarkdown(tr("{{v0}} 小结", { v0: session.title }), miniSummariesToText(pairs));
     routeTextFileExportResult(result, {
-      onComplete: () => toast({ title: '已导出小结' }),
-      onFailure: () => toast({ title: '导出失败', description: '没有写入任何文件，请重新选择位置后再试。', variant: 'destructive' }),
+      onComplete: () => toast({ title: tr("已导出小结") }),
+      onFailure: () => toast({ title: tr("导出失败"), description: tr("没有写入任何文件，请重新选择位置后再试。"), variant: 'destructive' }),
     });
   };
 
   return (
     <div className="space-y-3">
       <div className="space-y-1">
-        <Label className="text-xs text-muted-foreground">提取正则（匹配 AI 消息里的小结；建议用捕获组框住小结内容）</Label>
+        <Label className="text-xs text-muted-foreground">{tr("提取正则（匹配 AI 消息里的小结；建议用捕获组框住小结内容）")}</Label>
         <Input
           value={regex}
           onChange={(e) => handleRegexChange(e.target.value)}
           className="font-mono text-xs"
           placeholder={DEFAULT_REGEX}
         />
-        <p className="text-xs text-muted-foreground">
-          例：{'/<summary>([\\s\\S]*?)<\\/summary>/g'} —— 提取 {'<summary>…</summary>'} 里的内容。第一个捕获组即小结正文。
-        </p>
+        <p className="text-xs text-muted-foreground">{tr("例：")}{'/<summary>([\\s\\S]*?)<\\/summary>/g'}{tr(" —— 提取 ")}{'<summary>…</summary>'}{tr(" 里的内容。第一个捕获组即小结正文。")}</p>
       </div>
 
       <div className="flex items-center justify-between">
-        <Badge variant="secondary" className="font-normal">找到 {pairs.length} 条小结</Badge>
+        <Badge variant="secondary" className="font-normal">{tr("找到 ")}{pairs.length}{tr(" 条小结")}</Badge>
         {pairs.length > 0 && (
           <div className="flex gap-1">
             <Button variant="ghost" size="sm" className="gap-1" onClick={handleCopy}>
-              <Copy className="w-3.5 h-3.5" />复制
-            </Button>
+              <Copy className="w-3.5 h-3.5" />{tr("复制")}</Button>
             <Button variant="ghost" size="sm" className="gap-1" onClick={() => void handleExport()}>
-              <Upload className="w-3.5 h-3.5" />导出
-            </Button>
+              <Upload className="w-3.5 h-3.5" />{tr("导出")}</Button>
           </div>
         )}
       </div>
 
       {pairs.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-4 text-center">
-          没匹配到小结。检查正则是否符合你聊天里的小结标记格式。
-        </p>
+        <p className="text-sm text-muted-foreground py-4 text-center">{tr("没匹配到小结。检查正则是否符合你聊天里的小结标记格式。")}</p>
       ) : (
         <div className="max-h-[50vh] overflow-y-auto">
           <div className="space-y-2 pr-2">
@@ -94,12 +91,12 @@ export function MiniSummaryPanel({ session }: MiniSummaryPanelProps) {
               <div key={p.floor} className="rounded-md border overflow-hidden text-sm">
                 {p.userText.trim() && (
                   <div className="px-3 py-2 bg-muted/40 text-muted-foreground">
-                    <span className="text-[11px] uppercase tracking-wide">用户 · 第{p.floor - 1}楼附近</span>
+                    <span className="text-[11px] uppercase tracking-wide">{tr("用户 · 第{{v0}}楼附近", { v0: p.floor - 1 })}</span>
                     <p className="mt-0.5 line-clamp-2" title={p.userText.trim()}>{p.userText.trim()}</p>
                   </div>
                 )}
                 <div className="px-3 py-2">
-                  <span className="text-[11px] uppercase tracking-wide text-primary">小结 · 第{p.floor}楼</span>
+                  <span className="text-[11px] uppercase tracking-wide text-primary">{tr("小结 · 第{{v0}}楼", { v0: p.floor })}</span>
                   <p className="mt-0.5 whitespace-pre-wrap">{p.summary}</p>
                 </div>
               </div>

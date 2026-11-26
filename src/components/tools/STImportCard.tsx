@@ -1,3 +1,5 @@
+import { tr, getLocale, formatList } from '@/lib/i18n';
+import { useI18n } from '@/lib/i18n/react';
 /**
  * SillyTavern 接入流程协调器。
  * 目录选择与导入执行留在这里，扫描选择和结果展示由独立弹窗负责。
@@ -48,6 +50,7 @@ interface STImportCardProps {
 }
 
 export function STImportCard({ onChanged, variant = 'full', root }: STImportCardProps) {
+  useI18n();
   const { toast } = useToast();
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -73,7 +76,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       stateRef.current = null;
       if (pending && pending !== importingState.current) {
         void pending.cleanup?.().catch(error => {
-          toast({ title: '清理临时导入文件失败', description: String(error), variant: 'destructive' });
+          toast({ title: tr("清理临时导入文件失败"), description: String(error), variant: 'destructive' });
         });
       }
     };
@@ -133,7 +136,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
     try {
       await current.cleanup();
     } catch (err) {
-      toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+      toast({ title: tr("清理临时导入文件失败"), description: String(err), variant: 'destructive' });
     }
   };
 
@@ -144,7 +147,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
     const controls = beginRun();
     try {
       const selectedRoot = root ?? await pickDirectory(
-        '选择 SillyTavern 目录（安装根目录或 data/default-user）',
+        tr("选择 SillyTavern 目录（安装根目录或 data/default-user）"),
         { persistAuthorization: true, purpose: 'source' },
       );
       if (!selectedRoot || !controls.isCurrent() || controls.signal.aborted) return;
@@ -153,12 +156,12 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       if (!controls.isCurrent() || controls.signal.aborted) return;
       if (!scan.characters.length && !scan.strayChats.length && !scan.worldbooks.length && !scan.presets.length
         && !scan.regex && !scan.archives.length && scan.relationships.status !== 'parsed') {
-        const warningPaths = scan.warnings.slice(0, 3).map((warning) => warning.path).join('；');
+        const warningPaths = scan.warnings.slice(0, 3).map((warning) => warning.path).join(getLocale() === 'en' ? '; ' : '；');
         toast({
-          title: scan.warnings.length ? '未发现可安全导入的内容' : '没有找到 ST 内容',
+          title: scan.warnings.length ? tr("未发现可安全导入的内容") : tr("没有找到 ST 内容"),
           description: scan.warnings.length
-            ? `已跳过 ${scan.warnings.length} 项：${warningPaths}${scan.warnings.length > 3 ? '；…' : ''}`
-            : '这个文件夹里没有找到角色卡、聊天记录或世界书，请重新定位到 SillyTavern 安装目录或用户目录（如 data/default-user）。',
+            ? (scan.warnings.length > 3 ? tr("已跳过 {{v0}} 项：{{v1}}…", { v0: scan.warnings.length, v1: warningPaths }) : tr("已跳过 {{v0}} 项：{{v1}}", { v0: scan.warnings.length, v1: warningPaths }))
+            : tr("这个文件夹里没有找到角色卡、聊天记录或世界书，请重新定位到 SillyTavern 安装目录或用户目录（如 data/default-user）。"),
           variant: 'destructive',
         });
         return;
@@ -171,7 +174,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
     } catch (err) {
       // 用户自己点的取消，不是故障，不弹错误
       if (controls.isCurrent() && !isSTImportAborted(err)) {
-        toast({ title: '扫描失败', description: String(err), variant: 'destructive' });
+        toast({ title: tr("扫描失败"), description: String(err), variant: 'destructive' });
       }
     } finally {
       if (controls.isCurrent()) setScanning(false);
@@ -193,7 +196,7 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       if (!controls.isCurrent() || controls.signal.aborted) return;
       if (!scan.characters.length && !scan.strayChats.length && !scan.worldbooks.length && !scan.presets.length
         && !scan.regex && !scan.archives.length && scan.relationships.status !== 'parsed') {
-        throw new Error('没有找到可导入的 SillyTavern 内容');
+        throw new Error(tr("没有找到可导入的 SillyTavern 内容"));
       }
       setPicks(createAllImportPicks(scan));
       setState({
@@ -208,15 +211,15 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       transferred = true;
     } catch (err) {
       if (String(err).includes('STE_ST_IMPORT_CLEANUP_FAILED:')) {
-        toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+        toast({ title: tr("清理临时导入文件失败"), description: String(err), variant: 'destructive' });
       } else if (controls.isCurrent() && !isSTImportAborted(err)) {
-        toast({ title: '读取 SillyTavern 备份失败', description: String(err), variant: 'destructive' });
+        toast({ title: tr("读取 SillyTavern 备份失败"), description: String(err), variant: 'destructive' });
       }
     } finally {
       if (prepared && !transferred) {
         try { await cleanupSTBackupImport(prepared.root); }
         catch (err) {
-          toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+          toast({ title: tr("清理临时导入文件失败"), description: String(err), variant: 'destructive' });
         }
       }
       if (controls.isCurrent()) setScanning(false);
@@ -247,31 +250,31 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
       }, controls);
       if (!controls.isCurrent()) return;
       const parts = [
-        `角色 ${summary.characters}`,
-        `故事 ${summary.stories}`,
-        `世界书 ${summary.worldbooks}`,
-        `预设 ${summary.presets}`,
+        tr("角色 {{v0}}", { v0: summary.characters }),
+        tr("故事 {{v0}}", { v0: summary.stories }),
+        tr("世界书 {{v0}}", { v0: summary.worldbooks }),
+        tr("预设 {{v0}}", { v0: summary.presets }),
       ];
-      if (summary.regexes) parts.push(`正则规则集 ${summary.regexes}`);
-      if (summary.archivedFiles) parts.push(`其他资产 ${summary.archivedFiles} 个文件`);
-      if (summary.relationships) parts.push(`恢复关联 ${summary.relationships}`);
-      if (summary.unresolvedRelationships.length) parts.push(`未解析关联 ${summary.unresolvedRelationships.length}`);
-      if (summary.skipped) parts.push(`跳过已导入 ${summary.skipped}`);
-      if (summary.failed) parts.push(`处理失败 ${summary.failed}`);
+      if (summary.regexes) parts.push(tr("正则规则集 {{v0}}", { v0: summary.regexes }));
+      if (summary.archivedFiles) parts.push(tr("其他资产 {{v0}} 个文件", { v0: summary.archivedFiles }));
+      if (summary.relationships) parts.push(tr("恢复关联 {{v0}}", { v0: summary.relationships }));
+      if (summary.unresolvedRelationships.length) parts.push(tr("未解析关联 {{v0}}", { v0: summary.unresolvedRelationships.length }));
+      if (summary.skipped) parts.push(tr("跳过已导入 {{v0}}", { v0: summary.skipped }));
+      if (summary.failed) parts.push(tr("处理失败 {{v0}}", { v0: summary.failed }));
       setState(null);
       // 中途取消也算走完一轮：已写入的部分要照常汇报，不能装作没发生
       toast({
         title: summary.aborted
-          ? '导入已停止，已写入的内容已保留'
-          : (current.sourceLabel ? `${current.sourceLabel}导入完成` : '导入完成'),
-        description: parts.join('，'),
+          ? tr("导入已停止，已写入的内容已保留")
+          : (current.sourceLabel ? tr("{{v0}}导入完成", { v0: current.sourceLabel }) : tr("导入完成")),
+        description: formatList(parts),
       });
       setResult(summary);
     } catch (err) {
-      if (controls.isCurrent()) toast({ title: '导入失败', description: String(err), variant: 'destructive' });
+      if (controls.isCurrent()) toast({ title: tr("导入失败"), description: String(err), variant: 'destructive' });
     } finally {
       try { await current.cleanup?.(); } catch (err) {
-        toast({ title: '清理临时导入文件失败', description: String(err), variant: 'destructive' });
+        toast({ title: tr("清理临时导入文件失败"), description: String(err), variant: 'destructive' });
       }
       if (importingState.current === current) importingState.current = null;
       if (controls.isCurrent()) {
@@ -297,33 +300,24 @@ export function STImportCard({ onChanged, variant = 'full', root }: STImportCard
             <FolderSearch className="h-5 w-5 text-muted-foreground" />
           </div>
           <div className="min-w-0 basis-[14rem] grow">
-            <p className="text-sm font-medium">接入 SillyTavern</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              指定 ST 目录，按类别选择角色、聊天、世界书、预设、正则、扩展和媒体。{IMPORT_POLICY_SUMMARY}
+            <p className="text-sm font-medium">{tr("接入 SillyTavern")}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{tr("指定 ST 目录，按类别选择角色、聊天、世界书、预设、正则、扩展和媒体。")}{getLocale() === 'en' ? ' ' : ''}{tr(IMPORT_POLICY_SUMMARY)}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning || importing}>
-            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}
-            选择 ST 目录
-          </Button>
+            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}{tr("选择 ST 目录")}</Button>
           <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning || importing}>
-            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}
-            从 SillyTavern 备份导入
-          </Button>
+            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}{tr("从 SillyTavern 备份导入")}</Button>
         </Card>
       ) : (
         <>
           {root && (
             <Button variant="outline" size="sm" onClick={handlePick} disabled={scanning || importing}>
-              {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}
-              重新扫描并选择
-            </Button>
+              {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FolderSearch className="mr-1 h-4 w-4" />}{tr("重新扫描并选择")}</Button>
           )}
           {/* 云端/别机导出的 zip 不需要先接目录，设置页也要给这个入口（0826 反馈 1） */}
           <Button variant="outline" size="sm" onClick={handlePickBackup} disabled={scanning || importing}>
-            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}
-            从 SillyTavern 备份导入
-          </Button>
+            {scanning ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ArchiveRestore className="mr-1 h-4 w-4" />}{tr("从 SillyTavern 备份导入")}</Button>
         </>
       )}
 
